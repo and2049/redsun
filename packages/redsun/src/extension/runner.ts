@@ -11,6 +11,7 @@ export namespace ExtensionRunner {
     commands: Map<string, Extension.RegisteredCommand>
     activeTools: Set<string>
     contextFactory: () => Extension.Context
+    discoveredResources: { skillPaths: string[]; promptPaths: string[]; agentPaths: string[] }
   }
 
   export function create(contextFactory: () => Extension.Context): State {
@@ -20,6 +21,7 @@ export namespace ExtensionRunner {
       commands: new Map(),
       activeTools: new Set(),
       contextFactory,
+      discoveredResources: { skillPaths: [], promptPaths: [], agentPaths: [] },
     }
   }
 
@@ -87,6 +89,9 @@ export namespace ExtensionRunner {
         const r = await handler(event, ctx)
         if (r !== undefined) {
           result = mergeResults(result, r, event.type)
+          if (event.type === "resources_discover" || event.type === "agents_register") {
+            applyDiscoveredResources(state, r)
+          }
         }
       } catch (error) {
         log.error("extension handler failed", { event: event.type, error })
@@ -94,6 +99,35 @@ export namespace ExtensionRunner {
     }
 
     return result
+  }
+
+  function applyDiscoveredResources(
+    state: State,
+    result: Extension.EventResult,
+  ) {
+    const r = result as Extension.ResourcesDiscoverResult & Extension.AgentsRegisterResult
+    if (!r) return
+    if (r.skillPaths) {
+      for (const p of r.skillPaths) {
+        if (!state.discoveredResources.skillPaths.includes(p)) {
+          state.discoveredResources.skillPaths.push(p)
+        }
+      }
+    }
+    if (r.promptPaths) {
+      for (const p of r.promptPaths) {
+        if (!state.discoveredResources.promptPaths.includes(p)) {
+          state.discoveredResources.promptPaths.push(p)
+        }
+      }
+    }
+    if (r.agentPaths) {
+      for (const p of r.agentPaths) {
+        if (!state.discoveredResources.agentPaths.includes(p)) {
+          state.discoveredResources.agentPaths.push(p)
+        }
+      }
+    }
   }
 
   function mergeResults(
@@ -129,6 +163,24 @@ export namespace ExtensionRunner {
     if (eventType === "context") {
       const n = next as Extension.ContextEventResult
       return { messages: n.messages }
+    }
+
+    if (eventType === "resources_discover") {
+      const c = current as Extension.ResourcesDiscoverResult
+      const n = next as Extension.ResourcesDiscoverResult
+      return {
+        skillPaths: [...(c.skillPaths ?? []), ...(n.skillPaths ?? [])],
+        promptPaths: [...(c.promptPaths ?? []), ...(n.promptPaths ?? [])],
+        themePaths: [...(c.themePaths ?? []), ...(n.themePaths ?? [])],
+      }
+    }
+
+    if (eventType === "agents_register") {
+      const c = current as Extension.AgentsRegisterResult
+      const n = next as Extension.AgentsRegisterResult
+      return {
+        agentPaths: [...(c.agentPaths ?? []), ...(n.agentPaths ?? [])],
+      }
     }
 
     return next

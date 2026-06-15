@@ -59,7 +59,9 @@ export namespace ExtensionContext {
       ...base,
       isIdle: () => SessionStatus.get(options.sessionID).type === "idle",
       hasPendingMessages: () => false,
-      reload: async () => {},
+      reload: async () => {
+        await Instance.dispose()
+      },
     }
   }
 

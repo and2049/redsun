@@ -77,6 +77,16 @@ export namespace Extension {
     themePaths?: string[]
   }
 
+  export interface AgentsRegisterEvent {
+    type: "agents_register"
+    cwd: string
+    reason: "startup" | "reload"
+  }
+
+  export interface AgentsRegisterResult {
+    agentPaths?: string[]
+  }
+
   export interface SessionStartEvent {
     type: "session_start"
     reason: "startup" | "reload" | "new" | "resume" | "fork"
@@ -157,6 +167,7 @@ export namespace Extension {
   export type Event =
     | ProjectTrustEvent
     | ResourcesDiscoverEvent
+    | AgentsRegisterEvent
     | SessionStartEvent
     | SessionShutdownEvent
     | ContextEvent
@@ -170,6 +181,7 @@ export namespace Extension {
   export type EventResult =
     | ProjectTrustResult
     | ResourcesDiscoverResult
+    | AgentsRegisterResult
     | ContextEventResult
     | BeforeAgentStartResult
     | ToolCallResult

@@ -2,6 +2,7 @@ import { Ripgrep } from "../file/ripgrep"
 import { Global } from "../global"
 import { Filesystem } from "../util/filesystem"
 import { Config } from "../config/config"
+import { Skill } from "../skill"
 
 import { Instance } from "../project/instance"
 import path from "path"
@@ -65,6 +66,10 @@ export namespace SystemPrompt {
     path.join(Global.Path.config, "AGENTS.md"),
     path.join(os.homedir(), ".claude", "CLAUDE.md"),
   ]
+
+  export async function skills() {
+    return Skill.formatForPrompt()
+  }
 
   export async function custom() {
     const config = await Config.get()

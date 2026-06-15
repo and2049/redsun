@@ -116,4 +116,74 @@ describe("ExtensionRunner", () => {
     await ExtensionRunner.emit(runner, { type: "session_start", reason: "new" }, override)
     expect(receivedCwd).toBe("/override")
   })
+
+  test("resources_discover collects skillPaths and promptPaths from handlers", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.ResourcesDiscoverEvent>(runner, "resources_discover", () => ({
+      skillPaths: ["/a/skills", "/b/skills"],
+      promptPaths: ["/a/prompts"],
+    }))
+    ExtensionRunner.on<Extension.ResourcesDiscoverEvent>(runner, "resources_discover", () => ({
+      promptPaths: ["/c/prompts"],
+    }))
+    await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(runner, {
+      type: "resources_discover",
+      cwd: "/work",
+      reason: "startup",
+    })
+    expect(runner.discoveredResources.skillPaths).toEqual(["/a/skills", "/b/skills"])
+    expect(runner.discoveredResources.promptPaths).toEqual(["/a/prompts", "/c/prompts"])
+  })
+
+  test("resources_discover result is deduped across handlers", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.ResourcesDiscoverEvent>(runner, "resources_discover", () => ({
+      skillPaths: ["/shared/skills"],
+    }))
+    ExtensionRunner.on<Extension.ResourcesDiscoverEvent>(runner, "resources_discover", () => ({
+      skillPaths: ["/shared/skills", "/other/skills"],
+    }))
+    await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(runner, {
+      type: "resources_discover",
+      cwd: "/work",
+      reason: "startup",
+    })
+    expect(runner.discoveredResources.skillPaths).toEqual(["/shared/skills", "/other/skills"])
+  })
+
+  test("agents_register collects agentPaths from handlers", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.AgentsRegisterEvent>(runner, "agents_register", () => ({
+      agentPaths: ["/a/scout.md", "/a/architect.md"],
+    }))
+    ExtensionRunner.on<Extension.AgentsRegisterEvent>(runner, "agents_register", () => ({
+      agentPaths: ["/b/reviewer.md"],
+    }))
+    await ExtensionRunner.emit<Extension.AgentsRegisterEvent>(runner, {
+      type: "agents_register",
+      cwd: "/work",
+      reason: "startup",
+    })
+    expect(runner.discoveredResources.agentPaths).toEqual([
+      "/a/scout.md",
+      "/a/architect.md",
+      "/b/reviewer.md",
+    ])
+  })
+
+  test("agents_register result is deduped across handlers", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.AgentsRegisterEvent>(runner, "agents_register", () => ({
+      agentPaths: ["/shared/agent.md"],
+    }))
+    ExtensionRunner.on<Extension.AgentsRegisterEvent>(runner, "agents_register", () => ({
+      agentPaths: ["/shared/agent.md", "/other/agent.md"],
+    }))
+    await ExtensionRunner.emit<Extension.AgentsRegisterEvent>(runner, {
+      type: "agents_register",
+      cwd: "/work",
+      reason: "startup",
+    })
+    expect(runner.discoveredResources.agentPaths).toEqual(["/shared/agent.md", "/other/agent.md"])
+  })
 })

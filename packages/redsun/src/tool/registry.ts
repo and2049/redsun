@@ -84,6 +84,25 @@ export namespace ToolRegistry {
       log.info("registered extension tool", { id, source: source.scope })
     }
 
+    const discoverCtx: Extension.Context = ExtensionContext.create({
+      mode: "rpc",
+      cwd: Instance.directory,
+      sessionID: "",
+      agent: "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(
+      runner,
+      { type: "resources_discover", cwd: Instance.directory, reason: "startup" },
+      discoverCtx,
+    )
+    await ExtensionRunner.emit<Extension.AgentsRegisterEvent>(
+      runner,
+      { type: "agents_register", cwd: Instance.directory, reason: "startup" },
+      discoverCtx,
+    )
+
     return { custom, runner }
   })
 

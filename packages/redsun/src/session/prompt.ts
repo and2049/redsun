@@ -47,6 +47,7 @@ import { ExtensionWrapper } from "../extension/wrapper"
 import { ExtensionContext } from "../extension/context"
 import { ExtensionRunner } from "../extension/runner"
 import type { Extension } from "../extension/types"
+import { PromptTemplate } from "../prompt/template"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -550,7 +551,11 @@ export namespace SessionPrompt {
         agent,
         abort,
         sessionID,
-        system: [...(await SystemPrompt.environment()), ...(await SystemPrompt.custom())],
+        system: [
+          ...(await SystemPrompt.environment()),
+          ...(await SystemPrompt.custom()),
+          ...(await SystemPrompt.skills()),
+        ],
         messages: [
           ...MessageV2.toModelMessage(sessionMessages),
           ...(isLastStep
@@ -1387,6 +1392,19 @@ export namespace SessionPrompt {
       return args[argIndex]
     })
     let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+
+    // Apply {{argName}} named-argument substitution for prompt templates.
+    // Falls through to the existing $1/$ARGUMENTS behaviour when no args resolve.
+    if (/\{\{/.test(command.template)) {
+      const pt = await PromptTemplate.get(input.command)
+      const argDefs = pt?.arguments?.map((a) => ({ name: a.name, default: a.default }))
+      const namedArgs: Record<string, string> = {}
+      for (let i = 0; i < args.length; i++) {
+        const def = argDefs?.[i]
+        if (def) namedArgs[def.name] = args[i]
+      }
+      template = PromptTemplate.substitute(template, input.arguments, namedArgs, argDefs)
+    }
 
     const shell = ConfigMarkdown.shell(template)
     if (shell.length > 0) {

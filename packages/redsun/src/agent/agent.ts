@@ -6,6 +6,10 @@ import { SystemPrompt } from "../session/system"
 import { Instance } from "../project/instance"
 import { mergeDeep } from "remeda"
 import { Log } from "../util/log"
+import path from "path"
+import { ConfigMarkdown } from "../config/markdown"
+import { ToolRegistry } from "../tool/registry"
+import { GlobalBus } from "../bus/global"
 
 const log = Log.create({ service: "agent" })
 
@@ -51,7 +55,45 @@ export namespace Agent {
     })
   export type Info = z.infer<typeof Info>
 
-  const state = Instance.state(async () => {
+  const cache = new Map<string, Record<string, Info>>()
+
+  GlobalBus.on("event", (evt) => {
+    if (evt.payload?.type === "server.instance.disposed" && evt.directory) {
+      cache.delete(evt.directory)
+    }
+  })
+
+  async function loadAgentFromPath(filePath: string): Promise<{ name: string; data: Config.Agent } | undefined> {
+    const md = await ConfigMarkdown.parse(filePath)
+    if (!md.data) return undefined
+    const agentName = path.basename(filePath, ".md")
+    const config = {
+      name: agentName,
+      ...md.data,
+      prompt: md.content.trim(),
+    }
+    const parsed = Config.Agent.safeParse(config)
+    if (!parsed.success) {
+      log.warn("failed to parse agent file from extension", { filePath, issues: parsed.error.issues })
+      return undefined
+    }
+    return { name: agentName, data: parsed.data }
+  }
+
+  async function loadAgentsFromPaths(paths: string[]): Promise<Record<string, Config.Agent>> {
+    const result: Record<string, Config.Agent> = {}
+    for (const p of paths) {
+      const loaded = await loadAgentFromPath(p)
+      if (loaded) result[loaded.name] = loaded.data
+    }
+    return result
+  }
+
+  export async function invalidate() {
+    cache.clear()
+  }
+
+  async function stateFn() {
     const cfg = await Config.get()
     const defaultTools = cfg.tools ?? {}
     const defaultPermission: Info["permission"] = {
@@ -254,6 +296,46 @@ export namespace Agent {
       }
     }
 
+    // Load agents contributed by extensions (Phase 4)
+    const runner = await ToolRegistry.getRunner().catch(() => undefined)
+    if (runner) {
+      const extensionAgents = await loadAgentsFromPaths(runner.discoveredResources.agentPaths)
+      for (const [key, value] of Object.entries(extensionAgents)) {
+        if (value.disable) {
+          delete result[key]
+          continue
+        }
+        let item = result[key]
+        if (!item) {
+          item = result[key] = {
+            name: key,
+            mode: "all",
+            permission: agentPermission,
+            options: {},
+            tools: {},
+            native: false,
+          }
+        }
+        const { name, model, prompt, tools, description, temperature, top_p, mode, permission, color, maxSteps, ...extra } =
+          value
+        item.options = { ...item.options, ...extra }
+        if (model) item.model = Provider.parseModel(model)
+        if (prompt) item.prompt = prompt
+        if (tools) item.tools = { ...item.tools, ...tools }
+        item.tools = { ...defaultTools, ...item.tools }
+        if (description) item.description = description
+        if (temperature != undefined) item.temperature = temperature
+        if (top_p != undefined) item.topP = top_p
+        if (mode) item.mode = mode
+        if (color) item.color = color
+        if (name) item.name = name
+        if (maxSteps != undefined) item.maxSteps = maxSteps
+        if (permission ?? cfg.permission) {
+          item.permission = mergeAgentPermissions(cfg.permission ?? {}, permission ?? {})
+        }
+      }
+    }
+
     // Mark the default agent
     const defaultName = cfg.default_agent ?? "build"
     const defaultCandidate = result[defaultName]
@@ -275,20 +357,29 @@ export namespace Agent {
     }
 
     return result
-  })
+  }
 
   export async function get(agent: string) {
-    return state().then((x) => x[agent])
+    return getState().then((x) => x[agent])
   }
 
   export async function list() {
-    return state().then((x) => Object.values(x))
+    return getState().then((x) => Object.values(x))
   }
 
   export async function defaultAgent(): Promise<string> {
-    const agents = await state()
+    const agents = await getState()
     const defaultCandidate = Object.values(agents).find((a) => a.default)
     return defaultCandidate?.name ?? "build"
+  }
+
+  async function getState(): Promise<Record<string, Info>> {
+    const key = Instance.directory
+    const cached = cache.get(key)
+    if (cached) return cached
+    const fresh = await stateFn()
+    cache.set(key, fresh)
+    return fresh
   }
 
   export async function generate(input: { description: string; model?: { providerID: string; modelID: string } }) {

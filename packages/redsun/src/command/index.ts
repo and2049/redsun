@@ -7,6 +7,7 @@ import { Identifier } from "../id/id"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import { ToolRegistry } from "../tool/registry"
+import { PromptTemplate } from "../prompt/template"
 import type { Extension } from "../extension/types"
 
 export namespace Command {
@@ -82,6 +83,14 @@ export namespace Command {
         }
       }
     } catch {}
+
+    for (const pt of await PromptTemplate.all()) {
+      result[pt.name] = {
+        name: pt.name,
+        description: pt.description,
+        template: pt.content,
+      }
+    }
 
     return result
   })
