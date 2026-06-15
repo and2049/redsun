@@ -633,6 +633,7 @@ export namespace Config {
         })
         .optional(),
       extension: z.string().array().optional(),
+      defaultProjectTrust: z.enum(["ask", "always", "never"]).optional().describe("Default behavior for project trust prompts (default: ask)"),
       snapshot: z.boolean().optional(),
 
       disabled_providers: z.array(z.string()).optional().describe("Disable providers that are loaded automatically"),

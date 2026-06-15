@@ -13,6 +13,10 @@ import { SessionProcessor } from "./processor"
 import { fn } from "@/util/fn"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
+import { ToolRegistry } from "../tool/registry"
+import { ExtensionRunner } from "../extension/runner"
+import { ExtensionContext } from "../extension/context"
+import type { Extension } from "../extension/types"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -94,7 +98,28 @@ export namespace SessionCompaction {
     sessionID: string
     abort: AbortSignal
     auto: boolean
+    fromExtension?: boolean
   }) {
+    // Emit session_before_compact for extensions to cancel or customize
+    const runner = await ToolRegistry.getRunner()
+    const compactCtx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: "compaction",
+      projectTrusted: runner.projectTrusted,
+      getSystemPrompt: () => "",
+      signal: input.abort,
+    })
+    const beforeResult = await ExtensionRunner.emit(
+      runner,
+      { type: "session_before_compact", sessionID: input.sessionID, signal: input.abort } as Extension.SessionBeforeCompactEvent,
+      compactCtx,
+    )
+    if ((beforeResult as Extension.SessionBeforeCompactResult)?.cancel) {
+      log.info("compaction cancelled by extension")
+      return "stop"
+    }
+
     const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)!.info as MessageV2.User
     const agent = await Agent.get("compaction")
     const model = agent.model
@@ -182,6 +207,11 @@ export namespace SessionCompaction {
     }
     if (processor.message.error) return "stop"
     Bus.publish(Event.Compacted, { sessionID: input.sessionID })
+    await ExtensionRunner.emit(
+      runner,
+      { type: "session_compact", sessionID: input.sessionID, fromExtension: input.fromExtension ?? false } as Extension.SessionCompactEvent,
+      compactCtx,
+    )
     return "continue"
   }
 
@@ -194,6 +224,7 @@ export namespace SessionCompaction {
         modelID: z.string(),
       }),
       auto: z.boolean(),
+      fromExtension: z.boolean().optional(),
     }),
     async (input) => {
       const msg = await Session.updateMessage({
@@ -212,6 +243,7 @@ export namespace SessionCompaction {
         sessionID: msg.sessionID,
         type: "compaction",
         auto: input.auto,
+        fromExtension: input.fromExtension ?? false,
       })
     },
   )

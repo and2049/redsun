@@ -47,6 +47,7 @@ import { ExtensionContext } from "../extension/context"
 import { ExtensionRunner } from "../extension/runner"
 import type { Extension } from "../extension/types"
 import { PromptTemplate } from "../prompt/template"
+import { Entry } from "../entry/entry"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -168,6 +169,24 @@ export namespace SessionPrompt {
 
     return loop(input.sessionID)
   })
+
+  export async function sendMessage(sessionID: string, content: string) {
+    await Entry.append(sessionID, {
+      type: "custom_message",
+      customType: "extension.message",
+      content,
+      display: true,
+    })
+    log.info("sendMessage", { sessionID })
+  }
+
+  export async function sendUserMessage(sessionID: string, content: string) {
+    return prompt({
+      sessionID: sessionID as any,
+      agent: "extension",
+      parts: [{ type: "text", text: content }],
+    })
+  }
 
   export async function resolvePromptParts(template: string): Promise<PromptInput["parts"]> {
     const parts: PromptInput["parts"] = [
@@ -451,6 +470,7 @@ export namespace SessionPrompt {
           abort,
           sessionID,
           auto: task.auto,
+          fromExtension: task.fromExtension ?? false,
         })
         if (result === "stop") break
         continue
@@ -703,7 +723,7 @@ export namespace SessionPrompt {
       },
       tools: input.tools,
       agent: agent.name,
-      model: input.model ?? agent.model ?? (await lastModel(input.sessionID)),
+      model: input.model ?? agent.model ?? ToolRegistry.consumeModelOverride(input.sessionID) ?? (await lastModel(input.sessionID)),
       system: input.system,
     }
 

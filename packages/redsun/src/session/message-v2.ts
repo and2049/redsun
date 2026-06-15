@@ -152,6 +152,7 @@ export namespace MessageV2 {
   export const CompactionPart = PartBase.extend({
     type: z.literal("compaction"),
     auto: z.boolean(),
+    fromExtension: z.boolean().optional(),
   }).meta({
     ref: "CompactionPart",
   })

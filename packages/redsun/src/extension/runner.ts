@@ -1,6 +1,7 @@
 import { Log } from "../util/log"
 import type { Tool } from "../tool/tool"
 import type { Extension } from "./types"
+import { ExtensionContext } from "./context"
 
 export namespace ExtensionRunner {
   const log = Log.create({ service: "extension.runner" })
@@ -12,6 +13,10 @@ export namespace ExtensionRunner {
     activeTools: Set<string>
     contextFactory: () => Extension.Context
     discoveredResources: { skillPaths: string[]; promptPaths: string[]; agentPaths: string[] }
+    projectTrusted: boolean
+    pendingProviderRegistrations: Array<{ name: string; config: Extension.ProviderConfig; source: string }>
+    providerRegistrar?: { register: (name: string, config: Extension.ProviderConfig) => void; unregister: (name: string) => void }
+    eventBus: Map<string, Array<(data: unknown) => void>>
   }
 
   export function create(contextFactory: () => Extension.Context): State {
@@ -22,6 +27,9 @@ export namespace ExtensionRunner {
       activeTools: new Set(),
       contextFactory,
       discoveredResources: { skillPaths: [], promptPaths: [], agentPaths: [] },
+      projectTrusted: true,
+      pendingProviderRegistrations: [],
+      eventBus: new Map(),
     }
   }
 
@@ -80,6 +88,83 @@ export namespace ExtensionRunner {
     state.commands.delete(name)
   }
 
+  export function registerProvider(state: State, name: string, config: Extension.ProviderConfig, source: string) {
+    if (state.providerRegistrar) {
+      state.providerRegistrar.register(name, config)
+    } else {
+      state.pendingProviderRegistrations.push({ name, config, source })
+    }
+  }
+
+  export function unregisterProvider(state: State, name: string) {
+    if (state.providerRegistrar) {
+      state.providerRegistrar.unregister(name)
+    } else {
+      state.pendingProviderRegistrations = state.pendingProviderRegistrations.filter((r) => r.name !== name)
+    }
+  }
+
+  export function flushProviderRegistrations(state: State) {
+    if (!state.providerRegistrar) return
+    for (const { name, config } of state.pendingProviderRegistrations) {
+      try {
+        state.providerRegistrar.register(name, config)
+      } catch (error) {
+        log.error("provider registration failed", { name, error })
+      }
+    }
+    state.pendingProviderRegistrations = []
+  }
+
+  export function emitEvent(state: State, channel: string, data: unknown) {
+    const handlers = state.eventBus.get(channel)
+    if (!handlers || handlers.length === 0) return
+    for (const handler of handlers) {
+      try {
+        handler(data)
+      } catch (error) {
+        log.error("extension event bus handler failed", { channel, error })
+      }
+    }
+  }
+
+  export function onEvent(state: State, channel: string, handler: (data: unknown) => void): () => void {
+    const existing = state.eventBus.get(channel) ?? []
+    existing.push(handler)
+    state.eventBus.set(channel, existing)
+    return () => {
+      const updated = (state.eventBus.get(channel) ?? []).filter((h) => h !== handler)
+      if (updated.length === 0) {
+        state.eventBus.delete(channel)
+      } else {
+        state.eventBus.set(channel, updated)
+      }
+    }
+  }
+
+  export async function emitProjectTrust(
+    state: State,
+    event: Extension.ProjectTrustEvent,
+    ctx: Extension.ProjectTrustContext,
+  ): Promise<Extension.ProjectTrustResult | undefined> {
+    const handlers = state.handlers.get("project_trust")
+    if (!handlers || handlers.length === 0) return undefined
+
+    for (const handler of handlers) {
+      try {
+        const result = (await handler(event, ctx as any)) as Extension.ProjectTrustResult | undefined
+        if (result && result.trusted !== "undecided") {
+          return result
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log.error("project_trust handler failed", { error: message })
+      }
+    }
+
+    return undefined
+  }
+
   export async function emit<E extends Extension.Event>(
     state: State,
     event: E,
@@ -89,6 +174,7 @@ export namespace ExtensionRunner {
     if (!handlers || handlers.length === 0) return undefined
 
     const ctx = contextOverride ?? state.contextFactory()
+    const previousSession = ExtensionContext.setCurrentSessionID(ctx.sessionID)
     let result: Extension.EventResult | undefined
 
     for (const handler of handlers) {
@@ -105,6 +191,7 @@ export namespace ExtensionRunner {
       }
     }
 
+    ExtensionContext.setCurrentSessionID(previousSession)
     return result
   }
 
@@ -188,6 +275,24 @@ export namespace ExtensionRunner {
       return {
         agentPaths: [...(c.agentPaths ?? []), ...(n.agentPaths ?? [])],
       }
+    }
+
+    if (eventType === "session_before_compact") {
+      const n = next as Extension.SessionBeforeCompactResult
+      if (n.cancel) return { cancel: true }
+      return current
+    }
+
+    if (eventType === "session_before_switch") {
+      const n = next as Extension.SessionBeforeSwitchResult
+      if (n.cancel) return { cancel: true }
+      return current
+    }
+
+    if (eventType === "session_before_fork") {
+      const n = next as Extension.SessionBeforeForkResult
+      if (n.cancel) return { cancel: true }
+      return current
     }
 
     return next

@@ -32,10 +32,13 @@ export namespace Extension {
     getContextUsage(): ContextUsage | undefined
     getSystemPrompt(): string
     getEntries<T = unknown>(customType: string): Promise<Array<{ customType: string; data?: T; details?: T }>>
+    compact(): void
   }
 
   export interface CommandContext extends Context {
     reload(): Promise<void>
+    newSession(options?: { parentSession?: string }): Promise<{ sessionID: string }>
+    fork(entryId: string): Promise<{ sessionID: string }>
   }
 
   export interface SourceInfo {
@@ -64,6 +67,13 @@ export namespace Extension {
   export interface ProjectTrustResult {
     trusted: "yes" | "no" | "undecided"
     remember?: boolean
+  }
+
+  export interface ProjectTrustContext {
+    cwd: string
+    mode: Mode
+    hasUI: boolean
+    ui: Pick<UIContext, "select" | "confirm" | "input" | "notify">
   }
 
   export interface ResourcesDiscoverEvent {
@@ -96,6 +106,42 @@ export namespace Extension {
   export interface SessionShutdownEvent {
     type: "session_shutdown"
     reason: "quit" | "reload" | "new" | "resume" | "fork"
+  }
+
+  export interface SessionBeforeCompactEvent {
+    type: "session_before_compact"
+    sessionID: string
+    signal: AbortSignal
+  }
+
+  export interface SessionBeforeCompactResult {
+    cancel?: boolean
+  }
+
+  export interface SessionCompactEvent {
+    type: "session_compact"
+    sessionID: string
+    fromExtension: boolean
+  }
+
+  export interface SessionBeforeSwitchEvent {
+    type: "session_before_switch"
+    reason: "new" | "resume"
+    targetSessionFile?: string
+  }
+
+  export interface SessionBeforeSwitchResult {
+    cancel?: boolean
+  }
+
+  export interface SessionBeforeForkEvent {
+    type: "session_before_fork"
+    entryId: string
+    position: "before" | "at"
+  }
+
+  export interface SessionBeforeForkResult {
+    cancel?: boolean
   }
 
   export interface ContextEvent {
@@ -171,6 +217,10 @@ export namespace Extension {
     | AgentsRegisterEvent
     | SessionStartEvent
     | SessionShutdownEvent
+    | SessionBeforeCompactEvent
+    | SessionCompactEvent
+    | SessionBeforeSwitchEvent
+    | SessionBeforeForkEvent
     | ContextEvent
     | BeforeAgentStartEvent
     | ToolCallEvent
@@ -183,6 +233,9 @@ export namespace Extension {
     | ProjectTrustResult
     | ResourcesDiscoverResult
     | AgentsRegisterResult
+    | SessionBeforeCompactResult
+    | SessionBeforeSwitchResult
+    | SessionBeforeForkResult
     | ContextEventResult
     | BeforeAgentStartResult
     | ToolCallResult
@@ -218,6 +271,35 @@ export namespace Extension {
     ): Promise<string>
 
     setModel(model: string): Promise<boolean>
+
+    registerProvider(name: string, config: ProviderConfig): void
+    unregisterProvider(name: string): void
+
+    events: {
+      emit(channel: string, data: unknown): void
+      on(channel: string, handler: (data: unknown) => void): () => void
+    }
+  }
+
+  export interface ProviderConfig {
+    name?: string
+    baseUrl?: string
+    apiKey?: string
+    api?: string
+    models?: ProviderModelConfig[]
+    headers?: Record<string, string>
+  }
+
+  export interface ProviderModelConfig {
+    id: string
+    name: string
+    api?: string
+    reasoning: boolean
+    input: ("text" | "image")[]
+    cost: { input: number; output: number; cacheRead: number; cacheWrite: number }
+    contextWindow: number
+    maxTokens: number
+    headers?: Record<string, string>
   }
 
   export type Factory = (api: API) => void | Promise<void>

@@ -32,11 +32,22 @@ export namespace ExtensionLoader {
 
     // 4. Project extensions (if trusted)
     if (options?.projectTrusted !== false) {
-      const projectDir = path.join(Instance.directory, ".redsun", "extensions")
-      await discoverDirectory(projectDir, "project", loaded, seen)
+      await loadProjectExtensionsInto(loaded, seen)
     }
 
     return loaded
+  }
+
+  export async function loadProjectExtensions(): Promise<Extension.Loaded[]> {
+    const loaded: Extension.Loaded[] = []
+    const seen = new Set<string>()
+    await loadProjectExtensionsInto(loaded, seen)
+    return loaded
+  }
+
+  async function loadProjectExtensionsInto(loaded: Extension.Loaded[], seen: Set<string>) {
+    const projectDir = path.join(Instance.directory, ".redsun", "extensions")
+    await discoverDirectory(projectDir, "project", loaded, seen)
   }
 
   async function resolveEntry(

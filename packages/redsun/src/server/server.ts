@@ -1492,6 +1492,32 @@ export namespace Server {
           return c.json(permissions)
         },
       )
+      .post(
+        "/trust",
+        describeRoute({
+          summary: "Respond to trust prompt",
+          description: "Approve or deny project trust.",
+          operationId: "trust.respond",
+          responses: {
+            200: {
+              description: "Trust decision processed",
+              content: {
+                "application/json": {
+                  schema: resolver(z.boolean()),
+                },
+              },
+            },
+            ...errors(400),
+          },
+        }),
+        validator("json", z.object({ cwd: z.string(), trusted: z.boolean(), remember: z.boolean() })),
+        async (c) => {
+          const { cwd, trusted, remember } = c.req.valid("json")
+          const { respondToTrustPrompt } = await import("../trust/project-trust")
+          const result = await respondToTrustPrompt(cwd, trusted, remember)
+          return c.json(result)
+        },
+      )
       .get(
         "/command",
         describeRoute({

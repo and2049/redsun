@@ -29,6 +29,23 @@ import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
 import { Entry } from "../entry/entry"
+import { iife } from "@/util/iife"
+
+let trustOverride: boolean | undefined
+
+const sessionModelOverrides = new Map<string, { providerID: string; modelID: string }>()
+
+export namespace TrustFlag {
+  export function set(trusted: boolean) {
+    trustOverride = trusted
+  }
+  export function get() {
+    return trustOverride
+  }
+  export function clear() {
+    trustOverride = undefined
+  }
+}
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -77,8 +94,9 @@ export namespace ToolRegistry {
 
     const runner = ExtensionRunner.create(contextFactory)
 
-    const extensions = await ExtensionLoader.load()
-    for (const ext of extensions) {
+    // Phase 1: Load non-project extensions first (config, CLI, global)
+    const nonProjectExtensions = await ExtensionLoader.load({ projectTrusted: false })
+    for (const ext of nonProjectExtensions) {
       const api = createExtensionAPI(runner, ext.sourceInfo)
       try {
         await ext.factory(api)
@@ -87,17 +105,78 @@ export namespace ToolRegistry {
       }
     }
 
+    // Phase 2: Resolve project trust, allowing non-project extensions to vote
+    const { resolveProjectTrusted } = await import("../trust/project-trust")
+    const { createTrustStore } = await import("../trust/manager")
+    const trustStore = createTrustStore()
+    const config = await Config.get()
+    const defaultTrust = config.defaultProjectTrust
+    const trustCtx = ExtensionContext.create({
+      mode: "rpc",
+      cwd: Instance.directory,
+      sessionID: "",
+      agent: "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    const trusted = await resolveProjectTrusted({
+      cwd: Instance.directory,
+      trustStore,
+      trustOverride: iife((): boolean | undefined => {
+        if (trustOverride !== undefined) return trustOverride
+        if (defaultTrust === "always") return true
+        if (defaultTrust === "never") return false
+        return undefined
+      }),
+      defaultProjectTrust: defaultTrust as "ask" | "always" | "never" | undefined,
+      runner,
+      mode: "rpc",
+      hasUI: false,
+      ui: trustCtx.ui,
+    })
+    runner.projectTrusted = trusted
+
+    // Phase 3: Load project extensions if trusted
+    if (trusted) {
+      const projectExtensions = await ExtensionLoader.loadProjectExtensions()
+      for (const ext of projectExtensions) {
+        const api = createExtensionAPI(runner, ext.sourceInfo)
+        try {
+          await ext.factory(api)
+        } catch (error) {
+          log.error("extension factory failed", { path: ext.path, error })
+        }
+      }
+    }
+
+    // Phase 4: Discover tools from all loaded extensions
     for (const [id, { tool, source }] of runner.tools) {
       custom.set(id, tool)
       log.info("registered extension tool", { id, source: source.scope })
     }
+
+    // Wire provider registrar and flush pending registrations
+    const { Provider } = await import("../provider/provider")
+    runner.providerRegistrar = {
+      register: (name, config) => {
+        Provider.registerProvider(name, config).catch((err) => {
+          log.error("provider registration failed", { name, error: err })
+        })
+      },
+      unregister: (name) => {
+        Provider.unregisterProvider(name).catch((err) => {
+          log.error("provider unregistration failed", { name, error: err })
+        })
+      },
+    }
+    ExtensionRunner.flushProviderRegistrations(runner)
 
     const discoverCtx: Extension.Context = ExtensionContext.create({
       mode: "rpc",
       cwd: Instance.directory,
       sessionID: "",
       agent: "",
-      projectTrusted: true,
+      projectTrusted: trusted,
       getSystemPrompt: () => "",
     })
     await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(
@@ -125,10 +204,33 @@ export namespace ToolRegistry {
       registerCommand: (command) => ExtensionRunner.registerCommand(runner, command),
       unregisterCommand: (name) => ExtensionRunner.unregisterCommand(runner, name),
       sendMessage: (content: string) => {
-        log.warn("sendMessage is not yet implemented", { content })
+        const sessionID = ExtensionContext.getCurrentSessionID()
+        if (!sessionID) {
+          log.warn("sendMessage called outside session context", { content })
+          return
+        }
+        Entry.append(sessionID, {
+          type: "custom_message",
+          customType: "extension.message",
+          content,
+          display: true,
+        }).then(() => {
+          log.info("sendMessage delivered", { sessionID })
+        }).catch((err) => {
+          log.error("sendMessage failed", { sessionID, error: err })
+        })
       },
       sendUserMessage: (content: string) => {
-        log.warn("sendUserMessage is not yet implemented", { content })
+        const sessionID = ExtensionContext.getCurrentSessionID()
+        if (!sessionID) {
+          log.warn("sendUserMessage called outside session context", { content })
+          return
+        }
+        import("../session/prompt").then(({ SessionPrompt }) => {
+          SessionPrompt.sendUserMessage(sessionID, content)
+        }).catch((err) => {
+          log.error("sendUserMessage failed", { sessionID, error: err })
+        })
       },
       appendEntry: async (sessionID, customType, data) => {
         return Entry.append(sessionID, { type: "custom", customType, data })
@@ -142,7 +244,38 @@ export namespace ToolRegistry {
           details,
         })
       },
-      setModel: async () => false,
+      setModel: async (model: string) => {
+        const sessionID = ExtensionContext.getCurrentSessionID()
+        if (!sessionID) {
+          log.warn("setModel called outside session context", { model })
+          return false
+        }
+        try {
+          const { Provider } = await import("../provider/provider")
+          const parsed = Provider.parseModel(model)
+          await Provider.getModel(parsed.providerID, parsed.modelID)
+          sessionModelOverrides.set(sessionID, { providerID: parsed.providerID, modelID: parsed.modelID })
+          log.info("setModel", { model, sessionID })
+          return true
+        } catch (error) {
+          log.warn("setModel failed", { model, error })
+          return false
+        }
+      },
+      registerProvider: (name, config) => {
+        ExtensionRunner.registerProvider(runner, name, config, source.path)
+      },
+      unregisterProvider: (name) => {
+        ExtensionRunner.unregisterProvider(runner, name)
+      },
+      events: {
+        emit: (channel: string, data: unknown) => {
+          ExtensionRunner.emitEvent(runner, channel, data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          return ExtensionRunner.onEvent(runner, channel, handler)
+        },
+      },
     }
   }
 
@@ -270,6 +403,15 @@ export namespace ToolRegistry {
 
   export async function getRunner(): Promise<ExtensionRunner.State> {
     return state().then((s) => s.runner)
+  }
+
+  export function consumeModelOverride(sessionID: string): { providerID: string; modelID: string } | undefined {
+    const model = sessionModelOverrides.get(sessionID)
+    if (model) {
+      sessionModelOverrides.delete(sessionID)
+      return model
+    }
+    return undefined
   }
 
   function emitChanged() {

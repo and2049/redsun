@@ -2,6 +2,46 @@ import type { Tool } from "../tool/tool"
 import type { Extension } from "./types"
 import { ExtensionRunner } from "./runner"
 import type { ZodType } from "zod"
+import path from "path"
+import { Global } from "../global"
+import { Log } from "../util/log"
+
+const log = Log.create({ service: "extension.wrapper" })
+
+const PROTECTED_PATHS = [
+  path.join(Global.Path.config, "trust.json"),
+]
+
+const PROTECTED_GLOBS = [
+  ".env",
+  ".env.local",
+  ".env.production",
+]
+
+export function isProtectedPath(filePath: string): { blocked: boolean; reason?: string } {
+  const normalized = path.resolve(filePath)
+
+  for (const protectedPath of PROTECTED_PATHS) {
+    if (normalized === path.resolve(protectedPath)) {
+      return { blocked: true, reason: `Cannot write to protected path: ${filePath}` }
+    }
+  }
+
+  const basename = path.basename(normalized)
+  if (PROTECTED_GLOBS.includes(basename)) {
+    return { blocked: true, reason: `Cannot write to protected file: ${filePath}` }
+  }
+
+  if (normalized.includes(path.sep + ".git" + path.sep)) {
+    log.warn("writing to .git directory", { filePath })
+  }
+
+  if (normalized.includes(path.sep + "node_modules" + path.sep)) {
+    log.warn("writing to node_modules directory", { filePath })
+  }
+
+  return { blocked: false }
+}
 
 export namespace ExtensionWrapper {
   export interface ResolvedTool {
@@ -27,6 +67,18 @@ export namespace ExtensionWrapper {
       ...tool,
       execute: async (args, ctx) => {
         const eventCtx = contextFactory()
+
+        // Guardrail: check protected paths for write/edit tools
+        if (tool.id === "write" || tool.id === "edit") {
+          const filePath = (args as Record<string, unknown>).filePath as string | undefined
+          if (filePath) {
+            const guard = isProtectedPath(filePath)
+            if (guard.blocked) {
+              throw new Error(guard.reason ?? "blocked by guardrail")
+            }
+          }
+        }
+
         const callEvent: Extension.ToolCallEvent = {
           type: "tool_call",
           toolCallId: ctx.callID ?? "",

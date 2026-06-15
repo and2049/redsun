@@ -115,6 +115,13 @@ export namespace LLM {
 
     const messages = await injectCustomMessages(input.sessionID, input.messages)
 
+    const contextResult = await ExtensionRunner.emit(
+      extRunner,
+      { type: "context", messages: [...system.map((x): ModelMessage => ({ role: "system" as const, content: x })), ...messages] } as Extension.ContextEvent,
+      extContext,
+    )
+    const contextMessages = (contextResult as Extension.ContextEventResult | undefined)?.messages
+
     return streamText({
       onError(error) {
         l.error("stream error", {
@@ -154,7 +161,7 @@ export namespace LLM {
         ...input.model.headers,
       },
       maxRetries: input.retries ?? 0,
-      messages: [
+      messages: (contextMessages as ModelMessage[] | undefined) ?? [
         ...system.map(
           (x): ModelMessage => ({
             role: "system",

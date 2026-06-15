@@ -4,7 +4,17 @@ import { Instance } from "../project/instance"
 import { Entry } from "../entry/entry"
 import { Log } from "../util/log"
 
+let currentSessionID = ""
+
 export namespace ExtensionContext {
+  export function getCurrentSessionID(): string {
+    return currentSessionID
+  }
+  export function setCurrentSessionID(id: string): string {
+    const previous = currentSessionID
+    currentSessionID = id
+    return previous
+  }
   export function create(options: {
     mode: Extension.Mode
     cwd: string
@@ -37,6 +47,34 @@ export namespace ExtensionContext {
       },
       getSystemPrompt: options.getSystemPrompt,
       getEntries: options.getEntries ?? (async () => []),
+      compact: () => {
+        if (!options.sessionID) return
+        const sessionID = options.sessionID
+        const agent = options.agent
+        import("../session/index").then(({ Session }) =>
+          Session.messages({ sessionID, limit: 10 }).then(async (messages) => {
+            const lastUser = messages.findLast((m) => m.info.role === "user")
+            let model: { providerID: string; modelID: string }
+            if (lastUser?.info.role === "user" && lastUser.info.model) {
+              model = lastUser.info.model
+            } else {
+              const { Provider } = await import("../provider/provider")
+              const d = await Provider.defaultModel()
+              model = { providerID: d?.providerID ?? "openai", modelID: d?.modelID ?? "gpt-4o" }
+            }
+            const { SessionCompaction } = await import("../session/compaction")
+            await SessionCompaction.create({
+              sessionID,
+              agent,
+              model,
+              auto: false,
+              fromExtension: true,
+            })
+          }),
+        ).catch((err) => {
+          Log.Default.error("compact() from extension context failed", { error: err })
+        })
+      },
     }
   }
 
@@ -67,6 +105,24 @@ export namespace ExtensionContext {
       hasPendingMessages: () => false,
       reload: async () => {
         await Instance.dispose()
+      },
+      newSession: async (newOpts) => {
+        const { Session } = await import("../session/index")
+        const result = await Session.createNext({
+          directory: Instance.directory,
+          parentID: newOpts?.parentSession ?? options.sessionID,
+          reason: "new",
+        })
+        return { sessionID: result.id }
+      },
+      fork: async (entryId: string) => {
+        const { Session } = await import("../session/index")
+        const result = await Session.createNext({
+          directory: Instance.directory,
+          parentID: entryId,
+          reason: "fork",
+        })
+        return { sessionID: result.id }
       },
     }
   }
