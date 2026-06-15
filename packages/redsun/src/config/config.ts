@@ -52,7 +52,7 @@ export namespace Config {
 
     if (Flag.REDSUN_CONFIG_CONTENT) {
       result = mergeConfigWithPlugins(result, JSON.parse(Flag.REDSUN_CONFIG_CONTENT))
-      log.debug("loaded custom config from OPENCODE_CONFIG_CONTENT")
+      log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
     }
 
     for (const [key, value] of Object.entries(auth)) {
@@ -87,7 +87,7 @@ export namespace Config {
 
     if (Flag.REDSUN_CONFIG_DIR) {
       directories.push(Flag.REDSUN_CONFIG_DIR)
-      log.debug("loading config from OPENCODE_CONFIG_DIR", { path: Flag.REDSUN_CONFIG_DIR })
+      log.debug("loading config from REDSUN_CONFIG_DIR", { path: Flag.REDSUN_CONFIG_DIR })
     }
 
     const promises: Promise<void>[] = []

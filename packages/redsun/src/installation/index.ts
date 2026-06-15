@@ -10,10 +10,6 @@ export namespace Installation {
   export const CHANNEL = typeof REDSUN_CHANNEL === "string" ? REDSUN_CHANNEL : "local"
   export const USER_AGENT = `redsun/${CHANNEL}/${VERSION}/${Flag.REDSUN_CLIENT}`
 
-  export function isPreview() {
-    return CHANNEL !== "latest"
-  }
-
   export function isLocal() {
     return CHANNEL === "local"
   }

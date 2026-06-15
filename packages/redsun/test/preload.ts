@@ -6,7 +6,7 @@ import fs from "fs/promises"
 import fsSync from "fs"
 import { afterAll } from "bun:test"
 
-const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
+const dir = path.join(os.tmpdir(), "redsun-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(() => {
   fsSync.rmSync(dir, { recursive: true, force: true })
@@ -18,7 +18,7 @@ process.env["XDG_STATE_HOME"] = path.join(dir, "state")
 
 // Pre-fetch models.json so tests don't need the macro fallback
 // Also write the cache version file to prevent global/index.ts from clearing the cache
-const cacheDir = path.join(dir, "cache", "opencode")
+const cacheDir = path.join(dir, "cache", "redsun")
 await fs.mkdir(cacheDir, { recursive: true })
 await fs.writeFile(path.join(cacheDir, "version"), "14")
 const response = await fetch("https://models.dev/api.json")
@@ -26,7 +26,7 @@ if (response.ok) {
   await fs.writeFile(path.join(cacheDir, "models.json"), await response.text())
 }
 // Disable models.dev refresh to avoid race conditions during tests
-process.env["OPENCODE_DISABLE_MODELS_FETCH"] = "true"
+process.env["REDSUN_DISABLE_MODELS_FETCH"] = "true"
 
 // Clear provider env vars to ensure clean test state
 delete process.env["ANTHROPIC_API_KEY"]
