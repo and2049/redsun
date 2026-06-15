@@ -359,7 +359,7 @@ test("resolves scoped npm plugins in config", async () => {
 
       await Bun.write(
         path.join(dir, "opencode.json"),
-        JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: ["@scope/plugin"] }, null, 2),
+        JSON.stringify({ $schema: "https://opencode.ai/config.json", extension: ["@scope/plugin"] }, null, 2),
       )
     },
   })
@@ -368,21 +368,21 @@ test("resolves scoped npm plugins in config", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await Config.get()
-      const pluginEntries = config.plugin ?? []
+      const extensionEntries = config.extension ?? []
 
       const baseUrl = pathToFileURL(path.join(tmp.path, "opencode.json")).href
       const expected = import.meta.resolve("@scope/plugin", baseUrl)
 
-      expect(pluginEntries.includes(expected)).toBe(true)
+      expect(extensionEntries.includes(expected)).toBe(true)
 
-      const scopedEntry = pluginEntries.find((entry) => entry === expected)
+      const scopedEntry = extensionEntries.find((entry: string) => entry === expected)
       expect(scopedEntry).toBeDefined()
       expect(scopedEntry?.includes("/node_modules/@scope/plugin/")).toBe(true)
     },
   })
 })
 
-test("merges plugin arrays from global and local configs", async () => {
+test("merges extension arrays from global and local configs", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       // Create a nested project structure with local .redsun config
@@ -390,21 +390,21 @@ test("merges plugin arrays from global and local configs", async () => {
       const opencodeDir = path.join(projectDir, ".redsun")
       await fs.mkdir(opencodeDir, { recursive: true })
 
-      // Global config with plugins
+      // Global config with extensions
       await Bun.write(
         path.join(dir, "opencode.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
-          plugin: ["global-plugin-1", "global-plugin-2"],
+          extension: ["global-plugin-1", "global-plugin-2"],
         }),
       )
 
-      // Local .redsun config with different plugins
+      // Local .redsun config with different extensions
       await Bun.write(
         path.join(opencodeDir, "opencode.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
-          plugin: ["local-plugin-1"],
+          extension: ["local-plugin-1"],
         }),
       )
     },
@@ -414,16 +414,18 @@ test("merges plugin arrays from global and local configs", async () => {
     directory: path.join(tmp.path, "project"),
     fn: async () => {
       const config = await Config.get()
-      const plugins = config.plugin ?? []
+      const extensions = config.extension ?? []
 
-      // Should contain both global and local plugins
-      expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("global-plugin-2"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
+      // Should contain both global and local extensions
+      expect(extensions.some((p: string) => p.includes("global-plugin-1"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("global-plugin-2"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("local-plugin-1"))).toBe(true)
 
-      // Should have all 3 plugins (not replaced, but merged)
-      const pluginNames = plugins.filter((p) => p.includes("global-plugin") || p.includes("local-plugin"))
-      expect(pluginNames.length).toBeGreaterThanOrEqual(3)
+      // Should have all 3 extensions (not replaced, but merged)
+      const extensionNames = extensions.filter(
+        (p: string) => p.includes("global-plugin") || p.includes("local-plugin"),
+      )
+      expect(extensionNames.length).toBeGreaterThanOrEqual(3)
     },
   })
 })
@@ -460,7 +462,7 @@ Helper subagent prompt`,
   })
 })
 
-test("deduplicates duplicate plugins from global and local configs", async () => {
+test("deduplicates duplicate extensions from global and local configs", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       // Create a nested project structure with local .redsun config
@@ -468,21 +470,21 @@ test("deduplicates duplicate plugins from global and local configs", async () =>
       const opencodeDir = path.join(projectDir, ".redsun")
       await fs.mkdir(opencodeDir, { recursive: true })
 
-      // Global config with plugins
+      // Global config with extensions
       await Bun.write(
         path.join(dir, "opencode.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
-          plugin: ["duplicate-plugin", "global-plugin-1"],
+          extension: ["duplicate-plugin", "global-plugin-1"],
         }),
       )
 
-      // Local .redsun config with some overlapping plugins
+      // Local .redsun config with some overlapping extensions
       await Bun.write(
         path.join(opencodeDir, "opencode.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
-          plugin: ["duplicate-plugin", "local-plugin-1"],
+          extension: ["duplicate-plugin", "local-plugin-1"],
         }),
       )
     },
@@ -492,22 +494,22 @@ test("deduplicates duplicate plugins from global and local configs", async () =>
     directory: path.join(tmp.path, "project"),
     fn: async () => {
       const config = await Config.get()
-      const plugins = config.plugin ?? []
+      const extensions = config.extension ?? []
 
-      // Should contain all unique plugins
-      expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("duplicate-plugin"))).toBe(true)
+      // Should contain all unique extensions
+      expect(extensions.some((p: string) => p.includes("global-plugin-1"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("local-plugin-1"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("duplicate-plugin"))).toBe(true)
 
-      // Should deduplicate the duplicate plugin
-      const duplicatePlugins = plugins.filter((p) => p.includes("duplicate-plugin"))
-      expect(duplicatePlugins.length).toBe(1)
+      // Should deduplicate the duplicate extension
+      const duplicateExtensions = extensions.filter((p: string) => p.includes("duplicate-plugin"))
+      expect(duplicateExtensions.length).toBe(1)
 
-      // Should have exactly 3 unique plugins
-      const pluginNames = plugins.filter(
-        (p) => p.includes("global-plugin") || p.includes("local-plugin") || p.includes("duplicate-plugin"),
+      // Should have exactly 3 unique extensions
+      const extensionNames = extensions.filter(
+        (p: string) => p.includes("global-plugin") || p.includes("local-plugin") || p.includes("duplicate-plugin"),
       )
-      expect(pluginNames.length).toBe(3)
+      expect(extensionNames.length).toBe(3)
     },
   })
 })

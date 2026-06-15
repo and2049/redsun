@@ -1,91 +1,27 @@
-import type { Hooks, PluginInput, Plugin as PluginInstance } from "@redsun/plugin"
-import { Config } from "../config/config"
-import { Bus } from "../bus"
 import { Log } from "../util/log"
-import { createOpencodeClient } from "@redsun/sdk"
-import { Server } from "../server/server"
-import { BunProc } from "../bun"
-import { Instance } from "../project/instance"
-import { Flag } from "../flag/flag"
+
+// TODO: This is a temporary compatibility shim.
+// Plugin hooks are being replaced by the Extension system in Phase 1.
+// Each call site should be migrated to use Extension directly in subsequent work.
 
 export namespace Plugin {
-  const log = Log.create({ service: "plugin" })
+  const log = Log.create({ service: "plugin-compat" })
 
-  const state = Instance.state(async () => {
-    const client = createOpencodeClient({
-      baseUrl: "http://localhost:4096",
-      // @ts-ignore - fetch type incompatibility
-      fetch: async (...args) => Server.App().fetch(...args),
-    })
-    const config = await Config.get()
-    const hooks = []
-    const input: PluginInput = {
-      client,
-      project: Instance.project,
-      worktree: Instance.worktree,
-      directory: Instance.directory,
-      $: Bun.$,
-    }
-    const plugins = [...(config.plugin ?? [])]
-    if (!Flag.REDSUN_DISABLE_DEFAULT_PLUGINS) {
-      plugins.push("opencode-copilot-auth@0.0.9")
-      plugins.push("opencode-anthropic-auth@0.0.5")
-    }
-    for (let plugin of plugins) {
-      log.info("loading plugin", { path: plugin })
-      if (!plugin.startsWith("file://")) {
-        const lastAtIndex = plugin.lastIndexOf("@")
-        const pkg = lastAtIndex > 0 ? plugin.substring(0, lastAtIndex) : plugin
-        const version = lastAtIndex > 0 ? plugin.substring(lastAtIndex + 1) : "latest"
-        plugin = await BunProc.install(pkg, version)
-      }
-      const mod = await import(plugin)
-      for (const [_name, fn] of Object.entries<PluginInstance>(mod)) {
-        const init = await fn(input)
-        hooks.push(init)
-      }
-    }
-
-    return {
-      hooks,
-      input,
-    }
-  })
-
-  export async function trigger<
-    Name extends Exclude<keyof Required<Hooks>, "auth" | "event" | "tool">,
-    Input = Parameters<Required<Hooks>[Name]>[0],
-    Output = Parameters<Required<Hooks>[Name]>[1],
-  >(name: Name, input: Input, output: Output): Promise<Output> {
-    if (!name) return output
-    for (const hook of await state().then((x) => x.hooks)) {
-      const fn = hook[name]
-      if (!fn) continue
-      // @ts-expect-error if you feel adventurous, please fix the typing, make sure to bump the try-counter if you
-      // give up.
-      // try-counter: 2
-      await fn(input, output)
-    }
-    return output
-  }
-
-  export async function list() {
-    return state().then((x) => x.hooks)
-  }
+  export type Hooks = any
 
   export async function init() {
-    const hooks = await state().then((x) => x.hooks)
-    const config = await Config.get()
-    for (const hook of hooks) {
-      await hook.config?.(config)
-    }
-    Bus.subscribeAll(async (input) => {
-      const hooks = await state().then((x) => x.hooks)
-      for (const hook of hooks) {
-        hook["event"]?.({
-          event: input,
-        })
-      }
-    })
+    log.debug("plugin system disabled; use Extension API instead")
+  }
+
+  export async function list(): Promise<any[]> {
+    return []
+  }
+
+  export async function trigger<Name extends string, Input = any, Output = any>(
+    _name: Name,
+    _input: Input,
+    output: Output,
+  ): Promise<Output> {
+    return output
   }
 }

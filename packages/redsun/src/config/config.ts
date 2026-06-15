@@ -1,6 +1,5 @@
 import { Log } from "../util/log"
 import path from "path"
-import { pathToFileURL } from "url"
 import os from "os"
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
@@ -22,13 +21,13 @@ import { ConfigMarkdown } from "./markdown"
 export namespace Config {
   const log = Log.create({ service: "config" })
 
-  // Custom merge function that concatenates plugin arrays instead of replacing them
-  function mergeConfigWithPlugins(target: Info, source: Info): Info {
+  // Custom merge function that concatenates extension arrays instead of replacing them
+  function mergeConfigWithExtensions(target: Info, source: Info): Info {
     const merged = mergeDeep(target, source)
-    // If both configs have plugin arrays, concatenate them instead of replacing
-    if (target.plugin && source.plugin) {
-      const pluginSet = new Set([...target.plugin, ...source.plugin])
-      merged.plugin = Array.from(pluginSet)
+    // If both configs have extension arrays, concatenate them instead of replacing
+    if (target.extension && source.extension) {
+      const extensionSet = new Set([...target.extension, ...source.extension])
+      merged.extension = Array.from(extensionSet)
     }
     return merged
   }
@@ -39,19 +38,19 @@ export namespace Config {
 
     // Override with custom config if provided
     if (Flag.REDSUN_CONFIG) {
-      result = mergeConfigWithPlugins(result, await loadFile(Flag.REDSUN_CONFIG))
+      result = mergeConfigWithExtensions(result, await loadFile(Flag.REDSUN_CONFIG))
       log.debug("loaded custom config", { path: Flag.REDSUN_CONFIG })
     }
 
     for (const file of ["redsun.jsonc", "redsun.json"]) {
       const found = await Filesystem.findUp(file, Instance.directory, Instance.worktree)
       for (const resolved of found.toReversed()) {
-        result = mergeConfigWithPlugins(result, await loadFile(resolved))
+        result = mergeConfigWithExtensions(result, await loadFile(resolved))
       }
     }
 
     if (Flag.REDSUN_CONFIG_CONTENT) {
-      result = mergeConfigWithPlugins(result, JSON.parse(Flag.REDSUN_CONFIG_CONTENT))
+      result = mergeConfigWithExtensions(result, JSON.parse(Flag.REDSUN_CONFIG_CONTENT))
       log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
     }
 
@@ -59,13 +58,13 @@ export namespace Config {
       if (value.type === "wellknown") {
         process.env[value.key] = value.token
         const wellknown = (await fetch(`${key}/.well-known/redsun`).then((x) => x.json())) as any
-        result = mergeConfigWithPlugins(result, await load(JSON.stringify(wellknown.config ?? {}), process.cwd()))
+        result = mergeConfigWithExtensions(result, await load(JSON.stringify(wellknown.config ?? {}), process.cwd()))
       }
     }
 
     result.agent = result.agent || {}
     result.mode = result.mode || {}
-    result.plugin = result.plugin || []
+    result.extension = result.extension || []
 
     const directories = [
       Global.Path.config,
@@ -97,11 +96,11 @@ export namespace Config {
       if (dir.endsWith(".redsun") || dir === Flag.REDSUN_CONFIG_DIR) {
         for (const file of ["redsun.jsonc", "redsun.json"]) {
           log.debug(`loading config from ${path.join(dir, file)}`)
-          result = mergeConfigWithPlugins(result, await loadFile(path.join(dir, file)))
+          result = mergeConfigWithExtensions(result, await loadFile(path.join(dir, file)))
           // to satisy the type checker
           result.agent ??= {}
           result.mode ??= {}
-          result.plugin ??= []
+          result.extension ??= []
         }
       }
 
@@ -109,7 +108,6 @@ export namespace Config {
       result.command = mergeDeep(result.command ?? {}, await loadCommand(dir))
       result.agent = mergeDeep(result.agent, await loadAgent(dir))
       result.agent = mergeDeep(result.agent, await loadMode(dir))
-      result.plugin.push(...(await loadPlugin(dir)))
     }
     await Promise.allSettled(promises)
 
@@ -147,7 +145,7 @@ export namespace Config {
     }
   })
 
-  const INVALID_DIRS = new Bun.Glob(`{${["agents", "commands", "plugins", "tools", "skills"].join(",")}}/`)
+  const INVALID_DIRS = new Bun.Glob(`{${["agents", "commands", "extensions", "tools", "skills"].join(",")}}/`)
   async function assertValid(dir: string) {
     const invalid = await Array.fromAsync(
       INVALID_DIRS.scan({
@@ -176,13 +174,6 @@ export namespace Config {
     const gitignore = path.join(dir, ".gitignore")
     const hasGitIgnore = await Bun.file(gitignore).exists()
     if (!hasGitIgnore) await Bun.write(gitignore, ["node_modules", "package.json", "bun.lock", ".gitignore"].join("\n"))
-
-    await BunProc.run(
-      ["add", "@redsun/plugin@" + (Installation.isLocal() ? "latest" : Installation.VERSION), "--exact"],
-      {
-        cwd: dir,
-      },
-    ).catch(() => {})
   }
 
   const COMMAND_GLOB = new Bun.Glob("command/**/*.md")
@@ -293,21 +284,6 @@ export namespace Config {
       }
     }
     return result
-  }
-
-  const PLUGIN_GLOB = new Bun.Glob("plugin/*.{ts,js}")
-  async function loadPlugin(dir: string) {
-    const plugins: string[] = []
-
-    for await (const item of PLUGIN_GLOB.scan({
-      absolute: true,
-      followSymlinks: true,
-      dot: true,
-      cwd: dir,
-    })) {
-      plugins.push(pathToFileURL(item).href)
-    }
-    return plugins
   }
 
   export const McpLocal = z
@@ -655,7 +631,7 @@ export namespace Config {
           ignore: z.array(z.string()).optional(),
         })
         .optional(),
-      plugin: z.string().array().optional(),
+      extension: z.string().array().optional(),
       snapshot: z.boolean().optional(),
 
       disabled_providers: z.array(z.string()).optional().describe("Disable providers that are loaded automatically"),
@@ -933,11 +909,11 @@ export namespace Config {
         await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2))
       }
       const data = parsed.data
-      if (data.plugin) {
-        for (let i = 0; i < data.plugin.length; i++) {
-          const plugin = data.plugin[i]
+      if (data.extension) {
+        for (let i = 0; i < data.extension.length; i++) {
+          const extension = data.extension[i]
           try {
-            data.plugin[i] = import.meta.resolve!(plugin, configFilepath)
+            data.extension[i] = import.meta.resolve!(extension, configFilepath)
           } catch (err) {}
         }
       }

@@ -16,20 +16,29 @@ import { Tool } from "./tool"
 import { Instance } from "../project/instance"
 import { Config } from "../config/config"
 import path from "path"
-import { type ToolDefinition } from "@redsun/plugin"
 import z from "zod"
-import { Plugin } from "../plugin"
 import { WebSearchTool } from "./websearch"
 import { CodeSearchTool } from "./codesearch"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
+import { ExtensionLoader } from "../extension/loader"
+import { ExtensionRunner } from "../extension/runner"
+import { ExtensionContext } from "../extension/context"
+import type { Extension } from "../extension/types"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
 
-  export const state = Instance.state(async () => {
-    const custom = [] as Tool.Info[]
+  export const ChangeEvent = "tool.registry.changed" as const
+
+  export interface State {
+    custom: Map<string, Tool.Info>
+    runner: ExtensionRunner.State
+  }
+
+  export const state = Instance.state(async (): Promise<State> => {
+    const custom = new Map<string, Tool.Info>()
     const glob = new Bun.Glob("tool/*.{js,ts}")
 
     for (const dir of await Config.directories()) {
@@ -42,22 +51,66 @@ export namespace ToolRegistry {
         const namespace = path.basename(match, path.extname(match))
         const mod = await import(match)
         for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
-          custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+          const tool = fromLegacyDefinition(id === "default" ? namespace : `${namespace}_${id}`, def)
+          custom.set(tool.id, tool)
         }
       }
     }
 
-    const plugins = await Plugin.list()
-    for (const plugin of plugins) {
-      for (const [id, def] of Object.entries(plugin.tool ?? {})) {
-        custom.push(fromPlugin(id, def))
+    const contextFactory = (): Extension.Context =>
+      ExtensionContext.create({
+        mode: "rpc",
+        cwd: Instance.directory,
+        sessionID: "",
+        agent: "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+
+    const runner = ExtensionRunner.create(contextFactory)
+
+    const extensions = await ExtensionLoader.load()
+    for (const ext of extensions) {
+      const api = createExtensionAPI(runner, ext.sourceInfo)
+      try {
+        await ext.factory(api)
+      } catch (error) {
+        log.error("extension factory failed", { path: ext.path, error })
       }
     }
 
-    return { custom }
+    for (const [id, { tool, source }] of runner.tools) {
+      custom.set(id, tool)
+      log.info("registered extension tool", { id, source: source.scope })
+    }
+
+    return { custom, runner }
   })
 
-  function fromPlugin(id: string, def: ToolDefinition): Tool.Info {
+  function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
+    return {
+      on: (event, handler) => ExtensionRunner.on(runner, event, handler as any),
+      registerTool: (tool) => ExtensionRunner.registerTool(runner, tool, source),
+      unregisterTool: (id) => ExtensionRunner.unregisterTool(runner, id),
+      setActiveTools: (toolNames) => ExtensionRunner.setActiveTools(runner, toolNames),
+      getActiveTools: () => ExtensionRunner.getActiveTools(runner),
+      getAllTools: () => ExtensionRunner.getAllTools(runner),
+      registerCommand: (command) => ExtensionRunner.registerCommand(runner, command),
+      unregisterCommand: (name) => ExtensionRunner.unregisterCommand(runner, name),
+      sendMessage: () => {},
+      sendUserMessage: () => {},
+      appendEntry: () => {},
+      setModel: async () => false,
+    }
+  }
+
+  export interface ToolDefinition {
+    description: string
+    args: Record<string, z.ZodType>
+    execute(args: Record<string, unknown>, ctx: Tool.Context): Promise<string>
+  }
+
+  function fromLegacyDefinition(id: string, def: ToolDefinition): Tool.Info {
     return {
       id,
       init: async () => ({
@@ -75,18 +128,38 @@ export namespace ToolRegistry {
     }
   }
 
-  export async function register(tool: Tool.Info) {
-    const { custom } = await state()
-    const idx = custom.findIndex((t) => t.id === tool.id)
-    if (idx >= 0) {
-      custom.splice(idx, 1, tool)
-      return
+  export async function register(tool: Tool.Info, source?: Extension.SourceInfo) {
+    const { custom, runner } = await state()
+    custom.set(tool.id, tool)
+    if (source) {
+      runner.tools.set(tool.id, { tool, source })
     }
-    custom.push(tool)
+    emitChanged()
   }
 
-  async function all(): Promise<Tool.Info[]> {
-    const custom = await state().then((x) => x.custom)
+  export async function unregister(id: string) {
+    const { custom, runner } = await state()
+    custom.delete(id)
+    runner.tools.delete(id)
+    runner.activeTools.delete(id)
+    emitChanged()
+  }
+
+  export async function get(id: string): Promise<Tool.Info | undefined> {
+    const tools = await allTools()
+    return tools.find((t) => t.id === id)
+  }
+
+  export async function all(): Promise<Tool.Info[]> {
+    return allTools()
+  }
+
+  export async function ids() {
+    return allTools().then((x) => x.map((t) => t.id))
+  }
+
+  async function allTools(): Promise<Tool.Info[]> {
+    const { custom } = await state()
     const config = await Config.get()
 
     return [
@@ -106,20 +179,15 @@ export namespace ToolRegistry {
       SkillTool,
       ...(Flag.REDSUN_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
       ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
-      ...custom,
+      ...Array.from(custom.values()),
     ]
   }
 
-  export async function ids() {
-    return all().then((x) => x.map((t) => t.id))
-  }
-
   export async function tools(providerID: string, agent?: Agent.Info) {
-    const tools = await all()
+    const tools = await allTools()
     const result = await Promise.all(
       tools
         .filter((t) => {
-          // Enable websearch/codesearch for zen users OR via enable flag
           if (t.id === "codesearch" || t.id === "websearch") {
             return Flag.REDSUN_ENABLE_EXA
           }
@@ -151,11 +219,18 @@ export namespace ToolRegistry {
       result["codesearch"] = false
       result["websearch"] = false
     }
-    // Disable skill tool if all skills are denied
     if (agent.permission.skill["*"] === "deny" && Object.keys(agent.permission.skill).length === 1) {
       result["skill"] = false
     }
 
     return result
+  }
+
+  export async function getRunner(): Promise<ExtensionRunner.State> {
+    return state().then((s) => s.runner)
+  }
+
+  function emitChanged() {
+    // TODO: publish via Bus when event system is wired
   }
 }
