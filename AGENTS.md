@@ -1,6 +1,6 @@
 ## Debugging
 
-- To test opencode in the `packages/opencode` directory you can run `bun dev`
+- To test redsun in the `packages/redsun` directory you can run `bun dev`
 
 ## Tool Calling
 

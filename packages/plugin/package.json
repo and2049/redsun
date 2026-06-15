@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/plugin",
+  "name": "@redsun/plugin",
   "version": "1.0.205",
   "type": "module",
   "scripts": {
@@ -15,7 +15,7 @@
     "dist"
   ],
   "dependencies": {
-    "@opencode-ai/sdk": "workspace:*",
+    "@redsun/sdk": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {
