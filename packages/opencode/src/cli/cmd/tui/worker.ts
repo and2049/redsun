@@ -4,7 +4,6 @@ import { Log } from "@/util/log"
 import { Instance } from "@/project/instance"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { Rpc } from "@/util/rpc"
-import { upgrade } from "@/cli/upgrade"
 import type { BunWebSocketData } from "hono/bun"
 
 await Log.init({
@@ -42,14 +41,8 @@ export const rpc = {
       throw e
     }
   },
-  async checkUpgrade(input: { directory: string }) {
-    await Instance.provide({
-      directory: input.directory,
-      init: InstanceBootstrap,
-      fn: async () => {
-        await upgrade().catch(() => {})
-      },
-    })
+  async checkUpgrade(_input: { directory: string }) {
+    // upgrade functionality removed
   },
   async shutdown() {
     Log.Default.info("worker shutting down")

@@ -2,7 +2,6 @@ import { cmd } from "@/cli/cmd/cmd"
 import { Instance } from "@/project/instance"
 import path from "path"
 import { Server } from "@/server/server"
-import { upgrade } from "@/cli/upgrade"
 import { withNetworkOptions, resolveNetworkOptions } from "@/cli/network"
 
 export const TuiSpawnCommand = cmd({
@@ -13,7 +12,6 @@ export const TuiSpawnCommand = cmd({
       describe: "path to start opencode in",
     }),
   handler: async (args) => {
-    upgrade()
     const opts = await resolveNetworkOptions(args)
     const server = Server.listen(opts)
     const bin = process.execPath

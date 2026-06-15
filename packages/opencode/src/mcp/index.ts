@@ -248,7 +248,7 @@ export namespace MCP {
       for (const { name, transport } of transports) {
         try {
           const client = new Client({
-            name: "opencode",
+            name: "redsun",
             version: Installation.VERSION,
           })
           await client.connect(transport)
@@ -314,14 +314,14 @@ export namespace MCP {
         args,
         env: {
           ...process.env,
-          ...(cmd === "opencode" ? { BUN_BE_BUN: "1" } : {}),
+          ...(cmd === "redsun" ? { BUN_BE_BUN: "1" } : {}),
           ...mcp.environment,
         },
       })
 
       try {
         const client = new Client({
-          name: "opencode",
+          name: "redsun",
           version: Installation.VERSION,
         })
         await client.connect(transport)
@@ -534,7 +534,7 @@ export namespace MCP {
     // Try to connect - this will trigger the OAuth flow
     try {
       const client = new Client({
-        name: "opencode",
+        name: "redsun",
         version: Installation.VERSION,
       })
       await client.connect(transport)

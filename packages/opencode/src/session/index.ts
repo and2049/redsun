@@ -3,8 +3,6 @@ import { Bus } from "@/bus"
 import { Decimal } from "decimal.js"
 import z from "zod"
 import { type LanguageModelUsage, type ProviderMetadata } from "ai"
-import { Config } from "../config/config"
-import { Flag } from "../flag/flag"
 import { Identifier } from "../id/id"
 import { Installation } from "../installation"
 
@@ -49,11 +47,6 @@ export namespace Session {
           diffs: Snapshot.FileDiff.array().optional(),
         })
         .optional(),
-      share: z
-        .object({
-          url: z.string(),
-        })
-        .optional(),
       title: z.string(),
       version: z.string(),
       time: z.object({
@@ -75,16 +68,6 @@ export namespace Session {
       ref: "Session",
     })
   export type Info = z.output<typeof Info>
-
-  export const ShareInfo = z
-    .object({
-      secret: z.string(),
-      url: z.string(),
-    })
-    .meta({
-      ref: "SessionShare",
-    })
-  export type ShareInfo = z.output<typeof ShareInfo>
 
   export const Event = {
     Created: BusEvent.define(
@@ -192,17 +175,6 @@ export namespace Session {
     Bus.publish(Event.Created, {
       info: result,
     })
-    const cfg = await Config.get()
-    if (!result.parentID && (Flag.OPENCODE_AUTO_SHARE || cfg.share === "auto"))
-      share(result.id)
-        .then((share) => {
-          update(result.id, (draft) => {
-            draft.share = share
-          })
-        })
-        .catch(() => {
-          // Silently ignore sharing errors during session creation
-        })
     Bus.publish(Event.Updated, {
       info: result,
     })
@@ -212,34 +184,6 @@ export namespace Session {
   export const get = fn(Identifier.schema("session"), async (id) => {
     const read = await Storage.read<Info>(["session", Instance.project.id, id])
     return read as Info
-  })
-
-  export const getShare = fn(Identifier.schema("session"), async (id) => {
-    return Storage.read<ShareInfo>(["share", id])
-  })
-
-  export const share = fn(Identifier.schema("session"), async (id) => {
-    const cfg = await Config.get()
-    if (cfg.share === "disabled") {
-      throw new Error("Sharing is disabled in configuration")
-    }
-    const { ShareNext } = await import("@/share/share-next")
-    const share = await ShareNext.create(id)
-    await update(id, (draft) => {
-      draft.share = {
-        url: share.url,
-      }
-    })
-    return share
-  })
-
-  export const unshare = fn(Identifier.schema("session"), async (id) => {
-    // Use ShareNext to remove the share (same as share function uses ShareNext to create)
-    const { ShareNext } = await import("@/share/share-next")
-    await ShareNext.remove(id)
-    await update(id, (draft) => {
-      draft.share = undefined
-    })
   })
 
   export async function update(id: string, editor: (session: Info) => void) {
@@ -300,7 +244,7 @@ export namespace Session {
       for (const child of await children(sessionID)) {
         await remove(child.id)
       }
-      await unshare(sessionID).catch(() => {})
+
       for (const msg of await Storage.list(["message", sessionID])) {
         for (const part of await Storage.list(["part", msg.at(-1)!])) {
           await Storage.remove(part)

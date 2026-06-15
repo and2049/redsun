@@ -5,8 +5,6 @@ import { GenerateCommand } from "./cli/cmd/generate"
 import { Log } from "./util/log"
 import { AuthCommand } from "./cli/cmd/auth"
 import { AgentCommand } from "./cli/cmd/agent"
-import { UpgradeCommand } from "./cli/cmd/upgrade"
-import { UninstallCommand } from "./cli/cmd/uninstall"
 import { ModelsCommand } from "./cli/cmd/models"
 import { UI } from "./cli/ui"
 import { Installation } from "./installation"
@@ -16,7 +14,6 @@ import { ServeCommand } from "./cli/cmd/serve"
 import { DebugCommand } from "./cli/cmd/debug"
 import { StatsCommand } from "./cli/cmd/stats"
 import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
 import { ExportCommand } from "./cli/cmd/export"
 import { ImportCommand } from "./cli/cmd/import"
 import { AttachCommand } from "./cli/cmd/tui/attach"
@@ -42,7 +39,7 @@ process.on("uncaughtException", (e) => {
 
 const cli = yargs(hideBin(process.argv))
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName("redsun")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -69,7 +66,7 @@ const cli = yargs(hideBin(process.argv))
     })
 
     process.env.AGENT = "1"
-    process.env.OPENCODE = "1"
+    process.env.REDSUN = "1"
 
     Log.Default.info("opencode", {
       version: Installation.VERSION,
@@ -88,15 +85,12 @@ const cli = yargs(hideBin(process.argv))
   .command(DebugCommand)
   .command(AuthCommand)
   .command(AgentCommand)
-  .command(UpgradeCommand)
-  .command(UninstallCommand)
   .command(ServeCommand)
   .command(WebCommand)
   .command(ModelsCommand)
   .command(StatsCommand)
   .command(ExportCommand)
   .command(ImportCommand)
-  .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
   .fail((msg) => {

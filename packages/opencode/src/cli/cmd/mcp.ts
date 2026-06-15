@@ -466,7 +466,7 @@ export const McpAddCommand = cmd({
         }
       } else {
         const client = new Client({
-          name: "opencode",
+          name: "redsun",
           version: "1.0.0",
         })
         const transport = new StreamableHTTPClientTransport(new URL(url))

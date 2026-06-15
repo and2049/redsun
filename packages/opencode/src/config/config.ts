@@ -43,7 +43,7 @@ export namespace Config {
       log.debug("loaded custom config", { path: Flag.OPENCODE_CONFIG })
     }
 
-    for (const file of ["opencode.jsonc", "opencode.json"]) {
+    for (const file of ["redsun.jsonc", "redsun.json"]) {
       const found = await Filesystem.findUp(file, Instance.directory, Instance.worktree)
       for (const resolved of found.toReversed()) {
         result = mergeConfigWithPlugins(result, await loadFile(resolved))
@@ -71,14 +71,14 @@ export namespace Config {
       Global.Path.config,
       ...(await Array.fromAsync(
         Filesystem.up({
-          targets: [".opencode"],
+          targets: [".redsun"],
           start: Instance.directory,
           stop: Instance.worktree,
         }),
       )),
       ...(await Array.fromAsync(
         Filesystem.up({
-          targets: [".opencode"],
+          targets: [".redsun"],
           start: Global.Path.home,
           stop: Global.Path.home,
         }),
@@ -94,8 +94,8 @@ export namespace Config {
     for (const dir of unique(directories)) {
       await assertValid(dir)
 
-      if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
-        for (const file of ["opencode.jsonc", "opencode.json"]) {
+      if (dir.endsWith(".redsun") || dir === Flag.OPENCODE_CONFIG_DIR) {
+        for (const file of ["redsun.jsonc", "redsun.json"]) {
           log.debug(`loading config from ${path.join(dir, file)}`)
           result = mergeConfigWithPlugins(result, await loadFile(path.join(dir, file)))
           // to satisy the type checker
@@ -206,7 +206,7 @@ export namespace Config {
       if (!md.data) continue
 
       const name = (() => {
-        const patterns = ["/.opencode/command/", "/command/"]
+        const patterns = ["/.redsun/command/", "/command/"]
         const pattern = patterns.find((p) => item.includes(p))
 
         if (pattern) {
@@ -246,8 +246,8 @@ export namespace Config {
 
       // Extract relative path from agent folder for nested agents
       let agentName = path.basename(item, ".md")
-      const agentFolderPath = item.includes("/.opencode/agent/")
-        ? item.split("/.opencode/agent/")[1]
+      const agentFolderPath = item.includes("/.redsun/agent/")
+        ? item.split("/.redsun/agent/")[1]
         : item.includes("/agent/")
           ? item.split("/agent/")[1]
           : agentName + ".md"
@@ -794,11 +794,6 @@ export namespace Config {
         })
         .optional(),
       tools: z.record(z.string(), z.boolean()).optional(),
-      enterprise: z
-        .object({
-          url: z.string().optional().describe("Enterprise URL"),
-        })
-        .optional(),
       compaction: z
         .object({
           auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),
@@ -855,8 +850,8 @@ export namespace Config {
     let result: Info = pipe(
       {},
       mergeDeep(await loadFile(path.join(Global.Path.config, "config.json"))),
-      mergeDeep(await loadFile(path.join(Global.Path.config, "opencode.json"))),
-      mergeDeep(await loadFile(path.join(Global.Path.config, "opencode.jsonc"))),
+      mergeDeep(await loadFile(path.join(Global.Path.config, "redsun.json"))),
+      mergeDeep(await loadFile(path.join(Global.Path.config, "redsun.jsonc"))),
     )
 
     await import(path.join(Global.Path.config, "config"), {
@@ -867,7 +862,7 @@ export namespace Config {
       .then(async (mod) => {
         const { provider, model, ...rest } = mod.default
         if (provider && model) result.model = `${provider}/${model}`
-        result["$schema"] = "https://opencode.ai/config.json"
+        result["$schema"] = "https://redsun.sh/config.json"
         result = mergeDeep(result, rest)
         await Bun.write(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
         await fs.unlink(path.join(Global.Path.config, "config"))
@@ -958,7 +953,7 @@ export namespace Config {
     const parsed = Info.safeParse(data)
     if (parsed.success) {
       if (!parsed.data.$schema) {
-        parsed.data.$schema = "https://opencode.ai/config.json"
+        parsed.data.$schema = "https://redsun.sh/config.json"
         await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2))
       }
       const data = parsed.data

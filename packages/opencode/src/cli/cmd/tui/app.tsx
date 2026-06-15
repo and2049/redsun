@@ -3,7 +3,6 @@ import { Clipboard } from "@tui/util/clipboard"
 import { TextAttributes } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
 import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, batch, Show, on } from "solid-js"
-import { Installation } from "@/installation"
 import { Global } from "@/global"
 import { Flag } from "@/flag/flag"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
@@ -426,15 +425,6 @@ function App() {
       category: "System",
     },
     {
-      title: "Open docs",
-      value: "docs.open",
-      onSelect: () => {
-        open("https://opencode.ai/docs").catch(() => {})
-        dialog.clear()
-      },
-      category: "System",
-    },
-    {
       title: "Open WebUI",
       value: "webui.open",
       onSelect: () => {
@@ -507,7 +497,7 @@ function App() {
         DialogAlert.show(
           dialog,
           "Warning",
-          "While openrouter is a convenient way to access LLMs your request will often be routed to subpar providers that do not work well in our testing.\n\nFor reliable access to models check out OpenCode Zen\nhttps://opencode.ai/zen",
+          "While openrouter is a convenient way to access LLMs your request will often be routed to subpar providers that do not work well in our testing.",
         ).then(() => kv.set("openrouter_warning", true))
       })
     }
@@ -554,24 +544,6 @@ function App() {
       variant: "error",
       message,
       duration: 5000,
-    })
-  })
-
-  sdk.event.on(Installation.Event.Updated.type, (evt) => {
-    toast.show({
-      variant: "success",
-      title: "Update Complete",
-      message: `OpenCode updated to v${evt.properties.version}`,
-      duration: 5000,
-    })
-  })
-
-  sdk.event.on(Installation.Event.UpdateAvailable.type, (evt) => {
-    toast.show({
-      variant: "info",
-      title: "Update Available",
-      message: `OpenCode v${evt.properties.version} is available. Run 'opencode upgrade' to update manually.`,
-      duration: 10000,
     })
   })
 
@@ -623,11 +595,7 @@ function ErrorComponent(props: {
       props.onExit()
     }
   })
-  const [copied, setCopied] = createSignal(false)
 
-  const issueURL = new URL("https://github.com/sst/opencode/issues/new?template=bug-report.yml")
-
-  // Choose safe fallback colors per mode since theme context may not be available
   const isLight = props.mode === "light"
   const colors = {
     bg: isLight ? "#ffffff" : "#0a0a0a",
@@ -636,38 +604,8 @@ function ErrorComponent(props: {
     primary: isLight ? "#3b7dd8" : "#fab283",
   }
 
-  if (props.error.message) {
-    issueURL.searchParams.set("title", `opentui: fatal: ${props.error.message}`)
-  }
-
-  if (props.error.stack) {
-    issueURL.searchParams.set(
-      "description",
-      "```\n" + props.error.stack.substring(0, 6000 - issueURL.toString().length) + "...\n```",
-    )
-  }
-
-  issueURL.searchParams.set("opencode-version", Installation.VERSION)
-
-  const copyIssueURL = () => {
-    Clipboard.copy(issueURL.toString()).then(() => {
-      setCopied(true)
-    })
-  }
-
   return (
     <box flexDirection="column" gap={1} backgroundColor={colors.bg}>
-      <box flexDirection="row" gap={1} alignItems="center">
-        <text attributes={TextAttributes.BOLD} fg={colors.text}>
-          Please report an issue.
-        </text>
-        <box onMouseUp={copyIssueURL} backgroundColor={colors.primary} padding={1}>
-          <text attributes={TextAttributes.BOLD} fg={colors.bg}>
-            Copy issue URL (exception info pre-filled)
-          </text>
-        </box>
-        {copied() && <text fg={colors.muted}>Successfully copied</text>}
-      </box>
       <box flexDirection="row" gap={2} alignItems="center">
         <text fg={colors.text}>A fatal error occurred!</text>
         <box onMouseUp={props.reset} backgroundColor={colors.primary} padding={1}>
