@@ -14,6 +14,7 @@ import { Flag } from "@/flag/flag"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
+import { Entry } from "../entry/entry"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -137,6 +138,8 @@ export namespace LLM {
 
     const tools = await resolveTools(input)
 
+    const messages = await injectCustomMessages(input.sessionID, input.messages)
+
     return streamText({
       onError(error) {
         l.error("stream error", {
@@ -183,7 +186,7 @@ export namespace LLM {
             content: x,
           }),
         ),
-        ...input.messages,
+        ...messages,
       ],
       model: wrapLanguageModel({
         model: language,
@@ -228,5 +231,39 @@ export namespace LLM {
       }
     }
     return ""
+  }
+
+  async function injectCustomMessages(sessionID: string, messages: ModelMessage[]): Promise<ModelMessage[]> {
+    const entries = await Entry.list(sessionID)
+    const customMessages = entries.filter((e): e is Entry.CustomMessageEntry => e.type === "custom_message")
+    if (customMessages.length === 0) return messages
+
+    const customAsModelMessages = customMessages
+      .map((e) => customMessageToModelMessage(e))
+      .reverse()
+
+    const lastUserIdx = findLastUserIndex(messages)
+    if (lastUserIdx === -1) {
+      return [...messages, ...customAsModelMessages]
+    }
+    return [...messages.slice(0, lastUserIdx + 1), ...customAsModelMessages, ...messages.slice(lastUserIdx + 1)]
+  }
+
+  function findLastUserIndex(messages: ModelMessage[]): number {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return i
+    }
+    return -1
+  }
+
+  function customMessageToModelMessage(entry: Entry.CustomMessageEntry): ModelMessage {
+    const text = typeof entry.content === "string"
+      ? entry.content
+      : entry.content.map((p) => p.text).join("\n")
+    const tagged = `[custom:${entry.customType}] ${text}`
+    return {
+      role: "user",
+      content: [{ type: "text", text: tagged }],
+    }
   }
 }

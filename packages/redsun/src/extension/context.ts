@@ -1,6 +1,7 @@
 import type { Extension } from "./types"
 import { SessionStatus } from "../session/status"
 import { Instance } from "../project/instance"
+import { Entry } from "../entry/entry"
 
 export namespace ExtensionContext {
   export function create(options: {
@@ -10,7 +11,7 @@ export namespace ExtensionContext {
     agent: string
     projectTrusted: boolean
     getSystemPrompt: () => string
-    getEntries?: <T>(customType: string) => Array<{ customType: string; data?: T }>
+    getEntries?: <T>(customType: string) => Promise<Array<{ customType: string; data?: T; details?: T }>>
     signal?: AbortSignal
     abort?: () => void
   }): Extension.Context {
@@ -30,7 +31,7 @@ export namespace ExtensionContext {
       hasPendingMessages: () => false,
       getContextUsage: () => undefined,
       getSystemPrompt: options.getSystemPrompt,
-      getEntries: options.getEntries ?? (() => []),
+      getEntries: options.getEntries ?? (async () => []),
     }
   }
 
@@ -53,7 +54,7 @@ export namespace ExtensionContext {
       getSystemPrompt: options.getSystemPrompt,
       signal: options.signal,
       abort: options.abort,
-      getEntries: <T>(customType: string) => listEntriesSync<T>(options.sessionID, customType),
+      getEntries: <T>(customType: string) => Entry.getByType<T>(options.sessionID, customType),
     })
     return {
       ...base,
@@ -72,9 +73,5 @@ export namespace ExtensionContext {
       input: async () => undefined,
       select: async () => undefined,
     }
-  }
-
-  function listEntriesSync<T>(_sessionID: string, _customType: string): Array<{ customType: string; data?: T }> {
-    return []
   }
 }

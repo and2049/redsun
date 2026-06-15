@@ -31,7 +31,7 @@ export namespace Extension {
     hasPendingMessages(): boolean
     getContextUsage(): ContextUsage | undefined
     getSystemPrompt(): string
-    getEntries<T = unknown>(customType: string): Array<{ customType: string; data?: T }>
+    getEntries<T = unknown>(customType: string): Promise<Array<{ customType: string; data?: T; details?: T }>>
   }
 
   export interface CommandContext extends Context {
@@ -207,7 +207,14 @@ export namespace Extension {
     sendMessage(content: string): void
     sendUserMessage(content: string): void
 
-    appendEntry<T = unknown>(customType: string, data?: T): void
+    appendEntry<T = unknown>(sessionID: string, customType: string, data?: T): Promise<string>
+    appendCustomMessageEntry<T = unknown>(
+      sessionID: string,
+      customType: string,
+      content: string | Array<{ type: "text"; text: string }>,
+      display?: boolean,
+      details?: T,
+    ): Promise<string>
 
     setModel(model: string): Promise<boolean>
   }

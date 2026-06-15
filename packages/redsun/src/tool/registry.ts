@@ -26,6 +26,7 @@ import { ExtensionLoader } from "../extension/loader"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
+import { Entry } from "../entry/entry"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -106,7 +107,7 @@ export namespace ToolRegistry {
     return { custom, runner }
   })
 
-  function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
+  export function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
     return {
       on: (event, handler) => ExtensionRunner.on(runner, event, handler as any),
       registerTool: (tool) => ExtensionRunner.registerTool(runner, tool, source),
@@ -118,7 +119,18 @@ export namespace ToolRegistry {
       unregisterCommand: (name) => ExtensionRunner.unregisterCommand(runner, name),
       sendMessage: () => {},
       sendUserMessage: () => {},
-      appendEntry: () => {},
+      appendEntry: async (sessionID, customType, data) => {
+        return Entry.append(sessionID, { type: "custom", customType, data })
+      },
+      appendCustomMessageEntry: async (sessionID, customType, content, display, details) => {
+        return Entry.append(sessionID, {
+          type: "custom_message",
+          customType,
+          content,
+          display: display ?? true,
+          details,
+        })
+      },
       setModel: async () => false,
     }
   }
