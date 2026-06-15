@@ -1457,14 +1457,6 @@ export type Config = {
    */
   share?: "manual" | "auto" | "disabled"
   /**
-   * @deprecated Use 'share' field instead. Share newly created sessions automatically
-   */
-  autoshare?: boolean
-  /**
-   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
-   */
-  autoupdate?: boolean | "notify"
-  /**
    * Disable providers that are loaded automatically
    */
   disabled_providers?: Array<string>
