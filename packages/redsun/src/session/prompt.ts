@@ -15,7 +15,6 @@ import { Instance } from "../project/instance"
 import { Bus } from "../bus"
 import { ProviderTransform } from "../provider/transform"
 import { SystemPrompt } from "./system"
-import { Plugin } from "../plugin"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
@@ -241,8 +240,9 @@ export namespace SessionPrompt {
     for (const item of match.callbacks) {
       item.reject()
     }
+    const previousStatus = SessionStatus.get(sessionID)
     delete s[sessionID]
-    SessionStatus.set(sessionID, { type: "idle" })
+    SessionStatus.set(sessionID, { type: "idle", contextUsage: previousStatus.contextUsage })
     return
   }
 
@@ -358,15 +358,6 @@ export namespace SessionPrompt {
           subagent_type: task.agent,
           command: task.command,
         }
-        await Plugin.trigger(
-          "tool.execute.before",
-          {
-            tool: "task",
-            sessionID,
-            callID: part.id,
-          },
-          { args: taskArgs },
-        )
         let executionError: Error | undefined
         const result = await taskTool
           .execute(taskArgs, {
@@ -390,15 +381,6 @@ export namespace SessionPrompt {
             log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
             return undefined
           })
-        await Plugin.trigger(
-          "tool.execute.after",
-          {
-            tool: "task",
-            sessionID,
-            callID: part.id,
-          },
-          result,
-        )
         assistantMessage.finish = "tool-calls"
         assistantMessage.time.completed = Date.now()
         await Session.updateMessage(assistantMessage)
@@ -544,8 +526,6 @@ export namespace SessionPrompt {
 
       const sessionMessages = clone(msgs)
 
-      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: sessionMessages })
-
       const result = await processor.process({
         user: lastUser,
         agent,
@@ -630,17 +610,6 @@ export namespace SessionPrompt {
         description: item.description,
         inputSchema: jsonSchema(schema as any),
         async execute(args, options) {
-          await Plugin.trigger(
-            "tool.execute.before",
-            {
-              tool: item.id,
-              sessionID: input.sessionID,
-              callID: options.toolCallId,
-            },
-            {
-              args,
-            },
-          )
           const result = await wrapped.execute(args as Record<string, unknown>, {
             sessionID: input.sessionID,
             abort: options.abortSignal!,
@@ -666,15 +635,6 @@ export namespace SessionPrompt {
               }
             },
           })
-          await Plugin.trigger(
-            "tool.execute.after",
-            {
-              tool: item.id,
-              sessionID: input.sessionID,
-              callID: options.toolCallId,
-            },
-            result,
-          )
           return result
         },
         toModelOutput(result) {
@@ -692,28 +652,7 @@ export namespace SessionPrompt {
 
       // Wrap execute to add plugin hooks and format output
       item.execute = async (args, opts) => {
-        await Plugin.trigger(
-          "tool.execute.before",
-          {
-            tool: key,
-            sessionID: input.sessionID,
-            callID: opts.toolCallId,
-          },
-          {
-            args,
-          },
-        )
         const result = await execute(args, opts)
-
-        await Plugin.trigger(
-          "tool.execute.after",
-          {
-            tool: key,
-            sessionID: input.sessionID,
-            callID: opts.toolCallId,
-          },
-          result,
-        )
 
         const textParts: string[] = []
         const attachments: MessageV2.FilePart[] = []
@@ -1014,20 +953,6 @@ export namespace SessionPrompt {
         ]
       }),
     ).then((x) => x.flat())
-
-    await Plugin.trigger(
-      "chat.message",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        messageID: input.messageID,
-      },
-      {
-        message: info,
-        parts,
-      },
-    )
 
     await Session.updateMessage(info)
     for (const part of parts) {

@@ -1,13 +1,12 @@
 import { Provider } from "@/provider/provider"
 import { Log } from "@/util/log"
 import { streamText, wrapLanguageModel, type ModelMessage, type StreamTextResult, type Tool, type ToolSet } from "ai"
-import { clone, mergeDeep, pipe } from "remeda"
+import { mergeDeep, pipe } from "remeda"
 import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
 import { Instance } from "@/project/instance"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
-import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
 import { ToolRegistry } from "@/tool/registry"
 import { Flag } from "@/flag/flag"
@@ -50,7 +49,7 @@ export namespace LLM {
     })
     const [language, cfg] = await Promise.all([Provider.getLanguage(input.model), Config.get()])
 
-    const system = SystemPrompt.header(input.model.providerID)
+    const header = SystemPrompt.header(input.model.providerID)
     const joinedSystem = [
       // use agent prompt otherwise provider prompt
       ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
@@ -83,47 +82,23 @@ export namespace LLM {
     )
     const mutatedSystem = (beforeResult as Extension.BeforeAgentStartResult | undefined)?.systemPrompt ?? joinedSystem
 
-    system.push(mutatedSystem)
-
-    const header = system[0]
-    const original = clone(system)
-    await Plugin.trigger("experimental.chat.system.transform", {}, { system })
-    if (system.length === 0) {
-      system.push(...original)
-    }
-    // rejoin to maintain 2-part structure for caching if header unchanged
-    if (system.length > 2 && system[0] === header) {
-      const rest = system.slice(1)
-      system.length = 0
-      system.push(header, rest.join("\n"))
-    }
-
+    const system = [...header, mutatedSystem]
     const provider = await Provider.getProvider(input.model.providerID)
 
-    const params = await Plugin.trigger(
-      "chat.params",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        provider: Provider.getProvider(input.model.providerID),
-        message: input.user,
-      },
-      {
-        temperature: input.model.capabilities.temperature
-          ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
-          : undefined,
-        topP: input.agent.topP ?? ProviderTransform.topP(input.model),
-        topK: ProviderTransform.topK(input.model),
-        options: pipe(
-          {},
-          mergeDeep(ProviderTransform.options(input.model, input.sessionID, provider.options)),
-          input.small ? mergeDeep(ProviderTransform.smallOptions(input.model)) : mergeDeep({}),
-          mergeDeep(input.model.options),
-          mergeDeep(input.agent.options),
-        ),
-      },
-    )
+    const params = {
+      temperature: input.model.capabilities.temperature
+        ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
+        : undefined,
+      topP: input.agent.topP ?? ProviderTransform.topP(input.model),
+      topK: ProviderTransform.topK(input.model),
+      options: pipe(
+        {},
+        mergeDeep(ProviderTransform.options(input.model, input.sessionID, provider.options)),
+        input.small ? mergeDeep(ProviderTransform.smallOptions(input.model)) : mergeDeep({}),
+        mergeDeep(input.model.options),
+        mergeDeep(input.agent.options),
+      ),
+    }
 
     l.info("params", {
       params,

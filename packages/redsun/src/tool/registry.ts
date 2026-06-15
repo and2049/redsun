@@ -15,6 +15,8 @@ import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 import { Instance } from "../project/instance"
 import { Config } from "../config/config"
+import { Bus } from "../bus"
+import { BusEvent } from "../bus/bus-event"
 import path from "path"
 import z from "zod"
 import { WebSearchTool } from "./websearch"
@@ -31,7 +33,12 @@ import { Entry } from "../entry/entry"
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
 
-  export const ChangeEvent = "tool.registry.changed" as const
+  export const ChangeEvent = BusEvent.define(
+    "tool.registry.changed",
+    z.object({
+      directory: z.string(),
+    }),
+  )
 
   export interface State {
     custom: Map<string, Tool.Info>
@@ -117,8 +124,12 @@ export namespace ToolRegistry {
       getAllTools: () => ExtensionRunner.getAllTools(runner),
       registerCommand: (command) => ExtensionRunner.registerCommand(runner, command),
       unregisterCommand: (name) => ExtensionRunner.unregisterCommand(runner, name),
-      sendMessage: () => {},
-      sendUserMessage: () => {},
+      sendMessage: (content: string) => {
+        log.warn("sendMessage is not yet implemented", { content })
+      },
+      sendUserMessage: (content: string) => {
+        log.warn("sendUserMessage is not yet implemented", { content })
+      },
       appendEntry: async (sessionID, customType, data) => {
         return Entry.append(sessionID, { type: "custom", customType, data })
       },
@@ -262,6 +273,8 @@ export namespace ToolRegistry {
   }
 
   function emitChanged() {
-    // TODO: publish via Bus when event system is wired
+    Bus.publish(ChangeEvent, {
+      directory: Instance.directory,
+    })
   }
 }

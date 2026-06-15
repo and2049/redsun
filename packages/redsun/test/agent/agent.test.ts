@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { Agent } from "../../src/agent/agent"
+import { Config } from "../../src/config/config"
 import { ExtensionRunner } from "../../src/extension/runner"
 import type { Extension } from "../../src/extension/types"
 import { ToolRegistry } from "../../src/tool/registry"
@@ -59,7 +60,7 @@ test("throws error when all primary agents are disabled", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
           agent: {
@@ -73,12 +74,15 @@ test("throws error when all primary agents are disabled", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      let thrown = false
       try {
         await Agent.list()
-        expect(true).toBe(false) // should not reach here
       } catch (e: any) {
+        thrown = true
+        expect(Config.InvalidError.isInstance(e)).toBe(true)
         expect(e.data?.message).toContain("No primary agents are available")
       }
+      expect(thrown).toBe(true)
     },
   })
 })
@@ -87,7 +91,7 @@ test("does not throw when at least one primary agent remains", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
           agent: {
@@ -126,7 +130,7 @@ Custom primary agent`,
       )
 
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
           agent: {

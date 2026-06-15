@@ -1,6 +1,7 @@
 import { Log } from "../util/log"
 import path from "path"
 import os from "os"
+import { pathToFileURL } from "url"
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
 import { ModelsDev } from "../provider/models"
@@ -910,10 +911,11 @@ export namespace Config {
       }
       const data = parsed.data
       if (data.extension) {
+        const configDirUrl = pathToFileURL(path.dirname(configFilepath)).href
         for (let i = 0; i < data.extension.length; i++) {
           const extension = data.extension[i]
           try {
-            data.extension[i] = import.meta.resolve!(extension, configFilepath)
+            data.extension[i] = import.meta.resolve!(extension, configDirUrl)
           } catch (err) {}
         }
       }

@@ -35,10 +35,17 @@ export namespace ExtensionRunner {
     state.handlers.set(event, list)
   }
 
-  export function registerTool(state: State, tool: Tool.Info, source?: Extension.SourceInfo) {
+  export async function registerTool(state: State, tool: Tool.Info, source?: Extension.SourceInfo) {
     const id = tool.id
     log.info("registering tool", { id, source: source?.scope })
-    state.tools.set(id, { tool, source: source ?? { path: "", scope: "builtin" } })
+    let description: string | undefined
+    try {
+      const initialized = await tool.init()
+      description = initialized.description
+    } catch (error) {
+      log.warn("failed to initialize tool for description", { id, error })
+    }
+    state.tools.set(id, { tool, source: source ?? { path: "", scope: "builtin" }, description })
     if (state.activeTools.size === 0) {
       state.activeTools.add(id)
     }
@@ -58,9 +65,9 @@ export namespace ExtensionRunner {
   }
 
   export function getAllTools(state: State): Array<{ id: string; description: string; source: Extension.SourceInfo }> {
-    return Array.from(state.tools.values()).map(({ tool, source }) => ({
+    return Array.from(state.tools.values()).map(({ tool, source, description }) => ({
       id: tool.id,
-      description: "", // populated on init
+      description: description ?? "",
       source,
     }))
   }

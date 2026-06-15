@@ -2,6 +2,7 @@ import type { Extension } from "./types"
 import { SessionStatus } from "../session/status"
 import { Instance } from "../project/instance"
 import { Entry } from "../entry/entry"
+import { Log } from "../util/log"
 
 export namespace ExtensionContext {
   export function create(options: {
@@ -29,7 +30,11 @@ export namespace ExtensionContext {
       signal: options.signal,
       abort: options.abort ?? (() => {}),
       hasPendingMessages: () => false,
-      getContextUsage: () => undefined,
+      getContextUsage: () => {
+        const status = SessionStatus.get(options.sessionID)
+        if (status.contextUsage) return status.contextUsage
+        return undefined
+      },
       getSystemPrompt: options.getSystemPrompt,
       getEntries: options.getEntries ?? (async () => []),
     }
@@ -66,12 +71,24 @@ export namespace ExtensionContext {
     }
   }
 
-  function createUI(_mode: Extension.Mode): Extension.UIContext {
+  function createUI(mode: Extension.Mode): Extension.UIContext {
+    const log = Log.create({ service: "extension.ui" })
     return {
-      notify: (message: string, _type?: "info" | "warning" | "error") => {},
-      confirm: async () => false,
-      input: async () => undefined,
-      select: async () => undefined,
+      notify: (message: string, type: "info" | "warning" | "error" = "info") => {
+        log.info("notify", { message, type })
+      },
+      confirm: async (title: string, message: string) => {
+        log.warn("confirm() is not available in this mode", { mode, title, message })
+        return false
+      },
+      input: async (title: string, placeholder?: string) => {
+        log.warn("input() is not available in this mode", { mode, title, placeholder })
+        return undefined
+      },
+      select: async (title: string, options: string[]) => {
+        log.warn("select() is not available in this mode", { mode, title, options })
+        return undefined
+      },
     }
   }
 }

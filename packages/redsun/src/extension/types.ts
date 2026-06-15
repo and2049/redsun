@@ -46,6 +46,7 @@ export namespace Extension {
   export interface RegisteredTool {
     tool: Tool.Info
     source: SourceInfo
+    description?: string
   }
 
   export interface RegisteredCommand {
