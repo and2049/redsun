@@ -74,11 +74,12 @@ export namespace ExtensionRunner {
   export async function emit<E extends Extension.Event>(
     state: State,
     event: E,
+    contextOverride?: Extension.Context,
   ): Promise<Extension.EventResult | undefined> {
     const handlers = state.handlers.get(event.type)
     if (!handlers || handlers.length === 0) return undefined
 
-    const ctx = state.contextFactory()
+    const ctx = contextOverride ?? state.contextFactory()
     let result: Extension.EventResult | undefined
 
     for (const handler of handlers) {

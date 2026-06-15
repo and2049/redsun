@@ -11,6 +11,9 @@ import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
 import { ToolRegistry } from "@/tool/registry"
 import { Flag } from "@/flag/flag"
+import { ExtensionRunner } from "../extension/runner"
+import { ExtensionContext } from "../extension/context"
+import type { Extension } from "../extension/types"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -47,18 +50,39 @@ export namespace LLM {
     const [language, cfg] = await Promise.all([Provider.getLanguage(input.model), Config.get()])
 
     const system = SystemPrompt.header(input.model.providerID)
-    system.push(
-      [
-        // use agent prompt otherwise provider prompt
-        ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-        // any custom prompt passed into this call
-        ...input.system,
-        // any custom prompt from last user message
-        ...(input.user.system ? [input.user.system] : []),
-      ]
-        .filter((x) => x)
-        .join("\n"),
+    const joinedSystem = [
+      // use agent prompt otherwise provider prompt
+      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+      // any custom prompt passed into this call
+      ...input.system,
+      // any custom prompt from last user message
+      ...(input.user.system ? [input.user.system] : []),
+    ]
+      .filter((x) => x)
+      .join("\n")
+
+    const userPrompt = extractUserPrompt(input.messages)
+    const extRunner = await ToolRegistry.getRunner()
+    const extContext = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent.name,
+      projectTrusted: true,
+      getSystemPrompt: () => joinedSystem,
+      signal: input.abort,
+    })
+    const beforeResult = await ExtensionRunner.emit(
+      extRunner,
+      {
+        type: "before_agent_start",
+        prompt: userPrompt,
+        systemPrompt: joinedSystem,
+      } as Extension.BeforeAgentStartEvent,
+      extContext,
     )
+    const mutatedSystem = (beforeResult as Extension.BeforeAgentStartResult | undefined)?.systemPrompt ?? joinedSystem
+
+    system.push(mutatedSystem)
 
     const header = system[0]
     const original = clone(system)
@@ -189,5 +213,20 @@ export namespace LLM {
       if (value === false) delete input.tools[key]
     }
     return input.tools
+  }
+
+  function extractUserPrompt(messages: ModelMessage[]): string {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role !== "user") continue
+      if (typeof m.content === "string") return m.content
+      if (Array.isArray(m.content)) {
+        return m.content
+          .filter((p) => p.type === "text")
+          .map((p) => (p as { type: "text"; text: string }).text)
+          .join("\n")
+      }
+    }
+    return ""
   }
 }

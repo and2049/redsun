@@ -14,6 +14,10 @@ import { SessionPrompt } from "./prompt"
 import { fn } from "@/util/fn"
 import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
+import { ExtensionRunner } from "../extension/runner"
+import { ExtensionContext } from "../extension/context"
+import { ToolRegistry } from "../tool/registry"
+import type { Extension } from "../extension/types"
 
 import type { Provider } from "@/provider/provider"
 
@@ -128,6 +132,7 @@ export namespace Session {
     async (input) => {
       const session = await createNext({
         directory: Instance.directory,
+        reason: "fork",
       })
       const msgs = await messages({ sessionID: input.sessionID })
       for (const msg of msgs) {
@@ -157,7 +162,13 @@ export namespace Session {
     })
   })
 
-  export async function createNext(input: { id?: string; title?: string; parentID?: string; directory: string }) {
+  export async function createNext(input: {
+    id?: string
+    title?: string
+    parentID?: string
+    directory: string
+    reason?: "new" | "fork" | "resume" | "startup" | "reload"
+  }) {
     const result: Info = {
       id: Identifier.descending("session", input.id),
       version: Installation.VERSION,
@@ -178,6 +189,20 @@ export namespace Session {
     Bus.publish(Event.Updated, {
       info: result,
     })
+
+    const runner = await ToolRegistry.getRunner()
+    const ctx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: result.id,
+      agent: "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit(
+      runner,
+      { type: "session_start", reason: input.reason ?? "new" } as Extension.SessionStartEvent,
+      ctx,
+    )
     return result
   }
 
@@ -244,6 +269,20 @@ export namespace Session {
       for (const child of await children(sessionID)) {
         await remove(child.id)
       }
+
+      const runner = await ToolRegistry.getRunner()
+      const ctx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID,
+        agent: "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(
+        runner,
+        { type: "session_shutdown", reason: "quit" } as Extension.SessionShutdownEvent,
+        ctx,
+      )
 
       for (const msg of await Storage.list(["message", sessionID])) {
         for (const part of await Storage.list(["part", msg.at(-1)!])) {

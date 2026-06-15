@@ -6,6 +6,8 @@ import { Instance } from "../project/instance"
 import { Identifier } from "../id/id"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import { ToolRegistry } from "../tool/registry"
+import type { Extension } from "../extension/types"
 
 export namespace Command {
   export const Event = {
@@ -32,7 +34,9 @@ export namespace Command {
     .meta({
       ref: "Command",
     })
-  export type Info = z.infer<typeof Info>
+  export interface Info extends z.infer<typeof Info> {
+    handler?: Extension.RegisteredCommand["handler"]
+  }
 
   export const Default = {
     INIT: "init",
@@ -66,6 +70,18 @@ export namespace Command {
         subtask: command.subtask,
       }
     }
+
+    try {
+      const runner = await ToolRegistry.getRunner()
+      for (const [name, cmd] of runner.commands) {
+        result[name] = {
+          name,
+          description: cmd.description,
+          template: "",
+          handler: cmd.handler,
+        }
+      }
+    } catch {}
 
     return result
   })

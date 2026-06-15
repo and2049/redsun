@@ -43,6 +43,10 @@ import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { iife } from "@/util/iife"
 import { Shell } from "@/shell/shell"
+import { ExtensionWrapper } from "../extension/wrapper"
+import { ExtensionContext } from "../extension/context"
+import { ExtensionRunner } from "../extension/runner"
+import type { Extension } from "../extension/types"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -140,6 +144,20 @@ export namespace SessionPrompt {
   export const prompt = fn(PromptInput, async (input) => {
     const session = await Session.get(input.sessionID)
     await SessionRevert.cleanup(session)
+
+    const text = input.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { type: "text"; text: string }).text)
+      .join("\n")
+    const runner = await ToolRegistry.getRunner()
+    const ctx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent ?? "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit(runner, { type: "input", text } as Extension.InputEvent, ctx)
 
     const message = await createUserMessage(input)
     await Session.touch(input.sessionID)
@@ -583,9 +601,25 @@ export namespace SessionPrompt {
       mergeDeep(await ToolRegistry.enabled(input.agent)),
       mergeDeep(input.tools ?? {}),
     )
+    const runner = await ToolRegistry.getRunner()
+    const extContextFactory = () =>
+      ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: input.sessionID,
+        agent: input.agent.name,
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+        signal: input.processor.message.id ? undefined : undefined,
+      })
     for (const item of await ToolRegistry.tools(input.model.providerID, input.agent)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
+      const wrapped = ExtensionWrapper.wrapExecute(
+        item as ExtensionWrapper.ResolvedTool,
+        runner,
+        { path: "", scope: "builtin" },
+        extContextFactory,
+      )
       tools[item.id] = tool({
         id: item.id as any,
         description: item.description,
@@ -602,7 +636,7 @@ export namespace SessionPrompt {
               args,
             },
           )
-          const result = await item.execute(args, {
+          const result = await wrapped.execute(args as Record<string, unknown>, {
             sessionID: input.sessionID,
             abort: options.abortSignal!,
             messageID: input.processor.message.id,
@@ -1048,6 +1082,20 @@ export namespace SessionPrompt {
     }
     using _ = defer(() => cancel(input.sessionID))
 
+    const runner = await ToolRegistry.getRunner()
+    const extCtx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent,
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit(
+      runner,
+      { type: "input", text: input.command } as Extension.InputEvent,
+      extCtx,
+    )
+
     const session = await Session.get(input.sessionID)
     if (session.revert) {
       SessionRevert.cleanup(session)
@@ -1281,8 +1329,44 @@ export namespace SessionPrompt {
 
   export async function command(input: CommandInput) {
     log.info("command", input)
+
+    const runner = await ToolRegistry.getRunner()
+    const extCmd = runner.commands.get(input.command)
+    if (extCmd) {
+      const ctx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: input.sessionID,
+        agent: input.agent ?? "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(
+        runner,
+        { type: "input", text: `/${input.command} ${input.arguments}` } as Extension.InputEvent,
+        ctx,
+      )
+      await extCmd.handler(input.arguments, ctx)
+      return
+    }
+
     const command = await Command.get(input.command)
+    if (!command) {
+      throw new Error(`Command not found: ${input.command}`)
+    }
     const agentName = command.agent ?? input.agent ?? (await Agent.defaultAgent())
+
+    const ctx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent ?? "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit(
+      runner,
+      { type: "input", text: `/${input.command} ${input.arguments}` } as Extension.InputEvent,
+      ctx,
+    )
 
     const raw = input.arguments.match(argsRegex) ?? []
     const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))

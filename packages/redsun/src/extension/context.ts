@@ -1,4 +1,6 @@
 import type { Extension } from "./types"
+import { SessionStatus } from "../session/status"
+import { Instance } from "../project/instance"
 
 export namespace ExtensionContext {
   export function create(options: {
@@ -9,6 +11,8 @@ export namespace ExtensionContext {
     projectTrusted: boolean
     getSystemPrompt: () => string
     getEntries?: <T>(customType: string) => Array<{ customType: string; data?: T }>
+    signal?: AbortSignal
+    abort?: () => void
   }): Extension.Context {
     const hasUI = options.mode === "tui" || options.mode === "rpc"
 
@@ -21,8 +25,8 @@ export namespace ExtensionContext {
       agent: options.agent,
       isIdle: () => true,
       isProjectTrusted: () => options.projectTrusted,
-      signal: undefined,
-      abort: () => {},
+      signal: options.signal,
+      abort: options.abort ?? (() => {}),
       hasPendingMessages: () => false,
       getContextUsage: () => undefined,
       getSystemPrompt: options.getSystemPrompt,
@@ -30,22 +34,45 @@ export namespace ExtensionContext {
     }
   }
 
-  function createUI(mode: Extension.Mode): Extension.UIContext {
-    const unsupported = (name: string) => {
-      if (mode === "tui" || mode === "rpc") {
-        // In full implementation, wire to actual TUI
-        return () => Promise.resolve(undefined)
-      }
-      return () => Promise.resolve(undefined)
-    }
-
+  export function forSession(options: {
+    mode: Extension.Mode
+    sessionID: string
+    agent: string
+    projectTrusted: boolean
+    getSystemPrompt: () => string
+    signal?: AbortSignal
+    abort?: () => void
+  }): Extension.CommandContext {
+    const cwd = Instance.directory
+    const base = create({
+      mode: options.mode,
+      cwd,
+      sessionID: options.sessionID,
+      agent: options.agent,
+      projectTrusted: options.projectTrusted,
+      getSystemPrompt: options.getSystemPrompt,
+      signal: options.signal,
+      abort: options.abort,
+      getEntries: <T>(customType: string) => listEntriesSync<T>(options.sessionID, customType),
+    })
     return {
-      notify: (message: string, _type?: "info" | "warning" | "error") => {
-        // Wire to TUI or console in full implementation
-      },
-      confirm: unsupported("confirm") as any,
-      input: unsupported("input") as any,
-      select: unsupported("select") as any,
+      ...base,
+      isIdle: () => SessionStatus.get(options.sessionID).type === "idle",
+      hasPendingMessages: () => false,
+      reload: async () => {},
     }
+  }
+
+  function createUI(_mode: Extension.Mode): Extension.UIContext {
+    return {
+      notify: (message: string, _type?: "info" | "warning" | "error") => {},
+      confirm: async () => false,
+      input: async () => undefined,
+      select: async () => undefined,
+    }
+  }
+
+  function listEntriesSync<T>(_sessionID: string, _customType: string): Array<{ customType: string; data?: T }> {
+    return []
   }
 }
