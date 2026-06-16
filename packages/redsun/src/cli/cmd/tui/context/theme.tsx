@@ -8,7 +8,6 @@ import everforest from "./theme/everforest.json" with { type: "json" }
 import gruvbox from "./theme/gruvbox.json" with { type: "json" }
 import kanagawa from "./theme/kanagawa.json" with { type: "json" }
 import rosepine from "./theme/rosepine.json" with { type: "json" }
-import vesper from "./theme/vesper.json" with { type: "json" }
 import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
@@ -116,8 +115,7 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   everforest,
   gruvbox,
   kanagawa,
-  rosepine,
-  vesper,
+  rosepine
 }
 
 function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
