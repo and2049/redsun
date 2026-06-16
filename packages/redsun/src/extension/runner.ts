@@ -11,7 +11,7 @@ export namespace ExtensionRunner {
     commands: Map<string, Extension.RegisteredCommand>
     activeTools: Set<string>
     contextFactory: () => Extension.Context
-    discoveredResources: { skillPaths: string[]; promptPaths: string[]; agentPaths: string[] }
+    discoveredResources: { skillPaths: string[]; promptPaths: string[]; agentPaths: string[]; themePaths: string[] }
     projectTrusted: boolean
     pendingProviderRegistrations: Array<{ name: string; config: Extension.ProviderConfig; source: string }>
     providerRegistrar?: { register: (name: string, config: Extension.ProviderConfig) => void; unregister: (name: string) => void }
@@ -26,7 +26,7 @@ export namespace ExtensionRunner {
       commands: new Map(),
       activeTools: new Set(),
       contextFactory,
-      discoveredResources: { skillPaths: [], promptPaths: [], agentPaths: [] },
+      discoveredResources: { skillPaths: [], promptPaths: [], agentPaths: [], themePaths: [] },
       projectTrusted: true,
       pendingProviderRegistrations: [],
       eventBus: new Map(),
@@ -220,6 +220,13 @@ export namespace ExtensionRunner {
       for (const p of r.agentPaths) {
         if (!state.discoveredResources.agentPaths.includes(p)) {
           state.discoveredResources.agentPaths.push(p)
+        }
+      }
+    }
+    if (r.themePaths) {
+      for (const p of r.themePaths) {
+        if (!state.discoveredResources.themePaths.includes(p)) {
+          state.discoveredResources.themePaths.push(p)
         }
       }
     }

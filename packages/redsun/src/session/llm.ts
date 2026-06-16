@@ -32,6 +32,7 @@ export namespace LLM {
     small?: boolean
     tools: Record<string, Tool>
     retries?: number
+    compactionCutoff?: number
   }
 
   export type StreamOutput = StreamTextResult<ToolSet, unknown>
@@ -114,7 +115,7 @@ export namespace LLM {
 
     const tools = await resolveTools(input)
 
-    const messages = await injectCustomMessages(input.sessionID, input.messages)
+    const messages = await injectCustomMessages(input.sessionID, input.messages, input.compactionCutoff)
 
     const contextResult = await ExtensionRunner.emit(
       extRunner,
@@ -216,9 +217,14 @@ export namespace LLM {
     return ""
   }
 
-  async function injectCustomMessages(sessionID: string, messages: ModelMessage[]): Promise<ModelMessage[]> {
+  async function injectCustomMessages(sessionID: string, messages: ModelMessage[], compactionCutoff?: number): Promise<ModelMessage[]> {
     const entries = await Entry.list(sessionID)
-    const customMessages = entries.filter((e): e is Entry.CustomMessageEntry => e.type === "custom_message")
+    let customMessages = entries.filter((e): e is Entry.CustomMessageEntry => e.type === "custom_message")
+    if (customMessages.length === 0) return messages
+
+    if (compactionCutoff !== undefined) {
+      customMessages = customMessages.filter((e) => e.timestamp >= compactionCutoff)
+    }
     if (customMessages.length === 0) return messages
 
     const sessionMsgs = await Session.messages({ sessionID })

@@ -15,6 +15,7 @@ import { ReloadTool } from "./reload"
 import type { Agent } from "../agent/agent"
 import { Tool } from "./tool"
 import { Instance } from "../project/instance"
+import { State } from "../project/state"
 import { Config } from "../config/config"
 import { Bus } from "../bus"
 import { BusEvent } from "../bus/bus-event"
@@ -63,7 +64,7 @@ export namespace ToolRegistry {
     runner: ExtensionRunner.State
   }
 
-  export const state = Instance.state(async (): Promise<State> => {
+  async function initState(): Promise<State> {
     const custom = new Map<string, Tool.Info>()
     const glob = new Bun.Glob("tool/*.{js,ts}")
 
@@ -192,7 +193,80 @@ export namespace ToolRegistry {
     )
 
     return { custom, runner }
-  })
+  }
+
+  export const state = Instance.state(initState)
+
+  let pendingReload = false
+
+  export function setPendingReload() {
+    pendingReload = true
+  }
+
+  export function consumePendingReload(): boolean {
+    if (pendingReload) {
+      pendingReload = false
+      return true
+    }
+    return false
+  }
+
+  export async function reload() {
+    const s = await state()
+    const oldRunner = s.runner
+
+    const [{ SessionStatus }, { ExtensionContext: EC }] = await Promise.all([
+      import("../session/status"),
+      import("../extension/context"),
+    ])
+    const statuses = SessionStatus.list()
+    for (const [sessionID, status] of Object.entries(statuses)) {
+      if (status.type === "idle") continue
+      const ctx = EC.forSession({
+        mode: "rpc",
+        sessionID,
+        agent: "",
+        projectTrusted: oldRunner.projectTrusted,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(oldRunner, { type: "session_shutdown", reason: "reload" }, ctx)
+    }
+
+    State.reset(Instance.directory, initState as () => unknown)
+    await state()
+
+    const newState = await state()
+    const newRunner = newState.runner
+
+    const discoverCtx: Extension.Context = ExtensionContext.create({
+      mode: "rpc",
+      cwd: Instance.directory,
+      sessionID: "",
+      agent: "",
+      projectTrusted: newRunner.projectTrusted,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(
+      newRunner,
+      { type: "resources_discover", cwd: Instance.directory, reason: "reload" },
+      discoverCtx,
+    )
+
+    for (const [sessionID, status] of Object.entries(statuses)) {
+      if (status.type === "idle") continue
+      const ctx = EC.forSession({
+        mode: "rpc",
+        sessionID,
+        agent: "",
+        projectTrusted: newRunner.projectTrusted,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(newRunner, { type: "session_start", reason: "reload" }, ctx)
+    }
+
+    log.info("reload completed")
+    emitChanged()
+  }
 
   export function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
     return {

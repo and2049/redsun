@@ -5,6 +5,7 @@ import type { ZodType } from "zod"
 import path from "path"
 import { Global } from "../global"
 import { Log } from "../util/log"
+import { Permission } from "../permission"
 
 const log = Log.create({ service: "extension.wrapper" })
 
@@ -18,28 +19,31 @@ const PROTECTED_GLOBS = [
   ".env.production",
 ]
 
-export function isProtectedPath(filePath: string): { blocked: boolean; reason?: string } {
+const PROTECTED_DIRS = [
+  ".git",
+  "node_modules",
+  ".redsun" + path.sep + "extensions",
+]
+
+export function isProtectedPath(filePath: string): { blocked: boolean; reason?: string; type?: "extension" | "system" } {
   const normalized = path.resolve(filePath)
 
   for (const protectedPath of PROTECTED_PATHS) {
     if (normalized === path.resolve(protectedPath)) {
-      return { blocked: true, reason: `Cannot write to protected path: ${filePath}` }
+      return { blocked: true, reason: `Cannot write to protected path: ${filePath}`, type: "system" }
     }
   }
 
   const basename = path.basename(normalized)
   if (PROTECTED_GLOBS.includes(basename)) {
-    return { blocked: true, reason: `Cannot write to protected file: ${filePath}` }
+    return { blocked: true, reason: `Cannot write to protected file: ${filePath}`, type: "system" }
   }
 
-  if (normalized.includes(path.sep + ".git" + path.sep)) {
-    log.warn("writing to .git directory", { filePath })
-    return { blocked: true, reason: `Cannot write to protected directory: .git (${filePath})` }
-  }
-
-  if (normalized.includes(path.sep + "node_modules" + path.sep)) {
-    log.warn("writing to node_modules directory", { filePath })
-    return { blocked: true, reason: `Cannot write to protected directory: node_modules (${filePath})` }
+  for (const dir of PROTECTED_DIRS) {
+    if (normalized.includes(path.sep + dir + path.sep) || normalized.endsWith(path.sep + dir)) {
+      log.warn("writing to protected directory", { filePath, dir })
+      return { blocked: true, reason: `Cannot write to protected directory: ${dir} (${filePath})`, type: dir.includes("extensions") ? "extension" : "system" }
+    }
   }
 
   return { blocked: false }
@@ -70,13 +74,56 @@ export namespace ExtensionWrapper {
       execute: async (args, ctx) => {
         const eventCtx = contextFactory()
 
-        // Guardrail: check protected paths for write/edit tools
-        if (tool.id === "write" || tool.id === "edit") {
-          const filePath = (args as Record<string, unknown>).filePath as string | undefined
-          if (filePath) {
-            const guard = isProtectedPath(filePath)
-            if (guard.blocked) {
+        // Guardrail: check protected paths for file-writing tools
+        const filePath = (args as Record<string, unknown>).filePath as string | undefined
+        if (filePath) {
+          const guard = isProtectedPath(filePath)
+          if (guard.blocked) {
+            if (guard.type === "extension") {
+              await Permission.ask({
+                type: "extension_write",
+                title: "Write Extension",
+                pattern: filePath,
+                callID: ctx.callID,
+                sessionID: ctx.sessionID,
+                messageID: ctx.messageID,
+                metadata: { filePath },
+              })
+            } else {
               throw new Error(guard.reason ?? "blocked by guardrail")
+            }
+          }
+        }
+
+        if (tool.id === "bash") {
+          const command = (args as Record<string, unknown>).command as string | undefined
+          if (command) {
+            for (const dir of PROTECTED_DIRS) {
+              if (command.includes(dir)) {
+                if (dir.includes("extensions")) {
+                  await Permission.ask({
+                    type: "extension_write",
+                    title: "Write Extension via Bash",
+                    pattern: command,
+                    callID: ctx.callID,
+                    sessionID: ctx.sessionID,
+                    messageID: ctx.messageID,
+                    metadata: { command },
+                  })
+                } else {
+                  throw new Error(`Cannot reference protected directory "${dir}" via bash`)
+                }
+              }
+            }
+            for (const glob of PROTECTED_GLOBS) {
+              if (command.includes(glob)) {
+                throw new Error(`Cannot reference protected file "${glob}" via bash`)
+              }
+            }
+            for (const p of PROTECTED_PATHS) {
+              if (command.includes(path.basename(p))) {
+                throw new Error(`Cannot reference protected path "${p}" via bash`)
+              }
             }
           }
         }

@@ -290,8 +290,8 @@ export namespace SessionPrompt {
     using _ = defer(() => cancel(sessionID))
 
     let step = 0
-    const loopRunner = await ToolRegistry.getRunner()
     while (true) {
+      const loopRunner = await ToolRegistry.getRunner()
       SessionStatus.set(sessionID, { type: "busy" })
       log.info("loop", { step, sessionID })
       if (abort.aborted) break
@@ -512,6 +512,7 @@ export namespace SessionPrompt {
           fromExtension: task.fromExtension ?? false,
         })
         if (result === "stop") break
+        if (result === "cancelled") continue
         continue
       }
 
@@ -584,6 +585,9 @@ export namespace SessionPrompt {
       }
 
       const sessionMessages = clone(msgs)
+      const compactionCutoff = sessionMessages.find(
+        (m) => m.info.role === "user" && m.parts.some((p) => p.type === "compaction"),
+      )?.info.time.created
 
       const result = await processor.process({
         user: lastUser,
@@ -608,8 +612,13 @@ export namespace SessionPrompt {
         ],
         tools,
         model,
+        compactionCutoff,
       })
       if (result === "stop") break
+      if (ToolRegistry.consumePendingReload()) {
+        await ToolRegistry.reload()
+        continue
+      }
       continue
     }
     SessionCompaction.prune({ sessionID })

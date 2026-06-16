@@ -74,6 +74,7 @@ export const Instance = {
     } catch (e) {
       Log.Default.error("failed to emit session_shutdown on dispose", { error: e })
     }
+    await new Promise((r) => setTimeout(r, 0))
     await State.dispose(Instance.directory)
     cache.delete(Instance.directory)
     GlobalBus.emit("event", {

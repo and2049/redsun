@@ -61,6 +61,9 @@ export namespace Agent {
     if (evt.payload?.type === "server.instance.disposed" && evt.directory) {
       cache.delete(evt.directory)
     }
+    if (evt.payload?.type === "tool.registry.changed" && evt.directory) {
+      cache.delete(evt.directory)
+    }
   })
 
   async function loadAgentFromPath(filePath: string): Promise<{ name: string; data: Config.Agent } | undefined> {
