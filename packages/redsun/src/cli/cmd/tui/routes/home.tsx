@@ -92,24 +92,6 @@ export function Home() {
 
   return (
     <>
-      <box flexGrow={1} justifyContent="center" alignItems="center" paddingLeft={2} paddingRight={2} gap={1}>
-        <Logo />
-        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1}>
-          <Prompt
-            ref={(r) => {
-              prompt = r
-              promptRef.set(r)
-            }}
-            hint={Hint}
-          />
-        </box>
-        <Toast />
-      </box>
-      <Show when={!isFirstTimeUser()}>
-        <Show when={showTips()}>
-          <DidYouKnow />
-        </Show>
-      </Show>
       <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} flexDirection="row" flexShrink={0} gap={2}>
         <text fg={theme.textMuted}>{directory()}</text>
         <box gap={1} flexDirection="row" flexShrink={0}>
@@ -133,6 +115,26 @@ export function Home() {
           <text fg={theme.textMuted}>{Installation.VERSION}</text>
         </box>
       </box>
+
+      <box flexGrow={1} justifyContent="center" alignItems="center" paddingLeft={2} paddingRight={2} gap={1}>
+        <Logo />
+        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1}>
+          <Prompt
+            ref={(r) => {
+              prompt = r
+              promptRef.set(r)
+            }}
+            hint={Hint}
+          />
+        </box>
+        <Toast />
+      </box>
+      <Show when={!isFirstTimeUser()}>
+        <Show when={showTips()}>
+          <DidYouKnow />
+        </Show>
+      </Show>
+      <box height={3} flexShrink={0} />
     </>
   )
 }

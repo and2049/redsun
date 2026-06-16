@@ -4,12 +4,12 @@ import { useTheme } from "@tui/context/theme"
 import { useRenderer } from "@opentui/solid"
 
 const LOGO = [
-  `██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗`,
-  `██╔══██╗██╔════╝██╔══██╗██╔════╝██║░░░██║████╗  ██║`,
-  `██████╔╝█████╗  ██║░░██║███████╗██║░░░██║██╔██╗ ██║`,
-  `██╔══██╗██╔══╝  ██║░░██║╚════██║██║░░░██║██║╚██╗██║`,
-  `██║  ██║███████╗██████╔╝███████║╚██████╔╝██║ ╚████║`,
-  `╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝`,
+  `██╗      ██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗`,
+  `╚██╗     ██╔══██╗██╔════╝██╔══██╗██╔════╝██║░░░██║████╗  ██║`,
+  ` ╚██╗    ██████╔╝█████╗  ██║░░██║███████╗██║░░░██║██╔██╗ ██║`,
+  ` ██╔╝    ██╔══██╗██╔══╝  ██║░░██║╚════██║██║░░░██║██║╚██╗██║`,
+  `██╔╝     ██║  ██║███████╗██████╔╝███████║╚██████╔╝██║ ╚████║`,
+  `╚═╝      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝`,
 ]
 
 export function Logo() {
@@ -17,9 +17,10 @@ export function Logo() {
   const renderer = useRenderer()
   const logoWidth = LOGO[0].length
 
-  const actualBg = () => theme.background.a === 0
-    ? RGBA.fromHex(renderer.colors.defaultBackground ?? renderer.colors.palette[0]!)
-    : theme.background
+  const actualBg = () =>
+    theme.background.a === 0
+      ? RGBA.fromHex(renderer.colors.defaultBackground ?? renderer.colors.palette[0]!)
+      : theme.background
 
   return (
     <box>
@@ -31,7 +32,7 @@ export function Logo() {
               <For each={chars}>
                 {(char, i) => {
                   const t = () => i() / logoWidth
-                  
+
                   const baseColor = () => {
                     const start = theme.logoGradientStart
                     const end = theme.logoGradientEnd
@@ -59,14 +60,18 @@ export function Logo() {
                     const r = start.r + (end.r - start.r) * t()
                     const g = start.g + (end.g - start.g) * t()
                     const b = start.b + (end.b - start.b) * t()
-                    
+
                     const alpha = 0.4
                     const bg = actualBg()
-                    
+
                     const shadowR = r * alpha + bg.r * (1.0 - alpha)
                     const shadowG = g * alpha + bg.g * (1.0 - alpha)
                     const shadowB = b * alpha + bg.b * (1.0 - alpha)
-                    return RGBA.fromInts(Math.round(shadowR * 255), Math.round(shadowG * 255), Math.round(shadowB * 255))
+                    return RGBA.fromInts(
+                      Math.round(shadowR * 255),
+                      Math.round(shadowG * 255),
+                      Math.round(shadowB * 255),
+                    )
                   }
 
                   return (
