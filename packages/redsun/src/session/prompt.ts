@@ -599,6 +599,7 @@ export namespace SessionPrompt {
           ...(await SystemPrompt.custom()),
           ...(await SystemPrompt.skills()),
           ...SystemPrompt.selfModification(),
+          ...SystemPrompt.projectMemory(),
         ],
         messages: [
           ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
