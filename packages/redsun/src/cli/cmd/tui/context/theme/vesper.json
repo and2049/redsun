@@ -14,6 +14,8 @@
     "vesperMuted": "#A0A0A0"
   },
   "theme": {
+    "logoGradientStart": "#5476E5",
+    "logoGradientEnd": "#FF7399",
     "primary": {
       "dark": "#FFC799",
       "light": "#FFC799"

@@ -38,6 +38,8 @@
     "lightOrange": "#af3a03"
   },
   "theme": {
+    "logoGradientStart": "#5476E5",
+    "logoGradientEnd": "#FF7399",
     "primary": { "dark": "darkBlueBright", "light": "lightBlue" },
     "secondary": { "dark": "darkPurpleBright", "light": "lightPurple" },
     "accent": { "dark": "darkAquaBright", "light": "lightAqua" },

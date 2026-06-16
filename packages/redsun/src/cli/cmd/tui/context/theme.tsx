@@ -3,37 +3,12 @@ import path from "path"
 import { createEffect, createMemo, onMount } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { createSimpleContext } from "./helper"
-import aura from "./theme/aura.json" with { type: "json" }
-import ayu from "./theme/ayu.json" with { type: "json" }
-import catppuccin from "./theme/catppuccin.json" with { type: "json" }
-import catppuccinFrappe from "./theme/catppuccin-frappe.json" with { type: "json" }
-import catppuccinMacchiato from "./theme/catppuccin-macchiato.json" with { type: "json" }
-import cobalt2 from "./theme/cobalt2.json" with { type: "json" }
 import cursor from "./theme/cursor.json" with { type: "json" }
-import dracula from "./theme/dracula.json" with { type: "json" }
 import everforest from "./theme/everforest.json" with { type: "json" }
-import flexoki from "./theme/flexoki.json" with { type: "json" }
-import github from "./theme/github.json" with { type: "json" }
 import gruvbox from "./theme/gruvbox.json" with { type: "json" }
 import kanagawa from "./theme/kanagawa.json" with { type: "json" }
-import material from "./theme/material.json" with { type: "json" }
-import matrix from "./theme/matrix.json" with { type: "json" }
-import mercury from "./theme/mercury.json" with { type: "json" }
-import monokai from "./theme/monokai.json" with { type: "json" }
-import nightowl from "./theme/nightowl.json" with { type: "json" }
-import nord from "./theme/nord.json" with { type: "json" }
-import onedark from "./theme/one-dark.json" with { type: "json" }
-import redsun from "./theme/redsun.json" with { type: "json" }
-import orng from "./theme/orng.json" with { type: "json" }
-import lucentOrng from "./theme/lucent-orng.json" with { type: "json" }
-import palenight from "./theme/palenight.json" with { type: "json" }
 import rosepine from "./theme/rosepine.json" with { type: "json" }
-import solarized from "./theme/solarized.json" with { type: "json" }
-import synthwave84 from "./theme/synthwave84.json" with { type: "json" }
-import tokyonight from "./theme/tokyonight.json" with { type: "json" }
-import vercel from "./theme/vercel.json" with { type: "json" }
 import vesper from "./theme/vesper.json" with { type: "json" }
-import zenburn from "./theme/zenburn.json" with { type: "json" }
 import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
@@ -58,6 +33,8 @@ type ThemeColors = {
   border: RGBA
   borderActive: RGBA
   borderSubtle: RGBA
+  logoGradientStart: RGBA
+  logoGradientEnd: RGBA
   diffAdded: RGBA
   diffRemoved: RGBA
   diffContext: RGBA
@@ -135,37 +112,12 @@ type ThemeJson = {
 }
 
 export const DEFAULT_THEMES: Record<string, ThemeJson> = {
-  aura,
-  ayu,
-  catppuccin,
-  ["catppuccin-frappe"]: catppuccinFrappe,
-  ["catppuccin-macchiato"]: catppuccinMacchiato,
-  cobalt2,
   cursor,
-  dracula,
   everforest,
-  flexoki,
-  github,
   gruvbox,
   kanagawa,
-  material,
-  matrix,
-  mercury,
-  monokai,
-  nightowl,
-  nord,
-  ["one-dark"]: onedark,
-  redsun,
-  orng,
-  ["lucent-orng"]: lucentOrng,
-  palenight,
   rosepine,
-  solarized,
-  synthwave84,
-  tokyonight,
   vesper,
-  vercel,
-  zenburn,
 }
 
 function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
@@ -279,7 +231,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const [store, setStore] = createStore({
       themes: DEFAULT_THEMES,
       mode: kv.get("theme_mode", props.mode),
-      active: (sync.data.config.theme ?? kv.get("theme", "redsun")) as string,
+      active: (sync.data.config.theme ?? kv.get("theme", "cursor")) as string,
       ready: false,
     })
 
@@ -293,7 +245,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
           )
         })
         .catch(() => {
-          setStore("active", "redsun")
+          setStore("active", "cursor")
         })
         .finally(() => {
           if (store.active !== "system") {
@@ -312,7 +264,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
           if (store.active === "system") {
             setStore(
               produce((draft) => {
-                draft.active = "redsun"
+                draft.active = "cursor"
                 draft.ready = true
               }),
             )
@@ -330,7 +282,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       })
 
     const values = createMemo(() => {
-      return resolveTheme(store.themes[store.active] ?? store.themes.redsun, store.mode)
+      return resolveTheme(store.themes[store.active] ?? store.themes.cursor, store.mode)
     })
 
     const syntax = createMemo(() => generateSyntax(values()))
@@ -420,6 +372,9 @@ function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJs
 
   return {
     theme: {
+      logoGradientStart: RGBA.fromHex("#5476E5"),
+      logoGradientEnd: RGBA.fromHex("#FF7399"),
+
       // Primary colors using ANSI
       primary: ansiColors.cyan,
       secondary: ansiColors.magenta,
