@@ -31,6 +31,7 @@ import { Flag } from "../flag/flag"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
+import { Goal } from "./goal"
 import { $, fileURLToPath } from "bun"
 import { ConfigMarkdown } from "../config/markdown"
 import { SessionSummary } from "./summary"
@@ -600,6 +601,7 @@ export namespace SessionPrompt {
           ...(await SystemPrompt.skills()),
           ...SystemPrompt.selfModification(),
           ...SystemPrompt.projectMemory(),
+          ...SystemPrompt.goalFeature(),
         ],
         messages: [
           ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
@@ -615,7 +617,59 @@ export namespace SessionPrompt {
         tools,
         model,
       })
-      if (result === "stop") break
+      if (result === "stop") {
+        const activeGoal = await Goal.get(sessionID)
+        if (activeGoal) {
+          try {
+            const verdict = await Goal.evaluate({
+              sessionID,
+              condition: activeGoal.condition,
+              msgs: sessionMessages,
+              model,
+            })
+            if (verdict.ok) {
+              log.info("goal satisfied; allowing stop", { sessionID })
+              await Goal.clear(sessionID)
+              break
+            } else if (verdict.impossible) {
+              log.warn("goal impossible; allowing stop", { sessionID, reason: verdict.reason })
+              await Goal.clear(sessionID)
+              break
+            } else {
+              const count = await Goal.bumpReact(sessionID)
+              if (count > 12) {
+                log.warn("goal hit react cap; allowing stop", { sessionID })
+                await Goal.clear(sessionID)
+                break
+              }
+              
+              log.info("goal not satisfied; re-entering", { sessionID, attempt: count })
+              const messageID = Identifier.ascending("message")
+              await Session.updateMessage({
+                id: messageID,
+                sessionID,
+                role: "user",
+                time: { created: Date.now() },
+                agent: agent.name,
+                model: { providerID: model.providerID, modelID: model.id },
+              })
+              await Session.updatePart({
+                id: Identifier.ascending("part"),
+                messageID,
+                sessionID,
+                type: "text",
+                text: `Your goal is not yet satisfied: "${activeGoal.condition}".\n\nThe independent judge noted:\n${verdict.reason}\n\nKeep working toward the goal. Do not stop until it is genuinely met or impossible.`,
+                synthetic: true,
+              })
+              continue
+            }
+          } catch (err) {
+            log.warn("goal judge failed; allowing stop", { error: String(err) })
+            break
+          }
+        }
+        break
+      }
       if (ToolRegistry.consumePendingReload()) {
         await ToolRegistry.reload()
         continue
@@ -1369,6 +1423,51 @@ export namespace SessionPrompt {
       if ((extCmdInputResult as Extension.InputEventResult)?.action === "handled") return
       await extCmd.handler(input.arguments, ctx)
       return
+    }
+
+    if (input.command === Command.Default.GOAL) {
+      if (input.arguments.trim().length === 0) {
+        await Goal.clear(input.sessionID)
+        const messageID = Identifier.ascending("message")
+        await Session.updateMessage({
+          id: messageID,
+          sessionID: input.sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: input.agent ?? (await Agent.defaultAgent()),
+          model: { providerID: "system", modelID: "system" },
+        })
+        await Session.updatePart({
+          id: Identifier.ascending("part"),
+          messageID,
+          sessionID: input.sessionID,
+          type: "text",
+          text: "Goal cleared.",
+          synthetic: true,
+        })
+        return
+      } else {
+        const condition = input.arguments.trim()
+        await Goal.set(input.sessionID, condition)
+        const messageID = Identifier.ascending("message")
+        await Session.updateMessage({
+          id: messageID,
+          sessionID: input.sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: input.agent ?? (await Agent.defaultAgent()),
+          model: { providerID: "system", modelID: "system" },
+        })
+        await Session.updatePart({
+          id: Identifier.ascending("part"),
+          messageID,
+          sessionID: input.sessionID,
+          type: "text",
+          text: `Goal set: ${condition}`,
+          synthetic: true,
+        })
+        return
+      }
     }
 
     const command = await Command.get(input.command)
