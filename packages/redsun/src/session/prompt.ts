@@ -601,7 +601,7 @@ export namespace SessionPrompt {
           ...SystemPrompt.selfModification(),
         ],
         messages: [
-          ...MessageV2.toModelMessage(sessionMessages),
+          ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
           ...(isLastStep
             ? [
                 {
@@ -613,7 +613,6 @@ export namespace SessionPrompt {
         ],
         tools,
         model,
-        compactionCutoff,
       })
       if (result === "stop") break
       if (ToolRegistry.consumePendingReload()) {

@@ -13,6 +13,7 @@ import { ProviderTransform } from "@/provider/transform"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
 import { type SystemError } from "bun"
+import { Entry } from "../entry/entry"
 
 export namespace MessageV2 {
   export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
@@ -419,6 +420,50 @@ export namespace MessageV2 {
     parts: z.array(Part),
   })
   export type WithParts = z.infer<typeof WithParts>
+
+  function customMessageToModelMessage(entry: Entry.CustomMessageEntry): ModelMessage {
+    const text = typeof entry.content === "string"
+      ? entry.content
+      : entry.content.map((p) => p.text).join("\n")
+    const tagged = `[custom:${entry.customType}] ${text}`
+    return {
+      role: "user",
+      content: [{ type: "text", text: tagged }],
+    }
+  }
+
+  export async function toModelMessageWithCustom(
+    sessionID: string,
+    messages: WithParts[],
+    compactionCutoff?: number,
+  ): Promise<ModelMessage[]> {
+    const entries = await Entry.list(sessionID)
+    let customMessages = entries.filter((e): e is Entry.CustomMessageEntry => e.type === "custom_message")
+
+    if (compactionCutoff !== undefined) {
+      customMessages = customMessages.filter((e) => e.timestamp >= compactionCutoff)
+    }
+
+    const sortedCustom = [...customMessages].sort((a, b) => a.timestamp - b.timestamp)
+    const result: ModelMessage[] = []
+    let customIdx = 0
+
+    for (const msg of messages) {
+      while (customIdx < sortedCustom.length && sortedCustom[customIdx].timestamp <= msg.info.time.created) {
+        result.push(customMessageToModelMessage(sortedCustom[customIdx]))
+        customIdx++
+      }
+
+      result.push(...toModelMessage([msg]))
+    }
+
+    while (customIdx < sortedCustom.length) {
+      result.push(customMessageToModelMessage(sortedCustom[customIdx]))
+      customIdx++
+    }
+
+    return result
+  }
 
   export function toModelMessage(input: WithParts[]): ModelMessage[] {
     const result: UIMessage[] = []

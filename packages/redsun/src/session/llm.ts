@@ -13,8 +13,6 @@ import { Flag } from "@/flag/flag"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
-import { Entry } from "../entry/entry"
-import { Session } from "./index"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -32,7 +30,6 @@ export namespace LLM {
     small?: boolean
     tools: Record<string, Tool>
     retries?: number
-    compactionCutoff?: number
   }
 
   export type StreamOutput = StreamTextResult<ToolSet, unknown>
@@ -115,7 +112,7 @@ export namespace LLM {
 
     const tools = await resolveTools(input)
 
-    const messages = await injectCustomMessages(input.sessionID, input.messages, input.compactionCutoff)
+    const messages = input.messages
 
     const contextResult = await ExtensionRunner.emit(
       extRunner,
@@ -217,55 +214,4 @@ export namespace LLM {
     return ""
   }
 
-  async function injectCustomMessages(sessionID: string, messages: ModelMessage[], compactionCutoff?: number): Promise<ModelMessage[]> {
-    const entries = await Entry.list(sessionID)
-    let customMessages = entries.filter((e): e is Entry.CustomMessageEntry => e.type === "custom_message")
-    if (customMessages.length === 0) return messages
-
-    if (compactionCutoff !== undefined) {
-      customMessages = customMessages.filter((e) => e.timestamp >= compactionCutoff)
-    }
-    if (customMessages.length === 0) return messages
-
-    const sessionMsgs = await Session.messages({ sessionID })
-    const userMsgTimestamps = sessionMsgs
-      .filter((m) => m.info.role === "user")
-      .map((m) => m.info.time.created)
-
-    const sorted = [...customMessages].sort((a, b) => a.timestamp - b.timestamp)
-
-    const result: ModelMessage[] = []
-    let customIdx = 0
-    let userIdx = 0
-
-    for (const msg of messages) {
-      if (msg.role === "user" && userIdx < userMsgTimestamps.length) {
-        const ts = userMsgTimestamps[userIdx]
-        while (customIdx < sorted.length && sorted[customIdx].timestamp <= ts) {
-          result.push(customMessageToModelMessage(sorted[customIdx]))
-          customIdx++
-        }
-        userIdx++
-      }
-      result.push(msg)
-    }
-
-    while (customIdx < sorted.length) {
-      result.push(customMessageToModelMessage(sorted[customIdx]))
-      customIdx++
-    }
-
-    return result
-  }
-
-  function customMessageToModelMessage(entry: Entry.CustomMessageEntry): ModelMessage {
-    const text = typeof entry.content === "string"
-      ? entry.content
-      : entry.content.map((p) => p.text).join("\n")
-    const tagged = `[custom:${entry.customType}] ${text}`
-    return {
-      role: "user",
-      content: [{ type: "text", text: tagged }],
-    }
-  }
 }
