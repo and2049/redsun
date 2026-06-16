@@ -65,6 +65,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       formatter: FormatterStatus[]
       vcs: VcsInfo | undefined
       path: Path
+      trust: {
+        cwd: string
+        options: Array<{ label: string; trusted: boolean; sessionOnly: boolean }>
+      } | undefined
     }>({
       provider_next: {
         all: [],
@@ -90,12 +94,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       formatter: [],
       vcs: undefined,
       path: { state: "", config: "", worktree: "", directory: "" },
+      trust: undefined,
     })
 
     const sdk = useSDK()
 
     sdk.event.listen((e) => {
-      const event = e.details
+      const event = e.details as any
       switch (event.type) {
         case "permission.updated": {
           const permissions = store.permission[event.properties.sessionID]
@@ -249,6 +254,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         case "vcs.branch.updated": {
           setStore("vcs", { branch: event.properties.branch })
+          break
+        }
+
+        case "trust.prompt": {
+          setStore("trust", event.properties as any)
+          break
+        }
+
+        case "trust.resolved": {
+          setStore("trust", undefined)
           break
         }
       }

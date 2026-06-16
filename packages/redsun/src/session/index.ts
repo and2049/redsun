@@ -14,6 +14,11 @@ import { SessionPrompt } from "./prompt"
 import { fn } from "@/util/fn"
 import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
+import { ExtensionRunner } from "../extension/runner"
+import { ExtensionContext } from "../extension/context"
+import { ToolRegistry } from "../tool/registry"
+import type { Extension } from "../extension/types"
+import { Entry } from "../entry/entry"
 
 import type { Provider } from "@/provider/provider"
 
@@ -126,8 +131,26 @@ export namespace Session {
       messageID: Identifier.schema("message").optional(),
     }),
     async (input) => {
+      const runner = await ToolRegistry.getRunner()
+      const forkCtx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: input.sessionID,
+        agent: "",
+        projectTrusted: runner.projectTrusted,
+        getSystemPrompt: () => "",
+      })
+      const forkResult = await ExtensionRunner.emit(
+        runner,
+        { type: "session_before_fork", entryId: input.messageID ?? "", position: "at" } as Extension.SessionBeforeForkEvent,
+        forkCtx,
+      )
+      if ((forkResult as Extension.SessionBeforeForkResult)?.cancel) {
+        throw new Error("Session fork cancelled by extension")
+      }
+
       const session = await createNext({
         directory: Instance.directory,
+        reason: "fork",
       })
       const msgs = await messages({ sessionID: input.sessionID })
       for (const msg of msgs) {
@@ -157,7 +180,32 @@ export namespace Session {
     })
   })
 
-  export async function createNext(input: { id?: string; title?: string; parentID?: string; directory: string }) {
+  export async function createNext(input: {
+    id?: string
+    title?: string
+    parentID?: string
+    directory: string
+    reason?: "new" | "fork" | "resume" | "startup" | "reload"
+  }) {
+    if (input.reason === "new" || input.reason === "resume") {
+      const runner = await ToolRegistry.getRunner()
+      const ctx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: "",
+        agent: "",
+        projectTrusted: runner.projectTrusted,
+        getSystemPrompt: () => "",
+      })
+      const beforeResult = await ExtensionRunner.emit(
+        runner,
+        { type: "session_before_switch", reason: input.reason } as Extension.SessionBeforeSwitchEvent,
+        ctx,
+      )
+      if ((beforeResult as Extension.SessionBeforeSwitchResult)?.cancel) {
+        throw new Error("Session switch cancelled by extension")
+      }
+    }
+
     const result: Info = {
       id: Identifier.descending("session", input.id),
       version: Installation.VERSION,
@@ -178,6 +226,20 @@ export namespace Session {
     Bus.publish(Event.Updated, {
       info: result,
     })
+
+    const runner = await ToolRegistry.getRunner()
+    const ctx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: result.id,
+      agent: "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    await ExtensionRunner.emit(
+      runner,
+      { type: "session_start", reason: input.reason ?? "new" } as Extension.SessionStartEvent,
+      ctx,
+    )
     return result
   }
 
@@ -245,12 +307,27 @@ export namespace Session {
         await remove(child.id)
       }
 
+      const runner = await ToolRegistry.getRunner()
+      const ctx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID,
+        agent: "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(
+        runner,
+        { type: "session_shutdown", reason: "quit" } as Extension.SessionShutdownEvent,
+        ctx,
+      )
+
       for (const msg of await Storage.list(["message", sessionID])) {
         for (const part of await Storage.list(["part", msg.at(-1)!])) {
           await Storage.remove(part)
         }
         await Storage.remove(msg)
       }
+      await Entry.removeAll(sessionID)
       await Storage.remove(["session", project.id, sessionID])
       Bus.publish(Event.Deleted, {
         info: session,

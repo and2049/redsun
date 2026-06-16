@@ -4,19 +4,29 @@ import { Instance } from "@/project/instance"
 import z from "zod"
 
 export namespace SessionStatus {
+  export const ContextUsage = z.object({
+    tokens: z.number().nullable(),
+    contextWindow: z.number(),
+    percent: z.number().nullable(),
+  })
+  export type ContextUsage = z.infer<typeof ContextUsage>
+
   export const Info = z
     .union([
       z.object({
         type: z.literal("idle"),
+        contextUsage: ContextUsage.optional(),
       }),
       z.object({
         type: z.literal("retry"),
         attempt: z.number(),
         message: z.string(),
         next: z.number(),
+        contextUsage: ContextUsage.optional(),
       }),
       z.object({
         type: z.literal("busy"),
+        contextUsage: ContextUsage.optional(),
       }),
     ])
     .meta({

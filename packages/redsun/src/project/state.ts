@@ -62,4 +62,10 @@ export namespace State {
     disposalFinished = true
     log.info("state disposal completed", { key })
   }
+
+  export function reset(key: string, initFn: () => unknown): boolean {
+    const entries = recordsByKey.get(key)
+    if (!entries) return false
+    return entries.delete(initFn)
+  }
 }

@@ -51,6 +51,30 @@ export const Instance = {
   },
   async dispose() {
     Log.Default.info("disposing instance", { directory: Instance.directory })
+    try {
+      const [{ ToolRegistry }, { ExtensionRunner }, { ExtensionContext }, { SessionStatus }] = await Promise.all([
+        import("../tool/registry"),
+        import("../extension/runner"),
+        import("../extension/context"),
+        import("../session/status"),
+      ])
+      const runner = await ToolRegistry.getRunner()
+      const statuses = SessionStatus.list()
+      for (const [sessionID, status] of Object.entries(statuses)) {
+        if (status.type === "idle") continue
+        const ctx = ExtensionContext.forSession({
+          mode: "rpc",
+          sessionID,
+          agent: "",
+          projectTrusted: true,
+          getSystemPrompt: () => "",
+        })
+        await ExtensionRunner.emit(runner, { type: "session_shutdown", reason: "quit" }, ctx)
+      }
+    } catch (e) {
+      Log.Default.error("failed to emit session_shutdown on dispose", { error: e })
+    }
+    await new Promise((r) => setTimeout(r, 0))
     await State.dispose(Instance.directory)
     cache.delete(Instance.directory)
     GlobalBus.emit("event", {

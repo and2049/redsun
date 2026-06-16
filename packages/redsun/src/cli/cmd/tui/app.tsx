@@ -34,6 +34,7 @@ import { Provider } from "@/provider/provider"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
 import open from "open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
+import { iife } from "@/util/iife"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -266,6 +267,37 @@ function App() {
       },
     ),
   )
+
+  useKeyboard((evt) => {
+    const trust = sync.data.trust
+    if (trust) {
+      const response = iife(() => {
+        if (evt.ctrl || evt.meta) return
+        if (evt.name === "return") return { trusted: trust.options[0]?.trusted ?? true, remember: true }
+        if (evt.name === "a") return { trusted: true, remember: true }
+        if (evt.name === "t") return { trusted: true, remember: false }
+        if (evt.name === "d") return { trusted: false, remember: false }
+        if (evt.name === "escape") return { trusted: false, remember: false }
+        return
+      })
+      if (response) {
+        fetch(`${sdk.url}/trust`, {
+          method: "POST",
+          body: JSON.stringify({
+            cwd: trust.cwd,
+            trusted: response.trusted,
+            remember: response.remember,
+          }),
+          headers: { "Content-Type": "application/json" },
+        }).then(() => {
+          sdk.client.instance.dispose().then(() => {
+            sync.bootstrap()
+          })
+        })
+      }
+      return
+    }
+  })
 
   const connected = useConnected()
   command.register(() => [
@@ -571,6 +603,40 @@ function App() {
         }
       }}
     >
+      <Show when={sync.data.trust}>
+        {(() => {
+          const trust = sync.data.trust!
+          return (
+            <box
+              border={["left"] as any}
+              paddingTop={1}
+              paddingBottom={1}
+              paddingLeft={2}
+              gap={1}
+              backgroundColor={theme.backgroundPanel}
+              borderColor={theme.warning}
+              flexShrink={0}
+            >
+              <text fg={theme.text}>Trust project folder?</text>
+              <text fg={theme.textMuted}>{trust.cwd}</text>
+              <text fg={theme.textMuted}>This allows redsun to load .redsun settings and extensions.</text>
+              <box flexDirection="row" gap={2}>
+                {trust.options.map((opt, i) => {
+                  const label = i === 0 ? "enter" : i === 1 ? "a" : i === 2 ? "t" : i === 3 ? "d" : ""
+                  return (
+                    <box flexDirection="row" gap={0.25}>
+                      <text fg={theme.text}>
+                        <b>{label}</b>
+                      </text>
+                      <text fg={theme.textMuted}>{opt.label}</text>
+                    </box>
+                  )
+                })}
+              </box>
+            </box>
+          )
+        })()}
+      </Show>
       <Switch>
         <Match when={route.data.type === "home"}>
           <Home />

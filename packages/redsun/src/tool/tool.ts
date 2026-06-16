@@ -22,6 +22,8 @@ export namespace Tool {
   }
   export interface Info<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
     id: string
+    promptSnippet?: string
+    promptGuidelines?: string[]
     init: (ctx?: InitContext) => Promise<{
       description: string
       parameters: Parameters

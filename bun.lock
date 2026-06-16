@@ -5,7 +5,6 @@
     "": {
       "name": "redsun",
       "dependencies": {
-        "@redsun/plugin": "workspace:*",
         "@redsun/script": "workspace:*",
         "@redsun/sdk": "workspace:*",
         "typescript": "catalog:",
@@ -13,20 +12,6 @@
       "devDependencies": {
         "prettier": "3.6.2",
         "turbo": "2.5.6",
-      },
-    },
-    "packages/plugin": {
-      "name": "@redsun/plugin",
-      "version": "1.0.205",
-      "dependencies": {
-        "@redsun/sdk": "workspace:*",
-        "zod": "catalog:",
-      },
-      "devDependencies": {
-        "@tsconfig/node22": "catalog:",
-        "@types/node": "catalog:",
-        "@typescript/native-preview": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/redsun": {
@@ -70,7 +55,6 @@
         "@opentui/solid": "0.1.63",
         "@parcel/watcher": "2.5.1",
         "@pierre/diffs": "catalog:",
-        "@redsun/plugin": "workspace:*",
         "@redsun/script": "workspace:*",
         "@redsun/sdk": "workspace:*",
         "@redsun/util": "workspace:*",
@@ -505,8 +489,6 @@
     "@parcel/watcher-win32-x64": ["@parcel/watcher-win32-x64@2.5.1", "", { "os": "win32", "cpu": "x64" }, "sha512-9lHBdJITeNR++EvSQVUcaZoWupyHfXe1jZvGZ06O/5MflPcuPLtEphScIBL+AiCWBO46tDSHzWyD0uDmmZqsgA=="],
 
     "@pierre/diffs": ["@pierre/diffs@1.0.2", "", { "dependencies": { "@shikijs/core": "^3.0.0", "@shikijs/engine-javascript": "3.19.0", "@shikijs/transformers": "3.19.0", "diff": "8.0.2", "hast-util-to-html": "9.0.5", "lru_map": "0.4.1", "shiki": "3.19.0" }, "peerDependencies": { "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0" } }, "sha512-RkFSDD5X/U+8QjyilPViYGJfmJNWXR17zTL8zw48+DcVC1Ujbh6I1edyuRnFfgRzpft05x2DSCkz2cjoIAxPvQ=="],
-
-    "@redsun/plugin": ["@redsun/plugin@workspace:packages/plugin"],
 
     "@redsun/script": ["@redsun/script@workspace:packages/script"],
 

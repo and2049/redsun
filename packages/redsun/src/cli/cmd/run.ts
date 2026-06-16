@@ -11,6 +11,7 @@ import { createOpencodeClient, type OpencodeClient } from "@redsun/sdk/v2"
 import { Server } from "../../server/server"
 import { Provider } from "../../provider/provider"
 import { Agent } from "../../agent/agent"
+import { TrustFlag } from "../../tool/registry"
 
 const TOOL: Record<string, [string, string]> = {
   todowrite: ["Todo", UI.Style.TEXT_WARNING_BOLD],
@@ -83,6 +84,14 @@ export const RunCommand = cmd({
       .option("port", {
         type: "number",
         describe: "port for the local server (defaults to random port if no value provided)",
+      })
+      .option("trust", {
+        type: "boolean",
+        describe: "trust the project directory without prompting",
+      })
+      .option("no-trust", {
+        type: "boolean",
+        describe: "do not trust the project directory",
       })
   },
   handler: async (args) => {
@@ -294,6 +303,9 @@ export const RunCommand = cmd({
 
       return await execute(sdk, sessionID)
     }
+
+    if (args.trust === true) TrustFlag.set(true)
+    else if (args["no-trust"] === true) TrustFlag.set(false)
 
     await bootstrap(process.cwd(), async () => {
       const server = Server.listen({ port: args.port ?? 0, hostname: "127.0.0.1" })

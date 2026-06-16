@@ -8,11 +8,10 @@ import path from "path"
 import os from "os"
 import { Config } from "../../config/config"
 import { Global } from "../../global"
-import { Plugin } from "../../plugin"
 import { Instance } from "../../project/instance"
-import type { Hooks } from "@redsun/plugin"
 
-type PluginAuth = NonNullable<Hooks["auth"]>
+// TODO: Replace with Extension auth provider registration when implemented.
+type PluginAuth = any
 
 /**
  * Handle plugin-based authentication flow.
@@ -24,14 +23,14 @@ async function handlePluginAuth(plugin: { auth: PluginAuth }, provider: string):
     const method = await prompts.select({
       message: "Login method",
       options: [
-        ...plugin.auth.methods.map((x, index) => ({
+        ...plugin.auth.methods.map((x: any, index: number) => ({
           label: x.label,
           value: index.toString(),
         })),
       ],
     })
     if (prompts.isCancel(method)) throw new UI.CancelledError()
-    index = parseInt(method)
+    index = parseInt(method as string)
   }
   const method = plugin.auth.methods[index]
 
@@ -49,7 +48,7 @@ async function handlePluginAuth(plugin: { auth: PluginAuth }, provider: string):
           options: prompt.options,
         })
         if (prompts.isCancel(value)) throw new UI.CancelledError()
-        inputs[prompt.key] = value
+        inputs[prompt.key] = value as string
       } else {
         const value = await prompts.text({
           message: prompt.message,
@@ -57,7 +56,7 @@ async function handlePluginAuth(plugin: { auth: PluginAuth }, provider: string):
           validate: prompt.validate ? (v) => prompt.validate!(v ?? "") : undefined,
         })
         if (prompts.isCancel(value)) throw new UI.CancelledError()
-        inputs[prompt.key] = value
+        inputs[prompt.key] = value as string
       }
     }
   }
@@ -306,7 +305,8 @@ export const AuthLoginCommand = cmd({
 
         if (prompts.isCancel(provider)) throw new UI.CancelledError()
 
-        const plugin = await Plugin.list().then((x) => x.find((x) => x.auth?.provider === provider))
+        // TODO: Check Extension-registered auth providers when implemented.
+        const plugin = undefined as any
         if (plugin && plugin.auth) {
           const handled = await handlePluginAuth({ auth: plugin.auth }, provider)
           if (handled) return
@@ -321,8 +321,8 @@ export const AuthLoginCommand = cmd({
           provider = provider.replace(/^@ai-sdk\//, "")
           if (prompts.isCancel(provider)) throw new UI.CancelledError()
 
-          // Check if a plugin provides auth for this custom provider
-          const customPlugin = await Plugin.list().then((x) => x.find((x) => x.auth?.provider === provider))
+          // TODO: Check if an Extension provides auth for this custom provider when implemented.
+          const customPlugin = undefined as any
           if (customPlugin && customPlugin.auth) {
             const handled = await handlePluginAuth({ auth: customPlugin.auth }, provider)
             if (handled) return

@@ -2,10 +2,12 @@ import { Ripgrep } from "../file/ripgrep"
 import { Global } from "../global"
 import { Filesystem } from "../util/filesystem"
 import { Config } from "../config/config"
+import { Skill } from "../skill"
 
 import { Instance } from "../project/instance"
 import path from "path"
 import os from "os"
+import { fileURLToPath } from "bun"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
 import PROMPT_ANTHROPIC_WITHOUT_TODO from "./prompt/qwen.txt"
@@ -65,6 +67,31 @@ export namespace SystemPrompt {
     path.join(Global.Path.config, "AGENTS.md"),
     path.join(os.homedir(), ".claude", "CLAUDE.md"),
   ]
+
+  export async function skills() {
+    return Skill.formatForPrompt()
+  }
+
+  const _docsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs")
+
+  export function selfModification() {
+    return [
+      [
+        `<self_modification>`,
+        `You can extend redsun by creating extensions, skills, or prompt templates.`,
+        `Documentation files are available at:`,
+        `- Extensions: ${path.join(_docsDir, "extensions.md")}`,
+        `- Skills: ${path.join(_docsDir, "skills.md")}`,
+        `- Prompt templates: ${path.join(_docsDir, "prompt-templates.md")}`,
+        `Read the appropriate documentation when you need to:`,
+        `- Create a new extension (custom tool, command, or event handler)`,
+        `- Create a new skill (specialized knowledge/workflow for the agent)`,
+        `- Create a new prompt template (reusable prompt with argument substitution)`,
+        `After writing extension files to disk, use the reload tool to pick up the changes.`,
+        `</self_modification>`,
+      ].join("\n"),
+    ]
+  }
 
   export async function custom() {
     const config = await Config.get()
