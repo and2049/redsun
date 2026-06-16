@@ -42,6 +42,7 @@ export namespace Command {
   export const Default = {
     INIT: "init",
     REVIEW: "review",
+    GOAL: "goal",
   } as const
 
   const state = Instance.state(async () => {

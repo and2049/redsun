@@ -105,6 +105,18 @@ export namespace SystemPrompt {
     ]
   }
 
+  export function goalFeature() {
+    return [
+      [
+        `<goal_feature>`,
+        `You can use the \`/goal <condition>\` command to set a persistent stop-condition for your session.`,
+        `When a goal is active, you will not be allowed to exit the session until an independent judge model evaluates the transcript and confirms the condition is met.`,
+        `This is extremely useful for complex tasks to prevent you from stopping prematurely.`,
+        `</goal_feature>`,
+      ].join("\n"),
+    ]
+  }
+
   export async function custom() {
     const config = await Config.get()
     const paths = new Set<string>()
