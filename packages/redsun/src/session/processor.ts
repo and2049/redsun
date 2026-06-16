@@ -9,7 +9,6 @@ import { SessionSummary } from "./summary"
 import { Bus } from "@/bus"
 import { SessionRetry } from "./retry"
 import { SessionStatus } from "./status"
-import { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
 import { LLM } from "./llm"
 import { Config } from "@/config/config"
@@ -250,6 +249,15 @@ export namespace SessionProcessor {
                   input.assistantMessage.finish = value.finishReason
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
+                  const contextWindow = input.model.limit.context
+                  SessionStatus.set(input.sessionID, {
+                    type: "busy",
+                    contextUsage: {
+                      tokens: usage.tokens.input + usage.tokens.output + usage.tokens.reasoning,
+                      contextWindow,
+                      percent: contextWindow > 0 ? ((usage.tokens.input + usage.tokens.output + usage.tokens.reasoning) / contextWindow) * 100 : null,
+                    },
+                  })
                   await Session.updatePart({
                     id: Identifier.ascending("part"),
                     reason: value.finishReason,
@@ -310,16 +318,6 @@ export namespace SessionProcessor {
                 case "text-end":
                   if (currentText) {
                     currentText.text = currentText.text.trimEnd()
-                    const textOutput = await Plugin.trigger(
-                      "experimental.text.complete",
-                      {
-                        sessionID: input.sessionID,
-                        messageID: input.assistantMessage.id,
-                        partID: currentText.id,
-                      },
-                      { text: currentText.text },
-                    )
-                    currentText.text = textOutput.text
                     currentText.time = {
                       start: Date.now(),
                       end: Date.now(),

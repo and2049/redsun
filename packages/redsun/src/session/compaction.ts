@@ -12,8 +12,11 @@ import { Log } from "../util/log"
 import { SessionProcessor } from "./processor"
 import { fn } from "@/util/fn"
 import { Agent } from "@/agent/agent"
-import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
+import { ToolRegistry } from "../tool/registry"
+import { ExtensionRunner } from "../extension/runner"
+import { ExtensionContext } from "../extension/context"
+import type { Extension } from "../extension/types"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -95,7 +98,28 @@ export namespace SessionCompaction {
     sessionID: string
     abort: AbortSignal
     auto: boolean
+    fromExtension?: boolean
   }) {
+    // Emit session_before_compact for extensions to cancel or customize
+    const runner = await ToolRegistry.getRunner()
+    const compactCtx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: "compaction",
+      projectTrusted: runner.projectTrusted,
+      getSystemPrompt: () => "",
+      signal: input.abort,
+    })
+    const beforeResult = await ExtensionRunner.emit(
+      runner,
+      { type: "session_before_compact", sessionID: input.sessionID, signal: input.abort } as Extension.SessionBeforeCompactEvent,
+      compactCtx,
+    )
+    if ((beforeResult as Extension.SessionBeforeCompactResult)?.cancel) {
+      log.info("compaction cancelled by extension")
+      return "cancelled"
+    }
+
     const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)!.info as MessageV2.User
     const agent = await Agent.get("compaction")
     const model = agent.model
@@ -132,15 +156,9 @@ export namespace SessionCompaction {
       model,
       abort: input.abort,
     })
-    // Allow plugins to inject context or replace compaction prompt
-    const compacting = await Plugin.trigger(
-      "experimental.session.compacting",
-      { sessionID: input.sessionID },
-      { context: [], prompt: undefined },
-    )
     const defaultPrompt =
       "Provide a detailed prompt for continuing our conversation above. Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next considering new session will not have access to our conversation."
-    const promptText = compacting.prompt ?? [defaultPrompt, ...compacting.context].join("\n\n")
+    const promptText = defaultPrompt
     const result = await processor.process({
       user: userMessage,
       agent,
@@ -189,6 +207,11 @@ export namespace SessionCompaction {
     }
     if (processor.message.error) return "stop"
     Bus.publish(Event.Compacted, { sessionID: input.sessionID })
+    await ExtensionRunner.emit(
+      runner,
+      { type: "session_compact", sessionID: input.sessionID, fromExtension: input.fromExtension ?? false } as Extension.SessionCompactEvent,
+      compactCtx,
+    )
     return "continue"
   }
 
@@ -201,6 +224,7 @@ export namespace SessionCompaction {
         modelID: z.string(),
       }),
       auto: z.boolean(),
+      fromExtension: z.boolean().optional(),
     }),
     async (input) => {
       const msg = await Session.updateMessage({
@@ -219,6 +243,7 @@ export namespace SessionCompaction {
         sessionID: msg.sessionID,
         type: "compaction",
         auto: input.auto,
+        fromExtension: input.fromExtension ?? false,
       })
     },
   )

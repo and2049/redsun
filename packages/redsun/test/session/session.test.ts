@@ -4,6 +4,9 @@ import { Session } from "../../src/session"
 import { Bus } from "../../src/bus"
 import { Log } from "../../src/util/log"
 import { Instance } from "../../src/project/instance"
+import { ToolRegistry } from "../../src/tool/registry"
+import { ExtensionRunner } from "../../src/extension/runner"
+import type { Extension } from "../../src/extension/types"
 
 const projectRoot = path.join(__dirname, "../..")
 Log.init({ print: false })
@@ -64,6 +67,27 @@ describe("session.started event", () => {
         expect(events).toContain("updated")
         expect(events.indexOf("started")).toBeLessThan(events.indexOf("updated"))
 
+        await Session.remove(session.id)
+      },
+    })
+  })
+})
+
+describe("session fork cancel", () => {
+  test("session_before_fork cancel blocks fork", async () => {
+    await Instance.provide({
+      directory: projectRoot,
+      fn: async () => {
+        await ToolRegistry.state()
+        const runner = await ToolRegistry.getRunner()
+        ExtensionRunner.on<Extension.SessionBeforeForkEvent>(runner, "session_before_fork", () => ({
+          cancel: true,
+        }))
+
+        const session = await Session.create({})
+        await expect(Session.fork({ sessionID: session.id })).rejects.toThrow(
+          "Session fork cancelled by extension",
+        )
         await Session.remove(session.id)
       },
     })

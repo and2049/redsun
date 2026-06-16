@@ -1,20 +1,16 @@
 import { Instance } from "@/project/instance"
-import { Plugin } from "../plugin"
-import { map, filter, pipe, fromEntries, mapValues } from "remeda"
+import { mapValues } from "remeda"
 import z from "zod"
 import { fn } from "@/util/fn"
-import type { AuthOuathResult, Hooks } from "@redsun/plugin"
 import { NamedError } from "@redsun/util/error"
 import { Auth } from "@/auth"
 
+// TODO: Replace Plugin auth providers with Extension auth provider registration.
+type AuthOuathResult = any
+
 export namespace ProviderAuth {
   const state = Instance.state(async () => {
-    const methods = pipe(
-      await Plugin.list(),
-      filter((x) => x.auth?.provider !== undefined),
-      map((x) => [x.auth!.provider, x.auth!] as const),
-      fromEntries(),
-    )
+    const methods: Record<string, any> = {}
     return { methods, pending: {} as Record<string, AuthOuathResult> }
   })
 
@@ -30,9 +26,9 @@ export namespace ProviderAuth {
 
   export async function methods() {
     const s = await state().then((x) => x.methods)
-    return mapValues(s, (x) =>
+    return mapValues(s, (x: any) =>
       x.methods.map(
-        (y): Method => ({
+        (y: any): Method => ({
           type: y.type,
           label: y.label,
         }),
@@ -57,7 +53,7 @@ export namespace ProviderAuth {
       method: z.number(),
     }),
     async (input): Promise<Authorization | undefined> => {
-      const auth = await state().then((s) => s.methods[input.providerID])
+      const auth = await state().then((s) => s.methods[input.providerID] as any)
       const method = auth.methods[input.method]
       if (method.type === "oauth") {
         const result = await method.authorize()

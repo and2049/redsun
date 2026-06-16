@@ -21,9 +21,9 @@ test("loads JSON config file", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           model: "test/model",
           username: "testuser",
         }),
@@ -44,10 +44,10 @@ test("loads JSONC config file", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.jsonc"),
+        path.join(dir, "redsun.jsonc"),
         `{
         // This is a comment
-        "$schema": "https://opencode.ai/config.json",
+        "$schema": "https://redsun.sh/config.json",
         "model": "test/model",
         "username": "testuser"
       }`,
@@ -68,17 +68,17 @@ test("merges multiple config files with correct precedence", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.jsonc"),
+        path.join(dir, "redsun.jsonc"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           model: "base",
           username: "base",
         }),
       )
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           model: "override",
         }),
       )
@@ -102,9 +102,9 @@ test("handles environment variable substitution", async () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
         await Bun.write(
-          path.join(dir, "opencode.json"),
+          path.join(dir, "redsun.json"),
           JSON.stringify({
-            $schema: "https://opencode.ai/config.json",
+            $schema: "https://redsun.sh/config.json",
             theme: "{env:TEST_VAR}",
           }),
         )
@@ -131,9 +131,9 @@ test("handles file inclusion substitution", async () => {
     init: async (dir) => {
       await Bun.write(path.join(dir, "included.txt"), "test_theme")
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           theme: "{file:included.txt}",
         }),
       )
@@ -152,9 +152,9 @@ test("validates config schema and throws on invalid fields", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           invalid_field: "should cause error",
         }),
       )
@@ -172,7 +172,7 @@ test("validates config schema and throws on invalid fields", async () => {
 test("throws error for invalid JSON", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(dir, "opencode.json"), "{ invalid json }")
+      await Bun.write(path.join(dir, "redsun.json"), "{ invalid json }")
     },
   })
   await Instance.provide({
@@ -187,9 +187,9 @@ test("handles agent configuration", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           agent: {
             test_agent: {
               model: "test/model",
@@ -218,9 +218,9 @@ test("handles command configuration", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           command: {
             test_command: {
               template: "test template",
@@ -249,9 +249,9 @@ test("migrates mode field to agent field", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           mode: {
             test_mode: {
               model: "test/model",
@@ -358,31 +358,25 @@ test("resolves scoped npm plugins in config", async () => {
       await Bun.write(path.join(pluginDir, "index.js"), "export default {}\n")
 
       await Bun.write(
-        path.join(dir, "opencode.json"),
-        JSON.stringify({ $schema: "https://opencode.ai/config.json", plugin: ["@scope/plugin"] }, null, 2),
+        path.join(dir, "redsun.json"),
+        JSON.stringify({ $schema: "https://redsun.sh/config.json", extension: ["./node_modules/@scope/plugin/index.js"] }, null, 2),
       )
     },
   })
 
-  await Instance.provide({
+    await Instance.provide({
     directory: tmp.path,
     fn: async () => {
       const config = await Config.get()
-      const pluginEntries = config.plugin ?? []
+      const extensionEntries = config.extension ?? []
 
-      const baseUrl = pathToFileURL(path.join(tmp.path, "opencode.json")).href
-      const expected = import.meta.resolve("@scope/plugin", baseUrl)
-
-      expect(pluginEntries.includes(expected)).toBe(true)
-
-      const scopedEntry = pluginEntries.find((entry) => entry === expected)
-      expect(scopedEntry).toBeDefined()
-      expect(scopedEntry?.includes("/node_modules/@scope/plugin/")).toBe(true)
+      expect(extensionEntries.length).toBe(1)
+      expect(extensionEntries[0]).toContain("/node_modules/@scope/plugin/")
     },
   })
 })
 
-test("merges plugin arrays from global and local configs", async () => {
+test("merges extension arrays from global and local configs", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       // Create a nested project structure with local .redsun config
@@ -390,21 +384,21 @@ test("merges plugin arrays from global and local configs", async () => {
       const opencodeDir = path.join(projectDir, ".redsun")
       await fs.mkdir(opencodeDir, { recursive: true })
 
-      // Global config with plugins
+      // Global config with extensions
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
-          plugin: ["global-plugin-1", "global-plugin-2"],
+          $schema: "https://redsun.sh/config.json",
+          extension: ["global-plugin-1", "global-plugin-2"],
         }),
       )
 
-      // Local .redsun config with different plugins
+      // Local .redsun config with different extensions
       await Bun.write(
-        path.join(opencodeDir, "opencode.json"),
+        path.join(opencodeDir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
-          plugin: ["local-plugin-1"],
+          $schema: "https://redsun.sh/config.json",
+          extension: ["local-plugin-1"],
         }),
       )
     },
@@ -414,16 +408,18 @@ test("merges plugin arrays from global and local configs", async () => {
     directory: path.join(tmp.path, "project"),
     fn: async () => {
       const config = await Config.get()
-      const plugins = config.plugin ?? []
+      const extensions = config.extension ?? []
 
-      // Should contain both global and local plugins
-      expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("global-plugin-2"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
+      // Should contain both global and local extensions
+      expect(extensions.some((p: string) => p.includes("global-plugin-1"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("global-plugin-2"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("local-plugin-1"))).toBe(true)
 
-      // Should have all 3 plugins (not replaced, but merged)
-      const pluginNames = plugins.filter((p) => p.includes("global-plugin") || p.includes("local-plugin"))
-      expect(pluginNames.length).toBeGreaterThanOrEqual(3)
+      // Should have all 3 extensions (not replaced, but merged)
+      const extensionNames = extensions.filter(
+        (p: string) => p.includes("global-plugin") || p.includes("local-plugin"),
+      )
+      expect(extensionNames.length).toBeGreaterThanOrEqual(3)
     },
   })
 })
@@ -460,7 +456,7 @@ Helper subagent prompt`,
   })
 })
 
-test("deduplicates duplicate plugins from global and local configs", async () => {
+test("deduplicates duplicate extensions from global and local configs", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       // Create a nested project structure with local .redsun config
@@ -468,21 +464,21 @@ test("deduplicates duplicate plugins from global and local configs", async () =>
       const opencodeDir = path.join(projectDir, ".redsun")
       await fs.mkdir(opencodeDir, { recursive: true })
 
-      // Global config with plugins
+      // Global config with extensions
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
-          plugin: ["duplicate-plugin", "global-plugin-1"],
+          $schema: "https://redsun.sh/config.json",
+          extension: ["duplicate-plugin", "global-plugin-1"],
         }),
       )
 
-      // Local .redsun config with some overlapping plugins
+      // Local .redsun config with some overlapping extensions
       await Bun.write(
-        path.join(opencodeDir, "opencode.json"),
+        path.join(opencodeDir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
-          plugin: ["duplicate-plugin", "local-plugin-1"],
+          $schema: "https://redsun.sh/config.json",
+          extension: ["duplicate-plugin", "local-plugin-1"],
         }),
       )
     },
@@ -492,22 +488,22 @@ test("deduplicates duplicate plugins from global and local configs", async () =>
     directory: path.join(tmp.path, "project"),
     fn: async () => {
       const config = await Config.get()
-      const plugins = config.plugin ?? []
+      const extensions = config.extension ?? []
 
-      // Should contain all unique plugins
-      expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("duplicate-plugin"))).toBe(true)
+      // Should contain all unique extensions
+      expect(extensions.some((p: string) => p.includes("global-plugin-1"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("local-plugin-1"))).toBe(true)
+      expect(extensions.some((p: string) => p.includes("duplicate-plugin"))).toBe(true)
 
-      // Should deduplicate the duplicate plugin
-      const duplicatePlugins = plugins.filter((p) => p.includes("duplicate-plugin"))
-      expect(duplicatePlugins.length).toBe(1)
+      // Should deduplicate the duplicate extension
+      const duplicateExtensions = extensions.filter((p: string) => p.includes("duplicate-plugin"))
+      expect(duplicateExtensions.length).toBe(1)
 
-      // Should have exactly 3 unique plugins
-      const pluginNames = plugins.filter(
-        (p) => p.includes("global-plugin") || p.includes("local-plugin") || p.includes("duplicate-plugin"),
+      // Should have exactly 3 unique extensions
+      const extensionNames = extensions.filter(
+        (p: string) => p.includes("global-plugin") || p.includes("local-plugin") || p.includes("duplicate-plugin"),
       )
-      expect(pluginNames.length).toBe(3)
+      expect(extensionNames.length).toBe(3)
     },
   })
 })
@@ -516,9 +512,9 @@ test("compaction config defaults to true when not specified", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
         }),
       )
     },
@@ -537,9 +533,9 @@ test("compaction config can disable auto compaction", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           compaction: {
             auto: false,
           },
@@ -561,9 +557,9 @@ test("compaction config can disable prune", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           compaction: {
             prune: false,
           },
@@ -585,9 +581,9 @@ test("compaction config can disable both auto and prune", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(
-        path.join(dir, "opencode.json"),
+        path.join(dir, "redsun.json"),
         JSON.stringify({
-          $schema: "https://opencode.ai/config.json",
+          $schema: "https://redsun.sh/config.json",
           compaction: {
             auto: false,
             prune: false,

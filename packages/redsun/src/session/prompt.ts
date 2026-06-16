@@ -15,7 +15,6 @@ import { Instance } from "../project/instance"
 import { Bus } from "../bus"
 import { ProviderTransform } from "../provider/transform"
 import { SystemPrompt } from "./system"
-import { Plugin } from "../plugin"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
@@ -43,6 +42,12 @@ import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { iife } from "@/util/iife"
 import { Shell } from "@/shell/shell"
+import { ExtensionWrapper } from "../extension/wrapper"
+import { ExtensionContext } from "../extension/context"
+import { ExtensionRunner } from "../extension/runner"
+import type { Extension } from "../extension/types"
+import { PromptTemplate } from "../prompt/template"
+import { Entry } from "../entry/entry"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -141,6 +146,33 @@ export namespace SessionPrompt {
     const session = await Session.get(input.sessionID)
     await SessionRevert.cleanup(session)
 
+    const text = input.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { type: "text"; text: string }).text)
+      .join("\n")
+    const runner = await ToolRegistry.getRunner()
+    const ctx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent ?? "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    const inputResult = await ExtensionRunner.emit(runner, { type: "input", text } as Extension.InputEvent, ctx)
+    const inputEventResult = inputResult as Extension.InputEventResult | undefined
+    if (inputEventResult?.action === "transform" && inputEventResult.text !== undefined) {
+      const transformedParts = [{ type: "text" as const, text: inputEventResult.text }]
+      const message = await createUserMessage({ ...input, parts: transformedParts })
+      await Session.touch(input.sessionID)
+      if (input.noReply === true) return message
+      return loop(input.sessionID)
+    }
+    if (inputEventResult?.action === "handled") {
+      const message = await createUserMessage(input)
+      await Session.touch(input.sessionID)
+      return message
+    }
+
     const message = await createUserMessage(input)
     await Session.touch(input.sessionID)
 
@@ -150,6 +182,24 @@ export namespace SessionPrompt {
 
     return loop(input.sessionID)
   })
+
+  export async function sendMessage(sessionID: string, content: string) {
+    await Entry.append(sessionID, {
+      type: "custom_message",
+      customType: "extension.message",
+      content,
+      display: true,
+    })
+    log.info("sendMessage", { sessionID })
+  }
+
+  export async function sendUserMessage(sessionID: string, content: string) {
+    return prompt({
+      sessionID: sessionID as any,
+      agent: "extension",
+      parts: [{ type: "text", text: content }],
+    })
+  }
 
   export async function resolvePromptParts(template: string): Promise<PromptInput["parts"]> {
     const parts: PromptInput["parts"] = [
@@ -222,8 +272,9 @@ export namespace SessionPrompt {
     for (const item of match.callbacks) {
       item.reject()
     }
+    const previousStatus = SessionStatus.get(sessionID)
     delete s[sessionID]
-    SessionStatus.set(sessionID, { type: "idle" })
+    SessionStatus.set(sessionID, { type: "idle", contextUsage: previousStatus.contextUsage })
     return
   }
 
@@ -240,6 +291,7 @@ export namespace SessionPrompt {
 
     let step = 0
     while (true) {
+      const loopRunner = await ToolRegistry.getRunner()
       SessionStatus.set(sessionID, { type: "busy" })
       log.info("loop", { step, sessionID })
       if (abort.aborted) break
@@ -273,6 +325,17 @@ export namespace SessionPrompt {
       }
 
       step++
+      const turnCtx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID,
+        agent: lastUser?.agent ?? "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(loopRunner, { type: "turn_start", turnIndex: step }, turnCtx)
+      await using _turnCleanup = defer(async () => {
+        await ExtensionRunner.emit(loopRunner, { type: "turn_end", turnIndex: step }, turnCtx)
+      })
       if (step === 1)
         ensureTitle({
           session: await Session.get(sessionID),
@@ -339,22 +402,27 @@ export namespace SessionPrompt {
           subagent_type: task.agent,
           command: task.command,
         }
-        await Plugin.trigger(
-          "tool.execute.before",
-          {
-            tool: "task",
-            sessionID,
-            callID: part.id,
-          },
-          { args: taskArgs },
-        )
         let executionError: Error | undefined
-        const result = await taskTool
+        const subtaskWrapped = ExtensionWrapper.wrapExecute(
+          { id: TaskTool.id, init: async () => taskTool } as unknown as ExtensionWrapper.ResolvedTool,
+          loopRunner,
+          { path: "", scope: "builtin" },
+          () =>
+            ExtensionContext.forSession({
+              mode: "rpc",
+              sessionID,
+              agent: task.agent,
+              projectTrusted: true,
+              getSystemPrompt: () => "",
+            }),
+        )
+        const result = await subtaskWrapped
           .execute(taskArgs, {
             agent: task.agent,
             messageID: assistantMessage.id,
             sessionID: sessionID,
             abort,
+            callID: part.callID,
             async metadata(input) {
               await Session.updatePart({
                 ...part,
@@ -371,15 +439,6 @@ export namespace SessionPrompt {
             log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
             return undefined
           })
-        await Plugin.trigger(
-          "tool.execute.after",
-          {
-            tool: "task",
-            sessionID,
-            callID: part.id,
-          },
-          result,
-        )
         assistantMessage.finish = "tool-calls"
         assistantMessage.time.completed = Date.now()
         await Session.updateMessage(assistantMessage)
@@ -392,7 +451,7 @@ export namespace SessionPrompt {
               title: result.title,
               metadata: result.metadata,
               output: result.output,
-              attachments: result.attachments,
+              attachments: result.attachments as MessageV2.FilePart[] | undefined,
               time: {
                 ...part.state.time,
                 end: Date.now(),
@@ -450,8 +509,10 @@ export namespace SessionPrompt {
           abort,
           sessionID,
           auto: task.auto,
+          fromExtension: task.fromExtension ?? false,
         })
         if (result === "stop") break
+        if (result === "cancelled") continue
         continue
       }
 
@@ -524,17 +585,23 @@ export namespace SessionPrompt {
       }
 
       const sessionMessages = clone(msgs)
-
-      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: sessionMessages })
+      const compactionCutoff = sessionMessages.find(
+        (m) => m.info.role === "user" && m.parts.some((p) => p.type === "compaction"),
+      )?.info.time.created
 
       const result = await processor.process({
         user: lastUser,
         agent,
         abort,
         sessionID,
-        system: [...(await SystemPrompt.environment()), ...(await SystemPrompt.custom())],
+        system: [
+          ...(await SystemPrompt.environment()),
+          ...(await SystemPrompt.custom()),
+          ...(await SystemPrompt.skills()),
+          ...SystemPrompt.selfModification(),
+        ],
         messages: [
-          ...MessageV2.toModelMessage(sessionMessages),
+          ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
           ...(isLastStep
             ? [
                 {
@@ -548,6 +615,10 @@ export namespace SessionPrompt {
         model,
       })
       if (result === "stop") break
+      if (ToolRegistry.consumePendingReload()) {
+        await ToolRegistry.reload()
+        continue
+      }
       continue
     }
     SessionCompaction.prune({ sessionID })
@@ -583,26 +654,31 @@ export namespace SessionPrompt {
       mergeDeep(await ToolRegistry.enabled(input.agent)),
       mergeDeep(input.tools ?? {}),
     )
+    const runner = await ToolRegistry.getRunner()
+    const extContextFactory = () =>
+      ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: input.sessionID,
+        agent: input.agent.name,
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+        signal: input.processor.message.id ? undefined : undefined,
+      })
     for (const item of await ToolRegistry.tools(input.model.providerID, input.agent)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
+      const wrapped = ExtensionWrapper.wrapExecute(
+        item as ExtensionWrapper.ResolvedTool,
+        runner,
+        { path: "", scope: "builtin" },
+        extContextFactory,
+      )
       tools[item.id] = tool({
         id: item.id as any,
         description: item.description,
         inputSchema: jsonSchema(schema as any),
         async execute(args, options) {
-          await Plugin.trigger(
-            "tool.execute.before",
-            {
-              tool: item.id,
-              sessionID: input.sessionID,
-              callID: options.toolCallId,
-            },
-            {
-              args,
-            },
-          )
-          const result = await item.execute(args, {
+          const result = await wrapped.execute(args as Record<string, unknown>, {
             sessionID: input.sessionID,
             abort: options.abortSignal!,
             messageID: input.processor.message.id,
@@ -627,15 +703,6 @@ export namespace SessionPrompt {
               }
             },
           })
-          await Plugin.trigger(
-            "tool.execute.after",
-            {
-              tool: item.id,
-              sessionID: input.sessionID,
-              callID: options.toolCallId,
-            },
-            result,
-          )
           return result
         },
         toModelOutput(result) {
@@ -651,30 +718,20 @@ export namespace SessionPrompt {
       const execute = item.execute
       if (!execute) continue
 
-      // Wrap execute to add plugin hooks and format output
+      // Wrap execute to add extension hooks and format output
       item.execute = async (args, opts) => {
-        await Plugin.trigger(
-          "tool.execute.before",
-          {
-            tool: key,
-            sessionID: input.sessionID,
-            callID: opts.toolCallId,
-          },
-          {
-            args,
-          },
-        )
-        const result = await execute(args, opts)
+        const ctx = extContextFactory()
+        const callResult = await ExtensionRunner.emit(runner, {
+          type: "tool_call",
+          toolCallId: opts?.toolCallId ?? "",
+          toolName: key,
+          input: args,
+        } as Extension.ToolCallEvent, ctx)
+        if ((callResult as Extension.ToolCallResult)?.block) {
+          throw new Error((callResult as Extension.ToolCallResult).reason ?? "execution blocked by extension")
+        }
 
-        await Plugin.trigger(
-          "tool.execute.after",
-          {
-            tool: key,
-            sessionID: input.sessionID,
-            callID: opts.toolCallId,
-          },
-          result,
-        )
+        const result = await execute(args, opts)
 
         const textParts: string[] = []
         const attachments: MessageV2.FilePart[] = []
@@ -692,15 +749,25 @@ export namespace SessionPrompt {
               url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
             })
           }
-          // Add support for other types if needed
         }
+
+        const output = textParts.join("\n\n")
+        const resultResult = await ExtensionRunner.emit(runner, {
+          type: "tool_result",
+          toolCallId: opts?.toolCallId ?? "",
+          toolName: key,
+          input: args,
+          output,
+          metadata: result.metadata ?? {},
+        } as Extension.ToolResultEvent, ctx)
+        const mutated = resultResult as Extension.ToolResultEventResult | undefined
 
         return {
           title: "",
-          metadata: result.metadata ?? {},
-          output: textParts.join("\n\n"),
+          metadata: mutated?.metadata ?? result.metadata ?? {},
+          output: mutated?.output ?? output,
           attachments,
-          content: result.content, // directly return content to preserve ordering when outputting to model
+          content: result.content,
         }
       }
       item.toModelOutput = (result) => {
@@ -725,7 +792,7 @@ export namespace SessionPrompt {
       },
       tools: input.tools,
       agent: agent.name,
-      model: input.model ?? agent.model ?? (await lastModel(input.sessionID)),
+      model: input.model ?? agent.model ?? ToolRegistry.consumeModelOverride(input.sessionID) ?? (await lastModel(input.sessionID)),
       system: input.system,
     }
 
@@ -976,20 +1043,6 @@ export namespace SessionPrompt {
       }),
     ).then((x) => x.flat())
 
-    await Plugin.trigger(
-      "chat.message",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        messageID: input.messageID,
-      },
-      {
-        message: info,
-        parts,
-      },
-    )
-
     await Session.updateMessage(info)
     for (const part of parts) {
       await Session.updatePart(part)
@@ -1047,6 +1100,21 @@ export namespace SessionPrompt {
       throw new Session.BusyError(input.sessionID)
     }
     using _ = defer(() => cancel(input.sessionID))
+
+    const runner = await ToolRegistry.getRunner()
+    const extCtx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent,
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    const shellInputResult = await ExtensionRunner.emit(
+      runner,
+      { type: "input", text: input.command } as Extension.InputEvent,
+      extCtx,
+    )
+    if ((shellInputResult as Extension.InputEventResult)?.action === "handled") return
 
     const session = await Session.get(input.sessionID)
     if (session.revert) {
@@ -1281,8 +1349,46 @@ export namespace SessionPrompt {
 
   export async function command(input: CommandInput) {
     log.info("command", input)
+
+    const runner = await ToolRegistry.getRunner()
+    const extCmd = runner.commands.get(input.command)
+    if (extCmd) {
+      const ctx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: input.sessionID,
+        agent: input.agent ?? "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+      const extCmdInputResult = await ExtensionRunner.emit(
+        runner,
+        { type: "input", text: `/${input.command} ${input.arguments}` } as Extension.InputEvent,
+        ctx,
+      )
+      if ((extCmdInputResult as Extension.InputEventResult)?.action === "handled") return
+      await extCmd.handler(input.arguments, ctx)
+      return
+    }
+
     const command = await Command.get(input.command)
+    if (!command) {
+      throw new Error(`Command not found: ${input.command}`)
+    }
     const agentName = command.agent ?? input.agent ?? (await Agent.defaultAgent())
+
+    const ctx = ExtensionContext.forSession({
+      mode: "rpc",
+      sessionID: input.sessionID,
+      agent: input.agent ?? "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+    const cmdInputResult = await ExtensionRunner.emit(
+      runner,
+      { type: "input", text: `/${input.command} ${input.arguments}` } as Extension.InputEvent,
+      ctx,
+    )
+    if ((cmdInputResult as Extension.InputEventResult)?.action === "handled") return
 
     const raw = input.arguments.match(argsRegex) ?? []
     const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
@@ -1303,6 +1409,19 @@ export namespace SessionPrompt {
       return args[argIndex]
     })
     let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+
+    // Apply {{argName}} named-argument substitution for prompt templates.
+    // Falls through to the existing $1/$ARGUMENTS behaviour when no args resolve.
+    if (/\{\{/.test(command.template)) {
+      const pt = await PromptTemplate.get(input.command)
+      const argDefs = pt?.arguments?.map((a) => ({ name: a.name, default: a.default }))
+      const namedArgs: Record<string, string> = {}
+      for (let i = 0; i < args.length; i++) {
+        const def = argDefs?.[i]
+        if (def) namedArgs[def.name] = args[i]
+      }
+      template = PromptTemplate.substitute(template, input.arguments, namedArgs, argDefs)
+    }
 
     const shell = ConfigMarkdown.shell(template)
     if (shell.length > 0) {

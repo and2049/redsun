@@ -5,7 +5,7 @@ import { mapValues, mergeDeep, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
 import { Log } from "../util/log"
 import { BunProc } from "../bun"
-import { Plugin } from "../plugin"
+
 import { ModelsDev } from "./models"
 import { NamedError } from "@redsun/util/error"
 import { Auth } from "../auth"
@@ -694,52 +694,8 @@ export namespace Provider {
       }
     }
 
-    for (const plugin of await Plugin.list()) {
-      if (!plugin.auth) continue
-      const providerID = plugin.auth.provider
-      if (disabled.has(providerID)) continue
-
-      // For github-copilot plugin, check if auth exists for either github-copilot or github-copilot-enterprise
-      let hasAuth = false
-      const auth = await Auth.get(providerID)
-      if (auth) hasAuth = true
-
-      // Special handling for github-copilot: also check for enterprise auth
-      if (providerID === "github-copilot" && !hasAuth) {
-        const enterpriseAuth = await Auth.get("github-copilot-enterprise")
-        if (enterpriseAuth) hasAuth = true
-      }
-
-      if (!hasAuth) continue
-      if (!plugin.auth.loader) continue
-
-      // Load for the main provider if auth exists
-      if (auth) {
-        const options = await plugin.auth.loader(() => Auth.get(providerID) as any, database[plugin.auth.provider])
-        mergeProvider(plugin.auth.provider, {
-          source: "custom",
-          options: options,
-        })
-      }
-
-      // If this is github-copilot plugin, also register for github-copilot-enterprise if auth exists
-      if (providerID === "github-copilot") {
-        const enterpriseProviderID = "github-copilot-enterprise"
-        if (!disabled.has(enterpriseProviderID)) {
-          const enterpriseAuth = await Auth.get(enterpriseProviderID)
-          if (enterpriseAuth) {
-            const enterpriseOptions = await plugin.auth.loader(
-              () => Auth.get(enterpriseProviderID) as any,
-              database[enterpriseProviderID],
-            )
-            mergeProvider(enterpriseProviderID, {
-              source: "custom",
-              options: enterpriseOptions,
-            })
-          }
-        }
-      }
-    }
+    // TODO: Load Extension-registered auth providers when implemented.
+    // for (const plugin of await Plugin.list()) { ... }
 
     for (const [providerID, fn] of Object.entries(CUSTOM_LOADERS)) {
       if (disabled.has(providerID)) continue
@@ -1036,6 +992,110 @@ export namespace Provider {
       providerID: providerID,
       modelID: rest.join("/"),
     }
+  }
+
+  export async function registerProvider(name: string, config: {
+    name?: string
+    baseUrl?: string
+    apiKey?: string
+    api?: string
+    models?: Array<{
+      id: string
+      name: string
+      api?: string
+      reasoning: boolean
+      input: ("text" | "image")[]
+      cost: { input: number; output: number; cacheRead: number; cacheWrite: number }
+      contextWindow: number
+      maxTokens: number
+      headers?: Record<string, string>
+    }>
+    headers?: Record<string, string>
+  }) {
+    const s = await state()
+    const apiNpm = config.api
+      ? `@ai-sdk/${config.api.includes("anthropic") ? "anthropic" : config.api.includes("google") ? "google" : config.api.includes("openai-compatible") ? "openai-compatible" : "openai"}`
+      : undefined
+
+    const models: Record<string, Model> = {}
+    if (config.models) {
+      for (const m of config.models) {
+        const model: Model = {
+          id: m.id,
+          providerID: name,
+          api: {
+            id: m.api ?? m.id,
+            npm: apiNpm ?? "@ai-sdk/openai-compatible",
+            url: config.baseUrl ?? (config.api && config.api.includes("anthropic") ? "https://api.anthropic.com" : ""),
+          },
+          status: "active",
+          name: m.name,
+          capabilities: {
+            temperature: true,
+            reasoning: m.reasoning,
+            attachment: m.input.includes("image"),
+            toolcall: true,
+            input: {
+              text: m.input.includes("text"),
+              audio: false,
+              image: m.input.includes("image"),
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            interleaved: false,
+          },
+          cost: {
+            input: m.cost.input,
+            output: m.cost.output,
+            cache: {
+              read: m.cost.cacheRead,
+              write: m.cost.cacheWrite,
+            },
+          },
+          limit: {
+            context: m.contextWindow,
+            output: m.maxTokens,
+          },
+          options: m.headers ?? {},
+          headers: m.headers ?? {},
+          family: "",
+          release_date: "",
+        }
+        models[m.id] = model
+      }
+    }
+
+    const provider: Info = {
+      id: name,
+      name: config.name ?? name,
+      source: "custom",
+      env: config.apiKey ? [] : [],
+      key: config.apiKey,
+      options: config.headers ?? {},
+      models,
+    }
+
+    s.providers[name] = provider
+    log.info("registered provider", { name, modelCount: Object.keys(models).length })
+  }
+
+  export async function unregisterProvider(name: string) {
+    const s = await state()
+    delete s.providers[name]
+    // Clear cached language models
+    for (const key of s.models.keys()) {
+      if (key.startsWith(name + "/")) {
+        s.models.delete(key)
+      }
+    }
+    log.info("unregistered provider", { name })
   }
 
   export const ModelNotFoundError = NamedError.create(

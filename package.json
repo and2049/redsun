@@ -59,7 +59,6 @@
     "turbo": "2.5.6"
   },
   "dependencies": {
-    "@redsun/plugin": "workspace:*",
     "@redsun/script": "workspace:*",
     "@redsun/sdk": "workspace:*",
     "typescript": "catalog:"
