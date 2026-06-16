@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test"
+import { test, expect, describe, mock, beforeAll } from "bun:test"
 import { ExtensionContext } from "../../src/extension/context"
 import { Entry } from "../../src/entry/entry"
 import { Instance } from "../../src/project/instance"
@@ -90,5 +90,50 @@ describe("ExtensionContext.forSession.getEntries", () => {
         expect(result[0].data).toEqual({ step: 5 })
       },
     })
+  })
+})
+
+describe("ExtensionContext.compact", () => {
+  test("returns early when sessionID is empty", async () => {
+    const ctx = ExtensionContext.create({
+      mode: "rpc",
+      cwd: "/tmp",
+      sessionID: "",
+      agent: "",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+
+    await expect(ctx.compact()).resolves.toBeUndefined()
+  })
+})
+
+describe("ExtensionContext.compact error propagation (mocked)", () => {
+  beforeAll(() => {
+    mock.module("../../src/session/index", () => ({
+      Session: {
+        messages: async () => [{ info: { role: "user", model: { providerID: "openai", modelID: "gpt-4o" } } }],
+      },
+    }))
+    mock.module("../../src/session/compaction", () => ({
+      SessionCompaction: {
+        create: async () => {
+          throw new Error("compaction failed")
+        },
+      },
+    }))
+  })
+
+  test("propagates error from SessionCompaction.create", async () => {
+    const ctx = ExtensionContext.create({
+      mode: "rpc",
+      cwd: "/tmp",
+      sessionID: "ses_compact_err",
+      agent: "test",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    })
+
+    await expect(ctx.compact()).rejects.toThrow("compaction failed")
   })
 })

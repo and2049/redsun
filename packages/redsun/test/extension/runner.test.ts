@@ -3,19 +3,20 @@ import { ExtensionRunner } from "../../src/extension/runner"
 import { ExtensionContext } from "../../src/extension/context"
 import type { Extension } from "../../src/extension/types"
 
+function makeRunner() {
+  return ExtensionRunner.create(() =>
+    ExtensionContext.create({
+      mode: "rpc",
+      cwd: "/tmp",
+      sessionID: "test",
+      agent: "test",
+      projectTrusted: true,
+      getSystemPrompt: () => "",
+    }),
+  )
+}
+
 describe("ExtensionRunner", () => {
-  function makeRunner() {
-    return ExtensionRunner.create(() =>
-      ExtensionContext.create({
-        mode: "rpc",
-        cwd: "/tmp",
-        sessionID: "test",
-        agent: "test",
-        projectTrusted: true,
-        getSystemPrompt: () => "",
-      }),
-    )
-  }
 
   test("emit with no handlers returns undefined", async () => {
     const runner = makeRunner()
@@ -245,5 +246,76 @@ describe("ExtensionRunner", () => {
       position: "at",
     })
     expect(called).toBe(true)
+  })
+})
+
+describe("ExtensionRunner provider queue", () => {
+  const providerConfig: Extension.ProviderConfig = {
+    baseUrl: "https://api.example.com/v1",
+    models: [{ id: "my-model", name: "My Model", reasoning: false, input: ["text"], cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 4096 }],
+  }
+
+  test("registerProvider queues when registrar not wired", () => {
+    const runner = makeRunner()
+    ExtensionRunner.registerProvider(runner, "p1", providerConfig, "/src/p1.ts")
+    expect(runner.pendingProviderRegistrations.length).toBe(1)
+    expect(runner.pendingProviderRegistrations[0].name).toBe("p1")
+    expect(runner.pendingProviderRegistrations[0].config).toEqual(providerConfig)
+    expect(runner.pendingProviderRegistrations[0].source).toBe("/src/p1.ts")
+  })
+
+  test("registerProvider calls registrar directly when wired", () => {
+    const runner = makeRunner()
+    const registered: Array<{ name: string; config: Extension.ProviderConfig }> = []
+    runner.providerRegistrar = {
+      register: (name, config) => { registered.push({ name, config }) },
+      unregister: () => {},
+    }
+    ExtensionRunner.registerProvider(runner, "p2", providerConfig, "/src/p2.ts")
+    expect(registered.length).toBe(1)
+    expect(registered[0].name).toBe("p2")
+    expect(registered[0].config).toEqual(providerConfig)
+    expect(runner.pendingProviderRegistrations.length).toBe(0)
+  })
+
+  test("unregisterProvider calls unregister when wired", () => {
+    const runner = makeRunner()
+    const unregistered: string[] = []
+    runner.providerRegistrar = {
+      register: () => {},
+      unregister: (name) => { unregistered.push(name) },
+    }
+    ExtensionRunner.unregisterProvider(runner, "p1")
+    expect(unregistered).toEqual(["p1"])
+  })
+
+  test("unregisterProvider filters pending when registrar not wired", () => {
+    const runner = makeRunner()
+    runner.pendingProviderRegistrations = [
+      { name: "p1", config: providerConfig, source: "" },
+      { name: "p2", config: providerConfig, source: "" },
+      { name: "p3", config: providerConfig, source: "" },
+    ]
+    ExtensionRunner.unregisterProvider(runner, "p2")
+    expect(runner.pendingProviderRegistrations.length).toBe(2)
+    expect(runner.pendingProviderRegistrations.map((r) => r.name)).toEqual(["p1", "p3"])
+  })
+
+  test("flushProviderRegistrations processes all and clears array", () => {
+    const runner = makeRunner()
+    const registered: Array<{ name: string; config: Extension.ProviderConfig }> = []
+    runner.providerRegistrar = {
+      register: (name, config) => { registered.push({ name, config }) },
+      unregister: () => {},
+    }
+    runner.pendingProviderRegistrations = [
+      { name: "p1", config: providerConfig, source: "" },
+      { name: "p2", config: providerConfig, source: "" },
+      { name: "p3", config: providerConfig, source: "" },
+    ]
+    ExtensionRunner.flushProviderRegistrations(runner)
+    expect(registered.length).toBe(3)
+    expect(registered.map((r) => r.name)).toEqual(["p1", "p2", "p3"])
+    expect(runner.pendingProviderRegistrations.length).toBe(0)
   })
 })
