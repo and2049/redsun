@@ -30,6 +30,8 @@
     "dawnText": "#575279"
   },
   "theme": {
+    "logoGradientStart": "#5476E5",
+    "logoGradientEnd": "#FF7399",
     "primary": {
       "dark": "foam",
       "light": "pine"

@@ -37,6 +37,8 @@
     "lightYellow": "#dfa000"
   },
   "theme": {
+    "logoGradientStart": "#5476E5",
+    "logoGradientEnd": "#FF7399",
     "primary": {
       "dark": "darkStep9",
       "light": "lightStep9"
