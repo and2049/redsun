@@ -215,3 +215,43 @@ describe("Entry.removeAll", () => {
     })
   })
 })
+
+describe("Entry.removeBefore", () => {
+  test("removes entries with timestamp before cutoff", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const id1 = await Entry.append("ses_prune", { type: "custom", customType: "old", data: 1 })
+        await new Promise((r) => setTimeout(r, 10))
+        const cutoff = Date.now()
+        await new Promise((r) => setTimeout(r, 10))
+        const id2 = await Entry.append("ses_prune", { type: "custom", customType: "new", data: 2 })
+
+        const removed = await Entry.removeBefore("ses_prune", cutoff)
+        expect(removed).toBe(1)
+
+        const remaining = await Entry.list("ses_prune")
+        expect(remaining.length).toBe(1)
+        expect(remaining[0].id).toBe(id2)
+      },
+    })
+  })
+
+  test("removes nothing when all entries are after cutoff", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await Entry.append("ses_all_new", { type: "custom", customType: "x", data: 1 })
+        const cutoff = 0
+
+        const removed = await Entry.removeBefore("ses_all_new", cutoff)
+        expect(removed).toBe(0)
+
+        const remaining = await Entry.list("ses_all_new")
+        expect(remaining.length).toBe(1)
+      },
+    })
+  })
+})

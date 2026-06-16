@@ -166,7 +166,7 @@ export namespace ExtensionLoader {
     log.info("loading extension", { path: resolved })
 
     try {
-      const mod = await import(pathToFileURL(resolved).href)
+      const mod = await import(pathToFileURL(resolved).href + "?reload=" + Date.now())
       const factory = mod.default ?? mod.extension
       if (typeof factory !== "function") {
         log.warn("extension has no default factory export", { path: resolved })

@@ -14,6 +14,7 @@ import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
 import { Entry } from "../entry/entry"
+import { Session } from "./index"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -220,22 +221,35 @@ export namespace LLM {
     const customMessages = entries.filter((e): e is Entry.CustomMessageEntry => e.type === "custom_message")
     if (customMessages.length === 0) return messages
 
-    const customAsModelMessages = customMessages
-      .map((e) => customMessageToModelMessage(e))
-      .reverse()
+    const sessionMsgs = await Session.messages({ sessionID })
+    const userMsgTimestamps = sessionMsgs
+      .filter((m) => m.info.role === "user")
+      .map((m) => m.info.time.created)
 
-    const lastUserIdx = findLastUserIndex(messages)
-    if (lastUserIdx === -1) {
-      return [...messages, ...customAsModelMessages]
-    }
-    return [...messages.slice(0, lastUserIdx + 1), ...customAsModelMessages, ...messages.slice(lastUserIdx + 1)]
-  }
+    const sorted = [...customMessages].sort((a, b) => a.timestamp - b.timestamp)
 
-  function findLastUserIndex(messages: ModelMessage[]): number {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") return i
+    const result: ModelMessage[] = []
+    let customIdx = 0
+    let userIdx = 0
+
+    for (const msg of messages) {
+      if (msg.role === "user" && userIdx < userMsgTimestamps.length) {
+        const ts = userMsgTimestamps[userIdx]
+        while (customIdx < sorted.length && sorted[customIdx].timestamp <= ts) {
+          result.push(customMessageToModelMessage(sorted[customIdx]))
+          customIdx++
+        }
+        userIdx++
+      }
+      result.push(msg)
     }
-    return -1
+
+    while (customIdx < sorted.length) {
+      result.push(customMessageToModelMessage(sorted[customIdx]))
+      customIdx++
+    }
+
+    return result
   }
 
   function customMessageToModelMessage(entry: Entry.CustomMessageEntry): ModelMessage {

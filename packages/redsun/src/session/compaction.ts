@@ -17,6 +17,7 @@ import { ToolRegistry } from "../tool/registry"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
+import { Entry } from "../entry/entry"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -207,6 +208,18 @@ export namespace SessionCompaction {
     }
     if (processor.message.error) return "stop"
     Bus.publish(Event.Compacted, { sessionID: input.sessionID })
+
+    const compactUserMsg = input.messages.find(
+      (m) => m.info.role === "user" && m.parts.some((p) => p.type === "compaction"),
+    )
+    if (compactUserMsg) {
+      const removed = await Entry.removeBefore(input.sessionID, compactUserMsg.info.time.created)
+      log.info("pruned entries before compaction boundary", {
+        count: removed,
+        cutoff: compactUserMsg.info.time.created,
+      })
+    }
+
     await ExtensionRunner.emit(
       runner,
       { type: "session_compact", sessionID: input.sessionID, fromExtension: input.fromExtension ?? false } as Extension.SessionCompactEvent,

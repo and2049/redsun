@@ -103,4 +103,16 @@ export namespace Entry {
       await Storage.remove(key)
     }
   }
+
+  export async function removeBefore(sessionID: string, cutoff: number): Promise<number> {
+    let removed = 0
+    for (const key of await Storage.list(["entry", sessionID])) {
+      const entry = await Storage.read<Info>(key)
+      if (entry.timestamp < cutoff) {
+        await Storage.remove(key)
+        removed++
+      }
+    }
+    return removed
+  }
 }
