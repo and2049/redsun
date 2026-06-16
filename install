@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# redsun curl installer
-# Not yet available. For now, see the repository for build instructions.
-echo "redsun: a curl installer is not yet available. See the repository for build instructions."
