@@ -32,7 +32,7 @@ export namespace Extension {
     getContextUsage(): ContextUsage | undefined
     getSystemPrompt(): string
     getEntries<T = unknown>(customType: string): Promise<Array<{ customType: string; data?: T; details?: T }>>
-    compact(): void
+    compact(): Promise<void>
   }
 
   export interface CommandContext extends Context {
@@ -249,7 +249,7 @@ export namespace Extension {
   export interface API {
     on<E extends Event>(event: E["type"], handler: Handler<E, EventResult>): void
 
-    registerTool(tool: Tool.Info, source?: SourceInfo): void
+    registerTool(tool: Tool.Info, source?: SourceInfo): Promise<void>
     unregisterTool(id: string): void
     setActiveTools(toolNames: string[]): void
     getActiveTools(): string[]

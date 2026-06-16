@@ -34,10 +34,12 @@ export function isProtectedPath(filePath: string): { blocked: boolean; reason?: 
 
   if (normalized.includes(path.sep + ".git" + path.sep)) {
     log.warn("writing to .git directory", { filePath })
+    return { blocked: true, reason: `Cannot write to protected directory: .git (${filePath})` }
   }
 
   if (normalized.includes(path.sep + "node_modules" + path.sep)) {
     log.warn("writing to node_modules directory", { filePath })
+    return { blocked: true, reason: `Cannot write to protected directory: node_modules (${filePath})` }
   }
 
   return { blocked: false }

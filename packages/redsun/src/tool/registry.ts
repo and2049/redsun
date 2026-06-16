@@ -204,7 +204,7 @@ export namespace ToolRegistry {
       registerCommand: (command) => ExtensionRunner.registerCommand(runner, command),
       unregisterCommand: (name) => ExtensionRunner.unregisterCommand(runner, name),
       sendMessage: (content: string) => {
-        const sessionID = ExtensionContext.getCurrentSessionID()
+        const sessionID = runner.currentContext?.sessionID
         if (!sessionID) {
           log.warn("sendMessage called outside session context", { content })
           return
@@ -216,12 +216,20 @@ export namespace ToolRegistry {
           display: true,
         }).then(() => {
           log.info("sendMessage delivered", { sessionID })
+          const { SessionStatus } = require("../session/status")
+          if (SessionStatus.get(sessionID).type === "idle") {
+            import("../session/prompt").then(({ SessionPrompt }) => {
+              SessionPrompt.loop(sessionID)
+            }).catch((err) => {
+              log.error("sendMessage loop trigger failed", { sessionID, error: err })
+            })
+          }
         }).catch((err) => {
           log.error("sendMessage failed", { sessionID, error: err })
         })
       },
       sendUserMessage: (content: string) => {
-        const sessionID = ExtensionContext.getCurrentSessionID()
+        const sessionID = runner.currentContext?.sessionID
         if (!sessionID) {
           log.warn("sendUserMessage called outside session context", { content })
           return
@@ -245,7 +253,7 @@ export namespace ToolRegistry {
         })
       },
       setModel: async (model: string) => {
-        const sessionID = ExtensionContext.getCurrentSessionID()
+        const sessionID = runner.currentContext?.sessionID
         if (!sessionID) {
           log.warn("setModel called outside session context", { model })
           return false
@@ -306,9 +314,7 @@ export namespace ToolRegistry {
   export async function register(tool: Tool.Info, source?: Extension.SourceInfo) {
     const { custom, runner } = await state()
     custom.set(tool.id, tool)
-    if (source) {
-      runner.tools.set(tool.id, { tool, source })
-    }
+    await ExtensionRunner.registerTool(runner, tool, source)
     emitChanged()
   }
 
@@ -336,8 +342,9 @@ export namespace ToolRegistry {
   async function allTools(): Promise<Tool.Info[]> {
     const { custom } = await state()
     const config = await Config.get()
+    const customIds = new Set(Array.from(custom.keys()))
 
-    return [
+    const builtins: Tool.Info[] = [
       InvalidTool,
       BashTool,
       ReadTool,
@@ -354,8 +361,9 @@ export namespace ToolRegistry {
       SkillTool,
       ...(Flag.REDSUN_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
       ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
-      ...Array.from(custom.values()),
     ]
+
+    return [...builtins.filter((t) => !customIds.has(t.id)), ...Array.from(custom.values())]
   }
 
   export async function tools(providerID: string, agent?: Agent.Info) {

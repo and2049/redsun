@@ -131,6 +131,20 @@ export namespace Session {
       messageID: Identifier.schema("message").optional(),
     }),
     async (input) => {
+      const runner = await ToolRegistry.getRunner()
+      const forkCtx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: input.sessionID,
+        agent: "",
+        projectTrusted: runner.projectTrusted,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(
+        runner,
+        { type: "session_before_fork", entryId: input.messageID ?? "", position: "at" } as Extension.SessionBeforeForkEvent,
+        forkCtx,
+      )
+
       const session = await createNext({
         directory: Instance.directory,
         reason: "fork",
@@ -170,6 +184,25 @@ export namespace Session {
     directory: string
     reason?: "new" | "fork" | "resume" | "startup" | "reload"
   }) {
+    if (input.reason === "new" || input.reason === "resume") {
+      const runner = await ToolRegistry.getRunner()
+      const ctx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID: "",
+        agent: "",
+        projectTrusted: runner.projectTrusted,
+        getSystemPrompt: () => "",
+      })
+      const beforeResult = await ExtensionRunner.emit(
+        runner,
+        { type: "session_before_switch", reason: input.reason } as Extension.SessionBeforeSwitchEvent,
+        ctx,
+      )
+      if ((beforeResult as Extension.SessionBeforeSwitchResult)?.cancel) {
+        throw new Error("Session switch cancelled by extension")
+      }
+    }
+
     const result: Info = {
       id: Identifier.descending("session", input.id),
       version: Installation.VERSION,

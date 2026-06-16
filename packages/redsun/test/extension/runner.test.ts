@@ -186,4 +186,64 @@ describe("ExtensionRunner", () => {
     })
     expect(runner.discoveredResources.agentPaths).toEqual(["/shared/agent.md", "/other/agent.md"])
   })
+
+  test("session_before_compact cancel is returned when any handler cancels", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.SessionBeforeCompactEvent>(runner, "session_before_compact", () => ({
+      cancel: true,
+    }))
+    const result = await ExtensionRunner.emit<Extension.SessionBeforeCompactEvent>(runner, {
+      type: "session_before_compact",
+      sessionID: "s1",
+      signal: new AbortController().signal,
+    })
+    expect(result).toEqual({ cancel: true })
+  })
+
+  test("session_before_compact does not cancel when no handler returns cancel", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.SessionBeforeCompactEvent>(runner, "session_before_compact", () => ({}))
+    const result = await ExtensionRunner.emit<Extension.SessionBeforeCompactEvent>(runner, {
+      type: "session_before_compact",
+      sessionID: "s1",
+      signal: new AbortController().signal,
+    })
+    expect((result as Extension.SessionBeforeCompactResult | undefined)?.cancel).toBeUndefined()
+  })
+
+  test("session_before_switch cancel is returned when handler cancels", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.SessionBeforeSwitchEvent>(runner, "session_before_switch", () => ({
+      cancel: true,
+    }))
+    const result = await ExtensionRunner.emit<Extension.SessionBeforeSwitchEvent>(runner, {
+      type: "session_before_switch",
+      reason: "new",
+    })
+    expect(result).toEqual({ cancel: true })
+  })
+
+  test("session_before_switch does not cancel when no handler cancels", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.SessionBeforeSwitchEvent>(runner, "session_before_switch", () => ({}))
+    const result = await ExtensionRunner.emit<Extension.SessionBeforeSwitchEvent>(runner, {
+      type: "session_before_switch",
+      reason: "new",
+    })
+    expect((result as Extension.SessionBeforeSwitchResult | undefined)?.cancel).toBeUndefined()
+  })
+
+  test("session_before_fork handler is called during emit", async () => {
+    const runner = makeRunner()
+    let called = false
+    ExtensionRunner.on<Extension.SessionBeforeForkEvent>(runner, "session_before_fork", () => {
+      called = true
+    })
+    await ExtensionRunner.emit<Extension.SessionBeforeForkEvent>(runner, {
+      type: "session_before_fork",
+      entryId: "msg1",
+      position: "at",
+    })
+    expect(called).toBe(true)
+  })
 })

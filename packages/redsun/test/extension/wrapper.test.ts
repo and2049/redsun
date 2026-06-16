@@ -1,9 +1,10 @@
 import { test, expect, describe } from "bun:test"
 import { ExtensionRunner } from "../../src/extension/runner"
-import { ExtensionWrapper } from "../../src/extension/wrapper"
+import { ExtensionWrapper, isProtectedPath } from "../../src/extension/wrapper"
 import { ExtensionContext } from "../../src/extension/context"
 import type { Extension } from "../../src/extension/types"
 import z from "zod"
+import path from "path"
 
 function makeRunner() {
   return ExtensionRunner.create(() =>
@@ -69,5 +70,65 @@ describe("ExtensionWrapper.wrapExecute", () => {
     const result = await wrapped.execute({ input: "hi" }, { callID: "1" } as any)
     expect(result.output).toBe("mutated")
     expect(result.metadata).toEqual({ extra: true })
+  })
+
+  test("blocks write tool for .env file", async () => {
+    const runner = makeRunner()
+    const writeTool: ExtensionWrapper.ResolvedTool = {
+      id: "write",
+      description: "write tool",
+      parameters: z.object({ filePath: z.string(), content: z.string() }),
+      execute: async (args) => ({ title: "written", metadata: {}, output: "ok" }),
+    }
+    const wrapped = ExtensionWrapper.wrapExecute(writeTool, runner, { path: "", scope: "builtin" }, makeContextFactory())
+    await expect(wrapped.execute({ filePath: ".env", content: "x" }, { callID: "1" } as any)).rejects.toThrow("protected")
+  })
+
+  test("blocks edit tool for .git directory", async () => {
+    const runner = makeRunner()
+    const editTool: ExtensionWrapper.ResolvedTool = {
+      id: "edit",
+      description: "edit tool",
+      parameters: z.object({ filePath: z.string() }),
+      execute: async (args) => ({ title: "edited", metadata: {}, output: "ok" }),
+    }
+    const wrapped = ExtensionWrapper.wrapExecute(editTool, runner, { path: "", scope: "builtin" }, makeContextFactory())
+    const gitPath = path.resolve("/tmp", ".git", "config")
+    await expect(wrapped.execute({ filePath: gitPath }, { callID: "1" } as any)).rejects.toThrow("protected")
+  })
+
+  test("blocks write tool for node_modules", async () => {
+    const runner = makeRunner()
+    const writeTool: ExtensionWrapper.ResolvedTool = {
+      id: "write",
+      description: "write tool",
+      parameters: z.object({ filePath: z.string(), content: z.string() }),
+      execute: async (args) => ({ title: "written", metadata: {}, output: "ok" }),
+    }
+    const wrapped = ExtensionWrapper.wrapExecute(writeTool, runner, { path: "", scope: "builtin" }, makeContextFactory())
+    const nmPath = path.resolve("/tmp", "node_modules", "foo", "index.js")
+    await expect(wrapped.execute({ filePath: nmPath, content: "x" }, { callID: "1" } as any)).rejects.toThrow("protected")
+  })
+})
+
+describe("isProtectedPath", () => {
+  test("blocks .env files", () => {
+    expect(isProtectedPath(".env").blocked).toBe(true)
+    expect(isProtectedPath(".env.local").blocked).toBe(true)
+    expect(isProtectedPath(".env.production").blocked).toBe(true)
+  })
+
+  test("blocks .git directory paths", () => {
+    const p = path.resolve("/tmp", ".git", "config")
+    expect(isProtectedPath(p).blocked).toBe(true)
+  })
+
+  test("blocks node_modules directory paths", () => {
+    const p = path.resolve("/tmp", "node_modules", "pkg", "index.js")
+    expect(isProtectedPath(p).blocked).toBe(true)
+  })
+
+  test("allows normal paths", () => {
+    expect(isProtectedPath("/tmp/foo.txt").blocked).toBe(false)
   })
 })

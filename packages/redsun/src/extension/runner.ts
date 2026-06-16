@@ -1,7 +1,6 @@
 import { Log } from "../util/log"
 import type { Tool } from "../tool/tool"
 import type { Extension } from "./types"
-import { ExtensionContext } from "./context"
 
 export namespace ExtensionRunner {
   const log = Log.create({ service: "extension.runner" })
@@ -17,6 +16,7 @@ export namespace ExtensionRunner {
     pendingProviderRegistrations: Array<{ name: string; config: Extension.ProviderConfig; source: string }>
     providerRegistrar?: { register: (name: string, config: Extension.ProviderConfig) => void; unregister: (name: string) => void }
     eventBus: Map<string, Array<(data: unknown) => void>>
+    currentContext?: Extension.Context
   }
 
   export function create(contextFactory: () => Extension.Context): State {
@@ -174,7 +174,8 @@ export namespace ExtensionRunner {
     if (!handlers || handlers.length === 0) return undefined
 
     const ctx = contextOverride ?? state.contextFactory()
-    const previousSession = ExtensionContext.setCurrentSessionID(ctx.sessionID)
+    const previous = state.currentContext
+    state.currentContext = ctx
     let result: Extension.EventResult | undefined
 
     for (const handler of handlers) {
@@ -191,7 +192,7 @@ export namespace ExtensionRunner {
       }
     }
 
-    ExtensionContext.setCurrentSessionID(previousSession)
+    state.currentContext = previous
     return result
   }
 
