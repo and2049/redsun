@@ -93,6 +93,18 @@ export namespace SystemPrompt {
     ]
   }
 
+  export function projectMemory() {
+    return [
+      [
+        `<project_memory>`,
+        `Maintain long-term project context by reading and writing to the memory file located at \`.redsun/memory.md\`.`,
+        `When starting a task, read this file to understand the project's current state and rules.`,
+        `When finishing a significant milestone or learning something new about the project, update this file so future sessions have the context.`,
+        `</project_memory>`,
+      ].join("\n"),
+    ]
+  }
+
   export async function custom() {
     const config = await Config.get()
     const paths = new Set<string>()
