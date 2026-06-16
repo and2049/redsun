@@ -1,8 +1,11 @@
 import { test, expect, describe } from "bun:test"
 import { ToolRegistry } from "../../src/tool/registry"
+import { ExtensionContext } from "../../src/extension/context"
+import { ExtensionRunner } from "../../src/extension/runner"
 import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
 import type { Tool } from "../../src/tool/tool"
+import type { Extension } from "../../src/extension/types"
 import z from "zod"
 
 function makeTool(id: string, description: string): Tool.Info {
@@ -91,6 +94,51 @@ describe("allTools deduplication", () => {
         expect(bashIdx).toBeGreaterThan(-1)
         expect(customIdx).toBeGreaterThan(-1)
         expect(bashIdx).toBeLessThan(customIdx)
+      },
+    })
+  })
+})
+
+describe("runtime tool registration via API", () => {
+  test("api.registerTool makes tool visible in allTools and get", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await ToolRegistry.state()
+        const runner = await ToolRegistry.getRunner()
+        const api = ToolRegistry.createExtensionAPI(runner, { path: "/test", scope: "builtin" })
+
+        api.registerTool(makeTool("runtime-tool", "registered at runtime"))
+        await Bun.sleep(50)
+
+        const ids = await registeredToolIds()
+        expect(ids).toContain("runtime-tool")
+
+        const tool = await ToolRegistry.get("runtime-tool")
+        expect(tool).toBeDefined()
+        const init = await tool!.init()
+        expect(init.description).toBe("registered at runtime")
+      },
+    })
+  })
+
+  test("api.unregisterTool removes tool from allTools", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await ToolRegistry.state()
+        const runner = await ToolRegistry.getRunner()
+        const api = ToolRegistry.createExtensionAPI(runner, { path: "/test", scope: "builtin" })
+
+        api.registerTool(makeTool("to-remove", "temporary"))
+        await Bun.sleep(50)
+        expect(await registeredToolIds()).toContain("to-remove")
+
+        api.unregisterTool("to-remove")
+        await Bun.sleep(50)
+        expect(await registeredToolIds()).not.toContain("to-remove")
       },
     })
   })

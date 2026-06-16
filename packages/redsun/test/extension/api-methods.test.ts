@@ -228,3 +228,31 @@ describe("setModel (mocked Provider)", () => {
     })
   })
 })
+
+describe("input event", () => {
+  test("input handler can return handled action", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.InputEvent>(runner, "input", () => ({
+      action: "handled",
+    }))
+    const result = await ExtensionRunner.emit<Extension.InputEvent>(runner, {
+      type: "input",
+      text: "hello",
+    })
+    expect((result as Extension.InputEventResult)?.action).toBe("handled")
+  })
+
+  test("input handler can return transform action with text", async () => {
+    const runner = makeRunner()
+    ExtensionRunner.on<Extension.InputEvent>(runner, "input", () => ({
+      action: "transform",
+      text: "rewritten input",
+    }))
+    const result = await ExtensionRunner.emit<Extension.InputEvent>(runner, {
+      type: "input",
+      text: "original",
+    })
+    expect((result as Extension.InputEventResult)?.action).toBe("transform")
+    expect((result as Extension.InputEventResult)?.text).toBe("rewritten input")
+  })
+})

@@ -158,7 +158,20 @@ export namespace SessionPrompt {
       projectTrusted: true,
       getSystemPrompt: () => "",
     })
-    await ExtensionRunner.emit(runner, { type: "input", text } as Extension.InputEvent, ctx)
+    const inputResult = await ExtensionRunner.emit(runner, { type: "input", text } as Extension.InputEvent, ctx)
+    const inputEventResult = inputResult as Extension.InputEventResult | undefined
+    if (inputEventResult?.action === "transform" && inputEventResult.text !== undefined) {
+      const transformedParts = [{ type: "text" as const, text: inputEventResult.text }]
+      const message = await createUserMessage({ ...input, parts: transformedParts })
+      await Session.touch(input.sessionID)
+      if (input.noReply === true) return message
+      return loop(input.sessionID)
+    }
+    if (inputEventResult?.action === "handled") {
+      const message = await createUserMessage(input)
+      await Session.touch(input.sessionID)
+      return message
+    }
 
     const message = await createUserMessage(input)
     await Session.touch(input.sessionID)
@@ -277,6 +290,7 @@ export namespace SessionPrompt {
     using _ = defer(() => cancel(sessionID))
 
     let step = 0
+    const loopRunner = await ToolRegistry.getRunner()
     while (true) {
       SessionStatus.set(sessionID, { type: "busy" })
       log.info("loop", { step, sessionID })
@@ -311,6 +325,17 @@ export namespace SessionPrompt {
       }
 
       step++
+      const turnCtx = ExtensionContext.forSession({
+        mode: "rpc",
+        sessionID,
+        agent: lastUser?.agent ?? "",
+        projectTrusted: true,
+        getSystemPrompt: () => "",
+      })
+      await ExtensionRunner.emit(loopRunner, { type: "turn_start", turnIndex: step }, turnCtx)
+      await using _turnCleanup = defer(async () => {
+        await ExtensionRunner.emit(loopRunner, { type: "turn_end", turnIndex: step }, turnCtx)
+      })
       if (step === 1)
         ensureTitle({
           session: await Session.get(sessionID),
@@ -378,12 +403,26 @@ export namespace SessionPrompt {
           command: task.command,
         }
         let executionError: Error | undefined
-        const result = await taskTool
+        const subtaskWrapped = ExtensionWrapper.wrapExecute(
+          { id: TaskTool.id, init: async () => taskTool } as unknown as ExtensionWrapper.ResolvedTool,
+          loopRunner,
+          { path: "", scope: "builtin" },
+          () =>
+            ExtensionContext.forSession({
+              mode: "rpc",
+              sessionID,
+              agent: task.agent,
+              projectTrusted: true,
+              getSystemPrompt: () => "",
+            }),
+        )
+        const result = await subtaskWrapped
           .execute(taskArgs, {
             agent: task.agent,
             messageID: assistantMessage.id,
             sessionID: sessionID,
             abort,
+            callID: part.callID,
             async metadata(input) {
               await Session.updatePart({
                 ...part,
@@ -412,7 +451,7 @@ export namespace SessionPrompt {
               title: result.title,
               metadata: result.metadata,
               output: result.output,
-              attachments: result.attachments,
+              attachments: result.attachments as MessageV2.FilePart[] | undefined,
               time: {
                 ...part.state.time,
                 end: Date.now(),
@@ -670,8 +709,19 @@ export namespace SessionPrompt {
       const execute = item.execute
       if (!execute) continue
 
-      // Wrap execute to add plugin hooks and format output
+      // Wrap execute to add extension hooks and format output
       item.execute = async (args, opts) => {
+        const ctx = extContextFactory()
+        const callResult = await ExtensionRunner.emit(runner, {
+          type: "tool_call",
+          toolCallId: opts?.toolCallId ?? "",
+          toolName: key,
+          input: args,
+        } as Extension.ToolCallEvent, ctx)
+        if ((callResult as Extension.ToolCallResult)?.block) {
+          throw new Error((callResult as Extension.ToolCallResult).reason ?? "execution blocked by extension")
+        }
+
         const result = await execute(args, opts)
 
         const textParts: string[] = []
@@ -690,15 +740,25 @@ export namespace SessionPrompt {
               url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
             })
           }
-          // Add support for other types if needed
         }
+
+        const output = textParts.join("\n\n")
+        const resultResult = await ExtensionRunner.emit(runner, {
+          type: "tool_result",
+          toolCallId: opts?.toolCallId ?? "",
+          toolName: key,
+          input: args,
+          output,
+          metadata: result.metadata ?? {},
+        } as Extension.ToolResultEvent, ctx)
+        const mutated = resultResult as Extension.ToolResultEventResult | undefined
 
         return {
           title: "",
-          metadata: result.metadata ?? {},
-          output: textParts.join("\n\n"),
+          metadata: mutated?.metadata ?? result.metadata ?? {},
+          output: mutated?.output ?? output,
           attachments,
-          content: result.content, // directly return content to preserve ordering when outputting to model
+          content: result.content,
         }
       }
       item.toModelOutput = (result) => {
@@ -1040,11 +1100,12 @@ export namespace SessionPrompt {
       projectTrusted: true,
       getSystemPrompt: () => "",
     })
-    await ExtensionRunner.emit(
+    const shellInputResult = await ExtensionRunner.emit(
       runner,
       { type: "input", text: input.command } as Extension.InputEvent,
       extCtx,
     )
+    if ((shellInputResult as Extension.InputEventResult)?.action === "handled") return
 
     const session = await Session.get(input.sessionID)
     if (session.revert) {
@@ -1290,11 +1351,12 @@ export namespace SessionPrompt {
         projectTrusted: true,
         getSystemPrompt: () => "",
       })
-      await ExtensionRunner.emit(
+      const extCmdInputResult = await ExtensionRunner.emit(
         runner,
         { type: "input", text: `/${input.command} ${input.arguments}` } as Extension.InputEvent,
         ctx,
       )
+      if ((extCmdInputResult as Extension.InputEventResult)?.action === "handled") return
       await extCmd.handler(input.arguments, ctx)
       return
     }
@@ -1312,11 +1374,12 @@ export namespace SessionPrompt {
       projectTrusted: true,
       getSystemPrompt: () => "",
     })
-    await ExtensionRunner.emit(
+    const cmdInputResult = await ExtensionRunner.emit(
       runner,
       { type: "input", text: `/${input.command} ${input.arguments}` } as Extension.InputEvent,
       ctx,
     )
+    if ((cmdInputResult as Extension.InputEventResult)?.action === "handled") return
 
     const raw = input.arguments.match(argsRegex) ?? []
     const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))

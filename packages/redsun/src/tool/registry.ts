@@ -196,8 +196,19 @@ export namespace ToolRegistry {
   export function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
     return {
       on: (event, handler) => ExtensionRunner.on(runner, event, handler as any),
-      registerTool: (tool) => ExtensionRunner.registerTool(runner, tool, source),
-      unregisterTool: (id) => ExtensionRunner.unregisterTool(runner, id),
+      registerTool: async (tool) => {
+        await ExtensionRunner.registerTool(runner, tool, source)
+        const s = await state()
+        s.custom.set(tool.id, tool)
+        emitChanged()
+      },
+      unregisterTool: (id) => {
+        ExtensionRunner.unregisterTool(runner, id)
+        state().then((s) => {
+          s.custom.delete(id)
+          emitChanged()
+        })
+      },
       setActiveTools: (toolNames) => ExtensionRunner.setActiveTools(runner, toolNames),
       getActiveTools: () => ExtensionRunner.getActiveTools(runner),
       getAllTools: () => ExtensionRunner.getAllTools(runner),

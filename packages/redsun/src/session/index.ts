@@ -139,11 +139,14 @@ export namespace Session {
         projectTrusted: runner.projectTrusted,
         getSystemPrompt: () => "",
       })
-      await ExtensionRunner.emit(
+      const forkResult = await ExtensionRunner.emit(
         runner,
         { type: "session_before_fork", entryId: input.messageID ?? "", position: "at" } as Extension.SessionBeforeForkEvent,
         forkCtx,
       )
+      if ((forkResult as Extension.SessionBeforeForkResult)?.cancel) {
+        throw new Error("Session fork cancelled by extension")
+      }
 
       const session = await createNext({
         directory: Instance.directory,
