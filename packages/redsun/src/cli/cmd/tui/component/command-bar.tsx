@@ -241,6 +241,10 @@ export function CommandBar() {
     }
   })
 
+  const backgroundColor = createMemo(() =>
+    vim.mode === "command" ? theme.backgroundElement : theme.background,
+  )
+
   return (
     <box
       position="absolute"
@@ -249,7 +253,7 @@ export function CommandBar() {
       width={dimensions().width}
       height={1}
       zIndex={1000}
-      backgroundColor={theme.backgroundElement}
+      backgroundColor={backgroundColor()}
       flexDirection="row"
       alignItems="center"
       paddingLeft={1}
