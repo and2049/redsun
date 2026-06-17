@@ -299,9 +299,13 @@ export namespace ExtensionRunner {
     }
 
     if (eventType === "session_before_compact") {
+      const c = current as Extension.SessionBeforeCompactResult
       const n = next as Extension.SessionBeforeCompactResult
       if (n.cancel) return { cancel: true }
-      return current
+      return {
+        prompt: n.prompt ?? c.prompt,
+        context: [...(c.context ?? []), ...(n.context ?? [])],
+      }
     }
 
     if (eventType === "session_before_switch") {

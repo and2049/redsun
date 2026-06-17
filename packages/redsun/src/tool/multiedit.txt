@@ -15,13 +15,12 @@ To make multiple file edits, provide the following:
 IMPORTANT:
 - All edits are applied in sequence, in the order they are provided
 - Each edit operates on the result of the previous edit
-- All edits must be valid for the operation to succeed - if any edit fails, none will be applied
+- Edits are NOT atomic — if a later edit fails, earlier edits are already applied and there is no rollback
 - This tool is ideal when you need to make several changes to different parts of the same file
 
 CRITICAL REQUIREMENTS:
 1. All edits follow the same requirements as the single Edit tool
-2. The edits are atomic - either all succeed or none are applied
-3. Plan your edits carefully to avoid conflicts between sequential operations
+2. Plan your edits carefully to avoid conflicts between sequential operations
 
 WARNING:
 - The tool will fail if edits.oldString doesn't match the file contents exactly (including whitespace)
