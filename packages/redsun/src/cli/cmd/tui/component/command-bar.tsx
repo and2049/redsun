@@ -80,7 +80,7 @@ function ModeIndicator(props: { mode: VimMode }) {
   const { theme } = useTheme()
   return (
     <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
-      {props.mode.toUpperCase()}
+      {props.mode.toLowerCase()}
     </text>
   )
 }
