@@ -121,11 +121,19 @@ export namespace SessionCompaction {
       return "cancelled"
     }
 
-    const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)!.info as MessageV2.User
+    const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)?.info as MessageV2.User | undefined
+    if (!userMessage) {
+      log.error("parent message not found for compaction", { parentID: input.parentID })
+      return "stop"
+    }
     const agent = await Agent.get("compaction")
-    const model = (agent.model
+    const model = agent.model
       ? await Provider.getModel(agent.model.providerID, agent.model.modelID)
-      : await resolveTaskModel("compact", () => Provider.getModel(userMessage.model.providerID, userMessage.model.modelID)))!
+      : await resolveTaskModel("compact", () => Provider.getModel(userMessage.model.providerID, userMessage.model.modelID))
+    if (!model) {
+      log.error("no model available for compaction", { agent: agent.model, userModel: userMessage.model })
+      return "stop"
+    }
 
     const msg = (await Session.updateMessage({
       id: Identifier.ascending("message"),
@@ -160,7 +168,8 @@ export namespace SessionCompaction {
     })
     const defaultPrompt =
       "Provide a detailed prompt for continuing our conversation above. Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next considering new session will not have access to our conversation."
-    const promptText = defaultPrompt
+    const compactResult = beforeResult as Extension.SessionBeforeCompactResult | undefined
+    const promptText = compactResult?.prompt ?? [defaultPrompt, ...(compactResult?.context ?? [])].join("\n\n")
     const result = await processor.process({
       user: userMessage,
       agent,
