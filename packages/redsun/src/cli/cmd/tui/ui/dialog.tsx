@@ -5,6 +5,7 @@ import { Renderable, RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { Clipboard } from "@tui/util/clipboard"
 import { useToast } from "./toast"
+import { useMode } from "@tui/context/mode"
 
 export function Dialog(
   props: ParentProps<{
@@ -58,15 +59,18 @@ function init() {
 
   useKeyboard((evt) => {
     if (evt.name === "escape" && store.stack.length > 0) {
-      const current = store.stack.at(-1)!
-      current.onClose?.()
-      setStore("stack", store.stack.slice(0, -1))
       evt.preventDefault()
-      refocus()
+      setTimeout(() => {
+        const current = store.stack.at(-1)!
+        current.onClose?.()
+        setStore("stack", store.stack.slice(0, -1))
+        refocus()
+      }, 0)
     }
   })
 
   const renderer = useRenderer()
+  const vim = useMode()
   let focus: Renderable | null
   function refocus() {
     setTimeout(() => {
@@ -81,7 +85,9 @@ function init() {
       }
       const found = find(renderer.root)
       if (!found) return
-      focus.focus()
+      if (vim.mode === "insert") {
+        focus.focus()
+      }
     }, 1)
   }
 

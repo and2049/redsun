@@ -8,8 +8,10 @@ import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
 import { useDirectory } from "../context/directory"
+import { useMode } from "../context/mode"
 import { useRouteData } from "@tui/context/route"
 import { usePromptRef } from "../context/prompt"
+import { TextAttributes } from "@opentui/core"
 import { Installation } from "@/installation"
 import { useKV } from "../context/kv"
 import { useCommandDialog } from "../component/dialog-command"
@@ -89,6 +91,7 @@ export function Home() {
     }
   })
   const directory = useDirectory()
+  const vim = useMode()
 
   return (
     <>
