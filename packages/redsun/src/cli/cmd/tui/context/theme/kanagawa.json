@@ -41,15 +41,15 @@
     },
     "background": {
       "dark": "#1F1F28",
-      "light": "#F2E9DE"
+      "light": "#e7dde1"
     },
     "backgroundPanel": {
       "dark": "#2A2A37",
-      "light": "#EAE4D7"
+      "light": "#eadcd7"
     },
     "backgroundElement": {
       "dark": "#363646",
-      "light": "#E3DCD2"
+      "light": "#e3d7d2"
     },
     "border": {
       "dark": "#54546D",
