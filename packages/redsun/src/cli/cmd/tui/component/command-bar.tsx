@@ -1,9 +1,10 @@
-import { createSignal, createEffect, on, Show, onCleanup, batch, createMemo, For } from "solid-js"
-import { useMode } from "../context/mode"
-import { useTheme } from "../context/theme"
+import { createSignal, createEffect, Show, createMemo, For, Match, Switch } from "solid-js"
+import { useMode, type VimMode } from "../context/mode"
+import { useTheme, selectedForeground } from "../context/theme"
 import { useCommandDialog } from "./dialog-command"
 import type { InputRenderable } from "@opentui/core"
-import { useKeyboard } from "@opentui/solid"
+import { TextAttributes } from "@opentui/core"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import fuzzysort from "fuzzysort"
 import { SplitBorder } from "./border"
 
@@ -71,10 +72,88 @@ const COMMAND_ALIASES: Record<string, string> = {
   tips: "tips.toggle",
 }
 
+const MAX_SUGGESTIONS = 10
+const SUGGESTION_PADDING = 2
+const SEPARATOR_WIDTH = 3
+
+function ModeIndicator(props: { mode: VimMode }) {
+  const { theme } = useTheme()
+  return (
+    <text fg={theme.text} attributes={TextAttributes.BOLD}>
+      {props.mode.toUpperCase()}
+    </text>
+  )
+}
+
+function CommandInput(props: {
+  value: string
+  onInput: (value: string) => void
+  onRef: (ref: InputRenderable) => void
+}) {
+  const { theme } = useTheme()
+  return (
+    <box flexDirection="row" flexGrow={1}>
+      <text fg={theme.primary}>:</text>
+      <input
+        ref={props.onRef}
+        onInput={props.onInput}
+        value={props.value}
+        focusedBackgroundColor={theme.backgroundElement}
+        cursorColor={theme.primary}
+        focusedTextColor={theme.text}
+        flexGrow={1}
+      />
+    </box>
+  )
+}
+
+function CommandSuggestions(props: {
+  suggestions: string[]
+  selectedIndex: number
+  width: number
+}) {
+  const { theme } = useTheme()
+  return (
+    <box
+      position="absolute"
+      bottom={1}
+      left={0}
+      width={props.width}
+      flexDirection="column"
+      backgroundColor={theme.backgroundMenu}
+      {...SplitBorder}
+      borderColor={theme.border}
+      zIndex={100}
+    >
+      <For each={props.suggestions}>
+        {(suggestion, index) => {
+          const selected = () => index() === props.selectedIndex
+          return (
+            <box
+              paddingLeft={1}
+              paddingRight={1}
+              flexDirection="row"
+              backgroundColor={selected() ? theme.primary : undefined}
+            >
+              <text fg={selected() ? selectedForeground(theme) : theme.text} flexShrink={0}>
+                {suggestion}
+              </text>
+              <text fg={selected() ? selectedForeground(theme) : theme.textMuted} wrapMode="none">
+                {" "}- {COMMAND_ALIASES[suggestion]}
+              </text>
+            </box>
+          )
+        }}
+      </For>
+    </box>
+  )
+}
+
 export function CommandBar() {
   const vim = useMode()
   const { theme } = useTheme()
   const command = useCommandDialog()
+  const dimensions = useTerminalDimensions()
   let inputRef: InputRenderable
 
   const [input, setInput] = createSignal("")
@@ -85,7 +164,26 @@ export function CommandBar() {
     const val = lockedQuery() ?? input().trim().toLowerCase()
     if (!val) return []
     const aliases = Object.keys(COMMAND_ALIASES)
-    return fuzzysort.go(val, aliases).map((res) => res.target).slice(0, 10)
+    return fuzzysort
+      .go(val, aliases)
+      .map((res) => res.target)
+      .slice(0, MAX_SUGGESTIONS)
+  })
+
+  const suggestionWidth = createMemo(() => {
+    const list = suggestions()
+    if (list.length === 0) return 0
+    let max = 0
+    for (const suggestion of list) {
+      const alias = COMMAND_ALIASES[suggestion] ?? ""
+      const width =
+        SUGGESTION_PADDING +
+        Bun.stringWidth(suggestion) +
+        SEPARATOR_WIDTH +
+        Bun.stringWidth(alias)
+      if (width > max) max = width
+    }
+    return Math.min(max, dimensions().width)
   })
 
   createEffect(() => {
@@ -102,9 +200,8 @@ export function CommandBar() {
     if (vim.mode !== "command") return
 
     if (evt.name === "return") {
-      // Execute command
       const val = input().trim().toLowerCase()
-      inputRef?.blur() // explicitly blur before executing, prevents segfaults on exit
+      inputRef?.blur()
       vim.setMode("normal")
       setInput("")
       evt.preventDefault()
@@ -117,15 +214,26 @@ export function CommandBar() {
           command.trigger(val)
         }
       })
-    } else if (evt.name === "escape") {
+      return
+    }
+
+    if (evt.name === "escape") {
       vim.setMode("normal")
       setInput("")
       evt.preventDefault()
-    } else if (evt.name === "tab") {
+      return
+    }
+
+    if (evt.name === "tab") {
       evt.preventDefault()
       const list = suggestions()
-      if (list.length > 0) {
-        if (lockedQuery() === null) setLockedQuery(input().trim().toLowerCase())
+      if (list.length === 0) return
+
+      if (lockedQuery() === null) {
+        setLockedQuery(input().trim().toLowerCase())
+        setSelectedIndex(0)
+        setInput(list[0])
+      } else {
         const nextIndex = (selectedIndex() + (evt.shift ? -1 : 1) + list.length) % list.length
         setSelectedIndex(nextIndex)
         setInput(list[nextIndex])
@@ -134,56 +242,45 @@ export function CommandBar() {
   })
 
   return (
-    <box flexDirection="row" backgroundColor={theme.backgroundElement} paddingLeft={1} paddingRight={1} minHeight={1}>
-      <Show when={vim.mode === "command"}>
-        <Show when={suggestions().length > 0}>
-          <box 
-            position="absolute" 
-            bottom={1} 
-            left={0} 
-            flexDirection="column" 
-            backgroundColor={theme.backgroundMenu} 
-            {...SplitBorder}
-            borderColor={theme.border}
-          >
-            <For each={suggestions()}>
-              {(suggestion, index) => (
-                <box 
-                  paddingLeft={1} 
-                  paddingRight={1} 
-                  flexDirection="row"
-                  backgroundColor={index() === selectedIndex() ? theme.primary : undefined}
-                >
-                  <text fg={index() === selectedIndex() ? theme.background : theme.text}>
-                    {suggestion}
-                  </text>
-                  <text fg={theme.textMuted}> - {COMMAND_ALIASES[suggestion]}</text>
-                </box>
-              )}
-            </For>
-          </box>
-        </Show>
-        <text fg={theme.primary}>:</text>
-        <input
-          ref={(r) => {
-            inputRef = r
-            if (vim.mode === "command") {
-              setTimeout(() => inputRef.focus(), 1)
-            }
-          }}
-          onInput={(e) => {
-            if (e === input()) return
-            setLockedQuery(null)
-            setSelectedIndex(0)
-            setInput(e)
-          }}
-          value={input()}
-          focusedBackgroundColor={theme.backgroundElement}
-          cursorColor={theme.primary}
-          focusedTextColor={theme.text}
-          flexGrow={1}
-        />
-      </Show>
+    <box
+      position="absolute"
+      bottom={0}
+      left={0}
+      width={dimensions().width}
+      height={1}
+      zIndex={1000}
+      backgroundColor={theme.backgroundElement}
+      flexDirection="row"
+      alignItems="center"
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      <Switch>
+        <Match when={vim.mode === "command"}>
+          <CommandInput
+            value={input()}
+            onInput={(e) => {
+              if (e === input()) return
+              setLockedQuery(null)
+              setSelectedIndex(0)
+              setInput(e)
+            }}
+            onRef={(r) => {
+              inputRef = r
+            }}
+          />
+          <Show when={suggestions().length > 0}>
+            <CommandSuggestions
+              suggestions={suggestions()}
+              selectedIndex={selectedIndex()}
+              width={suggestionWidth()}
+            />
+          </Show>
+        </Match>
+        <Match when={true}>
+          <ModeIndicator mode={vim.mode} />
+        </Match>
+      </Switch>
     </box>
   )
 }

@@ -137,7 +137,7 @@ export function Home() {
           <DidYouKnow />
         </Show>
       </Show>
-      <box height={3} flexShrink={0} />
+      <box height={2} flexShrink={0} />
     </>
   )
 }
