@@ -24,6 +24,7 @@ import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { PromptStashProvider } from "./component/prompt/stash"
+import { CommandBar } from "./component/command-bar"
 import { DialogAlert } from "./ui/dialog-alert"
 import { ToastProvider, useToast } from "./ui/toast"
 import { ExitProvider, useExit } from "./context/exit"
@@ -34,6 +35,7 @@ import { Provider } from "@/provider/provider"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
 import open from "open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
+import { ModeProvider, useMode } from "./context/mode"
 import { iife } from "@/util/iife"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
@@ -120,19 +122,21 @@ export function tui(input: { url: string; args: Args; onExit?: () => Promise<voi
                         <SyncProvider>
                           <ThemeProvider mode={mode}>
                             <LocalProvider>
-                              <KeybindProvider>
-                                <PromptStashProvider>
-                                  <DialogProvider>
-                                    <CommandProvider>
-                                      <PromptHistoryProvider>
-                                        <PromptRefProvider>
-                                          <App />
-                                        </PromptRefProvider>
-                                      </PromptHistoryProvider>
-                                    </CommandProvider>
-                                  </DialogProvider>
-                                </PromptStashProvider>
-                              </KeybindProvider>
+                              <ModeProvider>
+                                <KeybindProvider>
+                                  <PromptStashProvider>
+                                    <DialogProvider>
+                                      <CommandProvider>
+                                        <PromptHistoryProvider>
+                                          <PromptRefProvider>
+                                            <App />
+                                          </PromptRefProvider>
+                                        </PromptHistoryProvider>
+                                      </CommandProvider>
+                                    </DialogProvider>
+                                  </PromptStashProvider>
+                                </KeybindProvider>
+                              </ModeProvider>
                             </LocalProvider>
                           </ThemeProvider>
                         </SyncProvider>
@@ -456,7 +460,6 @@ function App() {
       },
       category: "System",
     },
-
     {
       title: "Exit the app",
       value: "app.exit",
@@ -575,6 +578,7 @@ function App() {
     <box
       width={dimensions().width}
       height={dimensions().height}
+      flexDirection="column"
       backgroundColor={theme.background}
       onMouseUp={async () => {
         if (Flag.REDSUN_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) {
@@ -629,14 +633,17 @@ function App() {
           )
         })()}
       </Show>
-      <Switch>
-        <Match when={route.data.type === "home"}>
-          <Home />
-        </Match>
-        <Match when={route.data.type === "session"}>
-          <Session />
-        </Match>
-      </Switch>
+      <box flexGrow={1} flexDirection="column" paddingBottom={1}>
+        <Switch>
+          <Match when={route.data.type === "home"}>
+            <Home />
+          </Match>
+          <Match when={route.data.type === "session"}>
+            <Session />
+          </Match>
+        </Switch>
+      </box>
+      <CommandBar />
     </box>
   )
 }

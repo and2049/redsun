@@ -1,5 +1,5 @@
 import { BoxRenderable, TextareaRenderable, MouseEvent, PasteEvent, t, dim, fg, type KeyBinding } from "@opentui/core"
-import { createEffect, createMemo, type JSX, onMount, createSignal, onCleanup, Show, Switch, Match } from "solid-js"
+import { createEffect, createMemo, type JSX, onMount, createSignal, onCleanup, Show } from "solid-js"
 import "opentui-spinner/solid"
 import { useLocal } from "@tui/context/local"
 import { useTheme } from "@tui/context/theme"
@@ -16,7 +16,8 @@ import { usePromptStash } from "./stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useCommandDialog } from "../dialog-command"
-import { useRenderer } from "@opentui/solid"
+import { useMode } from "../../context/mode"
+import { useRenderer, useKeyboard } from "@opentui/solid"
 import { Editor } from "@tui/util/editor"
 import { useExit } from "../../context/exit"
 import { Clipboard } from "../../util/clipboard"
@@ -344,8 +345,28 @@ export function Prompt(props: PromptProps) {
     ]
   })
 
+  const vim = useMode()
   createEffect(() => {
-    input.focus()
+    if (vim.mode === "insert" && !props.disabled && dialog.stack.length === 0) {
+      setTimeout(() => {
+        input.focus()
+        renderer.requestRender()
+      }, 0)
+    } else {
+      setTimeout(() => {
+        input.blur()
+        renderer.requestRender()
+      }, 0)
+    }
+  })
+
+  useKeyboard((evt) => {
+    if (evt.name === "escape" && dialog.stack.length === 0) {
+      if (vim.mode === "insert") {
+        vim.setMode("normal")
+        evt.preventDefault()
+      }
+    }
   })
 
   onMount(() => {
@@ -713,7 +734,7 @@ export function Prompt(props: PromptProps) {
   }
 
   const highlight = createMemo(() => {
-    if (keybind.leader) return theme.border
+    if (keybind.leader || vim.mode !== "insert") return theme.border
     if (store.mode === "shell") return theme.primary
     return local.agent.color(local.agent.current().name)
   })
@@ -780,8 +801,8 @@ export function Prompt(props: PromptProps) {
           >
             <textarea
               placeholder={props.sessionID ? undefined : `Ask anything... "${PLACEHOLDERS[store.placeholder]}"`}
-              textColor={keybind.leader ? theme.textMuted : theme.text}
-              focusedTextColor={keybind.leader ? theme.textMuted : theme.text}
+              textColor={keybind.leader || vim.mode !== "insert" ? theme.textMuted : theme.text}
+              focusedTextColor={keybind.leader || vim.mode !== "insert" ? theme.textMuted : theme.text}
               minHeight={1}
               maxHeight={6}
               onContentChange={() => {
@@ -792,7 +813,7 @@ export function Prompt(props: PromptProps) {
               }}
               keyBindings={textareaKeybindings()}
               onKeyDown={async (e) => {
-                if (props.disabled) {
+                if (props.disabled || vim.mode !== "insert") {
                   e.preventDefault()
                   return
                 }
@@ -954,7 +975,7 @@ export function Prompt(props: PromptProps) {
               </text>
               <Show when={store.mode === "normal"}>
                 <box flexDirection="row" gap={1}>
-                  <text flexShrink={0} fg={keybind.leader ? theme.textMuted : theme.text}>
+                  <text flexShrink={0} fg={keybind.leader || vim.mode !== "insert" ? theme.textMuted : theme.text}>
                     {local.model.parsed().model}
                   </text>
                   <text fg={theme.textMuted}>{local.model.parsed().provider}</text>
@@ -990,13 +1011,14 @@ export function Prompt(props: PromptProps) {
           />
         </box>
         <box flexDirection="row" justifyContent="space-between">
-          <Show when={status().type !== "idle"} fallback={<text />}>
-            <box
-              flexDirection="row"
-              gap={1}
-              flexGrow={1}
-              justifyContent={status().type === "retry" ? "space-between" : "flex-start"}
-            >
+          <box flexDirection="row" gap={2} flexGrow={1}>
+            <Show when={status().type !== "idle"}>
+              <box
+                flexDirection="row"
+                gap={1}
+                flexGrow={1}
+                justifyContent={status().type === "retry" ? "space-between" : "flex-start"}
+              >
               <box flexShrink={0} flexDirection="row" gap={1}>
                 <box marginLeft={1}>
                   <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
@@ -1069,24 +1091,15 @@ export function Prompt(props: PromptProps) {
               </text>
             </box>
           </Show>
+          </box>
           <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
-              <Switch>
-                <Match when={store.mode === "normal"}>
-                  <text fg={theme.text}>
-                    {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>switch agent</span>
-                  </text>
-                  <text fg={theme.text}>
-                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
-                </Match>
-                <Match when={store.mode === "shell"}>
-                  <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
-                  </text>
-                </Match>
-              </Switch>
-            </box>
+            <Show when={store.mode === "shell"}>
+              <box gap={2} flexDirection="row">
+                <text fg={theme.text}>
+                  esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+                </text>
+              </box>
+            </Show>
           </Show>
         </box>
       </box>
