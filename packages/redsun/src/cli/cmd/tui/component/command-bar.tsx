@@ -36,7 +36,7 @@ const COMMAND_ALIASES: Record<string, string> = {
   mfav: "model.cycle_favorite",
   mfavrev: "model.cycle_favorite_reverse",
   agent: "agent.list",
-  agents: "agent.list",
+  agents: "agent.toggle",
   acycle: "agent.cycle",
   acyclerev: "agent.cycle.reverse",
   mcp: "mcp.list",

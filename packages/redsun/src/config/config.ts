@@ -387,6 +387,10 @@ export namespace Config {
         .positive()
         .optional()
         .describe("Maximum number of agentic iterations before forcing text-only response"),
+      hidden: z
+        .boolean()
+        .optional()
+        .describe("Hide the agent from the TUI agent list"),
       permission: z
         .object({
           edit: Permission.optional(),
@@ -959,7 +963,7 @@ export namespace Config {
   }
 
   export async function update(config: Info) {
-    const filepath = path.join(Instance.directory, "config.json")
+    const filepath = path.join(Instance.directory, "redsun.json")
     const existing = await loadFile(filepath)
     await Bun.write(filepath, JSON.stringify(mergeDeep(existing, config), null, 2))
     await Instance.dispose()

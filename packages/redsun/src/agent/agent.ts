@@ -15,7 +15,9 @@ const log = Log.create({ service: "agent" })
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
+import PROMPT_EXECUTE from "./prompt/execute.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_PAIR from "./prompt/pair.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 
@@ -178,6 +180,26 @@ export namespace Agent {
         mode: "primary",
         native: true,
       },
+      execute: {
+        name: "execute",
+        mode: "primary",
+        native: true,
+        hidden: true,
+        prompt: PROMPT_EXECUTE,
+        tools: { ...defaultTools },
+        options: {},
+        permission: agentPermission,
+      },
+      pair: {
+        name: "pair",
+        mode: "primary",
+        native: true,
+        hidden: true,
+        prompt: PROMPT_PAIR,
+        tools: { ...defaultTools },
+        options: {},
+        permission: agentPermission,
+      },
       general: {
         name: "general",
         description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
@@ -268,6 +290,7 @@ export namespace Agent {
         permission,
         color,
         maxSteps,
+        hidden: configHidden,
         ...extra
       } = value
       item.options = {
@@ -290,6 +313,7 @@ export namespace Agent {
       if (top_p != undefined) item.topP = top_p
       if (mode) item.mode = mode
       if (color) item.color = color
+      if (configHidden != undefined) item.hidden = configHidden
       // just here for consistency & to prevent it from being added as an option
       if (name) item.name = name
       if (maxSteps != undefined) item.maxSteps = maxSteps
@@ -319,7 +343,7 @@ export namespace Agent {
             native: false,
           }
         }
-        const { name, model, prompt, tools, description, temperature, top_p, mode, permission, color, maxSteps, ...extra } =
+        const { name, model, prompt, tools, description, temperature, top_p, mode, permission, color, maxSteps, hidden: extHidden, ...extra } =
           value
         item.options = { ...item.options, ...extra }
         if (model) item.model = Provider.parseModel(model)
@@ -333,6 +357,7 @@ export namespace Agent {
         if (color) item.color = color
         if (name) item.name = name
         if (maxSteps != undefined) item.maxSteps = maxSteps
+        if (extHidden != undefined) item.hidden = extHidden
         if (permission ?? cfg.permission) {
           item.permission = mergeAgentPermissions(cfg.permission ?? {}, permission ?? {})
         }
