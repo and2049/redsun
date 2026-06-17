@@ -8,8 +8,10 @@ import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
 import { useDirectory } from "../context/directory"
+import { useMode } from "../context/mode"
 import { useRouteData } from "@tui/context/route"
 import { usePromptRef } from "../context/prompt"
+import { TextAttributes } from "@opentui/core"
 import { Installation } from "@/installation"
 import { useKV } from "../context/kv"
 import { useCommandDialog } from "../component/dialog-command"
@@ -89,27 +91,10 @@ export function Home() {
     }
   })
   const directory = useDirectory()
+  const vim = useMode()
 
   return (
     <>
-      <box flexGrow={1} justifyContent="center" alignItems="center" paddingLeft={2} paddingRight={2} gap={1}>
-        <Logo />
-        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1}>
-          <Prompt
-            ref={(r) => {
-              prompt = r
-              promptRef.set(r)
-            }}
-            hint={Hint}
-          />
-        </box>
-        <Toast />
-      </box>
-      <Show when={!isFirstTimeUser()}>
-        <Show when={showTips()}>
-          <DidYouKnow />
-        </Show>
-      </Show>
       <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} flexDirection="row" flexShrink={0} gap={2}>
         <text fg={theme.textMuted}>{directory()}</text>
         <box gap={1} flexDirection="row" flexShrink={0}>
@@ -133,6 +118,26 @@ export function Home() {
           <text fg={theme.textMuted}>{Installation.VERSION}</text>
         </box>
       </box>
+
+      <box flexGrow={1} justifyContent="center" alignItems="center" paddingLeft={2} paddingRight={2} gap={1}>
+        <Logo />
+        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1}>
+          <Prompt
+            ref={(r) => {
+              prompt = r
+              promptRef.set(r)
+            }}
+            hint={Hint}
+          />
+        </box>
+        <Toast />
+      </box>
+      <Show when={!isFirstTimeUser()}>
+        <Show when={showTips()}>
+          <DidYouKnow />
+        </Show>
+      </Show>
+      <box height={2} flexShrink={0} />
     </>
   )
 }

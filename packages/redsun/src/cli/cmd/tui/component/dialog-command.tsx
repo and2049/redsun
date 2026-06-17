@@ -11,6 +11,7 @@ import {
 } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { useKeybind } from "@tui/context/keybind"
+import { useMode } from "@tui/context/mode"
 import type { KeybindsConfig } from "@redsun/sdk/v2"
 
 type Context = ReturnType<typeof init>
@@ -26,6 +27,7 @@ function init() {
   const [suspendCount, setSuspendCount] = createSignal(0)
   const dialog = useDialog()
   const keybind = useKeybind()
+  const vim = useMode()
   const options = createMemo(() => {
     const all = registrations().flatMap((x) => x())
     const suggested = all.filter((x) => x.suggested)
@@ -45,6 +47,7 @@ function init() {
 
   useKeyboard((evt) => {
     if (suspended()) return
+    if (vim.mode === "command") return
     if (dialog.stack.length > 0) return
     for (const option of options()) {
       if (option.keybind && keybind.match(option.keybind, evt)) {
@@ -97,9 +100,11 @@ export function CommandProvider(props: ParentProps) {
   const value = init()
   const dialog = useDialog()
   const keybind = useKeybind()
+  const vim = useMode()
 
   useKeyboard((evt) => {
     if (value.suspended()) return
+    if (vim.mode === "command") return
     if (dialog.stack.length > 0) return
     if (evt.defaultPrevented) return
     if (keybind.match("command_list", evt)) {
