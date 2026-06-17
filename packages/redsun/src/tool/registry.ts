@@ -26,6 +26,7 @@ import { CodeSearchTool } from "./codesearch"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
+import { ProjectTool } from "./project"
 import { ExtensionLoader } from "../extension/loader"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
@@ -455,6 +456,7 @@ export namespace ToolRegistry {
       CodeSearchTool,
       SkillTool,
       ReloadTool,
+      ProjectTool,
       ...(Flag.REDSUN_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
       ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
     ]
