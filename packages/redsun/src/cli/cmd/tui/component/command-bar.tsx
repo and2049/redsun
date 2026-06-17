@@ -79,7 +79,7 @@ const SEPARATOR_WIDTH = 3
 function ModeIndicator(props: { mode: VimMode }) {
   const { theme } = useTheme()
   return (
-    <text fg={theme.text} attributes={TextAttributes.BOLD}>
+    <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
       {props.mode.toUpperCase()}
     </text>
   )
