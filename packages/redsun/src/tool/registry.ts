@@ -214,6 +214,7 @@ export namespace ToolRegistry {
   export async function reload() {
     const s = await state()
     const oldRunner = s.runner
+    ExtensionRunner.invalidate(oldRunner)
 
     const [{ SessionStatus }, { ExtensionContext: EC }] = await Promise.all([
       import("../session/status"),
@@ -269,27 +270,39 @@ export namespace ToolRegistry {
   }
 
   export function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
+    const assertActive = () => {
+      if (ExtensionRunner.isInvalidated(runner)) {
+        throw new Error(
+          "This extension context is no longer valid. The runtime was reloaded — " +
+          "the extension factory will be called again with a fresh API object. " +
+          "Discard any captured references to the old api or ctx."
+        )
+      }
+    }
     return {
-      on: (event, handler) => ExtensionRunner.on(runner, event, handler as any),
+      on: (event, handler) => { assertActive(); ExtensionRunner.on(runner, event, handler as any) },
       registerTool: async (tool) => {
+        assertActive()
         await ExtensionRunner.registerTool(runner, tool, source)
         const s = await state()
         s.custom.set(tool.id, tool)
         emitChanged()
       },
       unregisterTool: (id) => {
+        assertActive()
         ExtensionRunner.unregisterTool(runner, id)
         state().then((s) => {
           s.custom.delete(id)
           emitChanged()
         })
       },
-      setActiveTools: (toolNames) => ExtensionRunner.setActiveTools(runner, toolNames),
-      getActiveTools: () => ExtensionRunner.getActiveTools(runner),
-      getAllTools: () => ExtensionRunner.getAllTools(runner),
-      registerCommand: (command) => ExtensionRunner.registerCommand(runner, command),
-      unregisterCommand: (name) => ExtensionRunner.unregisterCommand(runner, name),
+      setActiveTools: (toolNames) => { assertActive(); ExtensionRunner.setActiveTools(runner, toolNames) },
+      getActiveTools: () => { assertActive(); return ExtensionRunner.getActiveTools(runner) },
+      getAllTools: () => { assertActive(); return ExtensionRunner.getAllTools(runner) },
+      registerCommand: (command) => { assertActive(); ExtensionRunner.registerCommand(runner, command) },
+      unregisterCommand: (name) => { assertActive(); ExtensionRunner.unregisterCommand(runner, name) },
       sendMessage: (content: string) => {
+        assertActive()
         const sessionID = runner.currentContext?.sessionID
         if (!sessionID) {
           log.warn("sendMessage called outside session context", { content })
@@ -300,9 +313,9 @@ export namespace ToolRegistry {
           customType: "extension.message",
           content,
           display: true,
-        }).then(() => {
+        }).then(async () => {
           log.info("sendMessage delivered", { sessionID })
-          const { SessionStatus } = require("../session/status")
+          const { SessionStatus } = await import("../session/status")
           if (SessionStatus.get(sessionID).type === "idle") {
             import("../session/prompt").then(({ SessionPrompt }) => {
               SessionPrompt.loop(sessionID)
@@ -315,6 +328,7 @@ export namespace ToolRegistry {
         })
       },
       sendUserMessage: (content: string) => {
+        assertActive()
         const sessionID = runner.currentContext?.sessionID
         if (!sessionID) {
           log.warn("sendUserMessage called outside session context", { content })
@@ -327,9 +341,11 @@ export namespace ToolRegistry {
         })
       },
       appendEntry: async (sessionID, customType, data) => {
+        assertActive()
         return Entry.append(sessionID, { type: "custom", customType, data })
       },
       appendCustomMessageEntry: async (sessionID, customType, content, display, details) => {
+        assertActive()
         return Entry.append(sessionID, {
           type: "custom_message",
           customType,
@@ -339,6 +355,7 @@ export namespace ToolRegistry {
         })
       },
       setModel: async (model: string) => {
+        assertActive()
         const sessionID = runner.currentContext?.sessionID
         if (!sessionID) {
           log.warn("setModel called outside session context", { model })
@@ -356,19 +373,11 @@ export namespace ToolRegistry {
           return false
         }
       },
-      registerProvider: (name, config) => {
-        ExtensionRunner.registerProvider(runner, name, config, source.path)
-      },
-      unregisterProvider: (name) => {
-        ExtensionRunner.unregisterProvider(runner, name)
-      },
+      registerProvider: (name, config) => { assertActive(); ExtensionRunner.registerProvider(runner, name, config, source.path) },
+      unregisterProvider: (name) => { assertActive(); ExtensionRunner.unregisterProvider(runner, name) },
       events: {
-        emit: (channel: string, data: unknown) => {
-          ExtensionRunner.emitEvent(runner, channel, data)
-        },
-        on: (channel: string, handler: (data: unknown) => void) => {
-          return ExtensionRunner.onEvent(runner, channel, handler)
-        },
+        emit: (channel: string, data: unknown) => { assertActive(); ExtensionRunner.emitEvent(runner, channel, data) },
+        on: (channel: string, handler: (data: unknown) => void) => { assertActive(); return ExtensionRunner.onEvent(runner, channel, handler) },
       },
     }
   }

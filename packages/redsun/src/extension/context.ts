@@ -3,6 +3,7 @@ import { SessionStatus } from "../session/status"
 import { Instance } from "../project/instance"
 import { Entry } from "../entry/entry"
 import { Log } from "../util/log"
+import { ToolRegistry } from "../tool/registry"
 
 export namespace ExtensionContext {
   export function create(options: {
@@ -93,9 +94,9 @@ export namespace ExtensionContext {
     return {
       ...base,
       isIdle: () => SessionStatus.get(options.sessionID).type === "idle",
-      hasPendingMessages: () => false,
+      hasPendingMessages: () => SessionStatus.get(options.sessionID).type === "busy",
       reload: async () => {
-        await Instance.dispose()
+        await ToolRegistry.reload()
       },
       newSession: async (newOpts) => {
         const { Session } = await import("../session/index")
@@ -124,16 +125,16 @@ export namespace ExtensionContext {
       notify: (message: string, type: "info" | "warning" | "error" = "info") => {
         log.info("notify", { message, type })
       },
-      confirm: async (title: string, message: string) => {
-        log.warn("confirm() is not available in this mode", { mode, title, message })
+      confirm: async (_title: string, _message: string) => {
+        log.warn("confirm() is not yet wired to the TUI — always returns false")
         return false
       },
-      input: async (title: string, placeholder?: string) => {
-        log.warn("input() is not available in this mode", { mode, title, placeholder })
+      input: async (_title: string, _placeholder?: string) => {
+        log.warn("input() is not yet wired to the TUI — always returns undefined")
         return undefined
       },
-      select: async (title: string, options: string[]) => {
-        log.warn("select() is not available in this mode", { mode, title, options })
+      select: async (_title: string, _options: string[]) => {
+        log.warn("select() is not yet wired to the TUI — always returns undefined")
         return undefined
       },
     }

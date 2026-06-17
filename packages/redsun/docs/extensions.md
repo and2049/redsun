@@ -64,25 +64,25 @@ Additionally, extensions can be installed from npm or git via `redsun extension 
 
 Extensions can import from:
 
-- **`zod`** — Schema validation (always available)
+- **`zod`** — Schema validation (automatically available, no install needed)
 - **`path`, `os`, `fs`, `child_process`** — Node.js built-ins
 - **Bun APIs** — `Bun.file()`, `Bun.write()`, `Bun.$.spawn()`, etc.
-- **redsun internal modules** — Import from the redsun package to access types and utilities (available when running in dev mode)
-- **npm packages** — The extension's `node_modules` (if published as an npm package with dependencies)
+
+> **Important**: You cannot import internal redsun modules (like `Tool`, `Session`, etc.) from extension files. Extension tools must be defined inline using the `{ id, init }` object format shown in the examples below. The `z` (Zod) global is available for schema definitions.
 
 ## Extension File Format
 
 An extension file has a default export that is an async factory function receiving the `api` object:
 
 ```ts
-export default async function(api: API) {
+export default async function(api) {
   // Register tools, commands, event handlers here
 }
 ```
 
 The factory is called on startup and after each reload. Use it to set up all registrations.
 
-Multiple extensions in a single file are fine — each `export default` is one extension.
+> **After reload**, the old `api` object and all handler closures are invalidated. Any attempt to use a stale `api` object will throw an error. Your extension's factory function will be called again with a fresh `api` — simply re-register everything in the factory and it will work correctly.
 
 For complex extensions, create a directory with an `index.ts` as the entry point. For npm packages, the `main` field in `package.json` points to the entry file.
 
@@ -106,7 +106,7 @@ See the Event Reference section below for all available event types.
 
 ### `api.registerTool(tool)`
 
-Register a tool that the LLM can invoke. The tool is defined using the `Tool.define` pattern:
+Register a tool that the LLM can invoke. Tools must be defined as inline `Tool.Info` objects:
 
 ```ts
 const myTool = {
@@ -139,19 +139,7 @@ const myTool = {
 await api.registerTool(myTool)
 ```
 
-You can also use `Tool.define(id, init)` for a shorter form:
-
-```ts
-import { Tool } from "./tool"
-
-const myTool = Tool.define("my_tool", async (ctx) => ({
-  description: "...",
-  parameters: z.object({ ... }),
-  execute: async (args, ctx) => ({ ... }),
-}))
-```
-
-**Important**: When writing extension files that define tools, you must provide the complete `Tool.Info` object (with `id` and `init` fields) inline, since direct imports from redsun source may not be available in all environments. Use the pattern with `{ id, init }` in the extension file itself.
+**Note**: You must provide the complete `{ id, init }` object inline in extension files. You cannot import `Tool.define` or other redsun internals from within extensions — use the inline format shown above.
 
 **Tool Context (`ctx`)**:
 
@@ -376,7 +364,7 @@ The `ctx` object passed to event handlers (not command handlers):
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `ui` | `UIContext` | UI interaction methods (notify, confirm, input, select) |
+| `ui` | `UIContext` | UI interaction methods. `notify()` logs a message; `confirm()`, `input()`, `select()` are stubs (not yet wired to TUI — always return `false`/`undefined`) |
 | `mode` | `"tui" \| "print" \| "rpc"` | Current interaction mode |
 | `hasUI` | `boolean` | Whether UI interactions are available |
 | `cwd` | `string` | Current working directory |
@@ -386,11 +374,13 @@ The `ctx` object passed to event handlers (not command handlers):
 | `isProjectTrusted()` | `() => boolean` | Whether the current project is trusted |
 | `signal` | `AbortSignal \| undefined` | Abort signal for the current operation |
 | `abort()` | `() => void` | Abort the current operation |
-| `hasPendingMessages()` | `() => boolean` | Whether there are pending messages |
+| `hasPendingMessages()` | `() => boolean` | Whether the session is currently processing (busy status) |
 | `getContextUsage()` | `() => ContextUsage \| undefined` | Current context window usage |
 | `getSystemPrompt()` | `() => string` | Current system prompt content |
 | `getEntries<T>(customType)` | `(type: string) => Promise<Array>` | Read persisted entries by custom type |
 | `compact()` | `() => Promise<void>` | Trigger context compaction |
+
+> **Session-scoped context**: `api.sendMessage()` and `api.sendUserMessage()` only work during session-scoped events (e.g., `session_start`, `tool_call`, `tool_result`, `turn_start`, `turn_end`, `input`). They will silently fail during startup events like `resources_discover` and `agents_register` which have no session context.
 
 ### Command Context (`Extension.CommandContext`)
 
