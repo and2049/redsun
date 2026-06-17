@@ -650,6 +650,15 @@ export namespace Config {
         .string()
         .describe("Small model to use for tasks like title generation in the format of provider/model")
         .optional(),
+      task_router: z
+        .object({
+          compact: z.string().optional().describe("Model for context compaction"),
+          summary: z.string().optional().describe("Model for session summaries"),
+          title: z.string().optional().describe("Model for title generation"),
+          explore: z.string().optional().describe("Model for exploration subagents"),
+        })
+        .optional()
+        .describe("Per-task model routing for different task types"),
       default_agent: z
         .string()
         .optional()

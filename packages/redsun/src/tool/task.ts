@@ -6,6 +6,7 @@ import { Bus } from "../bus"
 import { MessageV2 } from "../session/message-v2"
 import { Identifier } from "../id/id"
 import { Agent } from "../agent/agent"
+import { resolveTaskModel } from "../provider/router"
 import { SessionPrompt } from "../session/prompt"
 import { iife } from "@/util/iife"
 import { defer } from "@/util/defer"
@@ -76,7 +77,8 @@ export const TaskTool = Tool.define("task", async () => {
         })
       })
 
-      const model = agent.model ?? {
+      const exploreModel = await resolveTaskModel("explore", async () => undefined)
+      const model = agent.model ?? (exploreModel ? { modelID: exploreModel.id, providerID: exploreModel.providerID } : undefined) ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
       }

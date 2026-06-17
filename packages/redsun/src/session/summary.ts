@@ -1,4 +1,5 @@
 import { Provider } from "@/provider/provider"
+import { resolveTaskModel } from "@/provider/router"
 
 import { fn } from "@/util/fn"
 import z from "zod"
@@ -75,9 +76,6 @@ export namespace SessionSummary {
     await Session.updateMessage(userMsg)
 
     const assistantMsg = messages.find((m) => m.info.role === "assistant")!.info as MessageV2.Assistant
-    const small =
-      (await Provider.getSmallModel(assistantMsg.providerID)) ??
-      (await Provider.getModel(assistantMsg.providerID, assistantMsg.modelID))
 
     const textPart = msgWithParts.parts.find((p) => p.type === "text" && !p.synthetic) as MessageV2.TextPart
     if (textPart && !userMsg.summary?.title) {
@@ -86,7 +84,7 @@ export namespace SessionSummary {
         agent,
         user: userMsg,
         tools: {},
-        model: agent.model ? await Provider.getModel(agent.model.providerID, agent.model.modelID) : small,
+        model: agent.model ? await Provider.getModel(agent.model.providerID, agent.model.modelID) : await resolveTaskModel("title", () => Provider.getSmallModel(assistantMsg.providerID)) ?? await Provider.getModel(assistantMsg.providerID, assistantMsg.modelID),
         small: true,
         messages: [
           {
@@ -131,7 +129,8 @@ export namespace SessionSummary {
           tools: {},
           model: summaryAgent.model
             ? await Provider.getModel(summaryAgent.model.providerID, summaryAgent.model.modelID)
-            : small,
+            : await resolveTaskModel("summary", () => Provider.getSmallModel(assistantMsg.providerID))
+              ?? await Provider.getModel(assistantMsg.providerID, assistantMsg.modelID),
           small: true,
           messages: [
             ...(await MessageV2.toModelMessageWithCustom(userMsg.sessionID, messages)),
