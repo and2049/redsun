@@ -40,13 +40,26 @@ export function isProtectedPath(filePath: string): { blocked: boolean; reason?: 
   }
 
   for (const dir of PROTECTED_DIRS) {
-    if (normalized.includes(path.sep + dir + path.sep) || normalized.endsWith(path.sep + dir)) {
+    const segments = normalized.split(path.sep)
+    if (segments.includes(dir)) {
       log.warn("writing to protected directory", { filePath, dir })
       return { blocked: true, reason: `Cannot write to protected directory: ${dir} (${filePath})`, type: dir.includes("extensions") ? "extension" : "system" }
     }
   }
 
   return { blocked: false }
+}
+
+function extractPathLikeTokens(command: string): string[] {
+  const tokens: string[] = []
+  const delimiterRegex = /[\s'"|;&<>(){}$`\\]+/
+  const parts = command.split(delimiterRegex)
+  for (const part of parts) {
+    if (part.length > 1 && (part.includes(path.sep) || part.startsWith(".") || part.startsWith("/"))) {
+      tokens.push(part)
+    }
+  }
+  return tokens
 }
 
 export namespace ExtensionWrapper {
@@ -98,9 +111,11 @@ export namespace ExtensionWrapper {
         if (tool.id === "bash") {
           const command = (args as Record<string, unknown>).command as string | undefined
           if (command) {
-            for (const dir of PROTECTED_DIRS) {
-              if (command.includes(dir)) {
-                if (dir.includes("extensions")) {
+            const tokens = extractPathLikeTokens(command)
+            for (const token of tokens) {
+              const guard = isProtectedPath(token)
+              if (guard.blocked) {
+                if (guard.type === "extension") {
                   await Permission.ask({
                     type: "extension_write",
                     title: "Write Extension via Bash",
@@ -111,13 +126,8 @@ export namespace ExtensionWrapper {
                     metadata: { command },
                   })
                 } else {
-                  throw new Error(`Cannot reference protected directory "${dir}" via bash`)
+                  throw new Error(guard.reason ?? "blocked by guardrail")
                 }
-              }
-            }
-            for (const glob of PROTECTED_GLOBS) {
-              if (command.includes(glob)) {
-                throw new Error(`Cannot reference protected file "${glob}" via bash`)
               }
             }
             for (const p of PROTECTED_PATHS) {

@@ -88,6 +88,7 @@ export namespace SystemPrompt {
         `- Create a new skill (specialized knowledge/workflow for the agent)`,
         `- Create a new prompt template (reusable prompt with argument substitution)`,
         `After writing extension files to disk, use the reload tool to pick up the changes.`,
+        `Extension files must use inline { id, init } tool definitions — you cannot import redsun internals from extensions.`,
         `</self_modification>`,
       ].join("\n"),
     ]

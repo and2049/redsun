@@ -17,6 +17,7 @@ export namespace ExtensionRunner {
     providerRegistrar?: { register: (name: string, config: Extension.ProviderConfig) => void; unregister: (name: string) => void }
     eventBus: Map<string, Array<(data: unknown) => void>>
     currentContext?: Extension.Context
+    invalidated?: boolean
   }
 
   export function create(contextFactory: () => Extension.Context): State {
@@ -31,6 +32,14 @@ export namespace ExtensionRunner {
       pendingProviderRegistrations: [],
       eventBus: new Map(),
     }
+  }
+
+  export function invalidate(state: State) {
+    state.invalidated = true
+  }
+
+  export function isInvalidated(state: State): boolean {
+    return state.invalidated === true
   }
 
   export function on<E extends Extension.Event>(
@@ -170,6 +179,10 @@ export namespace ExtensionRunner {
     event: E,
     contextOverride?: Extension.Context,
   ): Promise<Extension.EventResult | undefined> {
+    if (isInvalidated(state)) {
+      log.warn("emit called on invalidated runner", { event: event.type })
+      return undefined
+    }
     const handlers = state.handlers.get(event.type)
     if (!handlers || handlers.length === 0) return undefined
 
