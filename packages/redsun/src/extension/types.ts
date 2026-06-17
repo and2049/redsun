@@ -116,6 +116,8 @@ export namespace Extension {
 
   export interface SessionBeforeCompactResult {
     cancel?: boolean
+    prompt?: string
+    context?: string[]
   }
 
   export interface SessionCompactEvent {

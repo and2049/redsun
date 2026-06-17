@@ -115,27 +115,19 @@ export namespace ProviderTransform {
     return msgs
   }
 
-  function applyCaching(msgs: ModelMessage[], providerID: string): ModelMessage[] {
+  function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
     const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
     const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
 
-    const providerOptions = {
-      anthropic: {
-        cacheControl: { type: "ephemeral" },
-      },
-      openrouter: {
-        cache_control: { type: "ephemeral" },
-      },
-      bedrock: {
-        cachePoint: { type: "ephemeral" },
-      },
-      openaiCompatible: {
-        cache_control: { type: "ephemeral" },
-      },
+    const cacheControlByNpm: Record<string, Record<string, any>> = {
+      "@ai-sdk/anthropic": { anthropic: { cacheControl: { type: "ephemeral" } } },
+      "@openrouter/ai-sdk-provider": { openrouter: { cache_control: { type: "ephemeral" } } },
+      "@ai-sdk/amazon-bedrock": { bedrock: { cachePoint: { type: "ephemeral" } } },
     }
+    const providerOptions = cacheControlByNpm[model.api.npm] ?? { openaiCompatible: { cache_control: { type: "ephemeral" } } }
 
     for (const msg of unique([...system, ...final])) {
-      const shouldUseContentOptions = providerID !== "anthropic" && Array.isArray(msg.content) && msg.content.length > 0
+      const shouldUseContentOptions = model.providerID !== "anthropic" && Array.isArray(msg.content) && msg.content.length > 0
 
       if (shouldUseContentOptions) {
         const lastContent = msg.content[msg.content.length - 1]
@@ -204,7 +196,7 @@ export namespace ProviderTransform {
       model.api.id.includes("claude") ||
       model.api.npm === "@ai-sdk/anthropic"
     ) {
-      msgs = applyCaching(msgs, model.providerID)
+      msgs = applyCaching(msgs, model)
     }
 
     return msgs

@@ -596,7 +596,7 @@ export namespace SessionPrompt {
         abort,
         sessionID,
         system: [
-          ...(await SystemPrompt.environment()),
+          ...(await SystemPrompt.environmentStable()),
           ...(await SystemPrompt.custom()),
           ...(await SystemPrompt.skills()),
           ...SystemPrompt.selfModification(),

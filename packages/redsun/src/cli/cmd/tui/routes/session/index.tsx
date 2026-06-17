@@ -44,7 +44,6 @@ import { useKeyboard, useRenderer, useTerminalDimensions, type BoxProps, type JS
 import { useSDK } from "@tui/context/sdk"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "@tui/context/keybind"
-import { Header } from "./header"
 import { parsePatch } from "diff"
 import { useDialog } from "../../ui/dialog"
 import { TodoItem } from "../../component/todo-item"
@@ -994,11 +993,8 @@ export function Session() {
       }}
     >
       <box flexDirection="row" flexGrow={1}>
-        <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
+        <box flexGrow={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={0}>
           <Show when={session()}>
-            <Show when={!sidebarVisible()}>
-              <Header />
-            </Show>
             <scrollbox
               ref={(r) => (scroll = r)}
               viewportOptions={{
@@ -1113,7 +1109,7 @@ export function Session() {
                 )}
               </For>
             </scrollbox>
-            <box flexShrink={0}>
+            <box flexShrink={0} flexDirection="column" paddingTop={1}>
               <Prompt
                 ref={(r) => {
                   prompt = r

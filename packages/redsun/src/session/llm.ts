@@ -81,7 +81,13 @@ export namespace LLM {
     )
     const mutatedSystem = (beforeResult as Extension.BeforeAgentStartResult | undefined)?.systemPrompt ?? joinedSystem
 
-    const system = [...header, mutatedSystem]
+    const volatileEnv = await SystemPrompt.environmentVolatile()
+    const volatileSystem = volatileEnv.join("\n")
+    const system = [
+      ...header,
+      mutatedSystem,
+      ...(volatileSystem ? [volatileSystem] : []),
+    ]
     const provider = await Provider.getProvider(input.model.providerID)
 
     const params = {

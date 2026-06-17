@@ -1,10 +1,11 @@
 import { createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
-import { useDirectory } from "../../context/directory"
 import { useConnected } from "../../component/dialog-model"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
+import { pipe, sumBy } from "remeda"
+import type { AssistantMessage } from "@redsun/sdk/v2"
 
 export function Footer() {
   const { theme } = useTheme()
@@ -17,11 +18,48 @@ export function Footer() {
     if (route.data.type !== "session") return []
     return sync.data.permission[route.data.sessionID] ?? []
   })
-  const directory = useDirectory()
   const connected = useConnected()
 
   const [store, setStore] = createStore({
     welcome: false,
+  })
+
+  const messages = createMemo(() => {
+    if (route.data.type !== "session") return []
+    return sync.data.message[route.data.sessionID] ?? []
+  })
+
+  const cost = createMemo(() => {
+    const total = pipe(
+      messages(),
+      sumBy((x) => (x.role === "assistant" ? x.cost : 0)),
+    )
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(total)
+  })
+
+  const context = createMemo(() => {
+    const last = messages().findLast((x) => x.role === "assistant" && x.tokens.output > 0) as AssistantMessage
+    if (!last) return
+    const total =
+      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+    const model = sync.data.provider.find((x) => x.id === last.providerID)?.models[last.modelID]
+    
+    // Format large numbers with K suffix
+    const formatNumber = (num: number) => {
+      if (num >= 1000) {
+        return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K'
+      }
+      return num.toLocaleString()
+    }
+    
+    let result = formatNumber(total)
+    if (model?.limit.context) {
+      result += " (" + Math.round((total / model.limit.context) * 100) + "%)"
+    }
+    return result
   })
 
   onMount(() => {
@@ -47,9 +85,13 @@ export function Footer() {
   })
 
   return (
-    <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
-      <text fg={theme.textMuted}>{directory()}</text>
-      <box gap={2} flexDirection="row" flexShrink={0}>
+    <box flexDirection="row" justifyContent="flex-end" gap={1} flexShrink={0}>
+      <box gap={2} flexDirection="row" flexShrink={0} alignItems="center">
+        <Show when={context()}>
+          <text fg={theme.textMuted} wrapMode="none" flexShrink={0}>
+            {context()} · {cost()}
+          </text>
+        </Show>
         <Switch>
           <Match when={store.welcome}>
             <text fg={theme.text}>
@@ -79,7 +121,6 @@ export function Footer() {
                 {mcp()} MCP
               </text>
             </Show>
-            <text fg={theme.textMuted}>/status</text>
           </Match>
         </Switch>
       </box>
