@@ -18,6 +18,16 @@ test("loads built-in agents when no custom agents configured", async () => {
       const names = agents.map((a) => a.name)
       expect(names).toContain("build")
       expect(names).toContain("plan")
+      expect(names).toContain("execute")
+      expect(names).toContain("pair")
+      const execute = agents.find((a) => a.name === "execute")
+      const pair = agents.find((a) => a.name === "pair")
+      expect(execute?.hidden).toBe(true)
+      expect(pair?.hidden).toBe(true)
+      const build = agents.find((a) => a.name === "build")
+      const plan = agents.find((a) => a.name === "plan")
+      expect(build?.hidden).toBeFalsy()
+      expect(plan?.hidden).toBeFalsy()
     },
   })
 })
@@ -66,6 +76,8 @@ test("throws error when all primary agents are disabled", async () => {
           agent: {
             build: { disable: true },
             plan: { disable: true },
+            execute: { disable: true },
+            pair: { disable: true },
           },
         }),
       )
@@ -108,6 +120,33 @@ test("does not throw when at least one primary agent remains", async () => {
       const plan = agents.find((a) => a.name === "plan")
       expect(plan).toBeDefined()
       expect(plan?.mode).toBe("primary")
+    },
+  })
+})
+
+test("hidden agents can be unhidden via config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          agent: {
+            execute: { hidden: false },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const agents = await Agent.list()
+      const execute = agents.find((a) => a.name === "execute")
+      expect(execute).toBeDefined()
+      expect(execute?.hidden).toBeFalsy()
+      const pair = agents.find((a) => a.name === "pair")
+      expect(pair?.hidden).toBe(true)
     },
   })
 })

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://redsun.sh/config.json",
+  "agent": {
+    "pair": {
+      "hidden": false
+    },
+    "execute": {
+      "hidden": false
+    }
+  }
+}
