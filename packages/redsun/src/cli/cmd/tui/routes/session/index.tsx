@@ -67,6 +67,7 @@ import { Footer } from "./footer.tsx"
 import { usePromptRef } from "../../context/prompt"
 import { Filesystem } from "@/util/filesystem"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
+import { useMode } from "../../context/mode"
 
 addDefaultParsers(parsers.parsers)
 
@@ -248,6 +249,7 @@ export function Session() {
     dialog.clear()
   }
 
+  const vim = useMode()
   useKeyboard((evt) => {
     if (dialog.stack.length > 0) return
 
@@ -267,6 +269,23 @@ export function Session() {
           sessionID: route.sessionID,
           response: response,
         })
+      }
+    } else {
+      if (vim.mode === "normal") {
+        if (evt.name === "j") {
+          scroll.scrollBy(1)
+          evt.preventDefault()
+        } else if (evt.name === "k") {
+          scroll.scrollBy(-1)
+          evt.preventDefault()
+        } else if (evt.name === "g" && evt.shift) {
+          scroll.scrollTo(scroll.scrollHeight)
+          evt.preventDefault()
+        } else if (evt.name === "g" && !evt.shift) {
+          // Double g for top? We'll just map single g to top for now
+          scroll.scrollTo(0)
+          evt.preventDefault()
+        }
       }
     }
   })
