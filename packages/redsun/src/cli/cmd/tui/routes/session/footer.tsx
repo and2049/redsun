@@ -5,12 +5,9 @@ import { useDirectory } from "../../context/directory"
 import { useConnected } from "../../component/dialog-model"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
-import { useMode } from "../../context/mode"
-import { TextAttributes } from "@opentui/core"
 
 export function Footer() {
   const { theme } = useTheme()
-  const vim = useMode()
   const sync = useSync()
   const route = useRoute()
   const mcp = createMemo(() => Object.values(sync.data.mcp).filter((x) => x.status === "connected").length)

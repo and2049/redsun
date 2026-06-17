@@ -993,7 +993,7 @@ export function Session() {
         sync,
       }}
     >
-      <box flexDirection="row">
+      <box flexDirection="row" flexGrow={1}>
         <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
           <Show when={session()}>
             <Show when={!sidebarVisible()}>

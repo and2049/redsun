@@ -578,6 +578,7 @@ function App() {
     <box
       width={dimensions().width}
       height={dimensions().height}
+      flexDirection="column"
       backgroundColor={theme.background}
       onMouseUp={async () => {
         if (Flag.REDSUN_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) {
@@ -632,14 +633,16 @@ function App() {
           )
         })()}
       </Show>
-      <Switch>
-        <Match when={route.data.type === "home"}>
-          <Home />
-        </Match>
-        <Match when={route.data.type === "session"}>
-          <Session />
-        </Match>
-      </Switch>
+      <box flexGrow={1} flexDirection="column" paddingBottom={1}>
+        <Switch>
+          <Match when={route.data.type === "home"}>
+            <Home />
+          </Match>
+          <Match when={route.data.type === "session"}>
+            <Session />
+          </Match>
+        </Switch>
+      </box>
       <CommandBar />
     </box>
   )

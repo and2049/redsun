@@ -1,5 +1,5 @@
-import { BoxRenderable, TextareaRenderable, MouseEvent, PasteEvent, t, dim, fg, type KeyBinding, TextAttributes } from "@opentui/core"
-import { createEffect, createMemo, type JSX, onMount, createSignal, onCleanup, Show, Switch, Match } from "solid-js"
+import { BoxRenderable, TextareaRenderable, MouseEvent, PasteEvent, t, dim, fg, type KeyBinding } from "@opentui/core"
+import { createEffect, createMemo, type JSX, onMount, createSignal, onCleanup, Show } from "solid-js"
 import "opentui-spinner/solid"
 import { useLocal } from "@tui/context/local"
 import { useTheme } from "@tui/context/theme"
@@ -1012,9 +1012,6 @@ export function Prompt(props: PromptProps) {
         </box>
         <box flexDirection="row" justifyContent="space-between">
           <box flexDirection="row" gap={2} flexGrow={1}>
-            <text fg={theme.text} attributes={TextAttributes.BOLD} flexShrink={0}>
-              {vim.mode.toUpperCase()}
-            </text>
             <Show when={status().type !== "idle"}>
               <box
                 flexDirection="row"
@@ -1096,23 +1093,13 @@ export function Prompt(props: PromptProps) {
           </Show>
           </box>
           <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
-              <Switch>
-                <Match when={store.mode === "normal" && vim.mode === "insert"}>
-                  <text fg={theme.text}>
-                    {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>switch agent</span>
-                  </text>
-                  <text fg={theme.text}>
-                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
-                </Match>
-                <Match when={store.mode === "shell"}>
-                  <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
-                  </text>
-                </Match>
-              </Switch>
-            </box>
+            <Show when={store.mode === "shell"}>
+              <box gap={2} flexDirection="row">
+                <text fg={theme.text}>
+                  esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+                </text>
+              </box>
+            </Show>
           </Show>
         </box>
       </box>
