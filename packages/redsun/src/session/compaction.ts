@@ -4,6 +4,7 @@ import { Session } from "."
 import { Identifier } from "../id/id"
 import { Instance } from "../project/instance"
 import { Provider } from "../provider/provider"
+import { resolveTaskModel } from "../provider/router"
 import { MessageV2 } from "./message-v2"
 import z from "zod"
 import { SessionPrompt } from "./prompt"
@@ -122,9 +123,10 @@ export namespace SessionCompaction {
 
     const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)!.info as MessageV2.User
     const agent = await Agent.get("compaction")
-    const model = agent.model
+    const model = (agent.model
       ? await Provider.getModel(agent.model.providerID, agent.model.modelID)
-      : await Provider.getModel(userMessage.model.providerID, userMessage.model.modelID)
+      : await resolveTaskModel("compact", () => Provider.getModel(userMessage.model.providerID, userMessage.model.modelID)))!
+
     const msg = (await Session.updateMessage({
       id: Identifier.ascending("message"),
       role: "assistant",

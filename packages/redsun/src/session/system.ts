@@ -33,7 +33,7 @@ export namespace SystemPrompt {
     return [PROMPT_ANTHROPIC_WITHOUT_TODO]
   }
 
-  export async function environment() {
+  export async function environmentStable() {
     const project = Instance.project
     return [
       [
@@ -42,8 +42,18 @@ export namespace SystemPrompt {
         `  Working directory: ${Instance.directory}`,
         `  Is directory a git repo: ${project.vcs === "git" ? "yes" : "no"}`,
         `  Platform: ${process.platform}`,
-        `  Today's date: ${new Date().toDateString()}`,
         `</env>`,
+      ].join("\n"),
+    ]
+  }
+
+  export async function environmentVolatile() {
+    const project = Instance.project
+    return [
+      [
+        `<env_dynamic>`,
+        `  Today's date: ${new Date().toDateString()}`,
+        `</env_dynamic>`,
         `<files>`,
         `  ${
           project.vcs === "git"
