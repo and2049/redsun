@@ -362,7 +362,7 @@ export function Prompt(props: PromptProps) {
 
   useKeyboard((evt) => {
     if (evt.name === "escape" && dialog.stack.length === 0) {
-      if (vim.mode === "insert" || vim.mode === "command") {
+      if (vim.mode === "insert") {
         vim.setMode("normal")
         evt.preventDefault()
       }
