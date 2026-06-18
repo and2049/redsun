@@ -172,13 +172,7 @@ if ($env:GITHUB_ACTIONS -eq "true") {
 # --- Banner ---
 
 Write-Host ""
-Write-Host "██╗      ██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗"
-Write-Host "╚██╗     ██╔══██╗██╔════╝██╔══██╗██╔════╝██║░░░██║████╗░░██║"
-Write-Host " ╚██╗    ██████╔╝█████╗░░██║░░██║███████╗██║░░░██║██╔██╗░██║"
-Write-Host " ██╔╝    ██╔══██╗██╔══╝░░██║░░██║╚════██║██║░░░██║██║╚██╗██║"
-Write-Host "██╔╝     ██║  ██║███████╗██████╔╝███████║╚██████╔╝██║░╚████║"
-Write-Host "╚═╝      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝"
-Write-Host ""
+Write-Info "redsun installed successfully!"
 Write-Host ""
 Write-Info "To start using redsun:"
 Write-Host ""
