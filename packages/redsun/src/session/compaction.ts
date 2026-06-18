@@ -18,6 +18,8 @@ import { ToolRegistry } from "../tool/registry"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
+import { CompactionExtractor } from "./compaction-extractor"
+import PROMPT_COMPACTION_HYBRID from "../agent/prompt/compaction-hybrid.txt"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
@@ -135,6 +137,10 @@ export namespace SessionCompaction {
       return "stop"
     }
 
+    const cfg = await Config.get()
+    const strategy = cfg.compaction?.strategy ?? "hybrid"
+    const keepRecent = cfg.compaction?.keepRecent ?? 4
+
     const msg = (await Session.updateMessage({
       id: Identifier.ascending("message"),
       role: "assistant",
@@ -160,37 +166,97 @@ export namespace SessionCompaction {
         created: Date.now(),
       },
     })) as MessageV2.Assistant
-    const processor = SessionProcessor.create({
-      assistantMessage: msg,
-      sessionID: input.sessionID,
-      model,
-      abort: input.abort,
-    })
+
     const defaultPrompt =
       "Provide a detailed prompt for continuing our conversation above. Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next considering new session will not have access to our conversation."
     const compactResult = beforeResult as Extension.SessionBeforeCompactResult | undefined
     const promptText = compactResult?.prompt ?? [defaultPrompt, ...(compactResult?.context ?? [])].join("\n\n")
-    const result = await processor.process({
-      user: userMessage,
-      agent,
-      abort: input.abort,
-      sessionID: input.sessionID,
-      tools: {},
-      system: [],
-      messages: [
-        ...MessageV2.toModelMessage(input.messages),
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: promptText,
-            },
-          ],
-        },
-      ],
-      model,
-    })
+
+    let result: "continue" | "stop" = "continue"
+
+    if (strategy === "algorithmic") {
+      log.info("algorithmic compaction")
+      const state = CompactionExtractor.extract(input.messages)
+      const summary = CompactionExtractor.serialize(state)
+      if (summary.trim().length < 50) {
+        log.info("algorithmic summary too short, aborting")
+        return "stop"
+      }
+      await Session.updatePart({
+        id: Identifier.ascending("part"),
+        messageID: msg.id,
+        sessionID: input.sessionID,
+        type: "text",
+        text: summary,
+        time: { start: Date.now(), end: Date.now() },
+      })
+      msg.finish = "stop"
+      msg.time.completed = Date.now()
+      await Session.updateMessage(msg)
+      result = "continue"
+    } else if (strategy === "hybrid") {
+      log.info("hybrid compaction")
+      const state = CompactionExtractor.extract(input.messages)
+      const inventory = CompactionExtractor.serialize(state)
+      const recentMessages = CompactionExtractor.extractRecentMessages(input.messages, keepRecent)
+      const recentModelMessages = MessageV2.toModelMessage(recentMessages)
+      const inventoryMessage = {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: `## Structured Inventory\n\n${inventory}` }],
+      }
+      const synthesisMessage = {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: promptText }],
+      }
+      const hybridAgent = { ...agent, prompt: PROMPT_COMPACTION_HYBRID }
+      const processor = SessionProcessor.create({
+        assistantMessage: msg,
+        sessionID: input.sessionID,
+        model,
+        abort: input.abort,
+      })
+      result = await processor.process({
+        user: userMessage,
+        agent: hybridAgent,
+        abort: input.abort,
+        sessionID: input.sessionID,
+        tools: {},
+        system: [],
+        messages: [inventoryMessage, ...recentModelMessages, synthesisMessage],
+        model,
+      })
+      if (processor.message.error) return "stop"
+    } else {
+      log.info("llm compaction")
+      const processor = SessionProcessor.create({
+        assistantMessage: msg,
+        sessionID: input.sessionID,
+        model,
+        abort: input.abort,
+      })
+      result = await processor.process({
+        user: userMessage,
+        agent,
+        abort: input.abort,
+        sessionID: input.sessionID,
+        tools: {},
+        system: [],
+        messages: [
+          ...MessageV2.toModelMessage(input.messages),
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: promptText,
+              },
+            ],
+          },
+        ],
+        model,
+      })
+      if (processor.message.error) return "stop"
+    }
 
     if (result === "continue" && input.auto) {
       const continueMsg = await Session.updateMessage({
@@ -216,7 +282,7 @@ export namespace SessionCompaction {
         },
       })
     }
-    if (processor.message.error) return "stop"
+    if (msg.error) return "stop"
     Bus.publish(Event.Compacted, { sessionID: input.sessionID })
     await ExtensionRunner.emit(
       runner,

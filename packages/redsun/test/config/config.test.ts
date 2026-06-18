@@ -601,3 +601,52 @@ test("compaction config can disable both auto and prune", async () => {
     },
   })
 })
+
+test("compaction config accepts strategy and keepRecent", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://redsun.sh/config.json",
+          compaction: {
+            strategy: "algorithmic",
+            keepRecent: 6,
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await Config.get()
+      expect(config.compaction?.strategy).toBe("algorithmic")
+      expect(config.compaction?.keepRecent).toBe(6)
+    },
+  })
+})
+
+test("compaction config strategy defaults to undefined (hybrid at usage)", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://redsun.sh/config.json",
+          compaction: {
+            auto: true,
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await Config.get()
+      expect(config.compaction?.strategy).toBeUndefined()
+      expect(config.compaction?.keepRecent).toBeUndefined()
+    },
+  })
+})
