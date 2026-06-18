@@ -2,6 +2,7 @@ import { test, expect, describe } from "bun:test"
 import { ExtensionRunner } from "../../src/extension/runner"
 import { ExtensionContext } from "../../src/extension/context"
 import type { Extension } from "../../src/extension/types"
+import z from "zod"
 
 function makeRunner() {
   return ExtensionRunner.create(() =>
@@ -150,6 +151,22 @@ describe("ExtensionRunner", () => {
       reason: "startup",
     })
     expect(runner.discoveredResources.skillPaths).toEqual(["/shared/skills", "/other/skills"])
+  })
+
+  test("registered tools do not implicitly restrict active tools", async () => {
+    const runner = makeRunner()
+    await ExtensionRunner.registerTool(runner, {
+      id: "custom_tool",
+      init: async () => ({
+        description: "custom",
+        parameters: z.object({}),
+        execute: async () => ({ title: "ok", output: "ok", metadata: {} }),
+      }),
+    } as any)
+
+    expect(ExtensionRunner.getActiveTools(runner)).toEqual([])
+    ExtensionRunner.setActiveTools(runner, ["custom_tool"])
+    expect(ExtensionRunner.getActiveTools(runner)).toEqual(["custom_tool"])
   })
 
   test("agents_register collects agentPaths from handlers", async () => {

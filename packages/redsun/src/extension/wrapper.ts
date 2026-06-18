@@ -19,12 +19,6 @@ const PROTECTED_GLOBS = [
   ".env.production",
 ]
 
-const PROTECTED_DIRS = [
-  ".git",
-  "node_modules",
-  ".redsun" + path.sep + "extensions",
-]
-
 export function isProtectedPath(filePath: string): { blocked: boolean; reason?: string; type?: "extension" | "system" } {
   const normalized = path.resolve(filePath)
 
@@ -39,11 +33,19 @@ export function isProtectedPath(filePath: string): { blocked: boolean; reason?: 
     return { blocked: true, reason: `Cannot write to protected file: ${filePath}`, type: "system" }
   }
 
-  for (const dir of PROTECTED_DIRS) {
-    const segments = normalized.split(path.sep)
+  const segments = normalized.split(path.sep)
+  for (const dir of [".git", "node_modules"]) {
     if (segments.includes(dir)) {
       log.warn("writing to protected directory", { filePath, dir })
-      return { blocked: true, reason: `Cannot write to protected directory: ${dir} (${filePath})`, type: dir.includes("extensions") ? "extension" : "system" }
+      return { blocked: true, reason: `Cannot write to protected directory: ${dir} (${filePath})`, type: "system" }
+    }
+  }
+
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i] === ".redsun" && segments[i + 1] === "extensions") {
+      const dir = path.join(".redsun", "extensions")
+      log.warn("writing to protected directory", { filePath, dir })
+      return { blocked: true, reason: `Cannot write to protected directory: ${dir} (${filePath})`, type: "extension" }
     }
   }
 

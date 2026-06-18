@@ -85,17 +85,18 @@ export namespace ToolRegistry {
       }
     }
 
+    let runner: ExtensionRunner.State
     const contextFactory = (): Extension.Context =>
       ExtensionContext.create({
         mode: "rpc",
         cwd: Instance.directory,
         sessionID: "",
         agent: "",
-        projectTrusted: true,
+        projectTrusted: runner?.projectTrusted ?? false,
         getSystemPrompt: () => "",
       })
 
-    const runner = ExtensionRunner.create(contextFactory)
+    runner = ExtensionRunner.create(contextFactory)
 
     // Phase 1: Load non-project extensions first (config, CLI, global)
     const nonProjectExtensions = await ExtensionLoader.load({ projectTrusted: false })
@@ -119,7 +120,7 @@ export namespace ToolRegistry {
       cwd: Instance.directory,
       sessionID: "",
       agent: "",
-      projectTrusted: true,
+      projectTrusted: false,
       getSystemPrompt: () => "",
     })
     const trusted = await resolveProjectTrusted({

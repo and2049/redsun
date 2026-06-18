@@ -156,7 +156,7 @@ export namespace SessionPrompt {
       mode: "rpc",
       sessionID: input.sessionID,
       agent: input.agent ?? "",
-      projectTrusted: true,
+      projectTrusted: runner.projectTrusted,
       getSystemPrompt: () => "",
     })
     const inputResult = await ExtensionRunner.emit(runner, { type: "input", text } as Extension.InputEvent, ctx)
@@ -330,7 +330,7 @@ export namespace SessionPrompt {
         mode: "rpc",
         sessionID,
         agent: lastUser?.agent ?? "",
-        projectTrusted: true,
+        projectTrusted: loopRunner.projectTrusted,
         getSystemPrompt: () => "",
       })
       await ExtensionRunner.emit(loopRunner, { type: "turn_start", turnIndex: step }, turnCtx)
@@ -413,7 +413,7 @@ export namespace SessionPrompt {
               mode: "rpc",
               sessionID,
               agent: task.agent,
-              projectTrusted: true,
+              projectTrusted: loopRunner.projectTrusted,
               getSystemPrompt: () => "",
             }),
         )
@@ -618,56 +618,12 @@ export namespace SessionPrompt {
         model,
       })
       if (result === "stop") {
-        const activeGoal = await Goal.get(sessionID)
-        if (activeGoal) {
-          try {
-            const verdict = await Goal.evaluate({
-              sessionID,
-              condition: activeGoal.condition,
-              msgs: sessionMessages,
-              model,
-            })
-            if (verdict.ok) {
-              log.info("goal satisfied; allowing stop", { sessionID })
-              await Goal.clear(sessionID)
-              break
-            } else if (verdict.impossible) {
-              log.warn("goal impossible; allowing stop", { sessionID, reason: verdict.reason })
-              await Goal.clear(sessionID)
-              break
-            } else {
-              const count = await Goal.bumpReact(sessionID)
-              if (count > 12) {
-                log.warn("goal hit react cap; allowing stop", { sessionID })
-                await Goal.clear(sessionID)
-                break
-              }
-              
-              log.info("goal not satisfied; re-entering", { sessionID, attempt: count })
-              const messageID = Identifier.ascending("message")
-              await Session.updateMessage({
-                id: messageID,
-                sessionID,
-                role: "user",
-                time: { created: Date.now() },
-                agent: agent.name,
-                model: { providerID: model.providerID, modelID: model.id },
-              })
-              await Session.updatePart({
-                id: Identifier.ascending("part"),
-                messageID,
-                sessionID,
-                type: "text",
-                text: `Your goal is not yet satisfied: "${activeGoal.condition}".\n\nThe independent judge noted:\n${verdict.reason}\n\nKeep working toward the goal. Do not stop until it is genuinely met or impossible.`,
-                synthetic: true,
-              })
-              continue
-            }
-          } catch (err) {
-            log.warn("goal judge failed; allowing stop", { error: String(err) })
-            break
-          }
-        }
+        const goalStop = await handleGoalStop({
+          sessionID,
+          agent,
+          model,
+        })
+        if (goalStop.action === "continue") continue
         break
       }
       if (ToolRegistry.consumePendingReload()) {
@@ -695,6 +651,66 @@ export namespace SessionPrompt {
     return Provider.defaultModel()
   }
 
+  export async function handleGoalStop(input: {
+    sessionID: string
+    agent: Agent.Info
+    model: Provider.Model
+    evaluate?: typeof Goal.evaluate
+  }): Promise<{ action: "stop" } | { action: "continue" }> {
+    const activeGoal = await Goal.get(input.sessionID)
+    if (!activeGoal) return { action: "stop" }
+
+    try {
+      const latestMessages = await MessageV2.filterCompacted(MessageV2.stream(input.sessionID))
+      const verdict = await (input.evaluate ?? Goal.evaluate)({
+        sessionID: input.sessionID,
+        condition: activeGoal.condition,
+        msgs: latestMessages,
+        model: input.model,
+      })
+      if (verdict.ok) {
+        log.info("goal satisfied; allowing stop", { sessionID: input.sessionID })
+        await Goal.clear(input.sessionID)
+        return { action: "stop" }
+      }
+      if (verdict.impossible) {
+        log.warn("goal impossible; allowing stop", { sessionID: input.sessionID, reason: verdict.reason })
+        await Goal.clear(input.sessionID)
+        return { action: "stop" }
+      }
+
+      const count = await Goal.bumpReact(input.sessionID)
+      if (count > 12) {
+        log.warn("goal hit react cap; allowing stop", { sessionID: input.sessionID })
+        await Goal.clear(input.sessionID)
+        return { action: "stop" }
+      }
+
+      log.info("goal not satisfied; re-entering", { sessionID: input.sessionID, attempt: count })
+      const messageID = Identifier.ascending("message")
+      await Session.updateMessage({
+        id: messageID,
+        sessionID: input.sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: input.agent.name,
+        model: { providerID: input.model.providerID, modelID: input.model.id },
+      })
+      await Session.updatePart({
+        id: Identifier.ascending("part"),
+        messageID,
+        sessionID: input.sessionID,
+        type: "text",
+        text: `Your goal is not yet satisfied: "${activeGoal.condition}".\n\nThe independent judge noted:\n${verdict.reason}\n\nKeep working toward the goal. Do not stop until it is genuinely met or impossible.`,
+        synthetic: true,
+      })
+      return { action: "continue" }
+    } catch (err) {
+      log.warn("goal judge failed; allowing stop", { error: String(err) })
+      return { action: "stop" }
+    }
+  }
+
   async function resolveTools(input: {
     agent: Agent.Info
     model: Provider.Model
@@ -715,12 +731,13 @@ export namespace SessionPrompt {
         mode: "rpc",
         sessionID: input.sessionID,
         agent: input.agent.name,
-        projectTrusted: true,
+        projectTrusted: runner.projectTrusted,
         getSystemPrompt: () => "",
         signal: input.processor.message.id ? undefined : undefined,
       })
     for (const item of await ToolRegistry.tools(input.model.providerID, input.agent)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
+      if (runner.activeTools.size > 0 && !runner.activeTools.has(item.id)) continue
       const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
       const wrapped = ExtensionWrapper.wrapExecute(
         item as ExtensionWrapper.ResolvedTool,
@@ -838,6 +855,7 @@ export namespace SessionPrompt {
 
   async function createUserMessage(input: PromptInput) {
     const agent = await Agent.get(input.agent ?? (await Agent.defaultAgent()))
+    const model = ToolRegistry.consumeModelOverride(input.sessionID) ?? input.model ?? agent.model ?? (await lastModel(input.sessionID))
     const info: MessageV2.Info = {
       id: input.messageID ?? Identifier.ascending("message"),
       role: "user",
@@ -847,7 +865,7 @@ export namespace SessionPrompt {
       },
       tools: input.tools,
       agent: agent.name,
-      model: input.model ?? agent.model ?? ToolRegistry.consumeModelOverride(input.sessionID) ?? (await lastModel(input.sessionID)),
+      model,
       system: input.system,
     }
 
@@ -1161,7 +1179,7 @@ export namespace SessionPrompt {
       mode: "rpc",
       sessionID: input.sessionID,
       agent: input.agent,
-      projectTrusted: true,
+      projectTrusted: runner.projectTrusted,
       getSystemPrompt: () => "",
     })
     const shellInputResult = await ExtensionRunner.emit(
@@ -1176,7 +1194,7 @@ export namespace SessionPrompt {
       SessionRevert.cleanup(session)
     }
     const agent = await Agent.get(input.agent)
-    const model = input.model ?? agent.model ?? (await lastModel(input.sessionID))
+    const model = ToolRegistry.consumeModelOverride(input.sessionID) ?? input.model ?? agent.model ?? (await lastModel(input.sessionID))
     const userMsg: MessageV2.User = {
       id: Identifier.ascending("message"),
       sessionID: input.sessionID,
@@ -1412,7 +1430,7 @@ export namespace SessionPrompt {
         mode: "rpc",
         sessionID: input.sessionID,
         agent: input.agent ?? "",
-        projectTrusted: true,
+        projectTrusted: runner.projectTrusted,
         getSystemPrompt: () => "",
       })
       const extCmdInputResult = await ExtensionRunner.emit(
@@ -1480,7 +1498,7 @@ export namespace SessionPrompt {
       mode: "rpc",
       sessionID: input.sessionID,
       agent: input.agent ?? "",
-      projectTrusted: true,
+      projectTrusted: runner.projectTrusted,
       getSystemPrompt: () => "",
     })
     const cmdInputResult = await ExtensionRunner.emit(

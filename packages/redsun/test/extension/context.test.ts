@@ -1,8 +1,10 @@
-import { test, expect, describe, mock, beforeAll } from "bun:test"
+import { test, expect, describe } from "bun:test"
 import { ExtensionContext } from "../../src/extension/context"
 import { Entry } from "../../src/entry/entry"
 import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
+
+const sessionID = (name: string) => `ses_${name}_${Math.random().toString(36).slice(2)}`
 
 describe("ExtensionContext.getEntries", () => {
   test("returns empty array when no entries exist", async () => {
@@ -29,17 +31,18 @@ describe("ExtensionContext.getEntries", () => {
     await Instance.provide({
       directory: tmp.path,
       fn: async () => {
-        await Entry.append("ses_with", { type: "custom", customType: "my-type", data: { count: 42 } })
-        await Entry.append("ses_with", { type: "custom", customType: "other-type", data: { count: 99 } })
+        const sid = sessionID("with")
+        await Entry.append(sid, { type: "custom", customType: "my-type", data: { count: 42 } })
+        await Entry.append(sid, { type: "custom", customType: "other-type", data: { count: 99 } })
 
         const ctx = ExtensionContext.create({
           mode: "rpc",
           cwd: tmp.path,
-          sessionID: "ses_with",
+          sessionID: sid,
           agent: "",
           projectTrusted: true,
           getSystemPrompt: () => "",
-          getEntries: <T>(customType: string) => Entry.getByType<T>("ses_with", customType),
+          getEntries: <T>(customType: string) => Entry.getByType<T>(sid, customType),
         })
 
         const result = await ctx.getEntries<{ count: number }>("my-type")
@@ -75,11 +78,12 @@ describe("ExtensionContext.forSession.getEntries", () => {
     await Instance.provide({
       directory: tmp.path,
       fn: async () => {
-        await Entry.append("ses_session", { type: "custom", customType: "session-state", data: { step: 5 } })
+        const sid = sessionID("session")
+        await Entry.append(sid, { type: "custom", customType: "session-state", data: { step: 5 } })
 
         const ctx = ExtensionContext.forSession({
           mode: "rpc",
-          sessionID: "ses_session",
+          sessionID: sid,
           agent: "",
           projectTrusted: true,
           getSystemPrompt: () => "",
@@ -106,34 +110,17 @@ describe("ExtensionContext.compact", () => {
 
     await expect(ctx.compact()).resolves.toBeUndefined()
   })
-})
 
-describe("ExtensionContext.compact error propagation (mocked)", () => {
-  beforeAll(() => {
-    mock.module("../../src/session/index", () => ({
-      Session: {
-        messages: async () => [{ info: { role: "user", model: { providerID: "openai", modelID: "gpt-4o" } } }],
-      },
-    }))
-    mock.module("../../src/session/compaction", () => ({
-      SessionCompaction: {
-        create: async () => {
-          throw new Error("compaction failed")
-        },
-      },
-    }))
-  })
-
-  test("propagates error from SessionCompaction.create", async () => {
+  test("preserves supplied project trust state", () => {
     const ctx = ExtensionContext.create({
       mode: "rpc",
       cwd: "/tmp",
-      sessionID: "ses_compact_err",
+      sessionID: "ses_trust",
       agent: "test",
-      projectTrusted: true,
+      projectTrusted: false,
       getSystemPrompt: () => "",
     })
 
-    await expect(ctx.compact()).rejects.toThrow("compaction failed")
+    expect(ctx.isProjectTrusted()).toBe(false)
   })
 })

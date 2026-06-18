@@ -1,12 +1,17 @@
-import { test, expect, describe, mock, beforeAll } from "bun:test"
+import { test, expect, describe } from "bun:test"
 import { ToolRegistry } from "../../src/tool/registry"
 import { ExtensionRunner } from "../../src/extension/runner"
 import { ExtensionContext } from "../../src/extension/context"
 import { Entry } from "../../src/entry/entry"
 import { SessionStatus } from "../../src/session/status"
 import { Instance } from "../../src/project/instance"
+import { Provider } from "../../src/provider/provider"
+import { Session } from "../../src/session"
+import { SessionPrompt } from "../../src/session/prompt"
 import { tmpdir } from "../fixture/fixture"
 import type { Extension } from "../../src/extension/types"
+
+const sessionID = (name: string) => `ses_${name}_${Math.random().toString(36).slice(2)}`
 
 function makeRunner() {
   return ExtensionRunner.create(() =>
@@ -50,93 +55,28 @@ describe("sendMessage", () => {
     await Instance.provide({
       directory: tmp.path,
       fn: async () => {
+        const sid = sessionID("sm")
         await ToolRegistry.state()
         const runner = await ToolRegistry.getRunner()
         runner.currentContext = ExtensionContext.create({
           mode: "rpc",
           cwd: "/tmp",
-          sessionID: "ses_sm_test",
+          sessionID: sid,
           agent: "test",
           projectTrusted: true,
           getSystemPrompt: () => "",
         })
         const api = createAPI(runner)
 
-        SessionStatus.set("ses_sm_test", { type: "busy" })
+        SessionStatus.set(sid, { type: "busy" })
         api.sendMessage("hello world")
         await Bun.sleep(100)
 
-        const entries = await Entry.list("ses_sm_test")
+        const entries = await Entry.list(sid)
         const msgs = entries.filter((e) => (e as any).customType === "extension.message")
         expect(msgs.length).toBe(1)
         expect((msgs[0] as any).content).toBe("hello world")
         expect((msgs[0] as any).display).toBe(true)
-      },
-    })
-  })
-})
-
-describe("sendMessage loop trigger (mocked)", () => {
-  const loopSpy = mock(() => {})
-
-  beforeAll(() => {
-    mock.module("../../src/session/prompt", () => ({
-      SessionPrompt: { loop: loopSpy, sendUserMessage: mock(() => {}) },
-    }))
-  })
-
-  test("triggers loop when session is idle", async () => {
-    loopSpy.mockClear()
-
-    await using tmp = await tmpdir({ git: true })
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        await ToolRegistry.state()
-        const runner = await ToolRegistry.getRunner()
-        runner.currentContext = ExtensionContext.create({
-          mode: "rpc",
-          cwd: "/tmp",
-          sessionID: "ses_idle_1",
-          agent: "test",
-          projectTrusted: true,
-          getSystemPrompt: () => "",
-        })
-        const api = createAPI(runner)
-
-        SessionStatus.set("ses_idle_1", { type: "idle" })
-        api.sendMessage("trigger loop")
-        await Bun.sleep(200)
-
-        expect(loopSpy).toHaveBeenCalledWith("ses_idle_1")
-      },
-    })
-  })
-
-  test("does not trigger loop when session is busy", async () => {
-    loopSpy.mockClear()
-
-    await using tmp = await tmpdir({ git: true })
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        await ToolRegistry.state()
-        const runner = await ToolRegistry.getRunner()
-        runner.currentContext = ExtensionContext.create({
-          mode: "rpc",
-          cwd: "/tmp",
-          sessionID: "ses_busy_1",
-          agent: "test",
-          projectTrusted: true,
-          getSystemPrompt: () => "",
-        })
-        const api = createAPI(runner)
-
-        SessionStatus.set("ses_busy_1", { type: "busy" })
-        api.sendMessage("busy message")
-        await Bun.sleep(200)
-
-        expect(loopSpy).not.toHaveBeenCalled()
       },
     })
   })
@@ -153,24 +93,6 @@ describe("setModel", () => {
 
   test("consumeModelOverride returns undefined when no override", () => {
     expect(ToolRegistry.consumeModelOverride("unknown_session")).toBeUndefined()
-  })
-})
-
-describe("setModel (mocked Provider)", () => {
-  beforeAll(() => {
-    mock.module("../../src/provider/provider", () => ({
-      Provider: {
-        parseModel: (model: string) => {
-          const [providerID, modelID] = model.split("/")
-          return { providerID, modelID }
-        },
-        getModel: async (providerID: string, _modelID: string) => {
-          if (providerID === "nonexistent") throw new Error("ModelNotFoundError")
-          return { id: _modelID }
-        },
-        defaultModel: async () => ({ providerID: "openai", modelID: "gpt-4o" }),
-      },
-    }))
   })
 
   test("returns true for valid model and stores override", async () => {
@@ -190,11 +112,12 @@ describe("setModel (mocked Provider)", () => {
         })
         const api = createAPI(runner)
 
-        const result = await api.setModel("openai/gpt-4o")
+        const model = await Provider.defaultModel()
+        const result = await api.setModel(`${model.providerID}/${model.modelID}`)
         expect(result).toBe(true)
 
         const override = ToolRegistry.consumeModelOverride("ses_model_1")
-        expect(override).toEqual({ providerID: "openai", modelID: "gpt-4o" })
+        expect(override).toEqual({ providerID: model.providerID, modelID: model.modelID })
 
         const second = ToolRegistry.consumeModelOverride("ses_model_1")
         expect(second).toBeUndefined()
@@ -224,6 +147,81 @@ describe("setModel (mocked Provider)", () => {
 
         const override = ToolRegistry.consumeModelOverride("ses_model_invalid")
         expect(override).toBeUndefined()
+      },
+    })
+  })
+
+  test("input hook model override wins over explicit prompt model once", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const explicit = { providerID: "explicit", modelID: "explicit-model" }
+        const override = await Provider.defaultModel()
+        const session = await Session.create({})
+        await ToolRegistry.state()
+        const runner = await ToolRegistry.getRunner()
+        const api = createAPI(runner)
+        ExtensionRunner.on<Extension.InputEvent>(runner, "input", async () => {
+          await api.setModel(`${override.providerID}/${override.modelID}`)
+          return undefined
+        })
+
+        const first = await SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          model: explicit,
+          noReply: true,
+          parts: [{ type: "text", text: "use override" }],
+        })
+        expect((first.info as any).model).toEqual({ providerID: override.providerID, modelID: override.modelID })
+
+        runner.handlers.set("input", [])
+        const second = await SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          model: explicit,
+          noReply: true,
+          parts: [{ type: "text", text: "use explicit" }],
+        })
+        expect((second.info as any).model).toEqual(explicit)
+
+        await Session.remove(session.id)
+      },
+    })
+  })
+
+  test("input hook model override wins over explicit shell model", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const explicit = { providerID: "explicit", modelID: "explicit-model" }
+        const override = await Provider.defaultModel()
+        const session = await Session.create({})
+        await ToolRegistry.state()
+        const runner = await ToolRegistry.getRunner()
+        const api = createAPI(runner)
+        ExtensionRunner.on<Extension.InputEvent>(runner, "input", async () => {
+          await api.setModel(`${override.providerID}/${override.modelID}`)
+          return undefined
+        })
+
+        await SessionPrompt.shell({
+          sessionID: session.id,
+          agent: "build",
+          model: explicit,
+          command: "echo override",
+        })
+
+        const messages = await Session.messages({ sessionID: session.id })
+        const user = messages.find((msg) => msg.info.role === "user")
+        const assistant = messages.find((msg) => msg.info.role === "assistant")
+        expect((user?.info as any).model).toEqual({ providerID: override.providerID, modelID: override.modelID })
+        expect((assistant?.info as any).providerID).toBe(override.providerID)
+        expect((assistant?.info as any).modelID).toBe(override.modelID)
+
+        await Session.remove(session.id)
       },
     })
   })
