@@ -58,6 +58,103 @@ describe("SessionCompaction.process guards", () => {
   })
 })
 
+describe("SessionCompaction auto trigger thresholds", () => {
+  const model = {
+    limit: { context: 100_000, output: 10_000 },
+  } as any
+
+  function tokens(input: number) {
+    return {
+      input,
+      output: 0,
+      reasoning: 0,
+      cache: { read: 0, write: 0 },
+    }
+  }
+
+  test("triggers before hard overflow at the default threshold", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        SessionCompaction.resetAutoState()
+        expect(SessionCompaction.tokenUsageRatio({ tokens: tokens(65_000), model })).toBeCloseTo(65_000 / 90_000)
+        await expect(
+          SessionCompaction.isOverflow({ sessionID: "threshold-default", tokens: tokens(65_000), model }),
+        ).resolves.toBe(true)
+      },
+    })
+  })
+
+  test("uses configured trigger threshold", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "redsun.json"),
+          JSON.stringify({
+            $schema: "https://redsun.sh/config.json",
+            compaction: { triggerThreshold: 0.8, resetThreshold: 0.4 },
+          }),
+        )
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        SessionCompaction.resetAutoState()
+        await expect(
+          SessionCompaction.isOverflow({ sessionID: "threshold-configured", tokens: tokens(65_000), model }),
+        ).resolves.toBe(false)
+        await expect(
+          SessionCompaction.isOverflow({ sessionID: "threshold-configured", tokens: tokens(73_000), model }),
+        ).resolves.toBe(true)
+      },
+    })
+  })
+
+  test("does not retrigger until usage drops below reset threshold", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const sessionID = "threshold-hysteresis"
+        SessionCompaction.resetAutoState(sessionID)
+        await expect(SessionCompaction.isOverflow({ sessionID, tokens: tokens(65_000), model })).resolves.toBe(true)
+        await expect(SessionCompaction.isOverflow({ sessionID, tokens: tokens(80_000), model })).resolves.toBe(false)
+        await expect(SessionCompaction.isOverflow({ sessionID, tokens: tokens(30_000), model })).resolves.toBe(false)
+        await expect(SessionCompaction.isOverflow({ sessionID, tokens: tokens(65_000), model })).resolves.toBe(true)
+      },
+    })
+  })
+
+  test("manual compaction creation ignores auto hysteresis state", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await Session.create({})
+        const sessionID = session.id
+        SessionCompaction.resetAutoState(sessionID)
+        await expect(SessionCompaction.isOverflow({ sessionID, tokens: tokens(65_000), model })).resolves.toBe(true)
+
+        await SessionCompaction.create({
+          sessionID,
+          agent: "default",
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
+          auto: false,
+        })
+
+        const messages = await Session.messages({ sessionID })
+        const compactionPart = messages.flatMap((message) => message.parts).find((part) => part.type === "compaction")
+        expect(compactionPart).toMatchObject({ type: "compaction", auto: false })
+
+        await Session.remove(sessionID)
+      },
+    })
+  })
+})
+
 describe("compaction promptText logic", () => {
   const defaultPrompt =
     "Provide a detailed prompt for continuing our conversation above."

@@ -6,6 +6,7 @@ import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 import { pipe, sumBy } from "remeda"
 import type { AssistantMessage } from "@redsun/sdk/v2"
+import { formatContextStatus } from "../../input/token-display"
 
 export function Footer() {
   const { theme } = useTheme()
@@ -43,23 +44,8 @@ export function Footer() {
   const context = createMemo(() => {
     const last = messages().findLast((x) => x.role === "assistant" && x.tokens.output > 0) as AssistantMessage
     if (!last) return
-    const total =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     const model = sync.data.provider.find((x) => x.id === last.providerID)?.models[last.modelID]
-    
-    // Format large numbers with K suffix
-    const formatNumber = (num: number) => {
-      if (num >= 1000) {
-        return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K'
-      }
-      return num.toLocaleString()
-    }
-    
-    let result = formatNumber(total)
-    if (model?.limit.context) {
-      result += " (" + Math.round((total / model.limit.context) * 100) + "%)"
-    }
-    return result
+    return formatContextStatus({ tokens: last.tokens, contextLimit: model?.limit.context })
   })
 
   onMount(() => {

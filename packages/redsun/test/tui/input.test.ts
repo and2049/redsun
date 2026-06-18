@@ -23,6 +23,7 @@ import {
   getSubagentHeaderInfo,
   isSubagentSession,
 } from "../../src/cli/cmd/tui/input/subagent-session"
+import { formatCacheHitRatio, formatContextStatus } from "../../src/cli/cmd/tui/input/token-display"
 import { Keybind } from "../../src/util/keybind"
 
 function key(name: string, options: Partial<ParsedKey> = {}) {
@@ -257,5 +258,24 @@ describe("TUI subagent session helpers", () => {
       title: "Build",
     })
     expect(getSubagentHeaderInfo(sessions, "parent")).toBeUndefined()
+  })
+})
+
+describe("TUI token display helpers", () => {
+  test("omits cache ratio when there is no cache activity", () => {
+    const tokens = { input: 1000, output: 100, reasoning: 0, cache: { read: 0, write: 0 } }
+    expect(formatCacheHitRatio(tokens)).toBeUndefined()
+    expect(formatContextStatus({ tokens, contextLimit: 10_000 })).toBe("1.1K (11%)")
+  })
+
+  test("formats cache hit ratio from input plus cache read tokens", () => {
+    const tokens = { input: 400, output: 100, reasoning: 0, cache: { read: 600, write: 0 } }
+    expect(formatCacheHitRatio(tokens)).toBe("cache 60%")
+    expect(formatContextStatus({ tokens, contextLimit: 10_000 })).toBe("1.1K (11%) · cache 60%")
+  })
+
+  test("shows cache ratio when only cache writes are reported", () => {
+    const tokens = { input: 1000, output: 100, reasoning: 0, cache: { read: 0, write: 200 } }
+    expect(formatCacheHitRatio(tokens)).toBe("cache 0%")
   })
 })

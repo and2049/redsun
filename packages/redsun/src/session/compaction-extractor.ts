@@ -3,7 +3,7 @@ import { Todo } from "./todo"
 
 export namespace CompactionExtractor {
   const MAX_LIST_SIZE = 25
-  const MAX_TOOL_RESULTS = 30
+  export const DEFAULT_MAX_TOOL_RESULTS = 30
   const TASK_TRUNCATE = 400
   const REQUIREMENT_TRUNCATE = 300
   const NOTE_TRUNCATE = 300
@@ -51,6 +51,10 @@ export namespace CompactionExtractor {
     assistantNotes: string[]
     todoState: Todo.Info[]
     patches: { hash: string; files: string[] }[]
+  }
+
+  export interface ExtractOptions {
+    maxToolResults?: number
   }
 
   export function createState(): WorkingState {
@@ -189,19 +193,20 @@ export namespace CompactionExtractor {
     slot.actions.push(action)
   }
 
-  function addToolResult(state: WorkingState, tool: string, summary: string) {
+  function addToolResult(state: WorkingState, tool: string, summary: string, maxToolResults = DEFAULT_MAX_TOOL_RESULTS) {
     const last = state.toolResults[state.toolResults.length - 1]
     if (last && last.tool === tool) {
       last.summary = truncate(`${last.summary} → ${summary}`, SHELL_RESULT_TRUNCATE)
     } else {
       state.toolResults.push({ tool, summary: truncate(summary, TOOL_RESULT_TRUNCATE) })
-      while (state.toolResults.length > MAX_TOOL_RESULTS) state.toolResults.shift()
+      while (state.toolResults.length > maxToolResults) state.toolResults.shift()
     }
   }
 
-  function extractFromToolCall(state: WorkingState, part: MessageV2.ToolPart) {
+  function extractFromToolCall(state: WorkingState, part: MessageV2.ToolPart, options: ExtractOptions) {
     const tool = part.tool
     const input = part.state.input ?? {}
+    const maxToolResults = options.maxToolResults ?? DEFAULT_MAX_TOOL_RESULTS
 
     if (READ_TOOLS.has(tool)) {
       const filePath = extractFilePath(input)
@@ -218,23 +223,23 @@ export namespace CompactionExtractor {
           detail: buildEditDetail(tool, input),
         })
       } else if (tool === "patch") {
-        addToolResult(state, "patch", buildEditDetail(tool, input))
+        addToolResult(state, "patch", buildEditDetail(tool, input), maxToolResults)
       }
       return
     }
 
     if (SHELL_TOOLS.has(tool)) {
       if (tool === "bash") {
-        addToolResult(state, "bash", `ran: ${truncate(input.command ?? "", CMD_TRUNCATE)}`)
+        addToolResult(state, "bash", `ran: ${truncate(input.command ?? "", CMD_TRUNCATE)}`, maxToolResults)
       } else if (tool === "project") {
-        addToolResult(state, "project", `${truncate(input.action ?? "run", 80)}: ${truncate(input.file ?? "", 80)}`)
+        addToolResult(state, "project", `${truncate(input.action ?? "run", 80)}: ${truncate(input.file ?? "", 80)}`, maxToolResults)
       }
       return
     }
 
     if (WEB_TOOLS.has(tool)) {
       const query = input.query ?? input.url ?? ""
-      addToolResult(state, tool, truncate(query, 100))
+      addToolResult(state, tool, truncate(query, 100), maxToolResults)
       return
     }
 
@@ -246,12 +251,13 @@ export namespace CompactionExtractor {
     }
 
     if (tool === "task") {
-      addToolResult(state, "task", `dispatch: ${truncate(input.description ?? input.prompt ?? "", 100)}`)
+      addToolResult(state, "task", `dispatch: ${truncate(input.description ?? input.prompt ?? "", 100)}`, maxToolResults)
       return
     }
   }
 
-  function extractFromToolResult(state: WorkingState, part: MessageV2.ToolPart) {
+  function extractFromToolResult(state: WorkingState, part: MessageV2.ToolPart, options: ExtractOptions) {
+    const maxToolResults = options.maxToolResults ?? DEFAULT_MAX_TOOL_RESULTS
     if (part.state.status === "error") {
       addCapped(state.failures, truncate(part.state.error, ERROR_RESULT_TRUNCATE))
       return
@@ -271,7 +277,7 @@ export namespace CompactionExtractor {
         const limit = isErrorResult(output) ? ERROR_RESULT_TRUNCATE : SHELL_RESULT_TRUNCATE
         last.summary = truncate(`${last.summary} → ${truncate(output.trim(), limit)}`, limit)
       } else {
-        addToolResult(state, tool, truncate(output.trim(), SHELL_RESULT_TRUNCATE))
+        addToolResult(state, tool, truncate(output.trim(), SHELL_RESULT_TRUNCATE), maxToolResults)
       }
       return
     }
@@ -279,7 +285,7 @@ export namespace CompactionExtractor {
     if (tool === "grep" || tool === "codesearch") {
       const lines = output.split("\n").filter((l) => l.trim().length > 0)
       const preview = lines.slice(0, 10).join("\n")
-      addToolResult(state, tool, `${lines.length} matches:\n${truncate(preview, TOOL_RESULT_TRUNCATE)}`)
+      addToolResult(state, tool, `${lines.length} matches:\n${truncate(preview, TOOL_RESULT_TRUNCATE)}`, maxToolResults)
       return
     }
 
@@ -295,12 +301,12 @@ export namespace CompactionExtractor {
     }
 
     if (WEB_TOOLS.has(tool)) {
-      addToolResult(state, tool, truncate(output.trim(), TOOL_RESULT_TRUNCATE))
+      addToolResult(state, tool, truncate(output.trim(), TOOL_RESULT_TRUNCATE), maxToolResults)
       return
     }
 
     if (tool === "task") {
-      addToolResult(state, "task", truncate(output.trim(), TOOL_RESULT_TRUNCATE))
+      addToolResult(state, "task", truncate(output.trim(), TOOL_RESULT_TRUNCATE), maxToolResults)
       return
     }
   }
@@ -335,7 +341,7 @@ export namespace CompactionExtractor {
     state.patches.push({ hash: part.hash, files: part.files })
   }
 
-  export function extract(messages: MessageV2.WithParts[]): WorkingState {
+  export function extract(messages: MessageV2.WithParts[], options: ExtractOptions = {}): WorkingState {
     const state = createState()
 
     for (const msg of messages) {
@@ -350,8 +356,8 @@ export namespace CompactionExtractor {
         if (msg.info.summary) continue
         for (const part of msg.parts) {
           if (part.type === "tool") {
-            extractFromToolCall(state, part)
-            extractFromToolResult(state, part)
+            extractFromToolCall(state, part, options)
+            extractFromToolResult(state, part, options)
           } else if (part.type === "patch") {
             extractFromPatch(state, part)
           }

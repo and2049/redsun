@@ -6,6 +6,7 @@ import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
 import type { Tool } from "../../src/tool/tool"
 import type { Extension } from "../../src/extension/types"
+import { orderedToolEntries } from "../../src/session/tool-order"
 import z from "zod"
 
 function makeTool(id: string, description: string): Tool.Info {
@@ -96,6 +97,31 @@ describe("allTools deduplication", () => {
         expect(bashIdx).toBeLessThan(customIdx)
       },
     })
+  })
+
+  test("custom tools are sorted after the builtin prefix", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await ToolRegistry.state()
+        await ToolRegistry.register(makeTool("z-custom", "z custom"))
+        await ToolRegistry.register(makeTool("a-custom", "a custom"))
+
+        const ids = await registeredToolIds()
+        const customIds = ids.filter((id) => id.endsWith("-custom"))
+        expect(customIds).toEqual(["a-custom", "z-custom"])
+        expect(ids.indexOf("bash")).toBeLessThan(ids.indexOf("a-custom"))
+      },
+    })
+  })
+
+  test("MCP tool entries are sorted by id before model exposure", () => {
+    expect(orderedToolEntries({ zeta: 1, alpha: 2, middle: 3 }).map(([id]) => id)).toEqual([
+      "alpha",
+      "middle",
+      "zeta",
+    ])
   })
 })
 
