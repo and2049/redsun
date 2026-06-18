@@ -49,6 +49,7 @@ import { ExtensionRunner } from "../extension/runner"
 import type { Extension } from "../extension/types"
 import { PromptTemplate } from "../prompt/template"
 import { Entry } from "../entry/entry"
+import { orderedToolEntries } from "./tool-order"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -521,7 +522,7 @@ export namespace SessionPrompt {
       if (
         lastFinished &&
         lastFinished.summary !== true &&
-        (await SessionCompaction.isOverflow({ tokens: lastFinished.tokens, model }))
+        (await SessionCompaction.isOverflow({ tokens: lastFinished.tokens, model, sessionID }))
       ) {
         await SessionCompaction.create({
           sessionID,
@@ -789,7 +790,7 @@ export namespace SessionPrompt {
         },
       })
     }
-    for (const [key, item] of Object.entries(await MCP.tools(input.model))) {
+    for (const [key, item] of orderedToolEntries(await MCP.tools(input.model))) {
       if (Wildcard.all(key, enabledTools) === false) continue
       const execute = item.execute
       if (!execute) continue

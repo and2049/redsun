@@ -23,6 +23,10 @@ import PROMPT_COMPACTION_HYBRID from "../agent/prompt/compaction-hybrid.txt"
 
 export namespace SessionCompaction {
   const log = Log.create({ service: "session.compaction" })
+  export const DEFAULT_TRIGGER_THRESHOLD = 0.7
+  export const DEFAULT_RESET_THRESHOLD = 0.4
+
+  const autoState = new Map<string, { waitingForReset: boolean }>()
 
   export const Event = {
     Compacted: BusEvent.define(
@@ -33,15 +37,47 @@ export namespace SessionCompaction {
     ),
   }
 
-  export async function isOverflow(input: { tokens: MessageV2.Assistant["tokens"]; model: Provider.Model }) {
-    const config = await Config.get()
-    if (config.compaction?.auto === false) return false
+  export function tokenUsageRatio(input: { tokens: MessageV2.Assistant["tokens"]; model: Provider.Model }) {
     const context = input.model.limit.context
-    if (context === 0) return false
-    const count = input.tokens.input + input.tokens.cache.read + input.tokens.output
+    if (context === 0) return 0
     const output = Math.min(input.model.limit.output, SessionPrompt.OUTPUT_TOKEN_MAX) || SessionPrompt.OUTPUT_TOKEN_MAX
     const usable = context - output
-    return count > usable
+    if (usable <= 0) return 1
+    const count = input.tokens.input + input.tokens.cache.read + input.tokens.output
+    return count / usable
+  }
+
+  export function resetAutoState(sessionID?: string) {
+    if (sessionID) autoState.delete(sessionID)
+    else autoState.clear()
+  }
+
+  export async function isOverflow(input: {
+    tokens: MessageV2.Assistant["tokens"]
+    model: Provider.Model
+    sessionID?: string
+  }) {
+    const config = await Config.get()
+    if (config.compaction?.auto === false) return false
+    if (input.model.limit.context === 0) return false
+
+    const triggerThreshold = config.compaction?.triggerThreshold ?? DEFAULT_TRIGGER_THRESHOLD
+    const resetThreshold = config.compaction?.resetThreshold ?? DEFAULT_RESET_THRESHOLD
+    const usage = tokenUsageRatio(input)
+
+    if (!input.sessionID) return usage > triggerThreshold
+
+    const state = autoState.get(input.sessionID) ?? { waitingForReset: false }
+    if (usage <= resetThreshold) {
+      if (state.waitingForReset) autoState.delete(input.sessionID)
+      return false
+    }
+    if (state.waitingForReset) return false
+    if (usage > triggerThreshold) {
+      autoState.set(input.sessionID, { waitingForReset: true })
+      return true
+    }
+    return false
   }
 
   export const PRUNE_MINIMUM = 20_000
@@ -140,6 +176,7 @@ export namespace SessionCompaction {
     const cfg = await Config.get()
     const strategy = cfg.compaction?.strategy ?? "hybrid"
     const keepRecent = cfg.compaction?.keepRecent ?? 4
+    const maxToolResults = cfg.compaction?.maxToolResults ?? CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS
 
     const msg = (await Session.updateMessage({
       id: Identifier.ascending("message"),
@@ -176,7 +213,7 @@ export namespace SessionCompaction {
 
     if (strategy === "algorithmic") {
       log.info("algorithmic compaction")
-      const state = CompactionExtractor.extract(input.messages)
+      const state = CompactionExtractor.extract(input.messages, { maxToolResults })
       const summary = CompactionExtractor.serialize(state)
       if (summary.trim().length < 50) {
         log.info("algorithmic summary too short, aborting")
@@ -196,7 +233,7 @@ export namespace SessionCompaction {
       result = "continue"
     } else if (strategy === "hybrid") {
       log.info("hybrid compaction")
-      const state = CompactionExtractor.extract(input.messages)
+      const state = CompactionExtractor.extract(input.messages, { maxToolResults })
       const inventory = CompactionExtractor.serialize(state)
       const recentMessages = CompactionExtractor.extractRecentMessages(input.messages, keepRecent)
       const recentModelMessages = MessageV2.toModelMessage(recentMessages)

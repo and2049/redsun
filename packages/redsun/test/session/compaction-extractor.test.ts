@@ -657,6 +657,56 @@ describe("CompactionExtractor.extract — task result captured", () => {
   })
 })
 
+describe("CompactionExtractor.extract — maxToolResults", () => {
+  test("caps serialized tool result inventory", () => {
+    const state = CompactionExtractor.extract(
+      [
+        {
+          ...assistantMsg("m1", "Collected tool results"),
+          parts: [
+            toolPart("m1-bash", "bash", {
+              status: "completed",
+              input: { command: "bun test" },
+              output: "ok",
+              title: "bash",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            }),
+            toolPart("m1-grep", "grep", {
+              status: "completed",
+              input: { pattern: "TODO" },
+              output: "a\nb\nc",
+              title: "grep",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            }),
+            toolPart("m1-web", "webfetch", {
+              status: "completed",
+              input: { url: "https://example.com" },
+              output: "example output",
+              title: "webfetch",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            }),
+            toolPart("m1-task", "task", {
+              status: "completed",
+              input: { description: "Subtask" },
+              output: "subtask output",
+              title: "task",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            }),
+          ],
+        },
+      ],
+      { maxToolResults: 2 },
+    )
+
+    expect(state.toolResults.map((item) => item.tool)).toEqual(["webfetch", "task"])
+    expect(CompactionExtractor.serialize(state)).toContain("## Tool Results")
+  })
+})
+
 describe("CompactionExtractor.serialize — cancelled TODO", () => {
   test("cancelled status renders with ~ marker", () => {
     const state = CompactionExtractor.createState()

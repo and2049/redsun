@@ -627,6 +627,78 @@ test("compaction config accepts strategy and keepRecent", async () => {
   })
 })
 
+test("compaction config accepts thresholds and maxToolResults", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://redsun.sh/config.json",
+          compaction: {
+            triggerThreshold: 0.75,
+            resetThreshold: 0.35,
+            maxToolResults: 12,
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await Config.get()
+      expect(config.compaction?.triggerThreshold).toBe(0.75)
+      expect(config.compaction?.resetThreshold).toBe(0.35)
+      expect(config.compaction?.maxToolResults).toBe(12)
+    },
+  })
+})
+
+test("compaction config rejects resetThreshold greater than or equal to triggerThreshold", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://redsun.sh/config.json",
+          compaction: {
+            triggerThreshold: 0.6,
+            resetThreshold: 0.6,
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await expect(Config.get()).rejects.toThrow()
+    },
+  })
+})
+
+test("compaction config rejects triggerThreshold below default resetThreshold", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://redsun.sh/config.json",
+          compaction: {
+            triggerThreshold: 0.3,
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await expect(Config.get()).rejects.toThrow()
+    },
+  })
+})
+
 test("compaction config strategy defaults to undefined (hybrid at usage)", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

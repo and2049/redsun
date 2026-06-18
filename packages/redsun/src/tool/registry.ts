@@ -462,7 +462,8 @@ export namespace ToolRegistry {
       ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
     ]
 
-    return [...builtins.filter((t) => !customIds.has(t.id)), ...Array.from(custom.values())]
+    const customTools = Array.from(custom.values()).sort((a, b) => a.id.localeCompare(b.id))
+    return [...builtins.filter((t) => !customIds.has(t.id)), ...customTools]
   }
 
   export async function tools(providerID: string, agent?: Agent.Info) {

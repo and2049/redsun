@@ -775,7 +775,29 @@ export namespace Config {
             .min(0)
             .optional()
             .describe("Number of recent messages to keep verbatim in hybrid mode LLM input (default: 4)"),
+          triggerThreshold: z
+            .number()
+            .gt(0)
+            .max(1)
+            .optional()
+            .describe("Context usage ratio that triggers automatic compaction (default: 0.7)"),
+          resetThreshold: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Context usage ratio that rearms automatic compaction after a trigger (default: 0.4)"),
+          maxToolResults: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe("Maximum number of tool result summaries to keep in algorithmic compaction inventory (default: 30)"),
         })
+        .refine(
+          (value) => (value.resetThreshold ?? 0.4) < (value.triggerThreshold ?? 0.7),
+          "compaction.resetThreshold must be lower than compaction.triggerThreshold",
+        )
         .optional(),
       experimental: z
         .object({
