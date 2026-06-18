@@ -20,14 +20,14 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
     await $`git init`.cwd(dirpath).quiet()
     await $`git config user.name "Test User"`.cwd(dirpath).quiet()
     await $`git config user.email "test@test.com"`.cwd(dirpath).quiet()
-    await $`git commit --allow-empty -m "root commit"`.cwd(dirpath).quiet()
+    await $`git commit --allow-empty -m "root commit ${dirpath}"`.cwd(dirpath).quiet()
   }
   const extra = await options?.init?.(dirpath)
   const realpath = sanitizePath(await fs.realpath(dirpath))
   const result = {
     [Symbol.asyncDispose]: async () => {
       await options?.dispose?.(dirpath)
-      // await fs.rm(dirpath, { recursive: true, force: true })
+      await fs.rm(dirpath, { recursive: true, force: true })
     },
     path: realpath,
     extra: extra as T,
