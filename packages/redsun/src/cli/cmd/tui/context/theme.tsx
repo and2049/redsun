@@ -230,6 +230,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       themes: DEFAULT_THEMES,
       mode: kv.get("theme_mode", props.mode),
       active: (sync.data.config.theme ?? kv.get("theme", "cursor")) as string,
+      terminalDefaultBackground: null as RGBA | null,
       ready: false,
     })
 
@@ -272,6 +273,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         setStore(
           produce((draft) => {
             draft.themes.system = generateSystem(colors, store.mode)
+            draft.terminalDefaultBackground = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!)
             if (store.active === "system") {
               draft.ready = true
             }
@@ -311,6 +313,9 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       set(theme: string) {
         setStore("active", theme)
         kv.set("theme", theme)
+      },
+      get terminalDefaultBackground() {
+        return store.terminalDefaultBackground
       },
       get ready() {
         return store.ready
