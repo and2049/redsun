@@ -8,6 +8,7 @@ import { createStore } from "solid-js/store"
 import { useKeyboard, useRenderer } from "@opentui/solid"
 import { createSimpleContext } from "./helper"
 import { useMode } from "./mode"
+import { parseScopedKey, type KeyScope } from "../input/key-scope"
 
 export const { use: useKeybind, provider: KeybindProvider } = createSimpleContext({
   name: "Keybind",
@@ -76,21 +77,16 @@ export const { use: useKeybind, provider: KeybindProvider } = createSimpleContex
       get leader() {
         return store.leader
       },
-      parse(evt: ParsedKey, isLeaderOverride?: boolean): Keybind.Info {
-        const isLeaderActive = isLeaderOverride ?? (store.leader || vim.mode === "normal")
-        // Handle special case for Ctrl+Underscore (represented as \x1F)
-        if (evt.name === "\x1F") {
-          return Keybind.fromParsedKey({ ...evt, name: "_", ctrl: true }, isLeaderActive)
-        }
-        return Keybind.fromParsedKey(evt, isLeaderActive)
+      parse(evt: ParsedKey, scope: KeyScope = "global"): Keybind.Info {
+        return parseScopedKey(evt, scope, {
+          leader: store.leader,
+          vimMode: vim.mode,
+        })
       },
-      match(key: keyof KeybindsConfig, evt: ParsedKey) {
+      match(key: keyof KeybindsConfig, evt: ParsedKey, scope: KeyScope = "global") {
         const keybind = keybinds()[key]
         if (!keybind) return false
-        
-        // Pass the effective leader state
-        const isLeaderActive = store.leader || vim.mode === "normal"
-        const parsed: Keybind.Info = result.parse(evt, isLeaderActive)
+        const parsed = result.parse(evt, scope)
         for (const key of keybind) {
           if (Keybind.match(key, parsed)) {
             return true
