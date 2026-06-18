@@ -7,6 +7,7 @@ import { SplitBorder, EmptyBorder } from "@tui/component/border"
 import type { AssistantMessage, Session } from "@redsun/sdk/v2"
 import { useDirectory } from "../../context/directory"
 import { useKeybind } from "../../context/keybind"
+import { getSessionGroup } from "../../input/subagent-session"
 
 const Title = (props: { session: Accessor<Session> }) => {
   const { theme } = useTheme()
@@ -33,6 +34,11 @@ export function Header() {
   const sync = useSync()
   const session = createMemo(() => sync.session.get(route.sessionID)!)
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
+  const sessionGroup = createMemo(() => {
+    if (!session()) return []
+    return getSessionGroup(sync.data.session, route.sessionID)
+  })
+  const childIndex = createMemo(() => sessionGroup().findIndex((item) => item.id === route.sessionID))
   const cost = createMemo(() => {
     const total = pipe(
       messages(),
@@ -77,7 +83,9 @@ export function Header() {
           <Match when={session()?.parentID}>
             <box flexDirection="row" gap={2}>
               <text fg={theme.text}>
-                <b>Subagent session</b>
+                <b># {Math.max(childIndex(), 1)}/{Math.max(sessionGroup().length - 1, 1)}</b>
+                <span style={{ fg: theme.textMuted }}> | </span>
+                <span style={{ bold: true }}>{session().title}</span>
               </text>
               <text fg={theme.text}>
                 Parent <span style={{ fg: theme.textMuted }}>{keybind.print("session_parent")}</span>
@@ -88,13 +96,23 @@ export function Header() {
               <text fg={theme.text}>
                 Next <span style={{ fg: theme.textMuted }}>{keybind.print("session_child_cycle")}</span>
               </text>
+              <text fg={theme.text}>
+                List <span style={{ fg: theme.textMuted }}>:subagents</span>
+              </text>
               <box flexGrow={1} flexShrink={1} />
               <ContextInfo context={context} cost={cost} />
             </box>
           </Match>
           <Match when={true}>
             <box flexDirection="row" justifyContent="space-between" gap={1}>
-              <Title session={session} />
+              <box flexDirection="row" gap={2}>
+                <Title session={session} />
+                <Show when={sessionGroup().length > 1}>
+                  <text fg={theme.text}>
+                    Subagents <span style={{ fg: theme.textMuted }}>:subagents</span>
+                  </text>
+                </Show>
+              </box>
               <ContextInfo context={context} cost={cost} />
             </box>
           </Match>

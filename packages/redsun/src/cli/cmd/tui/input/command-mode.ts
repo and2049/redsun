@@ -18,6 +18,9 @@ export const COMMAND_ALIASES: Record<string, string> = {
   sidebar: "session.sidebar.toggle",
   interrupt: "session.interrupt",
   stop: "session.interrupt",
+  subagents: "session.subagents",
+  subs: "session.subagents",
+  children: "session.subagents",
 
   model: "model.list",
   models: "model.list",
