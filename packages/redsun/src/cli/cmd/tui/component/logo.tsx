@@ -1,7 +1,6 @@
 import { TextAttributes, RGBA } from "@opentui/core"
 import { For } from "solid-js"
 import { useTheme } from "@tui/context/theme"
-import { useRenderer } from "@opentui/solid"
 
 const LOGO = [
   `██╗      ██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗`,
@@ -13,13 +12,12 @@ const LOGO = [
 ]
 
 export function Logo() {
-  const { theme, mode } = useTheme()
-  const renderer = useRenderer()
+  const { theme, mode, terminalDefaultBackground } = useTheme()
   const logoWidth = LOGO[0].length
 
   const actualBg = () =>
     theme.background.a === 0
-      ? RGBA.fromHex(renderer.colors.defaultBackground ?? renderer.colors.palette[0]!)
+      ? (terminalDefaultBackground ?? theme.background)
       : theme.background
 
   return (
