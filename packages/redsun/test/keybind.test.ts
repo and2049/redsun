@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { Keybind } from "../src/util/keybind"
+import { matchDialogSelectKeybind } from "../src/cli/cmd/tui/ui/dialog-select-keybind"
 
 describe("Keybind.toString", () => {
   test("should convert simple key to string", () => {
@@ -417,5 +418,33 @@ describe("Keybind.parse", () => {
         name: "z",
       },
     ])
+  })
+})
+
+describe("DialogSelect keybind matching", () => {
+  const ctrl = (name: string) => ({
+    name,
+    ctrl: true,
+    meta: false,
+    shift: false,
+    super: false,
+  }) as Parameters<typeof matchDialogSelectKeybind>[1]
+
+  test("matches panel-local ctrl+f when normal-mode global parsing would set leader", () => {
+    const binding = Keybind.parse("ctrl+f")[0]
+    const evt = ctrl("f")
+
+    expect(Keybind.match(binding, Keybind.fromParsedKey(evt, true))).toBe(false)
+    expect(matchDialogSelectKeybind(binding, evt)).toBe(true)
+  })
+
+  test("matches panel-local ctrl+a, ctrl+d, and ctrl+r as plain control bindings", () => {
+    for (const key of ["a", "d", "r"]) {
+      expect(matchDialogSelectKeybind(Keybind.parse(`ctrl+${key}`)[0], ctrl(key))).toBe(true)
+    }
+  })
+
+  test("does not match a leader binding from a plain control key", () => {
+    expect(matchDialogSelectKeybind(Keybind.parse("<leader>f")[0], ctrl("f"))).toBe(false)
   })
 })
