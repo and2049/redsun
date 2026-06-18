@@ -765,6 +765,16 @@ export namespace Config {
         .object({
           auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),
           prune: z.boolean().optional().describe("Enable pruning of old tool outputs (default: true)"),
+          strategy: z
+            .enum(["hybrid", "algorithmic", "llm"])
+            .optional()
+            .describe("Compaction strategy: 'hybrid' = algorithmic extraction + LLM synthesis (default), 'algorithmic' = rule-based only (0 LLM tokens), 'llm' = full LLM summarization"),
+          keepRecent: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe("Number of recent messages to keep verbatim in hybrid mode LLM input (default: 4)"),
         })
         .optional(),
       experimental: z
