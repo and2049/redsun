@@ -67,6 +67,7 @@ import { usePromptRef } from "../../context/prompt"
 import { Filesystem } from "@/util/filesystem"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { useMode } from "../../context/mode"
+import { getSessionNavigationAction } from "../../input/session-navigation"
 
 addDefaultParsers(parsers.parsers)
 
@@ -270,22 +271,16 @@ export function Session() {
         })
       }
     } else {
-      if (vim.mode === "normal") {
-        if (evt.name === "j") {
-          scroll.scrollBy(1)
-          evt.preventDefault()
-        } else if (evt.name === "k") {
-          scroll.scrollBy(-1)
-          evt.preventDefault()
-        } else if (evt.name === "g" && evt.shift) {
-          scroll.scrollTo(scroll.scrollHeight)
-          evt.preventDefault()
-        } else if (evt.name === "g" && !evt.shift) {
-          // Double g for top? We'll just map single g to top for now
-          scroll.scrollTo(0)
-          evt.preventDefault()
-        }
+      const action = getSessionNavigationAction(vim.mode, evt)
+      if (!action) return
+      if (action.type === "scroll-by") {
+        scroll.scrollBy(action.amount)
+      } else if (action.type === "scroll-bottom") {
+        scroll.scrollTo(scroll.scrollHeight)
+      } else {
+        scroll.scrollTo(0)
       }
+      evt.preventDefault()
     }
   })
 

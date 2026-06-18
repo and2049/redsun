@@ -7,9 +7,9 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import * as fuzzysort from "fuzzysort"
 import { isDeepEqual } from "remeda"
 import { useDialog, type DialogContext } from "@tui/ui/dialog"
+import { useKeybind } from "@tui/context/keybind"
 import { Keybind } from "@/util/keybind"
 import { Locale } from "@/util/locale"
-import { matchDialogSelectKeybind } from "./dialog-select-keybind"
 
 export interface DialogSelectProps<T> {
   title: string
@@ -145,6 +145,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     }
   }
 
+  const keybind = useKeybind()
   useKeyboard((evt) => {
     if (evt.name === "up" || (evt.ctrl && evt.name === "p")) move(-1)
     if (evt.name === "down" || (evt.ctrl && evt.name === "n")) move(1)
@@ -161,7 +162,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
     for (const item of props.keybind ?? []) {
       if (item.disabled) continue
-      if (matchDialogSelectKeybind(item.keybind, evt)) {
+      if (Keybind.match(item.keybind, keybind.parse(evt, "dialog"))) {
         const s = selected()
         if (s) {
           evt.preventDefault()

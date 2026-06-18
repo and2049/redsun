@@ -18,6 +18,13 @@ import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useCommandDialog } from "../dialog-command"
 import { useMode } from "../../context/mode"
 import { useRenderer, useKeyboard } from "@opentui/solid"
+import { getVimModeTransition } from "../../input/mode"
+import {
+  shouldEnterShellEntry,
+  shouldExitShellEntry,
+  shouldUseAutocomplete,
+  type PromptEntryMode,
+} from "../../input/prompt-entry"
 import { Editor } from "@tui/util/editor"
 import { useExit } from "../../context/exit"
 import { Clipboard } from "../../util/clipboard"
@@ -170,7 +177,7 @@ export function Prompt(props: PromptProps) {
 
   const [store, setStore] = createStore<{
     prompt: PromptInfo
-    mode: "normal" | "shell"
+    entryMode: PromptEntryMode
     extmarkToPartIndex: Map<number, number>
     interrupt: number
     placeholder: number
@@ -180,7 +187,7 @@ export function Prompt(props: PromptProps) {
       input: "",
       parts: [],
     },
-    mode: "normal",
+    entryMode: "normal",
     extmarkToPartIndex: new Map(),
     interrupt: 0,
   })
@@ -237,8 +244,8 @@ export function Prompt(props: PromptProps) {
           if (autocomplete.visible) return
           if (!input.focused) return
           // TODO: this should be its own command
-          if (store.mode === "shell") {
-            setStore("mode", "normal")
+          if (store.entryMode === "shell") {
+            setStore("entryMode", "normal")
             return
           }
           if (!props.sessionID) return
@@ -362,10 +369,10 @@ export function Prompt(props: PromptProps) {
 
   useKeyboard((evt) => {
     if (evt.name === "escape" && dialog.stack.length === 0) {
-      if (vim.mode === "insert") {
-        vim.setMode("normal")
-        evt.preventDefault()
-      }
+      const transition = getVimModeTransition(vim.mode, evt)
+      if (transition?.reason !== "exit-insert") return
+      vim.setMode(transition.mode)
+      if (transition.preventDefault) evt.preventDefault()
     }
   })
 
@@ -582,9 +589,9 @@ export function Prompt(props: PromptProps) {
     const nonTextParts = store.prompt.parts.filter((part) => part.type !== "text")
 
     // Capture mode before it gets reset
-    const currentMode = store.mode
+    const currentEntryMode = store.entryMode
 
-    if (store.mode === "shell") {
+    if (store.entryMode === "shell") {
       sdk.client.session.shell({
         sessionID,
         agent: local.agent.current().name,
@@ -594,7 +601,7 @@ export function Prompt(props: PromptProps) {
         },
         command: inputText,
       })
-      setStore("mode", "normal")
+      setStore("entryMode", "normal")
     } else if (
       inputText.startsWith("/") &&
       iife(() => {
@@ -634,7 +641,7 @@ export function Prompt(props: PromptProps) {
     }
     history.append({
       ...store.prompt,
-      mode: currentMode,
+      mode: currentEntryMode,
     })
     input.extmarks.clear()
     setStore("prompt", {
@@ -735,7 +742,7 @@ export function Prompt(props: PromptProps) {
 
   const highlight = createMemo(() => {
     if (keybind.leader || vim.mode !== "insert") return theme.border
-    if (store.mode === "shell") return theme.primary
+    if (store.entryMode === "shell") return theme.primary
     return local.agent.color(local.agent.current().name)
   })
 
@@ -821,7 +828,7 @@ export function Prompt(props: PromptProps) {
                 // This is needed because Windows terminal doesn't properly send image data
                 // through bracketed paste, so we need to intercept the keypress and
                 // directly read from clipboard before the terminal handles it
-                if (keybind.match("input_paste", e)) {
+                if (keybind.match("input_paste", e, "prompt")) {
                   const content = await Clipboard.read()
                   if (content?.mime.startsWith("image/")) {
                     e.preventDefault()
@@ -834,7 +841,7 @@ export function Prompt(props: PromptProps) {
                   }
                   // If no image, let the default paste behavior continue
                 }
-                if (keybind.match("input_clear", e) && store.prompt.input !== "") {
+                if (keybind.match("input_clear", e, "prompt") && store.prompt.input !== "") {
                   input.clear()
                   input.extmarks.clear()
                   setStore("prompt", {
@@ -844,7 +851,7 @@ export function Prompt(props: PromptProps) {
                   setStore("extmarkToPartIndex", new Map())
                   return
                 }
-                if (keybind.match("app_exit", e)) {
+                if (keybind.match("app_exit", e, "prompt")) {
                   if (store.prompt.input === "") {
                     await exit()
                     // Don't preventDefault - let textarea potentially handle the event
@@ -852,31 +859,29 @@ export function Prompt(props: PromptProps) {
                     return
                   }
                 }
-                if (e.name === "!" && input.visualCursor.offset === 0) {
-                  setStore("mode", "shell")
+                if (shouldEnterShellEntry(e, input.visualCursor.offset)) {
+                  setStore("entryMode", "shell")
                   e.preventDefault()
                   return
                 }
-                if (store.mode === "shell") {
-                  if ((e.name === "backspace" && input.visualCursor.offset === 0) || e.name === "escape") {
-                    setStore("mode", "normal")
-                    e.preventDefault()
-                    return
-                  }
+                if (shouldExitShellEntry(store.entryMode, e, input.visualCursor.offset)) {
+                  setStore("entryMode", "normal")
+                  e.preventDefault()
+                  return
                 }
-                if (store.mode === "normal") autocomplete.onKeyDown(e)
+                if (shouldUseAutocomplete(store.entryMode)) autocomplete.onKeyDown(e)
                 if (!autocomplete.visible) {
                   if (
-                    (keybind.match("history_previous", e) && input.cursorOffset === 0) ||
-                    (keybind.match("history_next", e) && input.cursorOffset === input.plainText.length)
+                    (keybind.match("history_previous", e, "prompt") && input.cursorOffset === 0) ||
+                    (keybind.match("history_next", e, "prompt") && input.cursorOffset === input.plainText.length)
                   ) {
-                    const direction = keybind.match("history_previous", e) ? -1 : 1
+                    const direction = keybind.match("history_previous", e, "prompt") ? -1 : 1
                     const item = history.move(direction, input.plainText)
 
                     if (item) {
                       input.setText(item.input)
                       setStore("prompt", item)
-                      setStore("mode", item.mode ?? "normal")
+                      setStore("entryMode", item.mode ?? "normal")
                       restoreExtmarksFromParts(item.parts)
                       e.preventDefault()
                       if (direction === -1) input.cursorOffset = 0
@@ -885,8 +890,9 @@ export function Prompt(props: PromptProps) {
                     return
                   }
 
-                  if (keybind.match("history_previous", e) && input.visualCursor.visualRow === 0) input.cursorOffset = 0
-                  if (keybind.match("history_next", e) && input.visualCursor.visualRow === input.height - 1)
+                  if (keybind.match("history_previous", e, "prompt") && input.visualCursor.visualRow === 0)
+                    input.cursorOffset = 0
+                  if (keybind.match("history_next", e, "prompt") && input.visualCursor.visualRow === input.height - 1)
                     input.cursorOffset = input.plainText.length
                 }
               }}
@@ -971,9 +977,9 @@ export function Prompt(props: PromptProps) {
             />
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1}>
               <text fg={highlight()}>
-                {store.mode === "shell" ? "Shell" : Locale.titlecase(local.agent.current().name)}{" "}
+                {store.entryMode === "shell" ? "Shell" : Locale.titlecase(local.agent.current().name)}{" "}
               </text>
-              <Show when={store.mode === "normal"}>
+              <Show when={store.entryMode === "normal"}>
                 <box flexDirection="row" gap={1}>
                   <text flexShrink={0} fg={keybind.leader || vim.mode !== "insert" ? theme.textMuted : theme.text}>
                     {local.model.parsed().model}
@@ -1093,7 +1099,7 @@ export function Prompt(props: PromptProps) {
           </Show>
           </box>
           <Show when={status().type !== "retry"}>
-            <Show when={store.mode === "shell"}>
+            <Show when={store.entryMode === "shell"}>
               <box gap={2} flexDirection="row">
                 <text fg={theme.text}>
                   esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
