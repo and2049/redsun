@@ -1,6 +1,3 @@
-# redsun
-
-Hybrid coding agent harness.
 
 ## Install
 
