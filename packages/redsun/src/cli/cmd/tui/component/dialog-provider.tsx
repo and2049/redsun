@@ -24,11 +24,12 @@ export function createDialogProviderOptions() {
   const dialog = useDialog()
   const sdk = useSDK()
   const options = createMemo(() => {
+    const connected = sync.data.provider_next.connected
     return pipe(
       sync.data.provider_next.all,
       sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
       map((provider) => ({
-        title: provider.name,
+        title: connected.includes(provider.id) ? `${provider.name} ✓` : provider.name,
         value: provider.id,
         description: {
           opencode: "(Recommended)",
