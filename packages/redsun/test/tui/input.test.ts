@@ -77,15 +77,27 @@ describe("TUI Vim mode transitions", () => {
 })
 
 describe("TUI scoped key matching", () => {
-  test("global scope preserves normal-mode implicit leader behavior", () => {
+  test("global scope applies implicit leader to bare letters only in normal mode", () => {
+    // Bare letters in normal mode get an implicit <leader> prefix so they
+    // match leader bindings without swallowing vim motions.
     expect(
       matchScopedKeybind(Keybind.parse("<leader>f")[0], key("f"), "global", {
         leader: false,
         vimMode: "normal",
       }),
     ).toBe(true)
+    // Modifier chords (ctrl/meta/super) are unambiguous application shortcuts
+    // and are exempt from normal-mode leader-forcing, so they match their own
+    // definitions. This is what lets ctrl+n / ctrl+f / etc. work from normal mode.
     expect(
       matchScopedKeybind(Keybind.parse("ctrl+f")[0], key("f", { ctrl: true }), "global", {
+        leader: false,
+        vimMode: "normal",
+      }),
+    ).toBe(true)
+    // A modifier chord must not be misattributed to a leader binding.
+    expect(
+      matchScopedKeybind(Keybind.parse("<leader>f")[0], key("f", { ctrl: true }), "global", {
         leader: false,
         vimMode: "normal",
       }),
