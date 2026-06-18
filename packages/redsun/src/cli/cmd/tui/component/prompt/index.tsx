@@ -179,7 +179,6 @@ export function Prompt(props: PromptProps) {
     prompt: PromptInfo
     entryMode: PromptEntryMode
     extmarkToPartIndex: Map<number, number>
-    interrupt: number
     placeholder: number
   }>({
     placeholder: Math.floor(Math.random() * PLACEHOLDERS.length),
@@ -189,7 +188,6 @@ export function Prompt(props: PromptProps) {
     },
     entryMode: "normal",
     extmarkToPartIndex: new Map(),
-    interrupt: 0,
   })
 
   command.register(() => {
@@ -242,26 +240,17 @@ export function Prompt(props: PromptProps) {
         category: "Session",
         onSelect: (dialog) => {
           if (autocomplete.visible) return
-          if (!input.focused) return
           // TODO: this should be its own command
           if (store.entryMode === "shell") {
             setStore("entryMode", "normal")
             return
           }
           if (!props.sessionID) return
+          if (status().type === "idle") return
 
-          setStore("interrupt", store.interrupt + 1)
-
-          setTimeout(() => {
-            setStore("interrupt", 0)
-          }, 5000)
-
-          if (store.interrupt >= 2) {
-            sdk.client.session.abort({
-              sessionID: props.sessionID,
-            })
-            setStore("interrupt", 0)
-          }
+          sdk.client.session.abort({
+            sessionID: props.sessionID,
+          })
           dialog.clear()
         },
       },
@@ -1089,11 +1078,9 @@ export function Prompt(props: PromptProps) {
                   })()}
                 </box>
               </box>
-              <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
-                esc{" "}
-                <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                  {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
-                </span>
+              <text fg={theme.text}>
+                {keybind.print("session_interrupt")}{" "}
+                <span style={{ fg: theme.textMuted }}>interrupt</span>
               </text>
             </box>
           </Show>
