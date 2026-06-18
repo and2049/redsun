@@ -1,0 +1,114 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v1.0.0)"
+        required: false
+        type: string
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.tag }}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            echo "No tag found"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Publishing version: ${VERSION} (tag: ${TAG})"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Typecheck
+        run: bun turbo typecheck
+
+      - name: Test
+        run: bun turbo test
+        env:
+          CI: true
+
+      - name: Build all platform binaries
+        run: |
+          cd packages/redsun
+          bun run script/build.ts
+        env:
+          REDSUN_VERSION: ${{ steps.version.outputs.version }}
+          REDSUN_CHANNEL: release
+
+      - name: Create release archives
+        run: |
+          mkdir -p release-artifacts
+          for dir in packages/redsun/dist/*/; do
+            name=$(basename "$dir")
+            echo "Archiving ${name}..."
+            tar -czf "release-artifacts/${name}.tar.gz" -C packages/redsun/dist "${name}"
+          done
+          echo "Created archives:"
+          ls -la release-artifacts/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: redsun-binaries
+          path: release-artifacts/*.tar.gz
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: redsun ${{ steps.version.outputs.version }}
+          draft: true
+          generate_release_notes: true
+          files: release-artifacts/*.tar.gz
+
+      # --- npm publishing---
+      # - name: Setup Node.js for npm
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: "24"
+      #     registry-url: "https://registry.npmjs.org"
+      #
+      # - name: Publish platform packages to npm
+      #   working-directory: packages/redsun/dist
+      #   run: |
+      #     for dir in */; do
+      #       echo "Publishing ${dir%/}..."
+      #       cd "$dir"
+      #       npm publish --access public || true
+      #       cd ..
+      #     done
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #
+      # - name: Publish main package to npm
+      #   working-directory: packages/redsun
+      #   run: |
+      #     npm version ${{ steps.version.outputs.version }} --no-git-tag-version
+      #     npm publish --access public
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
