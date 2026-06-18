@@ -94,7 +94,7 @@ if ($Version) {
 $existingCommand = Get-Command $App -ErrorAction SilentlyContinue
 if ($existingCommand) {
     try {
-        $versionOutput = & $App version 2>$null
+        $versionOutput = & $App --version 2>$null
         if ($versionOutput) {
             $installedVersion = ($versionOutput -split '\s+')[1]
             if ($installedVersion -eq $specificVersion) {
