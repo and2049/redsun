@@ -84,7 +84,9 @@ jobs:
           name: redsun ${{ steps.version.outputs.version }}
           draft: true
           generate_release_notes: true
-          files: release-artifacts/*.tar.gz
+          files: |
+            release-artifacts/*.tar.gz
+            install
 
       # --- npm publishing---
       # - name: Setup Node.js for npm
