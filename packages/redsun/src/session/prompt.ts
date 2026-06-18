@@ -738,7 +738,11 @@ export namespace SessionPrompt {
     for (const item of await ToolRegistry.tools(input.model.providerID, input.agent)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
       if (runner.activeTools.size > 0 && !runner.activeTools.has(item.id)) continue
-      const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
+      const rawSchema = z.toJSONSchema(item.parameters) as any
+      const schema = ProviderTransform.schema(input.model, {
+        ...rawSchema,
+        properties: rawSchema.properties ?? {},
+      })
       const wrapped = ExtensionWrapper.wrapExecute(
         item as ExtensionWrapper.ResolvedTool,
         runner,
@@ -785,7 +789,7 @@ export namespace SessionPrompt {
         },
       })
     }
-    for (const [key, item] of Object.entries(await MCP.tools())) {
+    for (const [key, item] of Object.entries(await MCP.tools(input.model))) {
       if (Wildcard.all(key, enabledTools) === false) continue
       const execute = item.execute
       if (!execute) continue

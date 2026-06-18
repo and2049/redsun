@@ -191,6 +191,102 @@ describe("ProviderTransform.schema - gemini array items", () => {
   })
 })
 
+describe("ProviderTransform.schema - openai supported schema subset", () => {
+  const openaiModel = {
+    providerID: "openai",
+    api: {
+      id: "gpt-4.1",
+      npm: "@ai-sdk/openai",
+    },
+  } as any
+
+  const azureModel = {
+    providerID: "azure",
+    api: {
+      id: "gpt-4.1",
+      npm: "@ai-sdk/azure",
+    },
+  } as any
+
+  test("lowers boolean schemas and const values", () => {
+    const result = ProviderTransform.schema(openaiModel, {
+      type: "object",
+      properties: {
+        enabled: true,
+        mode: { const: "fast" },
+      },
+      required: ["enabled", "mode", 42],
+    } as any) as any
+
+    expect(result).toEqual({
+      type: "object",
+      properties: {
+        enabled: { type: "string" },
+        mode: { enum: ["fast"], type: "string" },
+      },
+      required: ["enabled", "mode"],
+    })
+  })
+
+  test("adds object properties and array items when omitted", () => {
+    const result = ProviderTransform.schema(openaiModel, {
+      type: "object",
+      properties: {
+        nested: { type: "object" },
+        list: { type: "array" },
+      },
+    } as any) as any
+
+    expect(result.properties.nested.properties).toEqual({})
+    expect(result.properties.list.items).toEqual({ type: "string" })
+  })
+
+  test("infers types from supported JSON schema keywords", () => {
+    const result = ProviderTransform.schema(azureModel, {
+      properties: {
+        count: { minimum: 1 },
+        tags: { items: { type: "string" } },
+      },
+      required: ["count"],
+    } as any) as any
+
+    expect(result.type).toBe("object")
+    expect(result.properties.count.type).toBe("number")
+    expect(result.properties.tags.type).toBe("array")
+    expect(result.properties.tags.items).toEqual({ type: "string" })
+  })
+
+  test("keeps refs, defs, enums, and composition keys in sanitized form", () => {
+    const result = ProviderTransform.schema(openaiModel, {
+      type: "object",
+      properties: {
+        choice: {
+          anyOf: [{ $ref: "#/$defs/Choice" }, false],
+        },
+      },
+      $defs: {
+        Choice: { enum: ["a", "b"] },
+      },
+    } as any) as any
+
+    expect(result.properties.choice.anyOf).toEqual([{ $ref: "#/$defs/Choice" }, { type: "string" }])
+    expect(result.$defs.Choice).toEqual({ enum: ["a", "b"], type: "string" })
+  })
+
+  test("does not sanitize non-openai providers", () => {
+    const schema = { type: "object", properties: { enabled: true } } as any
+    const result = ProviderTransform.schema(
+      {
+        providerID: "anthropic",
+        api: { id: "claude-sonnet", npm: "@ai-sdk/anthropic" },
+      } as any,
+      schema,
+    ) as any
+
+    expect(result.properties.enabled).toBe(true)
+  })
+})
+
 describe("ProviderTransform.message - DeepSeek reasoning content", () => {
   test("DeepSeek with tool calls includes reasoning_content in providerOptions", () => {
     const msgs = [
