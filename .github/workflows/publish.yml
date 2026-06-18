@@ -82,3 +82,4 @@ jobs:
             packages/redsun/*.tar.gz
             packages/redsun/*.zip
             install
+            install.ps1
