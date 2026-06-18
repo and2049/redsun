@@ -5,6 +5,7 @@ import type { Provider } from "./provider"
 import type { ModelsDev } from "./models"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
+type JsonRecord = Record<string, unknown>
 
 function mimeToModality(mime: string): Modality | undefined {
   if (mime.startsWith("image/")) return "image"
@@ -12,6 +13,90 @@ function mimeToModality(mime: string): Modality | undefined {
   if (mime.startsWith("video/")) return "video"
   if (mime === "application/pdf") return "pdf"
   return undefined
+}
+
+function isPlainObject(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function sanitizeOpenAISchema(value: unknown): unknown {
+  const types = ["string", "number", "boolean", "integer", "object", "array", "null"]
+  const compositionKeys = ["anyOf", "oneOf", "allOf"]
+
+  if (typeof value === "boolean") return { type: "string" }
+  if (Array.isArray(value)) return value.map(sanitizeOpenAISchema)
+  if (!isPlainObject(value)) return value
+
+  const result: JsonRecord = {}
+
+  if (typeof value.$ref === "string") result.$ref = value.$ref
+  if (typeof value.description === "string") result.description = value.description
+  if ("const" in value) result.enum = [value.const]
+  else if (Array.isArray(value.enum)) result.enum = value.enum
+
+  if (isPlainObject(value.properties)) {
+    result.properties = Object.fromEntries(
+      Object.entries(value.properties).map(([key, item]) => [key, sanitizeOpenAISchema(item)]),
+    )
+  }
+
+  if (Array.isArray(value.required)) {
+    result.required = value.required.filter((item) => typeof item === "string")
+  }
+
+  if ("items" in value) result.items = sanitizeOpenAISchema(value.items)
+
+  if ("additionalProperties" in value) {
+    result.additionalProperties =
+      typeof value.additionalProperties === "boolean"
+        ? value.additionalProperties
+        : sanitizeOpenAISchema(value.additionalProperties)
+  }
+
+  for (const key of compositionKeys) {
+    const item = value[key]
+    if (Array.isArray(item)) result[key] = item.map(sanitizeOpenAISchema)
+  }
+
+  for (const key of ["$defs", "definitions"]) {
+    const item = value[key]
+    if (isPlainObject(item)) {
+      result[key] = Object.fromEntries(Object.entries(item).map(([name, schema]) => [name, sanitizeOpenAISchema(schema)]))
+    }
+  }
+
+  const schemaTypes =
+    typeof value.type === "string"
+      ? types.includes(value.type)
+        ? [value.type]
+        : []
+      : Array.isArray(value.type)
+        ? value.type.filter((item) => typeof item === "string" && types.includes(item))
+        : []
+
+  if (schemaTypes.length === 0 && (typeof result.$ref === "string" || compositionKeys.some((key) => key in result))) {
+    return result
+  }
+
+  const inferredTypes =
+    schemaTypes.length > 0
+      ? schemaTypes
+      : ["properties", "required", "additionalProperties"].some((key) => key in value)
+        ? ["object"]
+        : ["items", "prefixItems"].some((key) => key in value)
+          ? ["array"]
+          : "enum" in result || "format" in value
+            ? ["string"]
+            : ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"].some((key) => key in value)
+              ? ["number"]
+              : []
+
+  if (inferredTypes.length === 0) return {}
+
+  result.type = inferredTypes.length === 1 ? inferredTypes[0] : inferredTypes
+  if (inferredTypes.includes("object") && !("properties" in result)) result.properties = {}
+  if (inferredTypes.includes("array") && !("items" in result)) result.items = { type: "string" }
+  return result
 }
 
 export namespace ProviderTransform {
@@ -383,6 +468,10 @@ export namespace ProviderTransform {
       }
     }
     */
+
+    if (model.api.npm === "@ai-sdk/openai" || model.api.npm === "@ai-sdk/azure") {
+      schema = sanitizeOpenAISchema(schema) as JSONSchema.BaseSchema
+    }
 
     // Convert integer enums to string enums for Google/Gemini
     if (model.providerID === "google" || model.api.id.includes("gemini")) {

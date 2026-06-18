@@ -1,10 +1,10 @@
-import { dynamicTool, type Tool, jsonSchema, type JSONSchema7 } from "ai"
+import type { Tool } from "ai"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
-import { type Tool as MCPToolDef, ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { Config } from "../config/config"
 import { Log } from "../util/log"
 import { NamedError } from "@redsun/util/error"
@@ -19,6 +19,8 @@ import { BusEvent } from "../bus/bus-event"
 import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
+import type { Provider } from "../provider/provider"
+import { convertMcpTool } from "./tool-convert"
 
 export namespace MCP {
   const log = Log.create({ service: "mcp" })
@@ -89,30 +91,6 @@ export namespace MCP {
     client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
       log.info("tools list changed notification received", { server: serverName })
       Bus.publish(ToolsChanged, { server: serverName })
-    })
-  }
-
-  // Convert MCP tool definition to AI SDK Tool type
-  function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient): Tool {
-    const inputSchema = mcpTool.inputSchema
-
-    // Spread first, then override type to ensure it's always "object"
-    const schema: JSONSchema7 = {
-      ...(inputSchema as JSONSchema7),
-      type: "object",
-      properties: (inputSchema.properties ?? {}) as JSONSchema7["properties"],
-      additionalProperties: false,
-    }
-
-    return dynamicTool({
-      description: mcpTool.description ?? "",
-      inputSchema: jsonSchema(schema),
-      execute: async (args: unknown) => {
-        return client.callTool({
-          name: mcpTool.name,
-          arguments: args as Record<string, unknown>,
-        })
-      },
     })
   }
 
@@ -444,10 +422,12 @@ export namespace MCP {
     s.status[name] = { status: "disabled" }
   }
 
-  export async function tools() {
+  export async function tools(model: Provider.Model) {
     const result: Record<string, Tool> = {}
     const s = await state()
     const clientsSnapshot = await clients()
+    const cfg = await Config.get()
+    const config = cfg.mcp ?? {}
 
     for (const [clientName, client] of Object.entries(clientsSnapshot)) {
       // Only include tools from connected MCPs (skip disabled ones)
@@ -471,7 +451,12 @@ export namespace MCP {
       for (const mcpTool of toolsResult.tools) {
         const sanitizedClientName = clientName.replace(/[^a-zA-Z0-9_-]/g, "_")
         const sanitizedToolName = mcpTool.name.replace(/[^a-zA-Z0-9_-]/g, "_")
-        result[sanitizedClientName + "_" + sanitizedToolName] = convertMcpTool(mcpTool, client)
+        result[sanitizedClientName + "_" + sanitizedToolName] = convertMcpTool(
+          mcpTool,
+          client,
+          model,
+          config[clientName]?.timeout,
+        )
       }
     }
     return result
@@ -575,7 +560,7 @@ export namespace MCP {
     await open(authorizationUrl)
 
     // Wait for callback using the OAuth state parameter
-    const code = await McpOAuthCallback.waitForCallback(oauthState)
+    const code = await McpOAuthCallback.waitForCallback(oauthState, mcpName)
 
     // Validate and clear the state
     const storedState = await McpAuth.getOAuthState(mcpName)
