@@ -184,7 +184,7 @@ check_version() {
     if command -v redsun >/dev/null 2>&1; then
         redsun_path=$(which redsun)
 
-        installed_version=$(redsun version 2>/dev/null || echo "0.0.0")
+        installed_version=$(redsun --version 2>/dev/null || echo "0.0.0")
         installed_version=$(echo $installed_version | awk '{print $2}')
 
         if [[ "$installed_version" != "$specific_version" ]]; then
