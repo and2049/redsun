@@ -425,7 +425,7 @@ export namespace Config {
       session_fork: z.string().optional().default("none").describe("Fork session from message"),
       session_rename: z.string().optional().default("none").describe("Rename session"),
 
-      session_interrupt: z.string().optional().default("escape").describe("Interrupt current session"),
+      session_interrupt: z.string().optional().default("ctrl+\\").describe("Interrupt current session"),
       session_compact: z.string().optional().default("<leader>c").describe("Compact the session"),
       messages_page_up: z.string().optional().default("pageup").describe("Scroll messages up by one page"),
       messages_page_down: z.string().optional().default("pagedown").describe("Scroll messages down by one page"),
