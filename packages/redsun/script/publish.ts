@@ -31,7 +31,7 @@ for (const key of Object.keys(binaries)) {
 console.log("Created release archives:")
 for (const key of Object.keys(binaries)) {
   const ext = key.includes("linux") ? "tar.gz" : "zip"
-  const archive = `../../${key}.${ext}`
+  const archive = `dist/${key}.${ext}`
   if (key.includes("linux")) {
     const contents = await $`tar -tzf ${archive}`.text()
     if (!contents.includes(pkg.name)) {
