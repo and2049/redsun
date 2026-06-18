@@ -67,7 +67,16 @@ import { usePromptRef } from "../../context/prompt"
 import { Filesystem } from "@/util/filesystem"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { useMode } from "../../context/mode"
+import { modeForContext } from "../../input/mode"
 import { getSessionNavigationAction } from "../../input/session-navigation"
+import { getToolPermissionResponse } from "../../input/permission"
+import {
+  getChildCycleTarget,
+  getFirstSessionGroupPermission,
+  getSubagentHeaderInfo,
+  isSubagentSession,
+} from "../../input/subagent-session"
+import { DialogSubagents } from "./dialog-subagent"
 
 addDefaultParsers(parsers.parsers)
 
@@ -108,7 +117,16 @@ export function Session() {
   const promptRef = usePromptRef()
   const session = createMemo(() => sync.session.get(route.sessionID)!)
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
-  const permissions = createMemo(() => sync.data.permission[route.sessionID] ?? [])
+  const activePermission = createMemo(() =>
+    getFirstSessionGroupPermission(sync.data.session, route.sessionID, sync.data.permission as any),
+  )
+  const activePermissionSession = createMemo(() => {
+    const target = activePermission()
+    if (!target) return
+    return sync.session.get(target.sessionID)
+  })
+  const subagentReadOnly = createMemo(() => isSubagentSession(session()))
+  const subagentHeader = createMemo(() => getSubagentHeaderInfo(sync.data.session, route.sessionID))
 
   const pending = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
@@ -177,28 +195,6 @@ export function Session() {
     }
   })
 
-  // Auto-navigate to whichever session currently needs permission input
-  createEffect(() => {
-    const currentSession = session()
-    if (!currentSession) return
-    const currentPermissions = permissions()
-    let targetID = currentPermissions.length > 0 ? currentSession.id : undefined
-
-    if (!targetID) {
-      const child = sync.data.session.find(
-        (x) => x.parentID === currentSession.id && (sync.data.permission[x.id]?.length ?? 0) > 0,
-      )
-      if (child) targetID = child.id
-    }
-
-    if (targetID && targetID !== currentSession.id) {
-      navigate({
-        type: "session",
-        sessionID: targetID,
-      })
-    }
-  })
-
   let scroll: ScrollBoxRenderable
   let prompt: PromptRef
   const keybind = useKeybind()
@@ -250,24 +246,26 @@ export function Session() {
   }
 
   const vim = useMode()
+  vim.guard(() => ({ subagentReadOnly: subagentReadOnly() }))
+  createEffect(() => {
+    const mode = modeForContext(vim.mode, { subagentReadOnly: subagentReadOnly() })
+    if (mode !== vim.mode) vim.setMode(mode)
+  })
+
   useKeyboard((evt) => {
     if (dialog.stack.length > 0) return
 
-    const first = permissions()[0]
-    if (first) {
-      const response = iife(() => {
-        if (evt.ctrl || evt.meta) return
-        if (evt.name === "return") return "once"
-        if (evt.name === "a") return "always"
-        if (evt.name === "d") return "reject"
-        if (evt.name === "escape") return "reject"
-        return
-      })
+    const target = activePermission()
+    if (target) {
+      if (evt.defaultPrevented) return
+      const response = getToolPermissionResponse(vim.mode, evt)
       if (response) {
+        const permission = target.permission as { id: string }
+        evt.preventDefault()
         sdk.client.permission.respond({
-          permissionID: first.id,
-          sessionID: route.sessionID,
-          response: response,
+          permissionID: permission.id,
+          sessionID: target.sessionID,
+          response,
         })
       }
     } else {
@@ -292,19 +290,12 @@ export function Session() {
 
   const local = useLocal()
 
-  function moveChild(direction: number) {
-    const parentID = session()?.parentID ?? session()?.id
-    let children = sync.data.session
-      .filter((x) => x.parentID === parentID || x.id === parentID)
-      .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    if (children.length === 1) return
-    let next = children.findIndex((x) => x.id === session()?.id) + direction
-    if (next >= children.length) next = 0
-    if (next < 0) next = children.length - 1
-    if (children[next]) {
+  function moveChild(direction: 1 | -1) {
+    const targetID = getChildCycleTarget(sync.data.session, route.sessionID, direction)
+    if (targetID) {
       navigate({
         type: "session",
-        sessionID: children[next].id,
+        sessionID: targetID,
       })
     }
   }
@@ -318,6 +309,14 @@ export function Session() {
       category: "Session",
       onSelect: (dialog) => {
         dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
+      },
+    },
+    {
+      title: "Subagent sessions",
+      value: "session.subagents",
+      category: "Session",
+      onSelect: (dialog) => {
+        dialog.replace(() => <DialogSubagents sessionID={route.sessionID} />)
       },
     },
     {
@@ -990,6 +989,26 @@ export function Session() {
       <box flexDirection="row" flexGrow={1}>
         <box flexGrow={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={0}>
           <Show when={session()}>
+            <Show when={subagentHeader()}>
+              {(info) => (
+                <box
+                  flexShrink={0}
+                  flexDirection="row"
+                  justifyContent="space-between"
+                  paddingBottom={1}
+                  gap={1}
+                >
+                  <text fg={theme.text}>
+                    <b>
+                      # {info().index}/{info().total}
+                    </b>
+                    <span style={{ fg: theme.textMuted }}> | </span>
+                    <span style={{ bold: true }}>{info().title}</span>
+                  </text>
+                  <text fg={theme.textMuted}>up parent · down next · :subagents</text>
+                </box>
+              )}
+            </Show>
             <scrollbox
               ref={(r) => (scroll = r)}
               viewportOptions={{
@@ -1105,12 +1124,50 @@ export function Session() {
               </For>
             </scrollbox>
             <box flexShrink={0} flexDirection="column" paddingTop={1}>
+              <Show when={activePermission() && activePermission()?.sessionID !== route.sessionID}>
+                <box
+                  border={["left"]}
+                  paddingTop={1}
+                  paddingBottom={1}
+                  paddingLeft={2}
+                  marginBottom={1}
+                  backgroundColor={theme.backgroundPanel}
+                  customBorderChars={SplitBorder.customBorderChars}
+                  borderColor={theme.warning}
+                  gap={1}
+                >
+                  <text fg={theme.text}>
+                    Permission required in {activePermissionSession()?.title ?? "subagent session"}
+                  </text>
+                  <box flexDirection="row" gap={2}>
+                    <text fg={theme.text}>
+                      <b>enter</b>
+                      <span style={{ fg: theme.textMuted }}> accept</span>
+                    </text>
+                    <text fg={theme.text}>
+                      <b>y</b>
+                      <span style={{ fg: theme.textMuted }}> accept always</span>
+                    </text>
+                    <text fg={theme.text}>
+                      <b>n</b>
+                      <span style={{ fg: theme.textMuted }}> deny</span>
+                    </text>
+                  </box>
+                </box>
+              </Show>
+              <Show when={subagentReadOnly()}>
+                <box paddingLeft={2} paddingBottom={1}>
+                  <text fg={theme.textMuted}>
+                    Subagent session is read-only. Use up to return to parent or :subagents to switch.
+                  </text>
+                </box>
+              </Show>
               <Prompt
                 ref={(r) => {
                   prompt = r
                   promptRef.set(r)
                 }}
-                disabled={permissions().length > 0}
+                disabled={subagentReadOnly() || !!activePermission() || !!sync.data.trust}
                 onSubmit={() => {
                   toBottom()
                 }}
@@ -1472,11 +1529,11 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
                 <span style={{ fg: theme.textMuted }}> accept</span>
               </text>
               <text fg={theme.text}>
-                <b>a</b>
+                <b>y</b>
                 <span style={{ fg: theme.textMuted }}> accept always</span>
               </text>
               <text fg={theme.text}>
-                <b>d</b>
+                <b>n</b>
                 <span style={{ fg: theme.textMuted }}> deny</span>
               </text>
             </box>
@@ -1675,9 +1732,6 @@ ToolRegistry.register<typeof TaskTool>({
   container: "block",
   render(props) {
     const { theme } = useTheme()
-    const keybind = useKeybind()
-    const dialog = useDialog()
-    const renderer = useRenderer()
 
     return (
       <>
@@ -1700,8 +1754,7 @@ ToolRegistry.register<typeof TaskTool>({
           </box>
         </Show>
         <text fg={theme.text}>
-          {keybind.print("session_child_cycle")}, {keybind.print("session_child_cycle_reverse")}
-          <span style={{ fg: theme.textMuted }}> to navigate between subagent sessions</span>
+          :subagents<span style={{ fg: theme.textMuted }}> to view subagent sessions</span>
         </text>
       </>
     )

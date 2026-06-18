@@ -15,6 +15,10 @@ export type ModeTransition = {
   reason: ModeTransitionReason
 }
 
+export type ModeTransitionContext = {
+  subagentReadOnly?: boolean
+}
+
 export function getVimModeTransition(current: VimMode, evt: ParsedKey): ModeTransition | undefined {
   if (evt.ctrl || evt.meta || evt.super) return
 
@@ -39,4 +43,14 @@ export function getVimModeTransition(current: VimMode, evt: ParsedKey): ModeTran
       return { mode: "normal", preventDefault: true, reason: "execute-command" }
     }
   }
+}
+
+export function isVimModeTransitionAllowed(transition: ModeTransition, context: ModeTransitionContext) {
+  if (context.subagentReadOnly && transition.reason === "enter-insert") return false
+  return true
+}
+
+export function modeForContext(mode: VimMode, context: ModeTransitionContext): VimMode {
+  if (context.subagentReadOnly && mode === "insert") return "normal"
+  return mode
 }

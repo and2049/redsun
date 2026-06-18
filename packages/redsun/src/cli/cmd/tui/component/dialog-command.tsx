@@ -12,6 +12,7 @@ import {
 import { useKeyboard } from "@opentui/solid"
 import { useKeybind } from "@tui/context/keybind"
 import { useMode } from "@tui/context/mode"
+import { useSync } from "@tui/context/sync"
 import type { KeybindsConfig } from "@redsun/sdk/v2"
 
 type Context = ReturnType<typeof init>
@@ -28,6 +29,7 @@ function init() {
   const dialog = useDialog()
   const keybind = useKeybind()
   const vim = useMode()
+  const sync = useSync()
   const options = createMemo(() => {
     const all = registrations().flatMap((x) => x())
     const suggested = all.filter((x) => x.suggested)
@@ -44,9 +46,12 @@ function init() {
     }))
   })
   const suspended = () => suspendCount() > 0
+  const permissionPromptActive = () =>
+    !!sync.data.trust || Object.values(sync.data.permission).some((permissions) => permissions.length > 0)
 
   useKeyboard((evt) => {
     if (suspended()) return
+    if (permissionPromptActive()) return
     if (vim.mode === "command") return
     if (dialog.stack.length > 0) return
     for (const option of options()) {
@@ -101,9 +106,13 @@ export function CommandProvider(props: ParentProps) {
   const dialog = useDialog()
   const keybind = useKeybind()
   const vim = useMode()
+  const sync = useSync()
+  const permissionPromptActive = () =>
+    !!sync.data.trust || Object.values(sync.data.permission).some((permissions) => permissions.length > 0)
 
   useKeyboard((evt) => {
     if (value.suspended()) return
+    if (permissionPromptActive()) return
     if (vim.mode === "command") return
     if (dialog.stack.length > 0) return
     if (evt.defaultPrevented) return
