@@ -66,7 +66,7 @@ export namespace LLM {
       mode: "rpc",
       sessionID: input.sessionID,
       agent: input.agent.name,
-      projectTrusted: true,
+      projectTrusted: extRunner.projectTrusted,
       getSystemPrompt: () => joinedSystem,
       signal: input.abort,
     })

@@ -28,7 +28,7 @@ export namespace ExtensionRunner {
       activeTools: new Set(),
       contextFactory,
       discoveredResources: { skillPaths: [], promptPaths: [], agentPaths: [], themePaths: [] },
-      projectTrusted: true,
+      projectTrusted: false,
       pendingProviderRegistrations: [],
       eventBus: new Map(),
     }
@@ -63,9 +63,6 @@ export namespace ExtensionRunner {
       log.warn("failed to initialize tool for description", { id, error })
     }
     state.tools.set(id, { tool, source: source ?? { path: "", scope: "builtin" }, description })
-    if (state.activeTools.size === 0) {
-      state.activeTools.add(id)
-    }
   }
 
   export function unregisterTool(state: State, id: string) {

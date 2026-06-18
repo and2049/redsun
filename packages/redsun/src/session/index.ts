@@ -232,7 +232,7 @@ export namespace Session {
       mode: "rpc",
       sessionID: result.id,
       agent: "",
-      projectTrusted: true,
+      projectTrusted: runner.projectTrusted,
       getSystemPrompt: () => "",
     })
     await ExtensionRunner.emit(
@@ -312,7 +312,7 @@ export namespace Session {
         mode: "rpc",
         sessionID,
         agent: "",
-        projectTrusted: true,
+        projectTrusted: runner.projectTrusted,
         getSystemPrompt: () => "",
       })
       await ExtensionRunner.emit(

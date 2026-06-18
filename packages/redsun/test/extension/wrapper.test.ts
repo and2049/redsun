@@ -128,6 +128,16 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath(p).blocked).toBe(true)
   })
 
+  test("blocks .redsun/extensions paths as extension writes", () => {
+    const relative = isProtectedPath(path.join(".redsun", "extensions", "tool.ts"))
+    expect(relative.blocked).toBe(true)
+    expect(relative.type).toBe("extension")
+
+    const nested = isProtectedPath(path.resolve("/tmp", "project", ".redsun", "extensions", "nested", "tool.ts"))
+    expect(nested.blocked).toBe(true)
+    expect(nested.type).toBe("extension")
+  })
+
   test("allows normal paths", () => {
     expect(isProtectedPath("/tmp/foo.txt").blocked).toBe(false)
   })

@@ -7,6 +7,8 @@ import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
 import type { Extension } from "../../src/extension/types"
 
+const sessionID = (name: string) => `ses_${name}_${Math.random().toString(36).slice(2)}`
+
 function makeRunner() {
   return ExtensionRunner.create(() =>
     ExtensionContext.create({
@@ -33,11 +35,12 @@ describe("Extension.API appendEntry", () => {
         await ToolRegistry.state()
         const runner = await ToolRegistry.getRunner()
         const api = createAPI(runner, { path: "/test", scope: "builtin" })
+        const sid = sessionID("api")
 
-        const id = await api.appendEntry("ses_api_test", "my-extension", { count: 7 })
+        const id = await api.appendEntry(sid, "my-extension", { count: 7 })
         expect(id).toStartWith("ent_")
 
-        const entries = await Entry.list("ses_api_test")
+        const entries = await Entry.list(sid)
         expect(entries.length).toBe(1)
         expect(entries[0].type).toBe("custom")
         expect((entries[0] as any).customType).toBe("my-extension")
@@ -54,9 +57,10 @@ describe("Extension.API appendEntry", () => {
         await ToolRegistry.state()
         const runner = await ToolRegistry.getRunner()
         const api = createAPI(runner, { path: "/test", scope: "builtin" })
+        const sid = sessionID("msg")
 
         const id = await api.appendCustomMessageEntry(
-          "ses_msg_test",
+          sid,
           "my-extension",
           "Remember this fact",
           false,
@@ -64,7 +68,7 @@ describe("Extension.API appendEntry", () => {
         )
         expect(id).toStartWith("ent_")
 
-        const entries = await Entry.list("ses_msg_test")
+        const entries = await Entry.list(sid)
         expect(entries.length).toBe(1)
         expect(entries[0].type).toBe("custom_message")
         expect((entries[0] as any).customType).toBe("my-extension")
@@ -83,9 +87,10 @@ describe("Extension.API appendEntry", () => {
         await ToolRegistry.state()
         const runner = await ToolRegistry.getRunner()
         const api = createAPI(runner, { path: "/test", scope: "builtin" })
+        const sid = sessionID("msg_default")
 
-        await api.appendCustomMessageEntry("ses_msg_default", "ext", "no display arg")
-        const entries = await Entry.list("ses_msg_default")
+        await api.appendCustomMessageEntry(sid, "ext", "no display arg")
+        const entries = await Entry.list(sid)
         expect((entries[0] as any).display).toBe(true)
       },
     })
@@ -101,6 +106,7 @@ describe("Extension.API used in extension factory", () => {
         await ToolRegistry.state()
         const runner = await ToolRegistry.getRunner()
         const api = createAPI(runner, { path: "/test", scope: "builtin" })
+        const sid = sessionID("factory")
 
         let captured: Array<{ customType: string; data?: unknown }> = []
         api.on("session_start", async (_event, ctx) => {
@@ -111,7 +117,7 @@ describe("Extension.API used in extension factory", () => {
 
         const sessionCtx = ExtensionContext.forSession({
           mode: "rpc",
-          sessionID: "ses_factory_test",
+          sessionID: sid,
           agent: "",
           projectTrusted: true,
           getSystemPrompt: () => "",

@@ -66,7 +66,7 @@ export const Instance = {
           mode: "rpc",
           sessionID,
           agent: "",
-          projectTrusted: true,
+          projectTrusted: runner.projectTrusted,
           getSystemPrompt: () => "",
         })
         await ExtensionRunner.emit(runner, { type: "session_shutdown", reason: "quit" }, ctx)

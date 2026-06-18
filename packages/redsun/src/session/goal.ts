@@ -2,11 +2,11 @@ import { generateObject, type ModelMessage } from "ai"
 import z from "zod"
 import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
-import { Instance } from "@/project/instance"
 import { MessageV2 } from "./message-v2"
 import { Provider } from "@/provider/provider"
 import { Identifier } from "@/id/id"
 import { Log } from "@/util/log"
+import { Storage } from "@/storage/storage"
 
 const log = Log.create({ service: "SessionGoal" })
 
@@ -54,35 +54,30 @@ const judgeUser = (condition: string) =>
 Condition: ${condition}`
 
 export namespace Goal {
-  const state = Instance.state(async () => {
-    return { goals: new Map<string, Goal>() }
-  })
+  const key = (sessionID: string) => ["session_goal", sessionID]
 
   export async function set(sessionID: string, condition: string) {
-    const data = await state()
-    data.goals.set(sessionID, { condition, react: 0 })
+    await Storage.write(key(sessionID), { condition, react: 0 } satisfies Goal)
     log.info("goal set", { sessionID, condition })
     Bus.publish(Event.Updated, { sessionID, goal: { condition } })
   }
 
   export async function get(sessionID: string): Promise<Goal | undefined> {
-    const data = await state()
-    return data.goals.get(sessionID)
+    return Storage.read<Goal>(key(sessionID)).catch(() => undefined)
   }
 
   export async function clear(sessionID: string) {
-    const data = await state()
-    data.goals.delete(sessionID)
+    await Storage.remove(key(sessionID))
     log.info("goal cleared", { sessionID })
     Bus.publish(Event.Updated, { sessionID, goal: undefined })
   }
 
   export async function bumpReact(sessionID: string) {
-    const data = await state()
-    const goal = data.goals.get(sessionID)
+    const goal = await get(sessionID)
     if (!goal) return 0
-    goal.react += 1
-    return goal.react
+    const next = { ...goal, react: goal.react + 1 }
+    await Storage.write(key(sessionID), next)
+    return next.react
   }
 
   export async function evaluate(input: {
