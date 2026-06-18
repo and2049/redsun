@@ -87,6 +87,9 @@ case "$combo" in
 esac
 
 archive_ext=".tar.gz"
+if [ "$os" != "linux" ]; then
+  archive_ext=".zip"
+fi
 
 is_musl=false
 if [ "$os" = "linux" ]; then
@@ -131,6 +134,12 @@ filename="$APP-$target$archive_ext"
 if ! command -v tar >/dev/null 2>&1; then
     echo -e "${RED}Error: 'tar' is required but not installed.${NC}"
     exit 1
+fi
+if [ "$os" != "linux" ]; then
+    if ! command -v unzip >/dev/null 2>&1; then
+        echo -e "${RED}Error: 'unzip' is required but not installed.${NC}"
+        exit 1
+    fi
 fi
 
 INSTALL_DIR=$HOME/.redsun/bin
@@ -285,14 +294,21 @@ download_and_install() {
         curl -# -L -o "$tmp_dir/$filename" "$url"
     fi
 
-    tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
+    if [ "$os" = "linux" ]; then
+        tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
+    else
+        unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
+    fi
 
     binary_file="$APP"
     if [ "$os" = "windows" ]; then
         binary_file="$APP.exe"
+        if [ -f "$tmp_dir/$APP" ] && [ ! -f "$tmp_dir/$APP.exe" ]; then
+            mv "$tmp_dir/$APP" "$tmp_dir/$APP.exe"
+        fi
     fi
 
-    mv "$tmp_dir/$APP-$target/bin/$binary_file" "$INSTALL_DIR/"
+    mv "$tmp_dir/$binary_file" "$INSTALL_DIR/"
     if [ "$os" != "windows" ]; then
         chmod 755 "${INSTALL_DIR}/$binary_file"
     fi
