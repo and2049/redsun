@@ -19,12 +19,16 @@ export const AttachCommand = cmd({
         alias: ["s"],
         type: "string",
         describe: "session id to continue",
+      })
+      .option("yolo", {
+        type: "boolean",
+        describe: "auto-approve all tool permissions without prompting (dangerous!)",
       }),
   handler: async (args) => {
     if (args.dir) process.chdir(args.dir)
     await tui({
       url: args.url,
-      args: { sessionID: args.session },
+      args: { sessionID: args.session, yolo: args.yolo },
     })
   },
 })

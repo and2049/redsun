@@ -93,6 +93,10 @@ export const RunCommand = cmd({
         type: "boolean",
         describe: "do not trust the project directory",
       })
+      .option("yolo", {
+        type: "boolean",
+        describe: "auto-approve all tool permissions without prompting (dangerous!)",
+      })
   },
   handler: async (args) => {
     let message = [...args.message, ...(args["--"] || [])]
@@ -211,6 +215,14 @@ export const RunCommand = cmd({
           if (event.type === "permission.updated") {
             const permission = event.properties
             if (permission.sessionID !== sessionID) continue
+            if (args.yolo) {
+              await sdk.permission.respond({
+                sessionID,
+                permissionID: permission.id,
+                response: "always",
+              })
+              continue
+            }
             const result = await select({
               message: `Permission required to run: ${permission.title}`,
               options: [

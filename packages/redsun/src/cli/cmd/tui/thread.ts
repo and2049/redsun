@@ -43,6 +43,10 @@ export const TuiThreadCommand = cmd({
       .option("agent", {
         type: "string",
         describe: "agent to use",
+      })
+      .option("yolo", {
+        type: "boolean",
+        describe: "auto-approve all tool permissions without prompting (dangerous!)",
       }),
   handler: async (args) => {
     // Resolve relative paths against PWD to preserve behavior when using --cwd flag
@@ -93,6 +97,7 @@ export const TuiThreadCommand = cmd({
         agent: args.agent,
         model: args.model,
         prompt,
+        yolo: args.yolo,
       },
       onExit: async () => {
         await client.call("shutdown", undefined)

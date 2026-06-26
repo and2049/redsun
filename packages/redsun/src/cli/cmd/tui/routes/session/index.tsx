@@ -68,6 +68,7 @@ import { Filesystem } from "@/util/filesystem"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { useMode } from "../../context/mode"
 import { modeForContext } from "../../input/mode"
+import { useArgs } from "../../context/args"
 import { getSessionNavigationAction } from "../../input/session-navigation"
 import { getToolPermissionResponse } from "../../input/permission"
 import {
@@ -127,6 +128,19 @@ export function Session() {
   })
   const subagentReadOnly = createMemo(() => isSubagentSession(session()))
   const subagentHeader = createMemo(() => getSubagentHeaderInfo(sync.data.session, route.sessionID))
+
+  const args = useArgs()
+  createEffect(() => {
+    if (!args.yolo) return
+    const target = activePermission()
+    if (!target) return
+    const permission = target.permission as { id: string }
+    sdk.client.permission.respond({
+      permissionID: permission.id,
+      sessionID: target.sessionID,
+      response: "always",
+    })
+  })
 
   const pending = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id

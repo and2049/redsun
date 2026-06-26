@@ -7,10 +7,15 @@ import { withNetworkOptions, resolveNetworkOptions } from "@/cli/network"
 export const TuiSpawnCommand = cmd({
   command: "spawn [project]",
   builder: (yargs) =>
-    withNetworkOptions(yargs).positional("project", {
-      type: "string",
-      describe: "path to start redsun in",
-    }),
+    withNetworkOptions(yargs)
+      .positional("project", {
+        type: "string",
+        describe: "path to start redsun in",
+      })
+      .option("yolo", {
+        type: "boolean",
+        describe: "auto-approve all tool permissions without prompting (dangerous!)",
+      }),
   handler: async (args) => {
     const opts = await resolveNetworkOptions(args)
     const server = Server.listen(opts)
@@ -28,6 +33,7 @@ export const TuiSpawnCommand = cmd({
       cwd = new URL("../../../../", import.meta.url).pathname
     } else cmd.push(process.execPath)
     cmd.push("attach", server.url.toString(), "--dir", args.project ? path.resolve(args.project) : process.cwd())
+    if (args.yolo) cmd.push("--yolo")
     const proc = Bun.spawn({
       cmd,
       cwd,
