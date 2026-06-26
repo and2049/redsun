@@ -68,6 +68,7 @@ export namespace SessionPrompt {
             resolve(input: MessageV2.WithParts): void
             reject(): void
           }[]
+          steering: string[]
         }
       > = {}
       return data
@@ -82,6 +83,23 @@ export namespace SessionPrompt {
   export function assertNotBusy(sessionID: string) {
     const match = state()[sessionID]
     if (match) throw new Session.BusyError(sessionID)
+  }
+
+  function queueSteering(sessionID: string, messageID: string) {
+    const s = state()[sessionID]
+    if (s) {
+      s.steering.push(messageID)
+      log.info("steering queued", { sessionID, messageID, pending: s.steering.length })
+    }
+  }
+
+  function drainSteering(sessionID: string): string[] {
+    const s = state()[sessionID]
+    if (!s || s.steering.length === 0) return []
+    const ids = s.steering.slice()
+    s.steering = []
+    log.info("steering drained", { sessionID, count: ids.length })
+    return ids
   }
 
   export const PromptInput = z.object({
@@ -167,6 +185,7 @@ export namespace SessionPrompt {
       const message = await createUserMessage({ ...input, parts: transformedParts })
       await Session.touch(input.sessionID)
       if (input.noReply === true) return message
+      queueSteering(input.sessionID, message.info.id)
       return loop(input.sessionID)
     }
     if (inputEventResult?.action === "handled") {
@@ -182,6 +201,7 @@ export namespace SessionPrompt {
       return message
     }
 
+    queueSteering(input.sessionID, message.info.id)
     return loop(input.sessionID)
   })
 
@@ -261,6 +281,7 @@ export namespace SessionPrompt {
     s[sessionID] = {
       abort: controller,
       callbacks: [],
+      steering: [],
     }
     return controller.signal
   }
@@ -274,6 +295,7 @@ export namespace SessionPrompt {
     for (const item of match.callbacks) {
       item.reject()
     }
+    match.steering = []
     const previousStatus = SessionStatus.get(sessionID)
     delete s[sessionID]
     SessionStatus.set(sessionID, { type: "idle", contextUsage: previousStatus.contextUsage })
@@ -322,8 +344,12 @@ export namespace SessionPrompt {
         !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
         lastUser.id < lastAssistant.id
       ) {
-        log.info("exiting loop", { sessionID })
-        break
+        if (drainSteering(sessionID).length > 0) {
+          log.info("steering injected, continuing loop", { sessionID })
+        } else {
+          log.info("exiting loop", { sessionID })
+          break
+        }
       }
 
       step++
@@ -625,6 +651,10 @@ export namespace SessionPrompt {
           model,
         })
         if (goalStop.action === "continue") continue
+        if (drainSteering(sessionID).length > 0) {
+          log.info("steering injected after stop, continuing loop", { sessionID })
+          continue
+        }
         break
       }
       if (ToolRegistry.consumePendingReload()) {
@@ -798,12 +828,16 @@ export namespace SessionPrompt {
       // Wrap execute to add extension hooks and format output
       item.execute = async (args, opts) => {
         const ctx = extContextFactory()
-        const callResult = await ExtensionRunner.emit(runner, {
-          type: "tool_call",
-          toolCallId: opts?.toolCallId ?? "",
-          toolName: key,
-          input: args,
-        } as Extension.ToolCallEvent, ctx)
+        const callResult = await ExtensionRunner.emit(
+          runner,
+          {
+            type: "tool_call",
+            toolCallId: opts?.toolCallId ?? "",
+            toolName: key,
+            input: args,
+          } as Extension.ToolCallEvent,
+          ctx,
+        )
         if ((callResult as Extension.ToolCallResult)?.block) {
           throw new Error((callResult as Extension.ToolCallResult).reason ?? "execution blocked by extension")
         }
@@ -829,14 +863,18 @@ export namespace SessionPrompt {
         }
 
         const output = textParts.join("\n\n")
-        const resultResult = await ExtensionRunner.emit(runner, {
-          type: "tool_result",
-          toolCallId: opts?.toolCallId ?? "",
-          toolName: key,
-          input: args,
-          output,
-          metadata: result.metadata ?? {},
-        } as Extension.ToolResultEvent, ctx)
+        const resultResult = await ExtensionRunner.emit(
+          runner,
+          {
+            type: "tool_result",
+            toolCallId: opts?.toolCallId ?? "",
+            toolName: key,
+            input: args,
+            output,
+            metadata: result.metadata ?? {},
+          } as Extension.ToolResultEvent,
+          ctx,
+        )
         const mutated = resultResult as Extension.ToolResultEventResult | undefined
 
         return {
@@ -860,7 +898,11 @@ export namespace SessionPrompt {
 
   async function createUserMessage(input: PromptInput) {
     const agent = await Agent.get(input.agent ?? (await Agent.defaultAgent()))
-    const model = ToolRegistry.consumeModelOverride(input.sessionID) ?? input.model ?? agent.model ?? (await lastModel(input.sessionID))
+    const model =
+      ToolRegistry.consumeModelOverride(input.sessionID) ??
+      input.model ??
+      agent.model ??
+      (await lastModel(input.sessionID))
     const info: MessageV2.Info = {
       id: input.messageID ?? Identifier.ascending("message"),
       role: "user",
@@ -1199,7 +1241,11 @@ export namespace SessionPrompt {
       SessionRevert.cleanup(session)
     }
     const agent = await Agent.get(input.agent)
-    const model = ToolRegistry.consumeModelOverride(input.sessionID) ?? input.model ?? agent.model ?? (await lastModel(input.sessionID))
+    const model =
+      ToolRegistry.consumeModelOverride(input.sessionID) ??
+      input.model ??
+      agent.model ??
+      (await lastModel(input.sessionID))
     const userMsg: MessageV2.User = {
       id: Identifier.ascending("message"),
       sessionID: input.sessionID,
