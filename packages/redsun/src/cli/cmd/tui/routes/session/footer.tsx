@@ -1,74 +1,103 @@
-import { createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js"
-import { useTheme } from "../../context/theme"
-import { useSync } from "../../context/sync"
-import { useConnected } from "../../component/dialog-model"
-import { createStore } from "solid-js/store"
-import { useRoute } from "../../context/route"
-import { pipe, sumBy } from "remeda"
-import type { AssistantMessage } from "@redsun/sdk/v2"
-import { formatContextStatus } from "../../input/token-display"
+import { createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { useTheme } from "../../context/theme";
+import { useSync } from "../../context/sync";
+import { useConnected } from "../../component/dialog-model";
+import { createStore } from "solid-js/store";
+import { useRoute } from "../../context/route";
+import { pipe, sumBy } from "remeda";
+import type { AssistantMessage } from "@redsun/sdk/v2";
+import { formatContextStatus } from "../../input/token-display";
 
 export function Footer() {
-  const { theme } = useTheme()
-  const sync = useSync()
-  const route = useRoute()
-  const mcp = createMemo(() => Object.values(sync.data.mcp).filter((x) => x.status === "connected").length)
-  const mcpError = createMemo(() => Object.values(sync.data.mcp).some((x) => x.status === "failed"))
-  const lsp = createMemo(() => Object.keys(sync.data.lsp))
+  const { theme } = useTheme();
+  const sync = useSync();
+  const route = useRoute();
+  const mcp = createMemo(
+    () =>
+      Object.values(sync.data.mcp).filter((x) => x.status === "connected")
+        .length,
+  );
+  const mcpError = createMemo(() =>
+    Object.values(sync.data.mcp).some((x) => x.status === "failed"),
+  );
+  const lsp = createMemo(() => Object.keys(sync.data.lsp));
   const permissions = createMemo(() => {
-    if (route.data.type !== "session") return []
-    return sync.data.permission[route.data.sessionID] ?? []
-  })
-  const connected = useConnected()
+    if (route.data.type !== "session") return [];
+    return sync.data.permission[route.data.sessionID] ?? [];
+  });
+  const connected = useConnected();
 
   const [store, setStore] = createStore({
     welcome: false,
-  })
+  });
 
   const messages = createMemo(() => {
-    if (route.data.type !== "session") return []
-    return sync.data.message[route.data.sessionID] ?? []
-  })
+    if (route.data.type !== "session") return [];
+    return sync.data.message[route.data.sessionID] ?? [];
+  });
 
   const cost = createMemo(() => {
     const total = pipe(
       messages(),
       sumBy((x) => (x.role === "assistant" ? x.cost : 0)),
-    )
+    );
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-    }).format(total)
-  })
+    }).format(total);
+  });
 
   const context = createMemo(() => {
-    const last = messages().findLast((x) => x.role === "assistant" && x.tokens.output > 0) as AssistantMessage
-    if (!last) return
-    const model = sync.data.provider.find((x) => x.id === last.providerID)?.models[last.modelID]
-    return formatContextStatus({ tokens: last.tokens, contextLimit: model?.limit.context })
-  })
+    const msgs = messages().filter(
+      (x) => x.role === "assistant" && x.tokens.output > 0,
+    ) as AssistantMessage[];
+    if (msgs.length === 0) return;
+    const last = msgs[msgs.length - 1];
+    const model = sync.data.provider.find((x) => x.id === last.providerID)
+      ?.models[last.modelID];
+
+    let cumulativeInput = 0;
+    let cumulativeCacheRead = 0;
+    let cumulativeCacheWrite = 0;
+    for (const msg of msgs) {
+      cumulativeInput += msg.tokens.input;
+      cumulativeCacheRead += msg.tokens.cache.read;
+      cumulativeCacheWrite += msg.tokens.cache.write;
+    }
+
+    return formatContextStatus({
+      tokens: last.tokens,
+      contextLimit: model?.limit.context,
+      cacheTokens: {
+        input: cumulativeInput,
+        output: 0,
+        reasoning: 0,
+        cache: { read: cumulativeCacheRead, write: cumulativeCacheWrite },
+      },
+    });
+  });
 
   onMount(() => {
     function tick() {
-      if (connected()) return
+      if (connected()) return;
       if (!store.welcome) {
-        setStore("welcome", true)
-        timeout = setTimeout(() => tick(), 5000)
-        return
+        setStore("welcome", true);
+        timeout = setTimeout(() => tick(), 5000);
+        return;
       }
 
       if (store.welcome) {
-        setStore("welcome", false)
-        timeout = setTimeout(() => tick(), 10_000)
-        return
+        setStore("welcome", false);
+        timeout = setTimeout(() => tick(), 10_000);
+        return;
       }
     }
-    let timeout = setTimeout(() => tick(), 10_000)
+    let timeout = setTimeout(() => tick(), 10_000);
 
     onCleanup(() => {
-      clearTimeout(timeout)
-    })
-  })
+      clearTimeout(timeout);
+    });
+  });
 
   return (
     <box flexDirection="row" justifyContent="flex-end" gap={1} flexShrink={0}>
@@ -87,7 +116,8 @@ export function Footer() {
           <Match when={connected()}>
             <Show when={permissions().length > 0}>
               <text fg={theme.warning}>
-                <span style={{ fg: theme.warning }}>◉</span> {permissions().length} Permission
+                <span style={{ fg: theme.warning }}>◉</span>{" "}
+                {permissions().length} Permission
                 {permissions().length > 1 ? "s" : ""}
               </text>
             </Show>
@@ -111,5 +141,5 @@ export function Footer() {
         </Switch>
       </box>
     </box>
-  )
+  );
 }
