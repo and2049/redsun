@@ -55,7 +55,6 @@
     }
   },
   "devDependencies": {
-    "prettier": "3.6.2",
     "turbo": "2.5.6"
   },
   "dependencies": {
@@ -63,12 +62,7 @@
     "@redsun/sdk": "workspace:*",
     "typescript": "catalog:"
   },
-
   "license": "MIT",
-  "prettier": {
-    "semi": false,
-    "printWidth": 120
-  },
   "trustedDependencies": [
     "esbuild",
     "protobufjs",
