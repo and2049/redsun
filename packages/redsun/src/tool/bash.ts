@@ -195,7 +195,29 @@ export const BashTool = Tool.define("bash", async () => {
         })
       }
 
-      const proc = spawn(params.command, {
+      // On Windows + Git Bash, ">nul" / "2>nul" creates a literal file named
+      // "nul" instead of redirecting to the null device. Rewrite to /dev/null.
+      let commandForExecution = params.command
+      if (process.platform === "win32" && shell.includes("bash")) {
+        const fileRedirects = tree.rootNode.descendantsOfType("file_redirect")
+        const nulReplacements: Array<{ start: number; end: number }> = []
+        for (const redirect of fileRedirects) {
+          if (!redirect) continue
+          const children = redirect.children
+          const lastChild = children[children.length - 1]
+          if (lastChild && lastChild.text.toLowerCase() === "nul") {
+            nulReplacements.push({ start: lastChild.startIndex, end: lastChild.endIndex })
+          }
+        }
+        if (nulReplacements.length > 0) {
+          nulReplacements.sort((a, b) => b.start - a.start)
+          for (const { start, end } of nulReplacements) {
+            commandForExecution = commandForExecution.slice(0, start) + "/dev/null" + commandForExecution.slice(end)
+          }
+        }
+      }
+
+      const proc = spawn(commandForExecution, {
         shell,
         cwd,
         env: {
