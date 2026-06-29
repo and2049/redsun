@@ -43,6 +43,7 @@ import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { iife } from "@/util/iife"
 import { Shell } from "@/shell/shell"
+import { Permission } from "@/permission"
 import { ExtensionWrapper } from "../extension/wrapper"
 import { ExtensionContext } from "../extension/context"
 import { ExtensionRunner } from "../extension/runner"
@@ -617,6 +618,8 @@ export namespace SessionPrompt {
         (m) => m.info.role === "user" && m.parts.some((p) => p.type === "compaction"),
       )?.info.time.created
 
+      const mcpInstructions = await SystemPrompt.mcp()
+
       const result = await processor.process({
         user: lastUser,
         agent,
@@ -629,6 +632,7 @@ export namespace SessionPrompt {
           ...SystemPrompt.selfModification(),
           ...SystemPrompt.projectMemory(),
           ...SystemPrompt.goalFeature(),
+          ...(mcpInstructions ? [mcpInstructions] : []),
         ],
         messages: [
           ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
@@ -892,6 +896,241 @@ export namespace SessionPrompt {
         }
       }
       tools[key] = item
+    }
+
+    const mcpClients = await MCP.clients()
+    const hasMcpResourceServer = Object.values(mcpClients).some(
+      (client) => !!client.getServerCapabilities()?.resources,
+    )
+    if (hasMcpResourceServer) {
+      const resourceServers = Object.entries(mcpClients)
+        .filter(([, client]) => !!client.getServerCapabilities()?.resources)
+        .map(([name]) => name)
+        .sort((a, b) => a.localeCompare(b))
+
+      tools["list_mcp_resources"] = tool({
+        description:
+          "Lists resources provided by connected MCP servers. Resources provide context such as files, database schemas, or application-specific information.",
+        inputSchema: jsonSchema(
+          ProviderTransform.schema(input.model, {
+            type: "object",
+            properties: {
+              server: {
+                type: "string",
+                description: "Optional MCP server name. When omitted, lists resources from every connected server.",
+              },
+            },
+            additionalProperties: false,
+          } as any) as any,
+        ),
+        async execute(args, opts) {
+          const server = (args as any)?.server as string | undefined
+          if (server && !resourceServers.includes(server)) {
+            throw new Error(
+              resourceServers.length === 0
+                ? `MCP server "${server}" does not support resources`
+                : `MCP server "${server}" does not support resources. Available resource servers: ${resourceServers.join(", ")}`,
+            )
+          }
+          const permissionPatterns = server ? [`mcp:${server}:*`] : resourceServers.map((s) => `mcp:${s}:*`)
+          await Permission.ask({
+            type: "read",
+            title: server ? `MCP resources: ${server}` : "MCP resources",
+            pattern: permissionPatterns,
+            callID: opts.toolCallId,
+            sessionID: input.sessionID,
+            messageID: input.processor.message.id,
+            metadata: server ? { server } : {},
+          })
+          const resources = await MCP.resources(server)
+          const filtered = Object.values(resources)
+            .filter((r) => !server || r.client === server)
+            .sort((a, b) => (a.client + "\0" + a.name + "\0" + a.uri).localeCompare(b.client + "\0" + b.name + "\0" + b.uri))
+          const formatted = filtered.map((r) => {
+            const { client, ...rest } = r
+            return { ...rest, server: client }
+          })
+          const content = JSON.stringify({ resources: formatted }, null, 2)
+          return {
+            title: server ? `MCP resources: ${server}` : "MCP resources",
+            metadata: { count: filtered.length, servers: resourceServers, ...(server ? { server } : {}) },
+            output: content,
+          }
+        },
+        toModelOutput(result) {
+          return { type: "text", value: result.output }
+        },
+      })
+
+      tools["list_mcp_resource_templates"] = tool({
+        description:
+          "Lists resource templates provided by connected MCP servers. Resource templates are parameterized resources that can be read after filling in their URI template.",
+        inputSchema: jsonSchema(
+          ProviderTransform.schema(input.model, {
+            type: "object",
+            properties: {
+              server: {
+                type: "string",
+                description:
+                  "Optional MCP server name. When omitted, lists resource templates from every connected server.",
+              },
+            },
+            additionalProperties: false,
+          } as any) as any,
+        ),
+        async execute(args, opts) {
+          const server = (args as any)?.server as string | undefined
+          if (server && !resourceServers.includes(server)) {
+            throw new Error(
+              resourceServers.length === 0
+                ? `MCP server "${server}" does not support resources`
+                : `MCP server "${server}" does not support resources. Available resource servers: ${resourceServers.join(", ")}`,
+            )
+          }
+          const permissionPatterns = server ? [`mcp:${server}:*`] : resourceServers.map((s) => `mcp:${s}:*`)
+          await Permission.ask({
+            type: "read",
+            title: server ? `MCP resource templates: ${server}` : "MCP resource templates",
+            pattern: permissionPatterns,
+            callID: opts.toolCallId,
+            sessionID: input.sessionID,
+            messageID: input.processor.message.id,
+            metadata: server ? { server } : {},
+          })
+          const templates = await MCP.resourceTemplates(server)
+          const filtered = Object.values(templates)
+            .filter((t) => !server || t.client === server)
+            .sort((a, b) =>
+              (a.client + "\0" + a.name + "\0" + a.uriTemplate).localeCompare(
+                b.client + "\0" + b.name + "\0" + b.uriTemplate,
+              ),
+            )
+          const formatted = filtered.map((t) => {
+            const { client, ...rest } = t
+            return { ...rest, server: client }
+          })
+          const content = JSON.stringify({ resourceTemplates: formatted }, null, 2)
+          return {
+            title: server ? `MCP resource templates: ${server}` : "MCP resource templates",
+            metadata: { count: filtered.length, servers: resourceServers, ...(server ? { server } : {}) },
+            output: content,
+          }
+        },
+        toModelOutput(result) {
+          return { type: "text", value: result.output }
+        },
+      })
+
+      const SUPPORTED_MCP_RESOURCE_MIMES = new Set([
+        "application/pdf",
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ])
+      const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
+
+      function base64Size(value: string) {
+        const trimmed = value.replace(/\s/g, "")
+        const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0
+        return Math.max(0, Math.floor((trimmed.length * 3) / 4) - padding)
+      }
+
+      function formatBytes(value: number) {
+        if (value < 1024) return `${value} B`
+        if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
+        return `${Math.ceil(value / (1024 * 1024))} MB`
+      }
+
+      tools["read_mcp_resource"] = tool({
+        description:
+          "Read a specific resource from an MCP server using the server name and resource URI. The URI is an MCP identifier and does not need to be a file URL.",
+        inputSchema: jsonSchema(
+          ProviderTransform.schema(input.model, {
+            type: "object",
+            properties: {
+              server: {
+                type: "string",
+                description: "MCP server name exactly as returned by list_mcp_resources.",
+              },
+              uri: {
+                type: "string",
+                description: "Resource URI to read. Use the exact URI string returned by list_mcp_resources.",
+              },
+            },
+            required: ["server", "uri"],
+            additionalProperties: false,
+          } as any) as any,
+        ),
+        async execute(args, opts) {
+          const server = (args as any)?.server as string
+          const uri = (args as any)?.uri as string
+          if (!server) throw new Error("server is required")
+          if (!uri) throw new Error("uri is required")
+          const client = mcpClients[server]
+          if (!client) throw new Error(`MCP server "${server}" is not connected`)
+          if (!client.getServerCapabilities()?.resources) {
+            throw new Error(`MCP server "${server}" does not support resources`)
+          }
+          await Permission.ask({
+            type: "read",
+            title: `MCP resource: ${uri}`,
+            pattern: [`mcp:${server}:${uri}`],
+            callID: opts.toolCallId,
+            sessionID: input.sessionID,
+            messageID: input.processor.message.id,
+            metadata: { server, uri },
+          })
+          const content = await MCP.readResource(server, uri)
+          if (!content) throw new Error(`Failed to read MCP resource: ${server}/${uri}`)
+
+          const textParts: string[] = []
+          const attachments: MessageV2.FilePart[] = []
+
+          for (const item of content.contents) {
+            const itemUri = typeof item.uri === "string" ? item.uri : uri
+            const mime = typeof item.mimeType === "string" ? item.mimeType : "application/octet-stream"
+            if (typeof item.text === "string") {
+              textParts.push(`Resource: ${itemUri}\nMIME: ${mime}\n${item.text}`)
+              continue
+            }
+            if (typeof item.blob === "string") {
+              const size = base64Size(item.blob)
+              if (!SUPPORTED_MCP_RESOURCE_MIMES.has(mime)) {
+                textParts.push(`[Binary MCP resource omitted: ${itemUri} (${mime}, ${formatBytes(size)}) is not a supported attachment type]`)
+                continue
+              }
+              if (size > MAX_MCP_RESOURCE_BLOB_BYTES) {
+                textParts.push(`[Binary MCP resource omitted: ${itemUri} (${mime}, ${formatBytes(size)}) exceeds ${formatBytes(MAX_MCP_RESOURCE_BLOB_BYTES)}]`)
+                continue
+              }
+              textParts.push(`[Binary MCP resource attached: ${itemUri} (${mime})]`)
+              attachments.push({
+                id: Identifier.ascending("part"),
+                sessionID: input.sessionID,
+                messageID: input.processor.message.id,
+                type: "file",
+                mime,
+                url: `data:${mime};base64,${item.blob}`,
+                filename: itemUri,
+              })
+              continue
+            }
+            textParts.push(`[MCP resource content without text or blob: ${itemUri}]`)
+          }
+
+          const output = textParts.join("\n\n") || `MCP resource ${uri} from ${server} returned no contents.`
+          return {
+            title: `MCP resource: ${uri}`,
+            metadata: { server, uri, contents: content.contents.length, attachments: attachments.length },
+            output,
+            attachments,
+          }
+        },
+        toModelOutput(result) {
+          return { type: "text", value: result.output }
+        },
+      })
     }
     return tools
   }

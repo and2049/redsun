@@ -3,6 +3,7 @@ import { Global } from "../global"
 import { Filesystem } from "../util/filesystem"
 import { Config } from "../config/config"
 import { Skill } from "../skill"
+import { MCP } from "../mcp"
 
 import { Instance } from "../project/instance"
 import path from "path"
@@ -80,6 +81,20 @@ export namespace SystemPrompt {
 
   export async function skills() {
     return Skill.formatForPrompt()
+  }
+
+  export async function mcp() {
+    const instructions = await MCP.instructions()
+    if (instructions.length === 0) return undefined
+    return [
+      "<mcp_instructions>",
+      ...instructions.flatMap((item) => [
+        `  <server name="${item.name}">`,
+        ...item.instructions.split("\n").map((line) => `    ${line}`),
+        "  </server>",
+      ]),
+      "</mcp_instructions>",
+    ].join("\n")
   }
 
   const _docsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs")
