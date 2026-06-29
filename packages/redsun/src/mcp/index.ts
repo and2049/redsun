@@ -462,6 +462,106 @@ export namespace MCP {
     return result
   }
 
+  export interface Resource {
+    uri: string
+    name: string
+    description?: string
+    mimeType?: string
+    client: string
+  }
+
+  export interface ResourceTemplate {
+    uriTemplate: string
+    name: string
+    description?: string
+    mimeType?: string
+    client: string
+  }
+
+  export interface McpInstructions {
+    name: string
+    instructions: string
+    tools: string[]
+  }
+
+  export async function resources(clientName?: string): Promise<Record<string, Resource>> {
+    const s = await state()
+    const cfg = await Config.get()
+    const result: Record<string, Resource> = {}
+    for (const [name, client] of Object.entries(s.clients)) {
+      if (s.status[name]?.status !== "connected") continue
+      if (clientName && name !== clientName) continue
+      if (!client.getServerCapabilities()?.resources) continue
+      try {
+        const timeout = cfg.mcp?.[name]?.timeout ?? 5000
+        const res = await withTimeout(client.listResources(), timeout)
+        for (const resource of res.resources) {
+          result[resource.uri] = { ...resource, client: name }
+        }
+      } catch (e) {
+        log.error("failed to list resources", { clientName: name, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    return result
+  }
+
+  export async function resourceTemplates(clientName?: string): Promise<Record<string, ResourceTemplate>> {
+    const s = await state()
+    const cfg = await Config.get()
+    const result: Record<string, ResourceTemplate> = {}
+    for (const [name, client] of Object.entries(s.clients)) {
+      if (s.status[name]?.status !== "connected") continue
+      if (clientName && name !== clientName) continue
+      if (!client.getServerCapabilities()?.resources) continue
+      try {
+        const timeout = cfg.mcp?.[name]?.timeout ?? 5000
+        const res = await withTimeout(client.listResourceTemplates(), timeout)
+        for (const template of res.resourceTemplates) {
+          result[template.uriTemplate] = { ...template, client: name }
+        }
+      } catch (e) {
+        log.error("failed to list resource templates", { clientName: name, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+    return result
+  }
+
+  export async function readResource(server: string, uri: string): Promise<{ contents: any[] } | undefined> {
+    const s = await state()
+    const client = s.clients[server]
+    if (!client) {
+      log.warn("client not found for readResource", { server })
+      return undefined
+    }
+    const cfg = await Config.get()
+    const timeout = cfg.mcp?.[server]?.timeout ?? 5000
+    try {
+      const result = await withTimeout(client.readResource({ uri }), timeout)
+      return { contents: Array.isArray(result.contents) ? result.contents : [result.contents] }
+    } catch (e) {
+      log.error("failed to read resource", { server, uri, error: e instanceof Error ? e.message : String(e) })
+      return undefined
+    }
+  }
+
+  export async function instructions(): Promise<McpInstructions[]> {
+    const s = await state()
+    const result: McpInstructions[] = []
+    for (const [name, client] of Object.entries(s.clients)) {
+      if (s.status[name]?.status !== "connected") continue
+      const instructionsText = (client as any).getInstructions?.()?.trim()
+      if (!instructionsText) continue
+      let tools: string[] = []
+      try {
+        const toolsResult = await client.listTools()
+        const sanitizedClientName = name.replace(/[^a-zA-Z0-9_-]/g, "_")
+        tools = toolsResult.tools.map((t) => `${sanitizedClientName}_${t.name.replace(/[^a-zA-Z0-9_-]/g, "_")}`)
+      } catch {}
+      result.push({ name, instructions: instructionsText, tools })
+    }
+    return result
+  }
+
   /**
    * Start OAuth authentication flow for an MCP server.
    * Returns the authorization URL that should be opened in a browser.

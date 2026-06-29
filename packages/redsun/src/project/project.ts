@@ -44,7 +44,7 @@ export namespace Project {
   export async function fromDirectory(directory: string) {
     log.info("fromDirectory", { directory })
 
-    const { id, worktree, vcs } = await iife(async () => {
+    const { id, worktree: wt, vcs } = await iife(async () => {
       const matches = Filesystem.up({ targets: [".git"], start: directory })
       const git = await matches.next().then((x) => x.value)
       await matches.return()
@@ -67,8 +67,8 @@ export namespace Project {
                 .map((x) => x.trim())
                 .toSorted(),
             )
-          id = roots[0]
-          if (id) Bun.file(path.join(git, "redsun")).write(id)
+id = roots[0]
+          if (id) Bun.file(path.join(git, "redsun")).write(id).catch(() => {})
         }
         if (!id)
           return {
@@ -90,7 +90,9 @@ export namespace Project {
         worktree: "/",
         vcs: Info.shape.vcs.parse(Flag.REDSUN_FAKE_VCS),
       }
-    })
+})
+
+    const worktree = wt.replaceAll("\\", "/")
 
     let existing = await Storage.read<Info>(["project", id]).catch(() => undefined)
     if (!existing) {

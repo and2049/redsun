@@ -1098,7 +1098,7 @@ export namespace Provider {
     log.info("unregistered provider", { name })
   }
 
-  export const ModelNotFoundError = NamedError.create(
+  const _ModelNotFoundError = NamedError.create(
     "ProviderModelNotFoundError",
     z.object({
       providerID: z.string(),
@@ -1106,11 +1106,24 @@ export namespace Provider {
       suggestions: z.array(z.string()).optional(),
     }),
   )
+  export class ModelNotFoundError extends _ModelNotFoundError {
+    override get message() {
+      const data = this.data as { providerID: string; modelID: string; suggestions?: string[] }
+      const suggestions = data.suggestions?.length ? ` Did you mean: ${data.suggestions.join(", ")}?` : ""
+      return `Model not found: ${data.providerID}/${data.modelID}.${suggestions}`
+    }
+  }
 
-  export const InitError = NamedError.create(
+  const _InitError = NamedError.create(
     "ProviderInitError",
     z.object({
       providerID: z.string(),
     }),
   )
+  export class InitError extends _InitError {
+    override get message() {
+      const data = this.data as { providerID: string }
+      return `Failed to initialize provider: ${data.providerID}`
+    }
+  }
 }
