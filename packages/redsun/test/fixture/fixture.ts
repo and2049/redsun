@@ -23,7 +23,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
     await $`git commit --allow-empty -m "root commit ${dirpath}"`.cwd(dirpath).quiet()
   }
   const extra = await options?.init?.(dirpath)
-  const realpath = sanitizePath(await fs.realpath(dirpath))
+  const realpath = sanitizePath(await fs.realpath(dirpath)).replaceAll("\\", "/")
   const result = {
     [Symbol.asyncDispose]: async () => {
       await options?.dispose?.(dirpath)
