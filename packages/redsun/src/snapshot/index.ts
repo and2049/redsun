@@ -69,7 +69,7 @@ export namespace Snapshot {
         .split("\n")
         .map((x) => x.trim())
         .filter(Boolean)
-        .map((x) => path.join(Instance.worktree, x)),
+.map((x) => path.join(Instance.worktree, x).replaceAll("\\", "/")),
     }
   }
 
@@ -99,14 +99,14 @@ export namespace Snapshot {
       for (const file of item.files) {
         if (files.has(file)) continue
         log.info("reverting", { file, hash: item.hash })
-        const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} checkout ${item.hash} -- ${file}`
+const relPath = path.relative(Instance.worktree, file).replaceAll("\\", "/")
+        const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} checkout ${item.hash} -- ${relPath}`
           .quiet()
           .cwd(Instance.worktree)
           .nothrow()
         if (result.exitCode !== 0) {
-          const relativePath = path.relative(Instance.worktree, file)
           const checkTree =
-            await $`git --git-dir ${git} --work-tree ${Instance.worktree} ls-tree ${item.hash} -- ${relativePath}`
+            await $`git --git-dir ${git} --work-tree ${Instance.worktree} ls-tree ${item.hash} -- ${relPath}`
               .quiet()
               .cwd(Instance.worktree)
               .nothrow()
