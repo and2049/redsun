@@ -30,6 +30,8 @@ import { Todo } from "@/session/todo"
 import { z } from "zod"
 import { LoadAPIKeyError } from "ai"
 import type { OpencodeClient, SessionMessageResponse } from "@redsun/sdk/v2"
+import path from "path"
+import { fileURLToPath } from "bun"
 
 export namespace ACP {
   const log = Log.create({ service: "acp-agent" })
@@ -849,10 +851,19 @@ export namespace ACP {
           case "resource":
             const resource = part.resource
             if ("text" in resource) {
-              parts.push({
-                type: "text",
-                text: resource.text,
-              })
+              try {
+                const parsed = new URL(resource.uri)
+                if (parsed.protocol === "file:") {
+                  const line = parsed.hash.match(/^#L(\d+)/)?.[1]
+                  let filepath: string
+                  try { filepath = fileURLToPath(parsed) }
+                  catch { filepath = decodeURIComponent(parsed.pathname) }
+                  if (path.sep === "\\") filepath = filepath.replace(/\\/g, "/")
+                  parts.push({ type: "text", text: `[${filepath}${line ? `:${line}` : ""}]\n${resource.text}` })
+                  break
+                }
+              } catch {}
+              parts.push({ type: "text", text: `[${resource.uri}]\n${resource.text}` })
             }
             break
 
