@@ -18,6 +18,7 @@ import PROMPT_ANTHROPIC_SPOOF from "./prompt/anthropic_spoof.txt"
 
 import PROMPT_CODEX from "./prompt/codex.txt"
 import type { Provider } from "@/provider/provider"
+import { ContextOptimizer } from "./context-optimizer"
 
 export namespace SystemPrompt {
   export function header(providerID: string) {
@@ -50,22 +51,25 @@ export namespace SystemPrompt {
 
   export async function environmentVolatile() {
     const project = Instance.project
+    const tree =
+      project.vcs === "git"
+        ? ContextOptimizer.boundVolatile(
+            "volatile file tree",
+            await Ripgrep.tree({
+              cwd: Instance.directory,
+              limit: 200,
+            }),
+          )
+        : ""
     return [
-      [
+      ContextOptimizer.boundVolatile("volatile environment", [
         `<env_dynamic>`,
         `  Today's date: ${new Date().toDateString()}`,
         `</env_dynamic>`,
         `<files>`,
-        `  ${
-          project.vcs === "git"
-            ? await Ripgrep.tree({
-                cwd: Instance.directory,
-                limit: 200,
-              })
-            : ""
-        }`,
+        `  ${tree}`,
         `</files>`,
-      ].join("\n"),
+      ].join("\n")),
     ]
   }
 
@@ -80,13 +84,13 @@ export namespace SystemPrompt {
   ]
 
   export async function skills() {
-    return Skill.formatForPrompt()
+    return ContextOptimizer.boundText("skills prompt", await Skill.formatForPrompt())
   }
 
   export async function mcp() {
     const instructions = await MCP.instructions()
     if (instructions.length === 0) return undefined
-    return [
+    return ContextOptimizer.boundText("mcp instructions", [
       "<mcp_instructions>",
       ...instructions.flatMap((item) => [
         `  <server name="${item.name}">`,
@@ -94,7 +98,7 @@ export namespace SystemPrompt {
         "  </server>",
       ]),
       "</mcp_instructions>",
-    ].join("\n")
+    ].join("\n"))
   }
 
   const _docsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs")
@@ -187,7 +191,7 @@ export namespace SystemPrompt {
       Bun.file(p)
         .text()
         .catch(() => "")
-        .then((x) => "Instructions from: " + p + "\n" + x),
+        .then((x) => ContextOptimizer.boundText(`instructions file ${p}`, "Instructions from: " + p + "\n" + x)),
     )
     return Promise.all(found).then((result) => result.filter(Boolean))
   }

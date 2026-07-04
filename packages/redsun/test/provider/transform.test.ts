@@ -285,6 +285,29 @@ describe("ProviderTransform.schema - openai supported schema subset", () => {
 
     expect(result.properties.enabled).toBe(true)
   })
+
+  test("trims doc-only schema fields and long descriptions", () => {
+    const result = ProviderTransform.schema(openaiModel, {
+      type: "object",
+      description: "x".repeat(1000),
+      examples: [{ ignored: true }],
+      markdownDescription: "ignored",
+      $comment: "ignored",
+      properties: {
+        value: {
+          type: "string",
+          description: "short",
+          examples: ["ignored"],
+        },
+      },
+    } as any) as any
+
+    expect(result.description).toContain("[redsun: context item truncated]")
+    expect(result.examples).toBeUndefined()
+    expect(result.markdownDescription).toBeUndefined()
+    expect(result.$comment).toBeUndefined()
+    expect(result.properties.value.examples).toBeUndefined()
+  })
 })
 
 describe("ProviderTransform.message - DeepSeek reasoning content", () => {
@@ -503,5 +526,77 @@ describe("ProviderTransform.message - empty image handling", () => {
       type: "text",
       text: "ERROR: Image file is empty or corrupted. Please provide a valid image.",
     })
+  })
+
+  test("replaces oversized data attachments with bounded text notice", () => {
+    const hugeBase64 = "a".repeat(8 * 1024 * 1024)
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "user",
+          content: [{ type: "image", image: `data:image/png;base64,${hugeBase64}` }],
+        },
+      ] as any[],
+      mockModel,
+    )
+
+    expect((result[0].content as any[])[0].type).toBe("text")
+    expect((result[0].content as any[])[0].text).toContain("exceeds")
+  })
+})
+
+describe("ProviderTransform.message - cache placement", () => {
+  const anthropicModel = {
+    providerID: "anthropic",
+    api: { id: "claude-sonnet", npm: "@ai-sdk/anthropic" },
+    capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+  } as any
+
+  test("does not mark volatile system context as cacheable", () => {
+    const msgs = [
+      { role: "system", content: "stable one" },
+      { role: "system", content: "stable two" },
+      { role: "system", content: "<env_dynamic>\n</env_dynamic>\n<files>\nfoo\n</files>" },
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, anthropicModel)
+
+    expect((result[0].providerOptions?.anthropic as any)?.cacheControl?.type).toBe("ephemeral")
+    expect((result[1].providerOptions?.anthropic as any)?.cacheControl?.type).toBe("ephemeral")
+    expect(result[2].providerOptions).toBeUndefined()
+  })
+
+  test("marks OpenRouter messages with provider-specific cache metadata", () => {
+    const result = ProviderTransform.message(
+      [
+        { role: "system", content: "stable" },
+        { role: "user", content: [{ type: "text", text: "hello" }] },
+      ] as any[],
+      {
+        providerID: "openrouter",
+        api: { id: "openrouter/model", npm: "@openrouter/ai-sdk-provider" },
+        capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+      } as any,
+    )
+
+    expect((result[0].providerOptions?.openrouter as any)?.cache_control?.type).toBe("ephemeral")
+    expect(((result[1].content as any[])[0].providerOptions?.openrouter as any)?.cache_control?.type).toBe("ephemeral")
+  })
+
+  test("OpenAI-compatible cache control is opt-in", () => {
+    const model = {
+      providerID: "deepseek",
+      api: { id: "deepseek-chat", npm: "@ai-sdk/openai-compatible" },
+      capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+    } as any
+
+    const disabled = ProviderTransform.message([{ role: "system", content: "stable" }] as any[], model)
+    const enabled = ProviderTransform.message([{ role: "system", content: "stable" }] as any[], model, {
+      openaiCompatibleCacheControl: true,
+    })
+
+    expect(disabled[0].providerOptions).toBeUndefined()
+    expect((enabled[0].providerOptions?.openaiCompatible as any)?.cache_control?.type).toBe("ephemeral")
   })
 })
