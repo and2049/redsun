@@ -9,6 +9,7 @@ import os from "os"
 import { Config } from "../../config/config"
 import { Global } from "../../global"
 import { Instance } from "../../project/instance"
+import { ProviderAuth } from "../../provider/auth"
 
 // TODO: Replace with Extension auth provider registration when implemented.
 type PluginAuth = any
@@ -158,6 +159,59 @@ async function handlePluginAuth(plugin: { auth: PluginAuth }, provider: string):
   return false
 }
 
+async function handleBuiltInAuth(provider: string): Promise<boolean> {
+  const methods = (await ProviderAuth.methods())[provider]
+  if (!methods?.length) return false
+
+  let index = 0
+  if (methods.length > 1) {
+    const selected = await prompts.select({
+      message: "Login method",
+      options: methods.map((method: ProviderAuth.Method, index: number) => ({
+        label: method.label,
+        value: index.toString(),
+      })),
+    })
+    if (prompts.isCancel(selected)) throw new UI.CancelledError()
+    index = parseInt(selected as string)
+  }
+
+  const method = methods[index]
+  if (method.type === "api") return false
+
+  const authorize = await ProviderAuth.authorize({ providerID: provider, method: index })
+  if (!authorize) return false
+  prompts.log.info("Go to: " + authorize.url)
+  if (authorize.instructions) prompts.log.info(authorize.instructions)
+
+  if (authorize.method === "auto") {
+    const spinner = prompts.spinner()
+    spinner.start("Waiting for authorization...")
+    try {
+      await ProviderAuth.callback({ providerID: provider, method: index })
+      spinner.stop("Login successful")
+    } catch {
+      spinner.stop("Failed to authorize", 1)
+      return true
+    }
+  } else {
+    const code = await prompts.text({
+      message: "Paste the authorization code here: ",
+      validate: (x) => (x && x.length > 0 ? undefined : "Required"),
+    })
+    if (prompts.isCancel(code)) throw new UI.CancelledError()
+    try {
+      await ProviderAuth.callback({ providerID: provider, method: index, code })
+      prompts.log.success("Login successful")
+    } catch {
+      prompts.log.error("Failed to authorize")
+    }
+  }
+
+  prompts.outro("Done")
+  return true
+}
+
 export const AuthCommand = cmd({
   command: "auth",
   describe: "manage credentials",
@@ -305,6 +359,8 @@ export const AuthLoginCommand = cmd({
 
         if (prompts.isCancel(provider)) throw new UI.CancelledError()
 
+        if (await handleBuiltInAuth(provider)) return
+
         // TODO: Check Extension-registered auth providers when implemented.
         const plugin = undefined as any
         if (plugin && plugin.auth) {
@@ -320,6 +376,8 @@ export const AuthLoginCommand = cmd({
           if (prompts.isCancel(provider)) throw new UI.CancelledError()
           provider = provider.replace(/^@ai-sdk\//, "")
           if (prompts.isCancel(provider)) throw new UI.CancelledError()
+
+          if (await handleBuiltInAuth(provider)) return
 
           // TODO: Check if an Extension provides auth for this custom provider when implemented.
           const customPlugin = undefined as any
