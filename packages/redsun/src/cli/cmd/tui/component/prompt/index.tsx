@@ -58,7 +58,7 @@ export type PromptRef = {
   submit(): void
 }
 
-const PLACEHOLDERS = ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"]
+const PLACEHOLDERS = ["Build a B2B SaaS. No mistakes.", "Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"]
 
 const TEXTAREA_ACTIONS = [
   "submit",
