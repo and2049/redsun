@@ -4,13 +4,33 @@ import z from "zod"
 import { fn } from "@/util/fn"
 import { NamedError } from "@redsun/util/error"
 import { Auth } from "@/auth"
+import { OpenAICodexOAuth } from "./openai-codex-oauth"
 
 // TODO: Replace Plugin auth providers with Extension auth provider registration.
 type AuthOuathResult = any
 
 export namespace ProviderAuth {
   const state = Instance.state(async () => {
-    const methods: Record<string, any> = {}
+    const methods: Record<string, any> = {
+      openai: {
+        methods: [
+          {
+            type: "oauth",
+            label: "ChatGPT Plus/Pro (browser)",
+            authorize: () => OpenAICodexOAuth.authorizeBrowser(),
+          },
+          {
+            type: "oauth",
+            label: "ChatGPT Plus/Pro (headless)",
+            authorize: () => OpenAICodexOAuth.authorizeHeadless(),
+          },
+          {
+            type: "api",
+            label: "API key",
+          },
+        ],
+      },
+    }
     return { methods, pending: {} as Record<string, AuthOuathResult> }
   })
 
@@ -100,6 +120,7 @@ export namespace ProviderAuth {
             access: result.access,
             refresh: result.refresh,
             expires: result.expires,
+            accountId: result.accountId,
           })
         }
         return

@@ -13,6 +13,7 @@ import { Env } from "../env"
 import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
+import { OpenAICodexOAuth } from "./openai-codex-oauth"
 
 // Direct imports for bundled providers
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
@@ -81,12 +82,22 @@ export namespace Provider {
       }
     },
     openai: async () => {
+      const auth = await Auth.get("openai")
+      const oauth = auth?.type === "oauth" ? auth : undefined
       return {
-        autoload: false,
+        autoload: !!oauth,
         async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
           return sdk.responses(modelID)
         },
-        options: {},
+        options: oauth
+          ? {
+              apiKey: OpenAICodexOAuth.DUMMY_API_KEY,
+              fetch: OpenAICodexOAuth.createFetch({
+                getAuth: () => Auth.get("openai"),
+                setAuth: (auth) => Auth.set("openai", auth),
+              }),
+            }
+          : {},
       }
     },
     "github-copilot": async () => {
@@ -735,6 +746,7 @@ export namespace Provider {
       }
 
       const configProvider = config.provider?.[providerID]
+      const auth = await Auth.get(providerID)
 
       for (const [modelID, model] of Object.entries(provider.models)) {
         model.api.id = model.api.id ?? model.id ?? modelID
@@ -746,6 +758,16 @@ export namespace Provider {
           (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
         )
           delete provider.models[modelID]
+        if (providerID === "openai" && auth?.type === "oauth") {
+          model.cost = {
+            input: 0,
+            output: 0,
+            cache: {
+              read: 0,
+              write: 0,
+            },
+          }
+        }
       }
 
       if (Object.keys(provider.models).length === 0) {
