@@ -5,6 +5,7 @@ import { bootstrap } from "../bootstrap"
 import { Storage } from "../../storage/storage"
 import { Project } from "../../project/project"
 import { Instance } from "../../project/instance"
+import { ContextOptimizer } from "../../session/context-optimizer"
 
 interface SessionStats {
   totalSessions: number
@@ -28,6 +29,7 @@ interface SessionStats {
   costPerDay: number
   tokensPerSession: number
   medianTokensPerSession: number
+  contextBreakdown: ContextOptimizer.Breakdown
 }
 
 export const StatsCommand = cmd({
@@ -47,11 +49,15 @@ export const StatsCommand = cmd({
         describe: "filter by project (default: all projects, empty string: current project)",
         type: "string",
       })
+      .option("context", {
+        describe: "show stored context category totals",
+        type: "boolean",
+      })
   },
   handler: async (args) => {
     await bootstrap(process.cwd(), async () => {
       const stats = await aggregateSessionStats(args.days, args.project)
-      displayStats(stats, args.tools)
+      displayStats(stats, args.tools, args.context)
     })
   },
 })
@@ -129,6 +135,15 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
     costPerDay: 0,
     tokensPerSession: 0,
     medianTokensPerSession: 0,
+    contextBreakdown: {
+      system: 0,
+      tools: 0,
+      messages: 0,
+      toolResults: 0,
+      customMessages: 0,
+      attachments: 0,
+      total: 0,
+    },
   }
 
   if (filteredSessions.length > 1000) {
@@ -150,10 +165,26 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
 
     const batchPromises = batch.map(async (session) => {
       const messages = await Session.messages({ sessionID: session.id })
+      const breakdowns = await ContextOptimizer.readBreakdowns(session.id)
 
       let sessionCost = 0
       let sessionTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
       let sessionToolUsage: Record<string, number> = {}
+      const contextBreakdown = {
+        system: 0,
+        tools: 0,
+        messages: 0,
+        toolResults: 0,
+        customMessages: 0,
+        attachments: 0,
+        total: 0,
+      }
+
+      for (const item of breakdowns) {
+        for (const key of Object.keys(contextBreakdown) as (keyof typeof contextBreakdown)[]) {
+          contextBreakdown[key] += item.breakdown[key] ?? 0
+        }
+      }
 
       for (const message of messages) {
         if (message.info.role === "assistant") {
@@ -181,6 +212,7 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
         sessionTokens,
         sessionTotalTokens: sessionTokens.input + sessionTokens.output + sessionTokens.reasoning,
         sessionToolUsage,
+        contextBreakdown,
         earliestTime: session.time.created,
         latestTime: session.time.updated,
       }
@@ -200,6 +232,9 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
       stats.totalTokens.reasoning += result.sessionTokens.reasoning
       stats.totalTokens.cache.read += result.sessionTokens.cache.read
       stats.totalTokens.cache.write += result.sessionTokens.cache.write
+      for (const key of Object.keys(stats.contextBreakdown) as (keyof SessionStats["contextBreakdown"])[]) {
+        stats.contextBreakdown[key] += result.contextBreakdown[key] ?? 0
+      }
 
       for (const [tool, count] of Object.entries(result.sessionToolUsage)) {
         stats.toolUsage[tool] = (stats.toolUsage[tool] || 0) + count
@@ -228,7 +263,7 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
   return stats
 }
 
-export function displayStats(stats: SessionStats, toolLimit?: number) {
+export function displayStats(stats: SessionStats, toolLimit?: number, showContext = false) {
   const width = 56
 
   function renderRow(label: string, value: string): string {
@@ -264,8 +299,28 @@ export function displayStats(stats: SessionStats, toolLimit?: number) {
   console.log(renderRow("Output", formatNumber(stats.totalTokens.output)))
   console.log(renderRow("Cache Read", formatNumber(stats.totalTokens.cache.read)))
   console.log(renderRow("Cache Write", formatNumber(stats.totalTokens.cache.write)))
+  const billableInput = stats.totalTokens.input + stats.totalTokens.cache.write
+  const cacheDenominator = billableInput + stats.totalTokens.cache.read
+  const cacheRate = cacheDenominator > 0 ? Math.round((stats.totalTokens.cache.read / cacheDenominator) * 100) : 0
+  console.log(renderRow("Billable Input", formatNumber(billableInput)))
+  console.log(renderRow("Cache Hit Rate", `${cacheRate}%`))
   console.log("└────────────────────────────────────────────────────────┘")
   console.log()
+
+  if (showContext) {
+    console.log("┌────────────────────────────────────────────────────────┐")
+    console.log("│                    CONTEXT BREAKDOWN                   │")
+    console.log("├────────────────────────────────────────────────────────┤")
+    console.log(renderRow("System", formatNumber(stats.contextBreakdown.system)))
+    console.log(renderRow("Tool Schemas", formatNumber(stats.contextBreakdown.tools)))
+    console.log(renderRow("Messages", formatNumber(stats.contextBreakdown.messages)))
+    console.log(renderRow("Tool Results", formatNumber(stats.contextBreakdown.toolResults)))
+    console.log(renderRow("Custom Messages", formatNumber(stats.contextBreakdown.customMessages)))
+    console.log(renderRow("Attachments", formatNumber(stats.contextBreakdown.attachments)))
+    console.log(renderRow("Total", formatNumber(stats.contextBreakdown.total)))
+    console.log("└────────────────────────────────────────────────────────┘")
+    console.log()
+  }
 
   // Tool Usage section
   if (Object.keys(stats.toolUsage).length > 0) {

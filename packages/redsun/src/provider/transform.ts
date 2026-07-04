@@ -3,6 +3,8 @@ import { unique } from "remeda"
 import type { JSONSchema } from "zod/v4/core"
 import type { Provider } from "./provider"
 import type { ModelsDev } from "./models"
+import { ContextOptimizer } from "@/session/context-optimizer"
+import { Flag } from "@/flag/flag"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
 type JsonRecord = Record<string, unknown>
@@ -96,6 +98,26 @@ function sanitizeOpenAISchema(value: unknown): unknown {
   result.type = inferredTypes.length === 1 ? inferredTypes[0] : inferredTypes
   if (inferredTypes.includes("object") && !("properties" in result)) result.properties = {}
   if (inferredTypes.includes("array") && !("items" in result)) result.items = { type: "string" }
+  return result
+}
+
+function slimSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(slimSchema)
+  if (!isPlainObject(value)) return value
+
+  const result: JsonRecord = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (key === "examples" || key === "markdownDescription" || key === "$comment") continue
+    if (key === "description" && typeof item === "string") {
+      result[key] = ContextOptimizer.boundText(
+        "schema description",
+        item,
+        Flag.REDSUN_EXPERIMENTAL_SCHEMA_DESCRIPTION_MAX_CHARS ?? ContextOptimizer.DEFAULT_SCHEMA_DESCRIPTION_MAX_CHARS,
+      )
+      continue
+    }
+    result[key] = slimSchema(item)
+  }
   return result
 }
 
@@ -200,9 +222,15 @@ export namespace ProviderTransform {
     return msgs
   }
 
+  function isVolatileSystemMessage(msg: ModelMessage) {
+    if (msg.role !== "system") return false
+    const text = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+    return text.includes("<env_dynamic>") || text.includes("<files>")
+  }
+
   function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-    const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
-    const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
+    const system = msgs.filter((msg) => msg.role === "system" && !isVolatileSystemMessage(msg)).slice(0, 2)
+    const final = msgs.filter((msg) => msg.role === "user").slice(-1)
 
     const cacheControlByNpm: Record<string, Record<string, any>> = {
       "@ai-sdk/anthropic": { anthropic: { cacheControl: { type: "ephemeral" } } },
@@ -259,6 +287,16 @@ export namespace ProviderTransform {
         const filename = part.type === "file" ? part.filename : undefined
         const modality = mimeToModality(mime)
         if (!modality) return part
+        const payload = part.type === "image" ? part.image.toString() : String((part as any).url ?? "")
+        const bytes = dataUrlBytes(payload)
+        const maxBytes = Flag.REDSUN_EXPERIMENTAL_ATTACHMENT_MAX_BYTES ?? ContextOptimizer.DEFAULT_ATTACHMENT_MAX_BYTES
+        if (bytes !== undefined && bytes > maxBytes) {
+          const name = filename ? `"${filename}"` : modality
+          return {
+            type: "text" as const,
+            text: `ERROR: Cannot attach ${name} (${bytes} bytes exceeds ${maxBytes} byte model-visible limit). Ask the user to provide a smaller file or read a text excerpt.`,
+          }
+        }
         if (model.capabilities.input[modality]) return part
 
         const name = filename ? `"${filename}"` : modality
@@ -272,14 +310,24 @@ export namespace ProviderTransform {
     })
   }
 
-  export function message(msgs: ModelMessage[], model: Provider.Model) {
+  function dataUrlBytes(value: string) {
+    const match = value.match(/^data:[^;]+;base64,(.*)$/)
+    if (!match) return undefined
+    const trimmed = match[1].replace(/\s/g, "")
+    const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0
+    return Math.max(0, Math.floor((trimmed.length * 3) / 4) - padding)
+  }
+
+  export function message(msgs: ModelMessage[], model: Provider.Model, providerOptions?: Record<string, any>) {
     msgs = unsupportedParts(msgs, model)
     msgs = normalizeMessages(msgs, model)
     if (
       model.providerID === "anthropic" ||
       model.api.id.includes("anthropic") ||
       model.api.id.includes("claude") ||
-      model.api.npm === "@ai-sdk/anthropic"
+      model.api.npm === "@ai-sdk/anthropic" ||
+      model.api.npm === "@openrouter/ai-sdk-provider" ||
+      (model.api.npm === "@ai-sdk/openai-compatible" && providerOptions?.openaiCompatibleCacheControl === true)
     ) {
       msgs = applyCaching(msgs, model)
     }
@@ -451,6 +499,7 @@ export namespace ProviderTransform {
   }
 
   export function schema(model: Provider.Model, schema: JSONSchema.BaseSchema) {
+    schema = slimSchema(schema) as JSONSchema.BaseSchema
     /*
     if (["openai", "azure"].includes(providerID)) {
       if (schema.type === "object" && schema.properties) {

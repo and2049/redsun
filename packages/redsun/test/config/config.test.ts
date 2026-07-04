@@ -722,3 +722,31 @@ test("compaction config strategy defaults to undefined (hybrid at usage)", async
     },
   })
 })
+
+test("provider options accept OpenAI-compatible cache control opt-in", () => {
+  const parsed = Config.Info.parse({
+    provider: {
+      deepseek: {
+        options: {
+          openaiCompatibleCacheControl: true,
+        },
+      },
+    },
+  })
+
+  expect(parsed.provider?.deepseek.options?.openaiCompatibleCacheControl).toBe(true)
+})
+
+test("provider options accept experimental OpenAI Responses continuation", () => {
+  const parsed = Config.Info.parse({
+    provider: {
+      openai: {
+        options: {
+          experimentalResponsesContinuation: "api-only",
+        },
+      },
+    },
+  })
+
+  expect(parsed.provider?.openai.options?.experimentalResponsesContinuation).toBe("api-only")
+})

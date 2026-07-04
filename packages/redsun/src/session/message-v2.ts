@@ -14,6 +14,7 @@ import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
 import { type SystemError } from "bun"
 import { Entry } from "../entry/entry"
+import { ContextOptimizer } from "./context-optimizer"
 
 export namespace MessageV2 {
   export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
@@ -239,6 +240,7 @@ export namespace MessageV2 {
       status: z.literal("completed"),
       input: z.record(z.string(), z.any()),
       output: z.string(),
+      modelOutput: z.string().optional(),
       title: z.string(),
       metadata: z.record(z.string(), z.any()),
       time: z.object({
@@ -425,7 +427,7 @@ export namespace MessageV2 {
     const text = typeof entry.content === "string"
       ? entry.content
       : entry.content.map((p) => p.text).join("\n")
-    const tagged = `[custom:${entry.customType}] ${text}`
+    const tagged = ContextOptimizer.boundText(`custom message ${entry.customType}`, `[custom:${entry.customType}] ${text}`)
     return {
       role: "user",
       content: [{ type: "text", text: tagged }],
@@ -560,7 +562,9 @@ export namespace MessageV2 {
                 state: "output-available",
                 toolCallId: part.callID,
                 input: part.state.input,
-                output: part.state.time.compacted ? "[Old tool result content cleared]" : part.state.output,
+                output: part.state.time.compacted
+                  ? "[Old tool result content cleared]"
+                  : part.state.modelOutput ?? part.state.output,
                 callProviderMetadata: part.metadata,
               })
             }
@@ -597,6 +601,26 @@ export namespace MessageV2 {
       })
     }
   })
+
+  export function optimizePartForStorage(part: Part): Part {
+    if (part.type !== "tool") return part
+    if (part.state.status !== "completed") return part
+    if (part.state.modelOutput !== undefined) return part
+
+    const modelOutput = ContextOptimizer.modelToolOutput({
+      partID: part.id,
+      tool: part.tool,
+      output: part.state.output,
+    })
+    if (!modelOutput) return part
+    return {
+      ...part,
+      state: {
+        ...part.state,
+        modelOutput,
+      },
+    }
+  }
 
   export const parts = fn(Identifier.schema("message"), async (messageID) => {
     const result = [] as MessageV2.Part[]

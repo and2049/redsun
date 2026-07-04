@@ -13,6 +13,7 @@ import { Flag } from "@/flag/flag"
 import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
+import { ContextOptimizer } from "./context-optimizer"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -30,6 +31,7 @@ export namespace LLM {
     small?: boolean
     tools: Record<string, Tool>
     retries?: number
+    assistantMessageID?: string
   }
 
   export type StreamOutput = StreamTextResult<ToolSet, unknown>
@@ -118,7 +120,16 @@ export namespace LLM {
 
     const tools = await resolveTools(input)
 
-    const messages = input.messages
+    const messages = ContextOptimizer.optimizeModelMessages(input.messages)
+    const breakdown = ContextOptimizer.breakdown({ system, messages, tools })
+    l.info("context breakdown", { breakdown })
+    if (input.assistantMessageID) {
+      await ContextOptimizer.writeBreakdown({
+        sessionID: input.sessionID,
+        messageID: input.assistantMessageID,
+        breakdown,
+      })
+    }
 
     const contextResult = await ExtensionRunner.emit(
       extRunner,
@@ -181,8 +192,23 @@ export namespace LLM {
           {
             async transformParams(args) {
               if (args.type === "stream") {
+                const continuation =
+                  provider.options?.experimentalResponsesContinuation === "api-only" &&
+                  input.model.providerID === "openai" &&
+                  args.params.providerOptions?.openai?.store !== false
+                    ? await ContextOptimizer.lastOpenAIResponse({
+                        sessionID: input.sessionID,
+                        providerID: input.model.providerID,
+                        modelID: input.model.id,
+                      })
+                    : undefined
+                if (continuation) {
+                  args.params.providerOptions = mergeDeep(args.params.providerOptions ?? {}, {
+                    openai: { previousResponseId: continuation },
+                  })
+                }
                 // @ts-expect-error
-                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model)
+                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, provider.options)
               }
               return args.params
             },

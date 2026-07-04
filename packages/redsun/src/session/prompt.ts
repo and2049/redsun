@@ -51,6 +51,7 @@ import type { Extension } from "../extension/types"
 import { PromptTemplate } from "../prompt/template"
 import { Entry } from "../entry/entry"
 import { orderedToolEntries } from "./tool-order"
+import { ContextOptimizer } from "./context-optimizer"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -619,32 +620,56 @@ export namespace SessionPrompt {
       )?.info.time.created
 
       const mcpInstructions = await SystemPrompt.mcp()
+      const skillsPrompt = await SystemPrompt.skills()
+      const system = [
+        ...(await SystemPrompt.environmentStable()),
+        ...(await SystemPrompt.custom()),
+        ...(skillsPrompt ? [skillsPrompt] : []),
+        ...SystemPrompt.selfModification(),
+        ...SystemPrompt.projectMemory(),
+        ...SystemPrompt.goalFeature(),
+        ...(mcpInstructions ? [mcpInstructions] : []),
+      ]
+      const modelMessages = [
+        ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
+        ...(isLastStep
+          ? [
+              {
+                role: "assistant" as const,
+                content: MAX_STEPS,
+              },
+            ]
+          : []),
+      ]
+      const preSampling = ContextOptimizer.breakdown({
+        system,
+        messages: ContextOptimizer.optimizeModelMessages(modelMessages),
+        tools,
+      })
+      if (
+        await SessionCompaction.isPreSamplingOverflow({
+          tokens: preSampling.total,
+          model,
+          sessionID,
+        })
+      ) {
+        await SessionCompaction.process({
+          messages: msgs,
+          parentID: lastUser.id,
+          abort,
+          sessionID,
+          auto: true,
+        })
+        continue
+      }
 
       const result = await processor.process({
         user: lastUser,
         agent,
         abort,
         sessionID,
-        system: [
-          ...(await SystemPrompt.environmentStable()),
-          ...(await SystemPrompt.custom()),
-          ...(await SystemPrompt.skills()),
-          ...SystemPrompt.selfModification(),
-          ...SystemPrompt.projectMemory(),
-          ...SystemPrompt.goalFeature(),
-          ...(mcpInstructions ? [mcpInstructions] : []),
-        ],
-        messages: [
-          ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
-          ...(isLastStep
-            ? [
-                {
-                  role: "assistant" as const,
-                  content: MAX_STEPS,
-                },
-              ]
-            : []),
-        ],
+        system,
+        messages: modelMessages,
         tools,
         model,
       })

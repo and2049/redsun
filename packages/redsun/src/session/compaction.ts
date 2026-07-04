@@ -80,6 +80,23 @@ export namespace SessionCompaction {
     return false
   }
 
+  export async function isPreSamplingOverflow(input: {
+    tokens: number
+    model: Provider.Model
+    sessionID?: string
+  }) {
+    return isOverflow({
+      model: input.model,
+      sessionID: input.sessionID,
+      tokens: {
+        input: input.tokens,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    })
+  }
+
   export const PRUNE_MINIMUM = 20_000
   export const PRUNE_PROTECT = 40_000
 

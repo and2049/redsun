@@ -265,7 +265,7 @@ export namespace CompactionExtractor {
     if (part.state.status !== "completed") return
 
     const tool = part.tool
-    const output = part.state.output ?? ""
+    const output = part.state.modelOutput ?? part.state.output ?? ""
 
     if (SHELL_TOOLS.has(tool) && isErrorResult(output)) {
       addCapped(state.failures, `${tool}: ${extractErrorSummary(output)}`)

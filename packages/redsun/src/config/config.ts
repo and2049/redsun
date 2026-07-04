@@ -594,6 +594,14 @@ export namespace Config {
           baseURL: z.string().optional(),
           enterpriseUrl: z.string().optional().describe("GitHub Enterprise URL for copilot authentication"),
           setCacheKey: z.boolean().optional().describe("Enable promptCacheKey for this provider (default false)"),
+          openaiCompatibleCacheControl: z
+            .boolean()
+            .optional()
+            .describe("Opt in to cache_control provider metadata for OpenAI-compatible providers that support it"),
+          experimentalResponsesContinuation: z
+            .union([z.literal(false), z.literal("api-only")])
+            .optional()
+            .describe("Experimental OpenAI Responses API continuation mode. Defaults to false."),
           timeout: z
             .union([
               z

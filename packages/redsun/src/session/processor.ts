@@ -12,6 +12,7 @@ import { SessionStatus } from "./status"
 import type { Provider } from "@/provider/provider"
 import { LLM } from "./llm"
 import { Config } from "@/config/config"
+import { ContextOptimizer } from "./context-optimizer"
 
 export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
@@ -45,7 +46,7 @@ export namespace SessionProcessor {
           try {
             let currentText: MessageV2.TextPart | undefined
             let reasoningMap: Record<string, MessageV2.ReasoningPart> = {}
-            const stream = await LLM.stream(streamInput)
+            const stream = await LLM.stream({ ...streamInput, assistantMessageID: input.assistantMessage.id })
 
             for await (const value of stream.fullStream) {
               input.abort.throwIfAborted()
@@ -249,6 +250,13 @@ export namespace SessionProcessor {
                   input.assistantMessage.finish = value.finishReason
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
+                  await ContextOptimizer.writeOpenAIResponse({
+                    sessionID: input.sessionID,
+                    messageID: input.assistantMessage.id,
+                    providerID: input.model.providerID,
+                    modelID: input.model.id,
+                    responseID: (value.providerMetadata as any)?.openai?.responseId ?? null,
+                  })
                   const contextWindow = input.model.limit.context
                   SessionStatus.set(input.sessionID, {
                     type: "busy",
