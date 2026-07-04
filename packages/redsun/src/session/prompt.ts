@@ -697,6 +697,7 @@ export namespace SessionPrompt {
 
     try {
       const latestMessages = await MessageV2.filterCompacted(MessageV2.stream(input.sessionID))
+      const judgedMessageID = latestMessages.findLast((msg) => msg.info.role === "assistant")?.info.id
       const verdict = await (input.evaluate ?? Goal.evaluate)({
         sessionID: input.sessionID,
         condition: activeGoal.condition,
@@ -705,11 +706,23 @@ export namespace SessionPrompt {
       })
       if (verdict.ok) {
         log.info("goal satisfied; allowing stop", { sessionID: input.sessionID })
+        Goal.publishVerdict({
+          sessionID: input.sessionID,
+          verdict,
+          attempt: activeGoal.react,
+          messageID: judgedMessageID,
+        })
         await Goal.clear(input.sessionID)
         return { action: "stop" }
       }
       if (verdict.impossible) {
         log.warn("goal impossible; allowing stop", { sessionID: input.sessionID, reason: verdict.reason })
+        Goal.publishVerdict({
+          sessionID: input.sessionID,
+          verdict,
+          attempt: activeGoal.react,
+          messageID: judgedMessageID,
+        })
         await Goal.clear(input.sessionID)
         return { action: "stop" }
       }
@@ -717,11 +730,24 @@ export namespace SessionPrompt {
       const count = await Goal.bumpReact(input.sessionID)
       if (count > 12) {
         log.warn("goal hit react cap; allowing stop", { sessionID: input.sessionID })
+        Goal.publishVerdict({
+          sessionID: input.sessionID,
+          verdict,
+          attempt: count,
+          messageID: judgedMessageID,
+        })
         await Goal.clear(input.sessionID)
         return { action: "stop" }
       }
 
       log.info("goal not satisfied; re-entering", { sessionID: input.sessionID, attempt: count })
+      Goal.publishVerdict({
+        sessionID: input.sessionID,
+        goal: { condition: activeGoal.condition },
+        verdict,
+        attempt: count,
+        messageID: judgedMessageID,
+      })
       const messageID = Identifier.ascending("message")
       await Session.updateMessage({
         id: messageID,
@@ -742,6 +768,13 @@ export namespace SessionPrompt {
       return { action: "continue" }
     } catch (err) {
       log.warn("goal judge failed; allowing stop", { error: String(err) })
+      Goal.publishVerdict({
+        sessionID: input.sessionID,
+        goal: { condition: activeGoal.condition },
+        verdict: { ok: false, reason: String(err) },
+        attempt: activeGoal.react,
+        error: true,
+      })
       return { action: "stop" }
     }
   }
@@ -1138,8 +1171,8 @@ export namespace SessionPrompt {
   async function createUserMessage(input: PromptInput) {
     const agent = await Agent.get(input.agent ?? (await Agent.defaultAgent()))
     const model =
-      ToolRegistry.consumeModelOverride(input.sessionID) ??
       input.model ??
+      ToolRegistry.consumeModelOverride(input.sessionID) ??
       agent.model ??
       (await lastModel(input.sessionID))
     const info: MessageV2.Info = {
@@ -1481,8 +1514,8 @@ export namespace SessionPrompt {
     }
     const agent = await Agent.get(input.agent)
     const model =
-      ToolRegistry.consumeModelOverride(input.sessionID) ??
       input.model ??
+      ToolRegistry.consumeModelOverride(input.sessionID) ??
       agent.model ??
       (await lastModel(input.sessionID))
     const userMsg: MessageV2.User = {

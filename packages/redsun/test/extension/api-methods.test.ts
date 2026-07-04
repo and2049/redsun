@@ -151,7 +151,7 @@ describe("setModel", () => {
     })
   })
 
-  test("input hook model override wins over explicit prompt model once", async () => {
+  test("explicit prompt model wins and leaves input hook override for the next prompt", async () => {
     await using tmp = await tmpdir({ git: true })
     await Instance.provide({
       directory: tmp.path,
@@ -167,36 +167,36 @@ describe("setModel", () => {
           return undefined
         })
 
-        const first = await SessionPrompt.prompt({
+        const explicitMessage = await SessionPrompt.prompt({
           sessionID: session.id,
           agent: "build",
           model: explicit,
           noReply: true,
           parts: [{ type: "text", text: "use override" }],
         })
-        expect((first.info as any).model).toEqual({ providerID: override.providerID, modelID: override.modelID })
+        expect((explicitMessage.info as any).model).toEqual(explicit)
 
         runner.handlers.set("input", [])
-        const second = await SessionPrompt.prompt({
+        const overrideMessage = await SessionPrompt.prompt({
           sessionID: session.id,
           agent: "build",
-          model: explicit,
           noReply: true,
-          parts: [{ type: "text", text: "use explicit" }],
+          parts: [{ type: "text", text: "use stored override" }],
         })
-        expect((second.info as any).model).toEqual(explicit)
+        expect((overrideMessage.info as any).model).toEqual({ providerID: override.providerID, modelID: override.modelID })
+
+        expect(ToolRegistry.consumeModelOverride(session.id)).toBeUndefined()
 
         await Session.remove(session.id)
       },
     })
   })
 
-  test("input hook model override wins over explicit shell model", async () => {
+  test("input hook model override wins shell model when no explicit model is supplied", async () => {
     await using tmp = await tmpdir({ git: true })
     await Instance.provide({
       directory: tmp.path,
       fn: async () => {
-        const explicit = { providerID: "explicit", modelID: "explicit-model" }
         const override = await Provider.defaultModel()
         const session = await Session.create({})
         await ToolRegistry.state()
@@ -210,7 +210,6 @@ describe("setModel", () => {
         await SessionPrompt.shell({
           sessionID: session.id,
           agent: "build",
-          model: explicit,
           command: "echo override",
         })
 

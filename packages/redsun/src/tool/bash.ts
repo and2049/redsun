@@ -1,5 +1,6 @@
 import z from "zod"
 import { spawn } from "child_process"
+import { realpath } from "fs/promises"
 import { Tool } from "./tool"
 import DESCRIPTION from "./bash.txt"
 import { Log } from "../util/log"
@@ -7,7 +8,6 @@ import { Instance } from "../project/instance"
 import { lazy } from "@/util/lazy"
 import { Language } from "web-tree-sitter"
 import { Agent } from "@/agent/agent"
-import { $ } from "bun"
 import { Filesystem } from "@/util/filesystem"
 import { Wildcard } from "@/util/wildcard"
 import { Permission } from "@/permission"
@@ -20,6 +20,14 @@ const MAX_OUTPUT_LENGTH = Flag.REDSUN_EXPERIMENTAL_BASH_MAX_OUTPUT_LENGTH || 30_
 const DEFAULT_TIMEOUT = Flag.REDSUN_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS || 2 * 60 * 1000
 
 export const log = Log.create({ service: "bash-tool" })
+
+const unquotePathArg = (arg: string) => {
+  if (arg.length < 2) return arg
+  const first = arg[0]
+  const last = arg[arg.length - 1]
+  if ((first === '"' || first === "'") && first === last) return arg.slice(1, -1)
+  return arg
+}
 
 const resolveWasm = (asset: string) => {
   if (asset.startsWith("file://")) return fileURLToPath(asset)
@@ -138,21 +146,10 @@ export const BashTool = Tool.define("bash", async () => {
         if (["cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown"].includes(command[0])) {
           for (const arg of command.slice(1)) {
             if (arg.startsWith("-") || (command[0] === "chmod" && arg.startsWith("+"))) continue
-            const resolved = await $`realpath ${arg}`
-              .quiet()
-              .nothrow()
-              .text()
-              .then((x) => x.trim())
+            const target = path.resolve(cwd, unquotePathArg(arg))
+            const resolved = await realpath(target).catch(() => target)
             log.info("resolved path", { arg, resolved })
-            if (resolved) {
-              // Git Bash on Windows returns Unix-style paths like /c/Users/...
-              const normalized =
-                process.platform === "win32" && resolved.match(/^\/[a-z]\//)
-                  ? resolved.replace(/^\/([a-z])\//, (_, drive) => `${drive.toUpperCase()}:\\`).replace(/\//g, "\\")
-                  : resolved
-
-              await checkExternalDirectory(normalized)
-            }
+            await checkExternalDirectory(resolved)
           }
         }
 

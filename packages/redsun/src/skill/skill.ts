@@ -46,10 +46,10 @@ export namespace Skill {
   export const state = Instance.state(async () => {
     const skills: Record<string, Info> = {}
 
-    const userDir = path.join(Global.Path.home, ".redsun", "skills")
+    const userDir = path.join(Global.Path.home, ".redsun", "skill")
     await discoverDir(userDir, "user", skills)
 
-    const projectDir = path.join(Instance.directory, ".redsun", "skills")
+    const projectDir = path.join(Instance.directory, ".redsun", "skill")
     await discoverDir(projectDir, "project", skills)
 
     for (const dir of await Config.directories()) {
@@ -66,6 +66,7 @@ export namespace Skill {
         if (!parsed.success) continue
 
         const name = parsed.data.name
+        if (skills[name]?.location === match) continue
         if (skills[name]) {
           log.warn("duplicate skill name", {
             name,
