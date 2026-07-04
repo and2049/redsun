@@ -19,6 +19,7 @@ import { ExtensionContext } from "../extension/context"
 import { ToolRegistry } from "../tool/registry"
 import type { Extension } from "../extension/types"
 import { Entry } from "../entry/entry"
+import { Goal } from "./goal"
 
 import type { Provider } from "@/provider/provider"
 
@@ -328,6 +329,7 @@ export namespace Session {
         await Storage.remove(msg)
       }
       await Entry.removeAll(sessionID)
+      if (await Goal.get(sessionID)) await Goal.clear(sessionID)
       await Storage.remove(["session", project.id, sessionID])
       Bus.publish(Event.Deleted, {
         info: session,

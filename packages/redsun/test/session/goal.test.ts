@@ -109,6 +109,21 @@ describe("Goal persistence", () => {
       },
     })
   })
+
+  test("session removal clears persisted goal state", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await Session.create({})
+        await Goal.set(session.id, "remove with session")
+
+        await Session.remove(session.id)
+
+        expect(await Goal.get(session.id)).toBeUndefined()
+      },
+    })
+  })
 })
 
 describe("/goal command", () => {
@@ -203,6 +218,12 @@ describe("Goal stop gate", () => {
         const session = await Session.create({})
         await seedConversation(session.id)
         await Goal.set(session.id, "finish")
+        const verdicts: any[] = []
+        const unsub = Bus.subscribe(GoalEvent.Updated, (event) => {
+          if (event.properties.sessionID === session.id && event.properties.lastVerdict) {
+            verdicts.push(event.properties.lastVerdict)
+          }
+        })
 
         const result = await SessionPrompt.handleGoalStop({
           sessionID: session.id,
@@ -212,7 +233,11 @@ describe("Goal stop gate", () => {
         })
 
         expect(result).toEqual({ action: "continue" })
+        unsub()
         expect(await Goal.get(session.id)).toEqual({ condition: "finish", react: 1 })
+        expect(verdicts).toContainEqual(
+          expect.objectContaining({ ok: false, reason: "not yet", attempt: 1 }),
+        )
         const messages = await Session.messages({ sessionID: session.id })
         const synthetic = messages.find((msg) =>
           msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && part.synthetic),
@@ -258,6 +283,12 @@ describe("Goal stop gate", () => {
         const session = await Session.create({})
         await seedConversation(session.id)
         await Goal.set(session.id, "finish")
+        const verdicts: any[] = []
+        const unsub = Bus.subscribe(GoalEvent.Updated, (event) => {
+          if (event.properties.sessionID === session.id && event.properties.lastVerdict) {
+            verdicts.push(event.properties.lastVerdict)
+          }
+        })
 
         const result = await SessionPrompt.handleGoalStop({
           sessionID: session.id,
@@ -269,7 +300,11 @@ describe("Goal stop gate", () => {
         })
 
         expect(result).toEqual({ action: "stop" })
+        unsub()
         expect(await Goal.get(session.id)).toEqual({ condition: "finish", react: 0 })
+        expect(verdicts).toContainEqual(
+          expect.objectContaining({ ok: false, reason: "Error: judge unavailable", attempt: 0, error: true }),
+        )
         await Goal.clear(session.id)
         await Session.remove(session.id)
       },

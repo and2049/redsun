@@ -144,7 +144,7 @@ describe("tool.bash permissions", () => {
             permission: {
               bash: {
                 "*": "deny",
-                "ls *": "allow",
+                "echo *": "allow",
                 "pwd*": "allow",
               },
             },
@@ -156,11 +156,11 @@ describe("tool.bash permissions", () => {
       directory: tmp.path,
       fn: async () => {
         const bash = await BashTool.init()
-        // ls should be allowed
+        // echo should be allowed
         const result = await bash.execute(
           {
-            command: "ls -la",
-            description: "List files",
+            command: "echo allowed",
+            description: "Echo allowed",
           },
           ctx,
         )
@@ -198,9 +198,9 @@ describe("tool.bash permissions", () => {
           JSON.stringify({
             permission: {
               bash: {
-                "find *": "allow",
-                "find * -delete*": "deny",
-                "find * -exec*": "deny",
+                "bun *": "allow",
+                "bun run *": "deny",
+                "bun x *": "deny",
                 "*": "deny",
               },
             },
@@ -212,33 +212,33 @@ describe("tool.bash permissions", () => {
       directory: tmp.path,
       fn: async () => {
         const bash = await BashTool.init()
-        // Basic find should work
+        // Basic bun command should work
         const result = await bash.execute(
           {
-            command: "find . -name '*.ts'",
-            description: "Find typescript files",
+            command: "bun --version",
+            description: "Show bun version",
           },
           ctx,
         )
         expect(result.metadata.exit).toBe(0)
 
-        // find -delete should be denied
+        // bun run should be denied
         await expect(
           bash.execute(
             {
-              command: "find . -name '*.tmp' -delete",
-              description: "Delete temp files",
+              command: "bun run delete",
+              description: "Run delete script",
             },
             ctx,
           ),
         ).rejects.toThrow("restricted")
 
-        // find -exec should be denied
+        // bun x should be denied
         await expect(
           bash.execute(
             {
-              command: "find . -name '*.ts' -exec cat {} \\;",
-              description: "Find and cat files",
+              command: "bun x dangerous-tool",
+              description: "Run external package",
             },
             ctx,
           ),

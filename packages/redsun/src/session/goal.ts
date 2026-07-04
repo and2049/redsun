@@ -72,6 +72,26 @@ export namespace Goal {
     Bus.publish(Event.Updated, { sessionID, goal: undefined })
   }
 
+  export function publishVerdict(input: {
+    sessionID: string
+    goal?: { condition: string }
+    verdict: Verdict
+    attempt: number
+    messageID?: string
+    error?: boolean
+  }) {
+    Bus.publish(Event.Updated, {
+      sessionID: input.sessionID,
+      goal: input.goal,
+      lastVerdict: {
+        ...input.verdict,
+        attempt: input.attempt,
+        messageID: input.messageID,
+        error: input.error,
+      },
+    })
+  }
+
   export async function bumpReact(sessionID: string) {
     const goal = await get(sessionID)
     if (!goal) return 0
@@ -88,8 +108,11 @@ export namespace Goal {
   }): Promise<Verdict> {
     const language = await Provider.getLanguage(input.model)
 
-    // Use toModelMessageWithCustom so judge sees exact context with extensions
-    const conversation = await MessageV2.toModelMessageWithCustom(input.sessionID, input.msgs)
+    // Use toModelMessageWithCustom so judge sees the same compacted custom-message window as the main model.
+    const compactionCutoff = input.msgs.find(
+      (m) => m.info.role === "user" && m.parts.some((p) => p.type === "compaction"),
+    )?.info.time.created
+    const conversation = await MessageV2.toModelMessageWithCustom(input.sessionID, input.msgs, compactionCutoff)
 
     const params = {
       temperature: 0,

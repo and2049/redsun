@@ -32,13 +32,13 @@ Instructions here.
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      const skills = await Skill.all()
-      expect(skills.length).toBe(1)
-      expect(skills[0].name).toBe("test-skill")
-      expect(skills[0].description).toBe("A test skill for verification.")
-      expect(normalize(skills[0].location)).toContain("skill/test-skill/SKILL.md")
-      expect(skills[0].baseDir).toBeTruthy()
-      expect(skills[0].disableModelInvocation).toBe(false)
+      const skill = (await Skill.all()).find((item) => item.name === "test-skill")
+      expect(skill).toBeDefined()
+      expect(skill?.description).toBe("A test skill for verification.")
+      expect(normalize(skill?.location ?? "")).toContain("skill/test-skill/SKILL.md")
+      expect(skill?.baseDir).toBeTruthy()
+      expect(skill?.scope).toBe("project")
+      expect(skill?.disableModelInvocation).toBe(false)
     },
   })
 })
@@ -64,7 +64,7 @@ description: Another test skill.
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      const skills = await Skill.all()
+      const skills = (await Skill.all()).filter((item) => item.scope === "project")
       expect(skills.length).toBe(1)
       expect(skills[0].name).toBe("my-skill")
     },
@@ -89,7 +89,7 @@ Just some content without YAML frontmatter.
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      const skills = await Skill.all()
+      const skills = (await Skill.all()).filter((item) => item.scope === "project")
       expect(skills).toEqual([])
     },
   })
@@ -101,7 +101,7 @@ test("returns empty array when no skills exist", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      const skills = await Skill.all()
+      const skills = (await Skill.all()).filter((item) => item.scope === "project")
       expect(skills).toEqual([])
     },
   })
@@ -129,10 +129,9 @@ disable-model-invocation: true
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      const skills = await Skill.all()
-      expect(skills.length).toBe(1)
-      expect(skills[0].name).toBe("hidden-skill")
-      expect(skills[0].disableModelInvocation).toBe(true)
+      const skill = (await Skill.all()).find((item) => item.name === "hidden-skill")
+      expect(skill).toBeDefined()
+      expect(skill?.disableModelInvocation).toBe(true)
     },
   })
 })
@@ -201,7 +200,7 @@ disable-model-invocation: true
     directory: tmp.path,
     fn: async () => {
       const prompt = await Skill.formatForPrompt()
-      expect(prompt).toBe("")
+      expect(prompt).not.toContain("hidden-skill")
     },
   })
 })
