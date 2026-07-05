@@ -16,16 +16,19 @@ Usage: install.sh [options]
 Options:
     -h, --help              Display this help message
     -v, --version <version> Install a specific version (e.g., 1.0.205)
+        --pre-release       Install the newest GitHub release marked as pre-release
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
     curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash
+    curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash -s -- --pre-release
     curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash -s -- --version 1.0.205
 EOF
 }
 
 requested_version=${VERSION:-}
 no_modify_path=false
+pre_release=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,6 +47,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-modify-path)
             no_modify_path=true
+            shift
+            ;;
+        --pre-release)
+            pre_release=true
             shift
             ;;
         *)
@@ -146,8 +153,21 @@ INSTALL_DIR=$HOME/.redsun/bin
 mkdir -p "$INSTALL_DIR"
 
 if [ -z "$requested_version" ]; then
-    url="https://github.com/and2049/redsun/releases/latest/download/$filename"
-    specific_version=$(curl -s https://api.github.com/repos/and2049/redsun/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+    if [ "$pre_release" = "true" ]; then
+        specific_version=$(
+            {
+                curl -s https://api.github.com/repos/and2049/redsun/releases |
+                tr -d '\n' |
+                grep -o '"tag_name":[ ]*"[^"]*"[^}]*"draft":[ ]*false[^}]*"prerelease":[ ]*true' |
+                head -n 1 |
+                sed -n 's/.*"tag_name":[ ]*"v\{0,1\}\([^"]*\)".*/\1/p'
+            } || true
+        )
+        url="https://github.com/and2049/redsun/releases/download/v${specific_version}/$filename"
+    else
+        url="https://github.com/and2049/redsun/releases/latest/download/$filename"
+        specific_version=$(curl -s https://api.github.com/repos/and2049/redsun/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+    fi
 
     if [[ $? -ne 0 || -z "$specific_version" ]]; then
         echo -e "${RED}Failed to fetch version information${NC}"

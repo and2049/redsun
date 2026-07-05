@@ -3,6 +3,7 @@
 param(
     [Alias("v")]
         [string]$Version,
+    [switch]$PreRelease,
     [switch]$NoModifyPath,
     [switch]$Help
 )
@@ -19,11 +20,13 @@ Usage: install.ps1 [options]
 
 Options:
     -Version <version>   Install a specific version (e.g., 1.0.205)
+    -PreRelease          Install the newest GitHub release marked as pre-release
     -NoModifyPath        Don't add redsun to user PATH
     -Help                Display this help message
 
 Examples:
     irm https://github.com/$Repo/releases/latest/download/install.ps1 | iex
+    & ([scriptblock]::Create((irm https://github.com/$Repo/releases/latest/download/install.ps1))) -PreRelease
     & ([scriptblock]::Create((irm https://github.com/$Repo/releases/latest/download/install.ps1))) -Version 1.0.205
 "@
     exit 0
@@ -78,11 +81,25 @@ if ($Version) {
         exit 1
     }
 } else {
-    $url = "https://github.com/$Repo/releases/latest/download/$filename"
     try {
-        $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
-        $release = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
-        $specificVersion = $release.tag_name -replace '^v', ''
+        if ($PreRelease) {
+            $apiUrl = "https://api.github.com/repos/$Repo/releases"
+            $release = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop |
+                Where-Object { $_.prerelease -and -not $_.draft } |
+                Select-Object -First 1
+            if (-not $release) {
+                Write-Error "No pre-release found"
+                Write-Info "Available releases: https://github.com/$Repo/releases"
+                exit 1
+            }
+            $specificVersion = $release.tag_name -replace '^v', ''
+            $url = "https://github.com/$Repo/releases/download/$($release.tag_name)/$filename"
+        } else {
+            $url = "https://github.com/$Repo/releases/latest/download/$filename"
+            $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
+            $release = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
+            $specificVersion = $release.tag_name -replace '^v', ''
+        }
     } catch {
         Write-Error "Failed to fetch version information"
         exit 1
