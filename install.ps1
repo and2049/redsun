@@ -3,6 +3,7 @@
 param(
     [Alias("v")]
         [string]$Version,
+    [Alias("pre-release")]
     [switch]$PreRelease,
     [switch]$NoModifyPath,
     [switch]$Help
@@ -26,7 +27,7 @@ Options:
 
 Examples:
     irm https://github.com/$Repo/releases/latest/download/install.ps1 | iex
-    & ([scriptblock]::Create((irm https://github.com/$Repo/releases/latest/download/install.ps1))) -PreRelease
+    `$installer = irm https://github.com/$Repo/releases/latest/download/install.ps1; & ([scriptblock]::Create(`$installer)) -pre-release
     & ([scriptblock]::Create((irm https://github.com/$Repo/releases/latest/download/install.ps1))) -Version 1.0.205
 "@
     exit 0

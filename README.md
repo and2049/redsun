@@ -22,5 +22,5 @@ irm https://github.com/and2049/redsun/releases/latest/download/install.ps1 | iex
 testing version:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/and2049/redsun/releases/latest/download/install.ps1))) -PreRelease
+$installer = irm https://github.com/and2049/redsun/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -pre-release
 ```
