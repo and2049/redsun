@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { MCP } from "../../src/mcp"
 import { convertMcpTool } from "../../src/mcp/tool-convert"
 
 const openaiModel = {
@@ -108,5 +109,46 @@ describe("MCP.convertMcpTool", () => {
     ) as any
 
     expect(tool.inputSchema).toBeDefined()
+  })
+
+  test("uses structuredContent when content is empty", async () => {
+    const client = {
+      async callTool() {
+        return {
+          content: [],
+          structuredContent: { answer: 42 },
+        }
+      },
+    } as any
+    const tool = convertMcpTool(
+      {
+        name: "structured",
+        description: "structured",
+        inputSchema: { type: "object" },
+      } as any,
+      client,
+      openaiModel,
+    ) as any
+
+    const result = await tool.execute({}, { abortSignal: new AbortController().signal })
+
+    expect(result.content).toEqual([{ type: "text", text: JSON.stringify({ answer: 42 }) }])
+  })
+})
+
+describe("MCP.paginate", () => {
+  test("follows cursors and preserves all page items", async () => {
+    const calls: Array<string | undefined> = []
+    const result = await MCP.paginate(
+      async (cursor?: string) => {
+        calls.push(cursor)
+        if (!cursor) return { tools: [{ name: "a" }], nextCursor: "next" }
+        return { tools: [{ name: "b" }] }
+      },
+      (page) => page.tools,
+    )
+
+    expect(calls).toEqual([undefined, "next"])
+    expect(result).toEqual([{ name: "a" }, { name: "b" }])
   })
 })
