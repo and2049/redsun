@@ -38,6 +38,12 @@ export function convertMcpTool(mcpTool: MCPToolDef, client: Client, model: Provi
             .join("\n\n") || "MCP tool returned an error",
         )
       }
+      if ((!result.content || result.content.length === 0) && result.structuredContent != null) {
+        return {
+          ...result,
+          content: [{ type: "text" as const, text: JSON.stringify(result.structuredContent) }],
+        }
+      }
       return result
     },
   })
