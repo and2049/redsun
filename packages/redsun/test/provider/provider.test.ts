@@ -4,6 +4,12 @@ import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { Provider } from "../../src/provider/provider"
 import { Env } from "../../src/env"
+import { ModelsDev } from "../../src/provider/models"
+
+const modelsDev = await ModelsDev.get()
+const anthropicModelIDs = Object.keys(modelsDev.anthropic.models)
+const ANTHROPIC_MODEL_ID = anthropicModelIDs.find((id) => id.includes("sonnet")) ?? anthropicModelIDs[0]
+const ANTHROPIC_OTHER_MODEL_ID = anthropicModelIDs.find((id) => id !== ANTHROPIC_MODEL_ID) ?? ANTHROPIC_MODEL_ID
 
 test("provider loaded from env variable", async () => {
   await using tmp = await tmpdir({
@@ -117,7 +123,7 @@ test("model whitelist filters models for provider", async () => {
           $schema: "https://opencode.ai/config.json",
           provider: {
             anthropic: {
-              whitelist: ["claude-sonnet-4-20250514"],
+              whitelist: [ANTHROPIC_MODEL_ID],
             },
           },
         }),
@@ -133,7 +139,7 @@ test("model whitelist filters models for provider", async () => {
       const providers = await Provider.list()
       expect(providers["anthropic"]).toBeDefined()
       const models = Object.keys(providers["anthropic"].models)
-      expect(models).toContain("claude-sonnet-4-20250514")
+      expect(models).toContain(ANTHROPIC_MODEL_ID)
       expect(models.length).toBe(1)
     },
   })
@@ -148,7 +154,7 @@ test("model blacklist excludes specific models", async () => {
           $schema: "https://opencode.ai/config.json",
           provider: {
             anthropic: {
-              blacklist: ["claude-sonnet-4-20250514"],
+              blacklist: [ANTHROPIC_MODEL_ID],
             },
           },
         }),
@@ -164,7 +170,7 @@ test("model blacklist excludes specific models", async () => {
       const providers = await Provider.list()
       expect(providers["anthropic"]).toBeDefined()
       const models = Object.keys(providers["anthropic"].models)
-      expect(models).not.toContain("claude-sonnet-4-20250514")
+      expect(models).not.toContain(ANTHROPIC_MODEL_ID)
     },
   })
 })
@@ -180,7 +186,7 @@ test("custom model alias via config", async () => {
             anthropic: {
               models: {
                 "my-alias": {
-                  id: "claude-sonnet-4-20250514",
+                  id: ANTHROPIC_MODEL_ID,
                   name: "My Custom Alias",
                 },
               },
@@ -296,10 +302,10 @@ test("getModel returns model for valid provider/model", async () => {
       Env.set("ANTHROPIC_API_KEY", "test-api-key")
     },
     fn: async () => {
-      const model = await Provider.getModel("anthropic", "claude-sonnet-4-20250514")
+      const model = await Provider.getModel("anthropic", ANTHROPIC_MODEL_ID)
       expect(model).toBeDefined()
       expect(model.providerID).toBe("anthropic")
-      expect(model.id).toBe("claude-sonnet-4-20250514")
+      expect(model.id).toBe(ANTHROPIC_MODEL_ID)
       const language = await Provider.getLanguage(model)
       expect(language).toBeDefined()
     },
@@ -383,6 +389,31 @@ test("defaultModel returns first available model when no config set", async () =
   })
 })
 
+test("defaultModel treats empty provider config as unrestricted", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          provider: {},
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    init: async () => {
+      Env.set("ANTHROPIC_API_KEY", "test-api-key")
+    },
+    fn: async () => {
+      const model = await Provider.defaultModel()
+      expect(model.providerID).toBeDefined()
+      expect(model.modelID).toBeDefined()
+    },
+  })
+})
+
 test("defaultModel respects config model setting", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
@@ -390,7 +421,7 @@ test("defaultModel respects config model setting", async () => {
         path.join(dir, "redsun.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
-          model: "anthropic/claude-sonnet-4-20250514",
+          model: `anthropic/${ANTHROPIC_MODEL_ID}`,
         }),
       )
     },
@@ -403,7 +434,7 @@ test("defaultModel respects config model setting", async () => {
     fn: async () => {
       const model = await Provider.defaultModel()
       expect(model.providerID).toBe("anthropic")
-      expect(model.modelID).toBe("claude-sonnet-4-20250514")
+      expect(model.modelID).toBe(ANTHROPIC_MODEL_ID)
     },
   })
 })
@@ -498,7 +529,7 @@ test("model options are merged from existing model", async () => {
           provider: {
             anthropic: {
               models: {
-                "claude-sonnet-4-20250514": {
+                [ANTHROPIC_MODEL_ID]: {
                   options: {
                     customOption: "custom-value",
                   },
@@ -517,7 +548,7 @@ test("model options are merged from existing model", async () => {
     },
     fn: async () => {
       const providers = await Provider.list()
-      const model = providers["anthropic"].models["claude-sonnet-4-20250514"]
+      const model = providers["anthropic"].models[ANTHROPIC_MODEL_ID]
       expect(model.options.customOption).toBe("custom-value")
     },
   })
@@ -607,7 +638,7 @@ test("getModel uses realIdByKey for aliased models", async () => {
             anthropic: {
               models: {
                 "my-sonnet": {
-                  id: "claude-sonnet-4-20250514",
+                  id: ANTHROPIC_MODEL_ID,
                   name: "My Sonnet Alias",
                 },
               },
@@ -722,7 +753,7 @@ test("model inherits properties from existing database model", async () => {
           provider: {
             anthropic: {
               models: {
-                "claude-sonnet-4-20250514": {
+                [ANTHROPIC_MODEL_ID]: {
                   name: "Custom Name for Sonnet",
                 },
               },
@@ -739,7 +770,7 @@ test("model inherits properties from existing database model", async () => {
     },
     fn: async () => {
       const providers = await Provider.list()
-      const model = providers["anthropic"].models["claude-sonnet-4-20250514"]
+      const model = providers["anthropic"].models[ANTHROPIC_MODEL_ID]
       expect(model.name).toBe("Custom Name for Sonnet")
       expect(model.capabilities.toolcall).toBe(true)
       expect(model.capabilities.attachment).toBe(true)
@@ -806,8 +837,8 @@ test("whitelist and blacklist can be combined", async () => {
           $schema: "https://opencode.ai/config.json",
           provider: {
             anthropic: {
-              whitelist: ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
-              blacklist: ["claude-opus-4-20250514"],
+              whitelist: [ANTHROPIC_MODEL_ID, ANTHROPIC_OTHER_MODEL_ID],
+              blacklist: [ANTHROPIC_OTHER_MODEL_ID],
             },
           },
         }),
@@ -823,8 +854,8 @@ test("whitelist and blacklist can be combined", async () => {
       const providers = await Provider.list()
       expect(providers["anthropic"]).toBeDefined()
       const models = Object.keys(providers["anthropic"].models)
-      expect(models).toContain("claude-sonnet-4-20250514")
-      expect(models).not.toContain("claude-opus-4-20250514")
+      expect(models).toContain(ANTHROPIC_MODEL_ID)
+      expect(models).not.toContain(ANTHROPIC_OTHER_MODEL_ID)
       expect(models.length).toBe(1)
     },
   })
@@ -943,7 +974,7 @@ test("getSmallModel respects config small_model override", async () => {
         path.join(dir, "redsun.json"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
-          small_model: "anthropic/claude-sonnet-4-20250514",
+          small_model: `anthropic/${ANTHROPIC_MODEL_ID}`,
         }),
       )
     },
@@ -957,7 +988,7 @@ test("getSmallModel respects config small_model override", async () => {
       const model = await Provider.getSmallModel("anthropic")
       expect(model).toBeDefined()
       expect(model?.providerID).toBe("anthropic")
-      expect(model?.id).toBe("claude-sonnet-4-20250514")
+      expect(model?.id).toBe(ANTHROPIC_MODEL_ID)
     },
   })
 })
@@ -1065,7 +1096,7 @@ test("model alias name defaults to alias key when id differs", async () => {
             anthropic: {
               models: {
                 sonnet: {
-                  id: "claude-sonnet-4-20250514",
+                  id: ANTHROPIC_MODEL_ID,
                   // no name specified - should default to "sonnet" (the key)
                 },
               },
@@ -1181,7 +1212,7 @@ test("model cost overrides existing cost values", async () => {
           provider: {
             anthropic: {
               models: {
-                "claude-sonnet-4-20250514": {
+                [ANTHROPIC_MODEL_ID]: {
                   cost: {
                     input: 999,
                     output: 888,
@@ -1201,7 +1232,7 @@ test("model cost overrides existing cost values", async () => {
     },
     fn: async () => {
       const providers = await Provider.list()
-      const model = providers["anthropic"].models["claude-sonnet-4-20250514"]
+      const model = providers["anthropic"].models[ANTHROPIC_MODEL_ID]
       expect(model.cost.input).toBe(999)
       expect(model.cost.output).toBe(888)
     },
@@ -1462,8 +1493,8 @@ test("getModel returns consistent results", async () => {
       Env.set("ANTHROPIC_API_KEY", "test-api-key")
     },
     fn: async () => {
-      const model1 = await Provider.getModel("anthropic", "claude-sonnet-4-20250514")
-      const model2 = await Provider.getModel("anthropic", "claude-sonnet-4-20250514")
+      const model1 = await Provider.getModel("anthropic", ANTHROPIC_MODEL_ID)
+      const model2 = await Provider.getModel("anthropic", ANTHROPIC_MODEL_ID)
       expect(model1.providerID).toEqual(model2.providerID)
       expect(model1.id).toEqual(model2.id)
       expect(model1).toEqual(model2)

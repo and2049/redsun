@@ -126,7 +126,9 @@ export async function convertToOpenAIResponsesInput({
               input.push({
                 role: "assistant",
                 content: [{ type: "output_text", text: part.text }],
-                id: (part.providerOptions?.openai?.itemId as string) ?? undefined,
+                ...(store && part.providerOptions?.openai?.itemId
+                  ? { id: part.providerOptions.openai.itemId as string }
+                  : {}),
               })
               break
             }
@@ -142,7 +144,9 @@ export async function convertToOpenAIResponsesInput({
                 input.push({
                   type: "local_shell_call",
                   call_id: part.toolCallId,
-                  id: (part.providerOptions?.openai?.itemId as string) ?? undefined,
+                  ...(store && part.providerOptions?.openai?.itemId
+                    ? { id: part.providerOptions.openai.itemId as string }
+                    : {}),
                   action: {
                     type: "exec",
                     command: parsedInput.action.command,
@@ -161,7 +165,7 @@ export async function convertToOpenAIResponsesInput({
                 call_id: part.toolCallId,
                 name: part.toolName,
                 arguments: JSON.stringify(part.input),
-                id: (part.providerOptions?.openai?.itemId as string) ?? undefined,
+                ...(store && part.providerOptions?.openai?.itemId ? { id: part.providerOptions.openai.itemId as string } : {}),
               })
               break
             }
@@ -292,7 +296,12 @@ export async function convertToOpenAIResponsesInput({
     }
   }
 
-  return { input, warnings }
+  return {
+    input: store
+      ? input
+      : input.filter((item) => !("type" in item) || item.type !== "reasoning" || typeof item.encrypted_content === "string"),
+    warnings,
+  }
 }
 
 const openaiResponsesReasoningProviderOptionsSchema = z.object({

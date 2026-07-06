@@ -827,6 +827,24 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
     // Copilot may change item_id across text deltas; normalize to one id.
     let currentTextId: string | null = null
 
+    function closeActiveReasoning(controller: TransformStreamDefaultController<LanguageModelV2StreamPart>) {
+      for (const [itemId, item] of Object.entries(activeReasoning)) {
+        for (const summaryIndex of item.summaryParts) {
+          controller.enqueue({
+            type: "reasoning-end",
+            id: `${itemId}:${summaryIndex}`,
+            providerMetadata: {
+              openai: {
+                itemId,
+                reasoningEncryptedContent: item.encryptedContent ?? null,
+              },
+            },
+          })
+        }
+        delete activeReasoning[itemId]
+      }
+    }
+
     let serviceTier: string | undefined
 
     return {
@@ -851,6 +869,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
             const value = chunk.value
 
             if (isResponseOutputItemAddedChunk(value)) {
+              if (!isResponseOutputItemAddedReasoningChunk(value)) closeActiveReasoning(controller)
               if (value.item.type === "function_call") {
                 ongoingToolCalls[value.output_index] = {
                   toolName: value.item.name,
@@ -1176,6 +1195,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV2 {
                 modelId: value.response.model,
               })
             } else if (isTextDeltaChunk(value)) {
+              closeActiveReasoning(controller)
               // Ensure a text-start exists, and normalize deltas to a stable id
               if (!currentTextId) {
                 currentTextId = value.item_id
