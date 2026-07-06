@@ -440,35 +440,49 @@ export namespace ProviderTransform {
   }
 
   export function providerOptions(model: Provider.Model, options: { [x: string]: any }) {
+    const usesOpenAIReasoningGate =
+      model.api.npm === "@ai-sdk/openai" ||
+      model.api.npm === "@ai-sdk/azure" ||
+      model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
+    const normalized =
+      usesOpenAIReasoningGate &&
+      (model.capabilities.reasoning || options.reasoningEffort !== undefined || options.reasoningSummary !== undefined)
+        ? { ...options, forceReasoning: true }
+        : options
+
     switch (model.api.npm) {
       case "@ai-sdk/openai":
+        return {
+          ["openai" as string]: normalized,
+        }
       case "@ai-sdk/azure":
         return {
-          ["openai" as string]: options,
+          ["openai" as string]: normalized,
+          ["azure" as string]: normalized,
         }
       case "@ai-sdk/amazon-bedrock":
         return {
-          ["bedrock" as string]: options,
+          ["bedrock" as string]: normalized,
         }
       case "@ai-sdk/anthropic":
         return {
-          ["anthropic" as string]: options,
+          ["anthropic" as string]: normalized,
         }
       case "@ai-sdk/google":
         return {
-          ["google" as string]: options,
+          ["google" as string]: normalized,
         }
       case "@ai-sdk/gateway":
         return {
-          ["gateway" as string]: options,
+          ["gateway" as string]: normalized,
         }
       case "@openrouter/ai-sdk-provider":
         return {
-          ["openrouter" as string]: options,
+          ["openrouter" as string]: normalized,
         }
       default:
         return {
-          [model.providerID]: options,
+          [model.providerID]: normalized,
         }
     }
   }

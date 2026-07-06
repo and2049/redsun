@@ -12,7 +12,7 @@ import z from "zod/v4"
 import { Instance } from "../project/instance"
 import { Installation } from "../installation"
 import { withTimeout } from "@/util/timeout"
-import { McpOAuthProvider } from "./oauth-provider"
+import { McpOAuthPendingProvider, McpOAuthProvider } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
 import { BusEvent } from "../bus/bus-event"
@@ -96,7 +96,25 @@ export namespace MCP {
 
   // Store transports for OAuth servers to allow finishing auth
   type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport
-  const pendingOAuthTransports = new Map<string, TransportWithAuth>()
+  const pendingOAuthTransports = new Map<string, { transport: TransportWithAuth; provider?: McpOAuthPendingProvider }>()
+  const MAX_LIST_PAGES = 20
+
+  export async function paginate<T>(
+    first: (cursor?: string) => Promise<{ nextCursor?: string; tools?: T[]; resources?: T[]; resourceTemplates?: T[] }>,
+    pick: (page: { tools?: T[]; resources?: T[]; resourceTemplates?: T[] }) => T[] | undefined,
+  ) {
+    const result: T[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < MAX_LIST_PAGES; page++) {
+      const res = await first(cursor)
+      result.push(...(pick(res) ?? []))
+      if (!res.nextCursor) return result
+      cursor = res.nextCursor
+    }
+    throw new Error(`MCP list exceeded ${MAX_LIST_PAGES} pages`)
+  }
+
+  const resourceKey = (clientName: string, id: string) => `${clientName.replaceAll("%", "%25").replaceAll(":", "%3A")}:${id}`
 
   const state = Instance.state(
     async () => {
@@ -257,7 +275,7 @@ export namespace MCP {
               }).catch((e) => log.debug("failed to show toast", { error: e }))
             } else {
               // Store transport for later finishAuth call
-              pendingOAuthTransports.set(key, transport)
+              pendingOAuthTransports.set(key, { transport })
               status = { status: "needs_auth" as const }
               // Show toast for needs_auth
               Bus.publish(TuiEvent.ToastShow, {
@@ -335,7 +353,10 @@ export namespace MCP {
       }
     }
 
-    const result = await withTimeout(mcpClient.listTools(), mcp.timeout ?? 5000).catch((err) => {
+    const result = await withTimeout(
+      paginate<any>((cursor) => (mcpClient as any).listTools(cursor ? { cursor } : undefined), (page) => page.tools),
+      mcp.timeout ?? 5000,
+    ).catch((err) => {
       log.error("failed to get tools from client", { key, error: err })
       return undefined
     })
@@ -358,7 +379,7 @@ export namespace MCP {
       }
     }
 
-    log.info("create() successfully created client", { key, toolCount: result.tools.length })
+    log.info("create() successfully created client", { key, toolCount: result.length })
     return {
       mcpClient,
       status,
@@ -435,7 +456,10 @@ export namespace MCP {
         continue
       }
 
-      const toolsResult = await client.listTools().catch((e) => {
+      const toolsResult = await paginate<any>(
+        (cursor) => (client as any).listTools(cursor ? { cursor } : undefined),
+        (page) => page.tools,
+      ).catch((e) => {
         log.error("failed to get tools", { clientName, error: e.message })
         const failedStatus = {
           status: "failed" as const,
@@ -448,7 +472,7 @@ export namespace MCP {
       if (!toolsResult) {
         continue
       }
-      for (const mcpTool of toolsResult.tools) {
+      for (const mcpTool of toolsResult) {
         const sanitizedClientName = clientName.replace(/[^a-zA-Z0-9_-]/g, "_")
         const sanitizedToolName = mcpTool.name.replace(/[^a-zA-Z0-9_-]/g, "_")
         result[sanitizedClientName + "_" + sanitizedToolName] = convertMcpTool(
@@ -494,9 +518,12 @@ export namespace MCP {
       if (!client.getServerCapabilities()?.resources) continue
       try {
         const timeout = cfg.mcp?.[name]?.timeout ?? 5000
-        const res = await withTimeout(client.listResources(), timeout)
-        for (const resource of res.resources) {
-          result[resource.uri] = { ...resource, client: name }
+        const resources = await withTimeout(
+          paginate<any>((cursor) => (client as any).listResources(cursor ? { cursor } : undefined), (page) => page.resources),
+          timeout,
+        )
+        for (const resource of resources) {
+          result[resourceKey(name, resource.uri)] = { ...resource, client: name }
         }
       } catch (e) {
         log.error("failed to list resources", { clientName: name, error: e instanceof Error ? e.message : String(e) })
@@ -515,9 +542,15 @@ export namespace MCP {
       if (!client.getServerCapabilities()?.resources) continue
       try {
         const timeout = cfg.mcp?.[name]?.timeout ?? 5000
-        const res = await withTimeout(client.listResourceTemplates(), timeout)
-        for (const template of res.resourceTemplates) {
-          result[template.uriTemplate] = { ...template, client: name }
+        const templates = await withTimeout(
+          paginate<any>(
+            (cursor) => (client as any).listResourceTemplates(cursor ? { cursor } : undefined),
+            (page) => page.resourceTemplates,
+          ),
+          timeout,
+        )
+        for (const template of templates) {
+          result[resourceKey(name, template.uriTemplate)] = { ...template, client: name }
         }
       } catch (e) {
         log.error("failed to list resource templates", { clientName: name, error: e instanceof Error ? e.message : String(e) })
@@ -553,9 +586,12 @@ export namespace MCP {
       if (!instructionsText) continue
       let tools: string[] = []
       try {
-        const toolsResult = await client.listTools()
+        const toolsResult = await paginate<any>(
+          (cursor) => (client as any).listTools(cursor ? { cursor } : undefined),
+          (page) => page.tools,
+        )
         const sanitizedClientName = name.replace(/[^a-zA-Z0-9_-]/g, "_")
-        tools = toolsResult.tools.map((t) => `${sanitizedClientName}_${t.name.replace(/[^a-zA-Z0-9_-]/g, "_")}`)
+        tools = toolsResult.map((t) => `${sanitizedClientName}_${t.name.replace(/[^a-zA-Z0-9_-]/g, "_")}`)
       } catch {}
       result.push({ name, instructions: instructionsText, tools })
     }
@@ -596,7 +632,7 @@ export namespace MCP {
     // OAuth config is optional - if not provided, we'll use auto-discovery
     const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
     let capturedUrl: URL | undefined
-    const authProvider = new McpOAuthProvider(
+    const authProvider = new McpOAuthPendingProvider(
       mcpName,
       mcpConfig.url,
       {
@@ -614,6 +650,7 @@ export namespace MCP {
     // Create transport with auth provider
     const transport = new StreamableHTTPClientTransport(new URL(mcpConfig.url), {
       authProvider,
+      requestInit: mcpConfig.headers ? { headers: mcpConfig.headers } : undefined,
     })
 
     // Try to connect - this will trigger the OAuth flow
@@ -623,12 +660,13 @@ export namespace MCP {
         version: Installation.VERSION,
       })
       await client.connect(transport)
+      await authProvider.commit()
       // If we get here, we're already authenticated
       return { authorizationUrl: "" }
     } catch (error) {
       if (error instanceof UnauthorizedError && capturedUrl) {
         // Store transport for finishAuth
-        pendingOAuthTransports.set(mcpName, transport)
+        pendingOAuthTransports.set(mcpName, { transport, provider: authProvider })
         return { authorizationUrl: capturedUrl.toString() }
       }
       throw error
@@ -679,15 +717,16 @@ export namespace MCP {
    * Complete OAuth authentication with the authorization code.
    */
   export async function finishAuth(mcpName: string, authorizationCode: string): Promise<Status> {
-    const transport = pendingOAuthTransports.get(mcpName)
+    const pending = pendingOAuthTransports.get(mcpName)
 
-    if (!transport) {
+    if (!pending) {
       throw new Error(`No pending OAuth flow for MCP server: ${mcpName}`)
     }
 
     try {
       // Call finishAuth on the transport
-      await transport.finishAuth(authorizationCode)
+      await pending.transport.finishAuth(authorizationCode)
+      await pending.provider?.commit()
 
       // Clear the code verifier after successful auth
       await McpAuth.clearCodeVerifier(mcpName)
@@ -702,7 +741,7 @@ export namespace MCP {
 
       // Re-add the MCP server to establish connection
       pendingOAuthTransports.delete(mcpName)
-      const result = await add(mcpName, mcpConfig)
+      const result = await add(mcpName, { ...mcpConfig, enabled: true })
 
       const statusRecord = result.status as Record<string, Status>
       return statusRecord[mcpName] ?? { status: "failed", error: "Unknown error after auth" }
@@ -710,7 +749,7 @@ export namespace MCP {
       log.error("failed to finish oauth", { mcpName, error })
       return {
         status: "failed",
-        error: error instanceof Error ? error.message : String(error),
+        error: `OAuth completion failed: ${error instanceof Error ? error.message : String(error)}`,
       }
     }
   }
@@ -749,9 +788,11 @@ export namespace MCP {
    * Get the authentication status for an MCP server.
    */
   export async function getAuthStatus(mcpName: string): Promise<AuthStatus> {
-    const hasTokens = await hasStoredTokens(mcpName)
-    if (!hasTokens) return "not_authenticated"
-    const expired = await McpAuth.isTokenExpired(mcpName)
-    return expired ? "expired" : "authenticated"
+    const cfg = await Config.get()
+    const mcpConfig = cfg.mcp?.[mcpName]
+    if (!mcpConfig || mcpConfig.type !== "remote") return "not_authenticated"
+    const entry = await McpAuth.getForUrl(mcpName, mcpConfig.url)
+    if (!entry?.tokens) return "not_authenticated"
+    return entry.tokens.expiresAt && entry.tokens.expiresAt < Date.now() / 1000 ? "expired" : "authenticated"
   }
 }

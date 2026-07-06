@@ -191,6 +191,50 @@ describe("ProviderTransform.schema - gemini array items", () => {
   })
 })
 
+describe("ProviderTransform.providerOptions", () => {
+  test("adds forceReasoning for OpenAI reasoning requests", () => {
+    const result = ProviderTransform.providerOptions(
+      {
+        providerID: "openai",
+        api: { id: "gpt-5", npm: "@ai-sdk/openai" },
+        capabilities: { reasoning: true },
+      } as any,
+      { reasoningEffort: "medium" },
+    )
+
+    expect(result.openai.forceReasoning).toBe(true)
+    expect(result.openai.reasoningEffort).toBe("medium")
+  })
+
+  test("passes Azure options under openai and azure namespaces", () => {
+    const result = ProviderTransform.providerOptions(
+      {
+        providerID: "azure",
+        api: { id: "gpt-5", npm: "@ai-sdk/azure" },
+        capabilities: { reasoning: true },
+      } as any,
+      { reasoningEffort: "low" },
+    )
+
+    expect(result.openai.forceReasoning).toBe(true)
+    expect(result.azure.forceReasoning).toBe(true)
+    expect(result.azure.reasoningEffort).toBe("low")
+  })
+
+  test("does not rewrite OpenRouter low effort to none", () => {
+    const result = ProviderTransform.providerOptions(
+      {
+        providerID: "openrouter",
+        api: { id: "openai/gpt-5-mini", npm: "@openrouter/ai-sdk-provider" },
+        capabilities: { reasoning: true },
+      } as any,
+      { reasoning: { effort: "low" } },
+    )
+
+    expect(result.openrouter.reasoning.effort).toBe("low")
+  })
+})
+
 describe("ProviderTransform.schema - openai supported schema subset", () => {
   const openaiModel = {
     providerID: "openai",

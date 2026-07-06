@@ -62,7 +62,7 @@ export namespace Provider {
     "@ai-sdk/github-copilot": createGitHubCopilotOpenAICompatible,
   }
 
-  type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>) => Promise<any>
+  type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>, model?: Model) => Promise<any>
   type CustomLoader = (provider: Info) => Promise<{
     autoload: boolean
     getModel?: CustomModelLoader
@@ -103,10 +103,11 @@ export namespace Provider {
     "github-copilot": async () => {
       return {
         autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          if (modelID.includes("codex")) {
-            return sdk.responses(modelID)
-          }
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>, model?: Model) {
+          const endpoint = (model?.api as any)?.endpoint
+          if (endpoint === "responses" && sdk.responses) return sdk.responses(modelID)
+          if (endpoint === "chat" && sdk.chat) return sdk.chat(modelID)
+          if (modelID.includes("codex")) return sdk.responses(modelID)
           return sdk.chat(modelID)
         },
         options: {},
@@ -115,10 +116,11 @@ export namespace Provider {
     "github-copilot-enterprise": async () => {
       return {
         autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          if (modelID.includes("codex")) {
-            return sdk.responses(modelID)
-          }
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>, model?: Model) {
+          const endpoint = (model?.api as any)?.endpoint
+          if (endpoint === "responses" && sdk.responses) return sdk.responses(modelID)
+          if (endpoint === "chat" && sdk.chat) return sdk.chat(modelID)
+          if (modelID.includes("codex")) return sdk.responses(modelID)
           return sdk.chat(modelID)
         },
         options: {},
@@ -909,7 +911,7 @@ export namespace Provider {
 
     try {
       const language = s.modelLoaders[model.providerID]
-        ? await s.modelLoaders[model.providerID](sdk, model.api.id, provider.options)
+        ? await s.modelLoaders[model.providerID](sdk, model.api.id, provider.options, model)
         : sdk.languageModel(model.api.id)
       s.models.set(key, language)
       return language
@@ -998,7 +1000,10 @@ export namespace Provider {
 
     const provider = await list()
       .then((val) => Object.values(val))
-      .then((x) => x.find((p) => !cfg.provider || Object.keys(cfg.provider).includes(p.id)))
+      .then((x) => {
+        const configured = Object.keys(cfg.provider ?? {})
+        return x.find((p) => configured.length === 0 || configured.includes(p.id))
+      })
     if (!provider) throw new Error("no providers found")
     const [model] = sort(Object.values(provider.models))
     if (!model) throw new Error("no models found")
