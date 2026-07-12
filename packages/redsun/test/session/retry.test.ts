@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { SessionRetry } from "../../src/session/retry"
 import { MessageV2 } from "../../src/session/message-v2"
+import { SessionPrompt } from "../../src/session/prompt"
+import { APICallError } from "ai"
 
 function apiError(headers?: Record<string, string>): MessageV2.APIError {
   return new MessageV2.APIError({
@@ -61,6 +63,34 @@ describe("session.retry.delay", () => {
 })
 
 describe("session.message-v2.fromError", () => {
+  test("classifies Z.AI request overflow", () => {
+    const result = MessageV2.fromError(
+      new APICallError({
+        message: "tokens in request more than max tokens allowed",
+        url: "https://api.z.ai/v1/chat/completions",
+        requestBodyValues: {},
+        statusCode: 400,
+      }),
+      { providerID: "zai" },
+    )
+    expect(MessageV2.ContextOverflowError.isInstance(result)).toBe(true)
+  })
+
+  test("allows one compaction retry for request overflow", () => {
+    const error = new MessageV2.ContextOverflowError({ message: "too long" }).toObject()
+    expect(SessionPrompt.shouldRetryContextOverflow(error, [])).toBe(true)
+    expect(
+      SessionPrompt.shouldRetryContextOverflow(error, [
+        {
+          info: { id: "m1", sessionID: "s1", role: "user", agent: "build", time: { created: 1 } },
+          parts: [
+            { id: "p1", messageID: "m1", sessionID: "s1", type: "compaction", auto: true, overflow: true },
+          ],
+        } as MessageV2.WithParts,
+      ]),
+    ).toBe(false)
+  })
+
   test.concurrent(
     "converts ECONNRESET socket errors to retryable APIError",
     async () => {

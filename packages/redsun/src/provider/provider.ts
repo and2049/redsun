@@ -100,6 +100,13 @@ export namespace Provider {
           : {},
       }
     },
+    meta: async () => ({
+      autoload: false,
+      async getModel(sdk: any, modelID: string) {
+        return sdk.responses(modelID)
+      },
+      options: {},
+    }),
     "github-copilot": async () => {
       return {
         autoload: false,
