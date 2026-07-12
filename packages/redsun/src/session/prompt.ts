@@ -674,6 +674,16 @@ export namespace SessionPrompt {
         model,
       })
       if (result === "stop") {
+        if (shouldRetryContextOverflow(processor.message.error, msgs)) {
+          await SessionCompaction.create({
+            sessionID,
+            agent: lastUser.agent,
+            model: lastUser.model,
+            auto: true,
+            overflow: true,
+          })
+          continue
+        }
         const goalStop = await handleGoalStop({
           sessionID,
           agent,
@@ -802,6 +812,16 @@ export namespace SessionPrompt {
       })
       return { action: "stop" }
     }
+  }
+
+  export function shouldRetryContextOverflow(
+    error: MessageV2.Assistant["error"],
+    messages: MessageV2.WithParts[],
+  ) {
+    if (!MessageV2.ContextOverflowError.isInstance(error)) return false
+    return !messages.some((message) =>
+      message.parts.some((part) => part.type === "compaction" && part.overflow === true),
+    )
   }
 
   async function resolveTools(input: {

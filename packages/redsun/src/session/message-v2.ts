@@ -18,6 +18,10 @@ import { ContextOptimizer } from "./context-optimizer"
 
 export namespace MessageV2 {
   export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
+  export const ContextOverflowError = NamedError.create(
+    "ContextOverflowError",
+    z.object({ message: z.string(), responseBody: z.string().optional() }),
+  )
   export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
   export const AuthError = NamedError.create(
     "ProviderAuthError",
@@ -154,6 +158,7 @@ export namespace MessageV2 {
   export const CompactionPart = PartBase.extend({
     type: z.literal("compaction"),
     auto: z.boolean(),
+    overflow: z.boolean().optional(),
     fromExtension: z.boolean().optional(),
   }).meta({
     ref: "CompactionPart",
@@ -348,6 +353,7 @@ export namespace MessageV2 {
         AuthError.Schema,
         NamedError.Unknown.Schema,
         OutputLengthError.Schema,
+        ContextOverflowError.Schema,
         AbortedError.Schema,
         APIError.Schema,
       ])
@@ -724,6 +730,24 @@ export namespace MessageV2 {
 
           return `${msg}: ${e.responseBody}`
         }).trim()
+
+        const responseCode = (() => {
+          try {
+            return JSON.parse(e.responseBody ?? "null")?.error?.code
+          } catch {
+            return undefined
+          }
+        })()
+        if (
+          ProviderTransform.isContextOverflow(message) ||
+          e.statusCode === 413 ||
+          responseCode === "context_length_exceeded"
+        ) {
+          return new MessageV2.ContextOverflowError(
+            { message, responseBody: e.responseBody },
+            { cause: e },
+          ).toObject()
+        }
 
         return new MessageV2.APIError(
           {
