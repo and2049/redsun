@@ -6,6 +6,41 @@ import path from "path"
 import fs from "fs/promises"
 import { pathToFileURL } from "url"
 
+test("creates a missing REDSUN_CONFIG_DIR", async () => {
+  await using tmp = await tmpdir()
+  const configDir = path.join(tmp.path, "missing-config")
+  const previous = process.env["REDSUN_CONFIG_DIR"]
+  process.env["REDSUN_CONFIG_DIR"] = configDir
+  try {
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await Config.get()
+        expect((await fs.stat(configDir)).isDirectory()).toBe(true)
+      },
+    })
+  } finally {
+    if (previous === undefined) delete process.env["REDSUN_CONFIG_DIR"]
+    else process.env["REDSUN_CONFIG_DIR"] = previous
+  }
+})
+
+test.skipIf(process.platform === "win32")("ignores an inaccessible REDSUN_CONFIG_DIR", async () => {
+  await using tmp = await tmpdir()
+  const configDir = path.join(tmp.path, "inaccessible-config")
+  await fs.mkdir(configDir)
+  await fs.chmod(configDir, 0o000)
+  const previous = process.env["REDSUN_CONFIG_DIR"]
+  process.env["REDSUN_CONFIG_DIR"] = configDir
+  try {
+    await Instance.provide({ directory: tmp.path, fn: () => Config.get() })
+  } finally {
+    await fs.chmod(configDir, 0o755)
+    if (previous === undefined) delete process.env["REDSUN_CONFIG_DIR"]
+    else process.env["REDSUN_CONFIG_DIR"] = previous
+  }
+})
+
 test("loads config with defaults when no files exist", async () => {
   await using tmp = await tmpdir()
   await Instance.provide({

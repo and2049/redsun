@@ -7,6 +7,12 @@ import { Log } from "../../src/util/log"
 
 Log.init({ print: false })
 
+test("selects the Redsun Meta prompt for Muse Spark", () => {
+  const prompt = SystemPrompt.provider({ api: { id: "meta/muse-spark-preview" } } as any)[0]
+  expect(prompt).toContain("Redsun powered by Meta Muse Spark")
+  expect(prompt).not.toContain("TodoWrite")
+})
+
 describe("SystemPrompt.environmentStable", () => {
   test("contains working directory and platform but not date or file tree", async () => {
     await using tmp = await tmpdir()

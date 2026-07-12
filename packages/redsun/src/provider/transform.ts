@@ -390,8 +390,24 @@ export namespace ProviderTransform {
       result["chat_template_args"] = { enable_thinking: true }
     }
 
-    if (model.providerID === "openai" || providerOptions?.setCacheKey) {
+    if (
+      providerOptions?.setCacheKey !== false &&
+      (model.providerID === "openai" ||
+        model.api.npm === "@ai-sdk/openai" ||
+        model.api.npm === "@ai-sdk/xai" ||
+        providerOptions?.setCacheKey)
+    ) {
       result["promptCacheKey"] = sessionID
+    }
+
+    if (
+      model.providerID === "meta" &&
+      model.api.npm === "@ai-sdk/openai" &&
+      model.api.id.toLowerCase().includes("muse-spark")
+    ) {
+      result["reasoningEffort"] = "high"
+      result["reasoningSummary"] = "auto"
+      result["include"] = ["reasoning.encrypted_content"]
     }
 
     if (model.api.npm === "@ai-sdk/google" || model.api.npm === "@ai-sdk/google-vertex") {
@@ -591,5 +607,18 @@ export namespace ProviderTransform {
     }
 
     return message
+  }
+
+  export function isContextOverflow(message: string) {
+    return [
+      /input is too long for requested model/i,
+      /exceeds the context window/i,
+      /input token count.*exceeds the maximum/i,
+      /tokens in request more than max tokens allowed/i,
+      /maximum prompt length is \d+/i,
+      /reduce the length of the messages/i,
+      /maximum context length is \d+ tokens/i,
+      /context_length_exceeded/i,
+    ].some((pattern) => pattern.test(message))
   }
 }

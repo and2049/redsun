@@ -85,16 +85,32 @@ export namespace Config {
       )),
     ]
 
-    if (Flag.REDSUN_CONFIG_DIR) {
-      directories.push(Flag.REDSUN_CONFIG_DIR)
-      log.debug("loading config from REDSUN_CONFIG_DIR", { path: Flag.REDSUN_CONFIG_DIR })
+    const configDir = process.env["REDSUN_CONFIG_DIR"]
+    if (configDir) {
+      try {
+        await fs.mkdir(configDir, { recursive: true })
+        directories.push(configDir)
+        log.debug("loading config from REDSUN_CONFIG_DIR", { path: configDir })
+      } catch (error) {
+        if (!isUnavailable(error)) throw error
+        log.warn("skipping unavailable REDSUN_CONFIG_DIR", { path: configDir })
+      }
     }
 
     const promises: Promise<void>[] = []
     for (const dir of unique(directories)) {
-      await assertValid(dir)
+      try {
+        await fs.readdir(dir)
+        await assertValid(dir)
+      } catch (error) {
+        if (isUnavailable(error)) {
+          log.warn("skipping unavailable config directory", { path: dir })
+          continue
+        }
+        throw error
+      }
 
-      if (dir.endsWith(".redsun") || dir === Flag.REDSUN_CONFIG_DIR) {
+      if (dir.endsWith(".redsun") || dir === configDir) {
         for (const file of ["redsun.jsonc", "redsun.json"]) {
           log.debug(`loading config from ${path.join(dir, file)}`)
           result = mergeConfigWithExtensions(result, await loadFile(path.join(dir, file)))
@@ -884,11 +900,16 @@ export namespace Config {
     let text = await Bun.file(filepath)
       .text()
       .catch((err) => {
-        if (err.code === "ENOENT") return
+        if (isUnavailable(err)) return
         throw new JsonError({ path: filepath }, { cause: err })
       })
     if (!text) return {}
     return load(text, filepath)
+  }
+
+  function isUnavailable(error: unknown) {
+    const code = (error as NodeJS.ErrnoException)?.code
+    return code === "ENOENT" || code === "EACCES" || code === "EPERM"
   }
 
   async function load(text: string, configFilepath: string) {
