@@ -58,7 +58,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should set promptCacheKey for openai provider regardless of setCacheKey", () => {
+  test("should set promptCacheKey for openai provider by default", () => {
     const openaiModel = {
       ...mockModel,
       providerID: "openai",
@@ -70,6 +70,51 @@ describe("ProviderTransform.options - setCacheKey", () => {
     }
     const result = ProviderTransform.options(openaiModel, sessionID, {})
     expect(result.promptCacheKey).toBe(sessionID)
+  })
+
+  test("should allow disabling promptCacheKey for openai", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { id: "gpt-4", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    expect(ProviderTransform.options(model, sessionID, { setCacheKey: false }).promptCacheKey).toBeUndefined()
+  })
+
+  test("should set promptCacheKey for xAI by default", () => {
+    const model = {
+      ...mockModel,
+      providerID: "xai",
+      api: { id: "grok-4", url: "https://api.x.ai", npm: "@ai-sdk/xai" },
+    }
+    expect(ProviderTransform.options(model, sessionID, {}).promptCacheKey).toBe(sessionID)
+    expect(ProviderTransform.options(model, sessionID, { setCacheKey: false }).promptCacheKey).toBeUndefined()
+  })
+
+  test("sets Muse Responses defaults", () => {
+    const model = {
+      ...mockModel,
+      providerID: "meta",
+      api: { id: "muse-spark-preview", url: "https://api.meta.ai", npm: "@ai-sdk/openai" },
+    }
+    expect(ProviderTransform.options(model, sessionID, {})).toMatchObject({
+      promptCacheKey: sessionID,
+      reasoningEffort: "high",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+    })
+  })
+
+  test("does not apply Muse reasoning defaults to other Meta models", () => {
+    const model = {
+      ...mockModel,
+      providerID: "meta",
+      api: { id: "llama-4", url: "https://api.meta.ai", npm: "@ai-sdk/openai" },
+    }
+    expect(ProviderTransform.options(model, sessionID, {})).not.toMatchObject({
+      reasoningEffort: "high",
+      reasoningSummary: "auto",
+    })
   })
 })
 
@@ -232,6 +277,13 @@ describe("ProviderTransform.providerOptions", () => {
     )
 
     expect(result.openrouter.reasoning.effort).toBe("low")
+  })
+})
+
+describe("ProviderTransform.isContextOverflow", () => {
+  test("recognizes Z.AI token limit errors", () => {
+    expect(ProviderTransform.isContextOverflow("tokens in request more than max tokens allowed")).toBe(true)
+    expect(ProviderTransform.isContextOverflow("invalid api key")).toBe(false)
   })
 })
 

@@ -253,6 +253,40 @@ test("custom provider with npm package", async () => {
   })
 })
 
+test("Meta models use the OpenAI Responses loader", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            meta: {
+              npm: "@ai-sdk/openai",
+              api: "https://api.meta.ai/v1",
+              models: {
+                "muse-spark-preview": {
+                  name: "Muse Spark",
+                  reasoning: true,
+                  limit: { context: 128000, output: 16000 },
+                },
+              },
+              options: { apiKey: "test" },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const model = await Provider.getModel("meta", "muse-spark-preview")
+      const language = await Provider.getLanguage(model)
+      expect(language.provider).toBe("meta.responses")
+    },
+  })
+})
+
 test("env variable takes precedence, config merges options", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

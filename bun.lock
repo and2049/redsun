@@ -147,6 +147,9 @@
     "web-tree-sitter",
     "tree-sitter-bash",
   ],
+  "patchedDependencies": {
+    "@ai-sdk/xai@2.0.42": "patches/@ai-sdk%2Fxai@2.0.42.patch",
+  },
   "overrides": {
     "@types/bun": "catalog:",
     "@types/node": "catalog:",

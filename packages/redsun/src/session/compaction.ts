@@ -355,6 +355,7 @@ export namespace SessionCompaction {
         modelID: z.string(),
       }),
       auto: z.boolean(),
+      overflow: z.boolean().optional(),
       fromExtension: z.boolean().optional(),
     }),
     async (input) => {
@@ -374,6 +375,7 @@ export namespace SessionCompaction {
         sessionID: msg.sessionID,
         type: "compaction",
         auto: input.auto,
+        overflow: input.overflow,
         fromExtension: input.fromExtension ?? false,
       })
     },
