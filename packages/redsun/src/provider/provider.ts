@@ -790,6 +790,7 @@ export namespace Provider {
     return {
       models: languages,
       providers,
+      customProviderBases: new Map<string, Info | undefined>(),
       sdk,
       modelLoaders,
     }
@@ -860,6 +861,13 @@ export namespace Provider {
         })
         s.sdk.set(key, loaded)
         return loaded as SDK
+      }
+
+      if (await Config.isProjectProviderModule(model.providerID, model.api.npm)) {
+        const { ToolRegistry } = await import("../tool/registry")
+        if (!(await ToolRegistry.getRunner()).projectTrusted) {
+          throw new Error(`Project provider module requires a trusted project: ${model.providerID}`)
+        }
       }
 
       let installedPath: string
@@ -1116,13 +1124,21 @@ export namespace Provider {
       models,
     }
 
+    if (!s.customProviderBases.has(name)) s.customProviderBases.set(name, s.providers[name])
     s.providers[name] = provider
     log.info("registered provider", { name, modelCount: Object.keys(models).length })
   }
 
   export async function unregisterProvider(name: string) {
     const s = await state()
-    delete s.providers[name]
+    const previous = s.customProviderBases.get(name)
+    if (s.customProviderBases.has(name)) {
+      if (previous) s.providers[name] = previous
+      else delete s.providers[name]
+      s.customProviderBases.delete(name)
+    } else {
+      delete s.providers[name]
+    }
     // Clear cached language models
     for (const key of s.models.keys()) {
       if (key.startsWith(name + "/")) {

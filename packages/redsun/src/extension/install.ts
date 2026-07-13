@@ -3,6 +3,7 @@ import os from "os"
 import { Log } from "../util/log"
 import { Global } from "../global"
 import { BunProc } from "../bun"
+import { pathToFileURL } from "url"
 
 export namespace ExtensionInstall {
   const log = Log.create({ service: "extension.install" })
@@ -36,10 +37,15 @@ export namespace ExtensionInstall {
 
       for (const entry of entries) {
         const srcPath = path.resolve(installedPath, entry)
-        const destName = `${pkg.replace("/", "-")}-${entry.replace(/^\.\//, "").replace(/\//g, "-")}`
+        const entryName = entry.replace(/^\.\//, "").replace(/\//g, "-").replace(/\.[^.]+$/, "")
+        const destName = `${pkg.replace("/", "-")}-${entryName}.ts`
         const destPath = path.join(extensionsDir, destName)
-        await Bun.$`cp ${srcPath} ${destPath}`.quiet()
-        log.info("installed extension file", { srcPath, destPath })
+        const sourceURL = pathToFileURL(srcPath).href
+        await Bun.write(
+          destPath,
+          `import * as extension from ${JSON.stringify(sourceURL)}\nexport default extension.default ?? extension.extension\n`,
+        )
+        log.info("installed extension shim", { srcPath, destPath })
       }
 
       return { success: true, message: `Installed ${specifier}`, path: extensionsDir }

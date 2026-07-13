@@ -52,9 +52,11 @@ export const PatchTool = Tool.define("patch", {
 
     for (const hunk of hunks) {
       const filePath = path.resolve(Instance.directory, hunk.path)
+      const movePath = hunk.type === "update" && hunk.move_path ? path.resolve(Instance.directory, hunk.move_path) : undefined
 
-      if (!Filesystem.contains(Instance.directory, filePath)) {
-        const parentDir = path.dirname(filePath)
+      for (const candidate of [filePath, movePath]) {
+        if (!candidate || Filesystem.contains(Instance.directory, candidate)) continue
+        const parentDir = path.dirname(candidate)
         if (agent.permission.external_directory === "ask") {
           await Permission.ask({
             type: "external_directory",
@@ -62,9 +64,9 @@ export const PatchTool = Tool.define("patch", {
             sessionID: ctx.sessionID,
             messageID: ctx.messageID,
             callID: ctx.callID,
-            title: `Patch file outside working directory: ${filePath}`,
+            title: `Patch file outside working directory: ${candidate}`,
             metadata: {
-              filepath: filePath,
+              filepath: candidate,
               parentDir,
             },
           })
@@ -74,10 +76,10 @@ export const PatchTool = Tool.define("patch", {
             "external_directory",
             ctx.callID,
             {
-              filepath: filePath,
+              filepath: candidate,
               parentDir,
             },
-            `File ${filePath} is not in the current working directory`,
+            `File ${candidate} is not in the current working directory`,
           )
         }
       }
@@ -127,7 +129,7 @@ export const PatchTool = Tool.define("patch", {
             oldContent,
             newContent,
             type: hunk.move_path ? "move" : "update",
-            movePath: hunk.move_path ? path.resolve(Instance.directory, hunk.move_path) : undefined,
+            movePath,
           })
 
           totalDiff += diff + "\n"

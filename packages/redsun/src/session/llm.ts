@@ -14,6 +14,7 @@ import { ExtensionRunner } from "../extension/runner"
 import { ExtensionContext } from "../extension/context"
 import type { Extension } from "../extension/types"
 import { ContextOptimizer } from "./context-optimizer"
+import { Auth } from "@/auth"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -35,6 +36,20 @@ export namespace LLM {
   }
 
   export type StreamOutput = StreamTextResult<ToolSet, unknown>
+
+  export function shouldUseOpenAIResponsesContinuation(input: {
+    enabled: unknown
+    providerID: string
+    store: unknown
+    auth?: Auth.Info
+  }) {
+    return (
+      input.enabled === "api-only" &&
+      input.providerID === "openai" &&
+      input.store !== false &&
+      input.auth?.type !== "oauth"
+    )
+  }
 
   export async function stream(input: StreamInput) {
     const l = log
@@ -91,6 +106,7 @@ export namespace LLM {
       ...(volatileSystem ? [volatileSystem] : []),
     ]
     const provider = await Provider.getProvider(input.model.providerID)
+    const openaiAuth = input.model.providerID === "openai" ? await Auth.get("openai") : undefined
 
     const params = {
       temperature: input.model.capabilities.temperature
@@ -193,9 +209,12 @@ export namespace LLM {
             async transformParams(args) {
               if (args.type === "stream") {
                 const continuation =
-                  provider.options?.experimentalResponsesContinuation === "api-only" &&
-                  input.model.providerID === "openai" &&
-                  args.params.providerOptions?.openai?.store !== false
+                  shouldUseOpenAIResponsesContinuation({
+                    enabled: provider.options?.experimentalResponsesContinuation,
+                    providerID: input.model.providerID,
+                    store: args.params.providerOptions?.openai?.store,
+                    auth: openaiAuth,
+                  })
                     ? await ContextOptimizer.lastOpenAIResponse({
                         sessionID: input.sessionID,
                         providerID: input.model.providerID,

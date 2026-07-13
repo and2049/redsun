@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { Global } from "../global"
 
 export type ProjectTrustDecision = boolean | null
@@ -126,12 +126,25 @@ function writeTrustFile(path: string, data: TrustFile): void {
   writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`, "utf-8")
 }
 
-export function hasTrustRequiringProjectResources(cwd: string): boolean {
-  let currentDir = normalizeCwd(cwd)
+export function hasTrustRequiringProjectResources(cwd: string, worktree = cwd): boolean {
+  let currentDir = resolve(cwd)
+  const boundary = resolve(worktree)
+  const withinWorktree = relative(boundary, currentDir)
+  const stop = withinWorktree.startsWith("..") || isAbsolute(withinWorktree) ? currentDir : boundary
 
-  const configDir = join(currentDir, ".redsun")
-  if (TRUST_REQUIRING_RESOURCES.some((entry) => existsSync(join(configDir, entry)))) {
-    return true
+  while (true) {
+    const configDir = join(currentDir, ".redsun")
+    if (
+      TRUST_REQUIRING_RESOURCES.some((entry) => existsSync(join(configDir, entry))) ||
+      ["redsun.json", "redsun.jsonc"].some((entry) => existsSync(join(currentDir, entry)))
+    ) {
+      return true
+    }
+
+    if (currentDir === stop) break
+    const parent = dirname(currentDir)
+    if (parent === currentDir) break
+    currentDir = parent
   }
 
   return false

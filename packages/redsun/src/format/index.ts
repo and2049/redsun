@@ -105,6 +105,11 @@ export namespace Format {
     Bus.subscribe(File.Event.Edited, async (payload) => {
       const file = payload.properties.file
       log.info("formatting", { file })
+      const { ToolRegistry } = await import("../tool/registry")
+      if (!(await ToolRegistry.getRunner()).projectTrusted) {
+        log.info("skipping formatter for untrusted project", { file })
+        return
+      }
       const ext = path.extname(file)
 
       for (const item of await getFormatter(ext)) {

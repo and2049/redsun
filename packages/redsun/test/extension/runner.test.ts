@@ -165,8 +165,11 @@ describe("ExtensionRunner", () => {
     } as any)
 
     expect(ExtensionRunner.getActiveTools(runner)).toEqual([])
+    expect(ExtensionRunner.isToolActive(runner, "builtin")).toBe(true)
     ExtensionRunner.setActiveTools(runner, ["custom_tool"])
     expect(ExtensionRunner.getActiveTools(runner)).toEqual(["custom_tool"])
+    expect(ExtensionRunner.isToolActive(runner, "custom_tool")).toBe(true)
+    expect(ExtensionRunner.isToolActive(runner, "mcp_search")).toBe(false)
   })
 
   test("agents_register collects agentPaths from handlers", async () => {
@@ -318,7 +321,7 @@ describe("ExtensionRunner provider queue", () => {
     expect(runner.pendingProviderRegistrations.map((r) => r.name)).toEqual(["p1", "p3"])
   })
 
-  test("flushProviderRegistrations processes all and clears array", () => {
+  test("flushProviderRegistrations processes all and clears array", async () => {
     const runner = makeRunner()
     const registered: Array<{ name: string; config: Extension.ProviderConfig }> = []
     runner.providerRegistrar = {
@@ -330,9 +333,26 @@ describe("ExtensionRunner provider queue", () => {
       { name: "p2", config: providerConfig, source: "" },
       { name: "p3", config: providerConfig, source: "" },
     ]
-    ExtensionRunner.flushProviderRegistrations(runner)
+    await ExtensionRunner.flushProviderRegistrations(runner)
     expect(registered.length).toBe(3)
     expect(registered.map((r) => r.name)).toEqual(["p1", "p2", "p3"])
     expect(runner.pendingProviderRegistrations.length).toBe(0)
+  })
+
+  test("unregisterAllProviders removes every runner-owned provider", async () => {
+    const runner = makeRunner()
+    const unregistered: string[] = []
+    runner.providerRegistrar = {
+      register: () => {},
+      unregister: (name) => { unregistered.push(name) },
+    }
+    ExtensionRunner.registerProvider(runner, "p1", providerConfig, "/src/p1.ts")
+    ExtensionRunner.registerProvider(runner, "p2", providerConfig, "/src/p2.ts")
+
+    await ExtensionRunner.unregisterAllProviders(runner)
+
+    expect(unregistered).toEqual(["p1", "p2"])
+    expect(runner.registeredProviders.size).toBe(0)
+    expect(runner.pendingProviderRegistrations).toEqual([])
   })
 })

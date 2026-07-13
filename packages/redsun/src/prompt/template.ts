@@ -6,6 +6,8 @@ import { Global } from "../global"
 import { ConfigMarkdown } from "../config/markdown"
 import { Log } from "../util/log"
 import { ToolRegistry } from "../tool/registry"
+import { State } from "../project/state"
+import { GlobalBus } from "../bus/global"
 
 export namespace PromptTemplate {
   const log = Log.create({ service: "prompt.template" })
@@ -30,7 +32,7 @@ export namespace PromptTemplate {
 
   const PROMPT_GLOB = new Bun.Glob("*.md")
 
-  export const state = Instance.state(async () => {
+  async function initState() {
     const result: Record<string, Info> = {}
 
     const home = path.join(Global.Path.home, ".redsun", "prompts")
@@ -52,6 +54,18 @@ export namespace PromptTemplate {
     } catch {}
 
     return result
+  }
+
+  export const state = Instance.state(initState)
+
+  export function invalidate(directory = Instance.directory) {
+    State.reset(directory, initState)
+  }
+
+  GlobalBus.on("event", (evt) => {
+    if (evt.payload?.type === "tool.registry.changed" && evt.directory) {
+      invalidate(evt.directory)
+    }
   })
 
   export async function all(): Promise<Info[]> {

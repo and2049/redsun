@@ -349,6 +349,15 @@ export namespace SessionPrompt {
         if (drainSteering(sessionID).length > 0) {
           log.info("steering injected, continuing loop", { sessionID })
         } else {
+          const activeGoal = await Goal.get(sessionID)
+          if (activeGoal) {
+            const [agent, model] = await Promise.all([
+              Agent.get(lastUser.agent),
+              Provider.getModel(lastUser.model.providerID, lastUser.model.modelID),
+            ])
+            const goalStop = await handleGoalStop({ sessionID, agent, model })
+            if (goalStop.action === "continue") continue
+          }
           log.info("exiting loop", { sessionID })
           break
         }
@@ -653,12 +662,12 @@ export namespace SessionPrompt {
           sessionID,
         })
       ) {
-        await SessionCompaction.process({
-          messages: msgs,
-          parentID: lastUser.id,
-          abort,
+        await SessionCompaction.create({
           sessionID,
+          agent: lastUser.agent,
+          model: lastUser.model,
           auto: true,
+          overflow: true,
         })
         continue
       }
@@ -850,7 +859,7 @@ export namespace SessionPrompt {
       })
     for (const item of await ToolRegistry.tools(input.model.providerID, input.agent)) {
       if (Wildcard.all(item.id, enabledTools) === false) continue
-      if (runner.activeTools.size > 0 && !runner.activeTools.has(item.id)) continue
+      if (!ExtensionRunner.isToolActive(runner, item.id)) continue
       const rawSchema = z.toJSONSchema(item.parameters) as any
       const schema = ProviderTransform.schema(input.model, {
         ...rawSchema,
@@ -904,6 +913,7 @@ export namespace SessionPrompt {
     }
     for (const [key, item] of orderedToolEntries(await MCP.tools(input.model))) {
       if (Wildcard.all(key, enabledTools) === false) continue
+      if (!ExtensionRunner.isToolActive(runner, key)) continue
       const execute = item.execute
       if (!execute) continue
 
@@ -924,7 +934,25 @@ export namespace SessionPrompt {
           throw new Error((callResult as Extension.ToolCallResult).reason ?? "execution blocked by extension")
         }
 
-        const result = await execute(args, opts)
+        let result: Awaited<ReturnType<typeof execute>>
+        try {
+          result = await execute(args, opts)
+        } catch (error) {
+          await ExtensionRunner.emit(
+            runner,
+            {
+              type: "tool_result",
+              toolCallId: opts?.toolCallId ?? "",
+              toolName: key,
+              input: args,
+              output: error instanceof Error ? error.message : String(error),
+              metadata: {},
+              isError: true,
+            } satisfies Extension.ToolResultEvent,
+            ctx,
+          )
+          throw error
+        }
 
         const textParts: string[] = []
         const attachments: MessageV2.FilePart[] = []
