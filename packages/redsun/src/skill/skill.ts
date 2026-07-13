@@ -7,6 +7,8 @@ import { NamedError } from "@redsun/util/error"
 import { ConfigMarkdown } from "../config/markdown"
 import { Log } from "../util/log"
 import { ToolRegistry } from "../tool/registry"
+import { State } from "../project/state"
+import { GlobalBus } from "../bus/global"
 
 export namespace Skill {
   const log = Log.create({ service: "skill" })
@@ -43,7 +45,7 @@ export namespace Skill {
   const PROJECT_SKILL_GLOB = new Bun.Glob("**/SKILL.md")
   const USER_SKILL_GLOB = new Bun.Glob("**/SKILL.md")
 
-  export const state = Instance.state(async () => {
+  async function initState() {
     const skills: Record<string, Info> = {}
 
     const userDir = path.join(Global.Path.home, ".redsun", "skill")
@@ -93,6 +95,18 @@ export namespace Skill {
     } catch {}
 
     return skills
+  }
+
+  export const state = Instance.state(initState)
+
+  export function invalidate(directory = Instance.directory) {
+    State.reset(directory, initState)
+  }
+
+  GlobalBus.on("event", (evt) => {
+    if (evt.payload?.type === "tool.registry.changed" && evt.directory) {
+      invalidate(evt.directory)
+    }
   })
 
   export async function get(name: string) {

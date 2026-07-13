@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test"
 import path from "path"
 import { Session } from "../../src/session"
 import { SessionCompaction } from "../../src/session/compaction"
+import { SessionPrompt } from "../../src/session/prompt"
+import { MessageV2 } from "../../src/session/message-v2"
 import { Log } from "../../src/util/log"
 import { Instance } from "../../src/project/instance"
 import { Identifier } from "../../src/id/id"
+import { Bus } from "../../src/bus"
 import { tmpdir } from "../fixture/fixture"
 
 Log.init({ print: false })
@@ -179,5 +182,73 @@ describe("compaction promptText logic", () => {
 
   test("prompt takes precedence over context", () => {
     expect(computePromptText({ prompt: "P", context: ["C"] })).toBe("P")
+  })
+})
+
+test("pre-sampling overflow creates a compaction boundary before continuing", async () => {
+  await using tmp = await tmpdir({
+    git: true,
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          compaction: { strategy: "algorithmic" },
+          provider: {
+            "context-test": {
+              npm: "@ai-sdk/openai-compatible",
+              api: "http://127.0.0.1:1/v1",
+              options: { apiKey: "test" },
+              models: {
+                tiny: { limit: { context: 100, output: 10 } },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const session = await Session.create({})
+      const user = await Session.updateMessage({
+        id: Identifier.ascending("message"),
+        role: "user",
+        sessionID: session.id,
+        agent: "build",
+        model: { providerID: "context-test", modelID: "tiny" },
+        summary: { title: "seed", diffs: [] },
+        time: { created: Date.now() },
+      })
+      await Session.updatePart({
+        id: Identifier.ascending("part"),
+        messageID: user.id,
+        sessionID: session.id,
+        type: "text",
+        text: "x".repeat(2_000),
+      })
+
+      const unsubscribe = Bus.subscribe(SessionCompaction.Event.Compacted, (event) => {
+        if (event.properties.sessionID === session.id) SessionPrompt.cancel(session.id)
+      })
+      await SessionPrompt.loop(session.id)
+      unsubscribe()
+
+      const all = await Session.messages({ sessionID: session.id })
+      expect(all.flatMap((message) => message.parts).find((part) => part.type === "compaction")).toMatchObject({
+        type: "compaction",
+        auto: true,
+        overflow: true,
+      })
+      const compacted = await MessageV2.filterCompacted(MessageV2.stream(session.id))
+      expect(compacted.some((message) => message.info.id === user.id)).toBe(false)
+      expect(
+        compacted.some(
+          (message) => message.info.role === "user" && message.parts.some((part) => part.type === "text" && part.synthetic),
+        ),
+      ).toBe(true)
+
+      await Session.remove(session.id)
+    },
   })
 })

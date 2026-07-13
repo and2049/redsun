@@ -86,19 +86,25 @@ describe("model-visible tool output", () => {
 })
 
 describe("ContextOptimizer.breakdown", () => {
-  test("reports custom message and attachment categories", () => {
+  test("reports non-overlapping custom, attachment, and tool-result categories", () => {
     const result = ContextOptimizer.breakdown({
       system: ["stable system"],
       tools: {},
       messages: [
         { role: "user", content: [{ type: "text", text: "[custom:test] hello" }] },
         { role: "user", content: [{ type: "file", url: "data:image/png;base64,abcd", mediaType: "image/png" }] } as any,
+        {
+          role: "assistant" as const,
+          content: [{ type: "tool-bash", state: "output-available", toolCallId: "call_1", output: "tool output" }],
+        } as any,
       ],
     })
 
     expect(result.system).toBeGreaterThan(0)
     expect(result.customMessages).toBeGreaterThan(0)
     expect(result.attachments).toBeGreaterThan(0)
+    expect(result.toolResults).toBeGreaterThan(0)
+    expect(result.messages).toBe(0)
     expect(result.total).toBe(result.system + result.tools + result.messages + result.toolResults + result.customMessages + result.attachments)
   })
 })
@@ -136,5 +142,22 @@ describe("ContextOptimizer.optimizeModelMessages", () => {
 
     expect(text).toContain("[redsun: older custom message omitted from model context]")
     expect(text).toContain("[custom:test] 3")
+  })
+
+  test("keeps the custom-message omission marker in chronological order", () => {
+    const messages = [
+      { role: "user" as const, content: [{ type: "text" as const, text: "before" }] },
+      { role: "user" as const, content: [{ type: "text" as const, text: `[custom:test] 0 ${"x".repeat(10_000)}` }] },
+      { role: "assistant" as const, content: [{ type: "text" as const, text: "between" }] },
+      { role: "user" as const, content: [{ type: "text" as const, text: `[custom:test] 1 ${"x".repeat(10_000)}` }] },
+      { role: "user" as const, content: [{ type: "text" as const, text: `[custom:test] 2 ${"x".repeat(10_000)}` }] },
+      { role: "user" as const, content: [{ type: "text" as const, text: `[custom:test] 3 ${"x".repeat(10_000)}` }] },
+    ]
+
+    const result = ContextOptimizer.limitCustomMessages(messages)
+    const text = result.map((message) => JSON.stringify(message)).join("\n")
+
+    expect(text.indexOf("before")).toBeLessThan(text.indexOf("[redsun: older custom message omitted from model context]"))
+    expect(text.indexOf("[redsun: older custom message omitted from model context]")).toBeLessThan(text.indexOf("between"))
   })
 })

@@ -9,6 +9,8 @@ import PROMPT_REVIEW from "./template/review.txt"
 import { ToolRegistry } from "../tool/registry"
 import { PromptTemplate } from "../prompt/template"
 import type { Extension } from "../extension/types"
+import { State } from "../project/state"
+import { GlobalBus } from "../bus/global"
 
 export namespace Command {
   export const Event = {
@@ -45,7 +47,7 @@ export namespace Command {
     GOAL: "goal",
   } as const
 
-  const state = Instance.state(async () => {
+  async function initState() {
     const cfg = await Config.get()
 
     const result: Record<string, Info> = {
@@ -94,6 +96,18 @@ export namespace Command {
     }
 
     return result
+  }
+
+  const state = Instance.state(initState)
+
+  export function invalidate(directory = Instance.directory) {
+    State.reset(directory, initState)
+  }
+
+  GlobalBus.on("event", (evt) => {
+    if (evt.payload?.type === "tool.registry.changed" && evt.directory) {
+      invalidate(evt.directory)
+    }
   })
 
   export async function get(name: string) {

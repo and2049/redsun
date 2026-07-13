@@ -5,7 +5,7 @@ import { pathToFileURL } from "url"
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
 import { ModelsDev } from "../provider/models"
-import { mergeDeep, pipe, unique } from "remeda"
+import { mergeDeep, pipe } from "remeda"
 import { Global } from "../global"
 import fs from "fs/promises"
 import { lazy } from "../util/lazy"
@@ -21,6 +21,7 @@ import { ConfigMarkdown } from "./markdown"
 
 export namespace Config {
   const log = Log.create({ service: "config" })
+  export type SourceScope = "user" | "project"
 
   // Custom merge function that concatenates extension arrays instead of replacing them
   function mergeConfigWithExtensions(target: Info, source: Info): Info {
@@ -36,22 +37,48 @@ export namespace Config {
   export const state = Instance.state(async () => {
     const auth = await Auth.all()
     let result = await global()
+    const extensions = {
+      user: new Set(result.extension ?? []),
+      project: new Set<string>(),
+    }
+    const projectMcp = new Set<string>()
+    const projectProviderModules = new Set<string>()
+    let userDefaultProjectTrust = result.defaultProjectTrust
+
+    const mergeSource = (source: Info, scope: SourceScope) => {
+      for (const entry of source.extension ?? []) extensions[scope].add(entry)
+      if (scope === "project" && source.mcp && typeof source.mcp === "object") {
+        for (const name of Object.keys(source.mcp)) projectMcp.add(name)
+      }
+      if (scope === "project") {
+        for (const [providerID, provider] of Object.entries(source.provider ?? {})) {
+          if (provider.npm) projectProviderModules.add(`${providerID}\0${provider.npm}`)
+          for (const model of Object.values(provider.models ?? {})) {
+            if (model.provider?.npm) projectProviderModules.add(`${providerID}\0${model.provider.npm}`)
+          }
+        }
+      }
+      if (scope === "user" && source.defaultProjectTrust !== undefined) {
+        userDefaultProjectTrust = source.defaultProjectTrust
+      }
+      result = mergeConfigWithExtensions(result, source)
+    }
 
     // Override with custom config if provided
     if (Flag.REDSUN_CONFIG) {
-      result = mergeConfigWithExtensions(result, await loadFile(Flag.REDSUN_CONFIG))
+      mergeSource(await loadFile(Flag.REDSUN_CONFIG), "user")
       log.debug("loaded custom config", { path: Flag.REDSUN_CONFIG })
     }
 
     for (const file of ["redsun.jsonc", "redsun.json"]) {
       const found = await Filesystem.findUp(file, Instance.directory, Instance.worktree)
       for (const resolved of found.toReversed()) {
-        result = mergeConfigWithExtensions(result, await loadFile(resolved))
+        mergeSource(await loadFile(resolved), "project")
       }
     }
 
     if (Flag.REDSUN_CONFIG_CONTENT) {
-      result = mergeConfigWithExtensions(result, JSON.parse(Flag.REDSUN_CONFIG_CONTENT))
+      mergeSource(JSON.parse(Flag.REDSUN_CONFIG_CONTENT), "user")
       log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
     }
 
@@ -59,7 +86,7 @@ export namespace Config {
       if (value.type === "wellknown") {
         process.env[value.key] = value.token
         const wellknown = (await fetch(`${key}/.well-known/redsun`).then((x) => x.json())) as any
-        result = mergeConfigWithExtensions(result, await load(JSON.stringify(wellknown.config ?? {}), process.cwd()))
+        mergeSource(await load(JSON.stringify(wellknown.config ?? {}), process.cwd()), "user")
       }
     }
 
@@ -67,29 +94,29 @@ export namespace Config {
     result.mode = result.mode || {}
     result.extension = result.extension || []
 
-    const directories = [
-      Global.Path.config,
+    const directoryEntries: Array<{ path: string; scope: SourceScope }> = [
+      { path: Global.Path.config, scope: "user" },
       ...(await Array.fromAsync(
         Filesystem.up({
           targets: [".redsun"],
           start: Instance.directory,
           stop: Instance.worktree,
         }),
-      )),
+      )).map((path) => ({ path, scope: "project" as const })),
       ...(await Array.fromAsync(
         Filesystem.up({
           targets: [".redsun"],
           start: Global.Path.home,
           stop: Global.Path.home,
         }),
-      )),
+      )).map((path) => ({ path, scope: "user" as const })),
     ]
 
     const configDir = process.env["REDSUN_CONFIG_DIR"]
     if (configDir) {
       try {
         await fs.mkdir(configDir, { recursive: true })
-        directories.push(configDir)
+        directoryEntries.push({ path: configDir, scope: "user" })
         log.debug("loading config from REDSUN_CONFIG_DIR", { path: configDir })
       } catch (error) {
         if (!isUnavailable(error)) throw error
@@ -97,8 +124,21 @@ export namespace Config {
       }
     }
 
+    const scopedDirectories = Array.from(
+      directoryEntries
+        .reduce((result, entry) => {
+          const previous = result.get(entry.path)
+          result.set(entry.path, {
+            path: entry.path,
+            scope: previous?.scope === "project" || entry.scope === "project" ? "project" : "user",
+          })
+          return result
+        }, new Map<string, { path: string; scope: SourceScope }>())
+        .values(),
+    )
+    const directories = scopedDirectories.map((entry) => entry.path)
     const promises: Promise<void>[] = []
-    for (const dir of unique(directories)) {
+    for (const { path: dir, scope } of scopedDirectories) {
       try {
         await fs.readdir(dir)
         await assertValid(dir)
@@ -113,7 +153,7 @@ export namespace Config {
       if (dir.endsWith(".redsun") || dir === configDir) {
         for (const file of ["redsun.jsonc", "redsun.json"]) {
           log.debug(`loading config from ${path.join(dir, file)}`)
-          result = mergeConfigWithExtensions(result, await loadFile(path.join(dir, file)))
+          mergeSource(await loadFile(path.join(dir, file)), scope)
           // to satisy the type checker
           result.agent ??= {}
           result.mode ??= {}
@@ -159,6 +199,14 @@ export namespace Config {
     return {
       config: result,
       directories,
+      scopedDirectories,
+      extensions: {
+        user: Array.from(extensions.user),
+        project: Array.from(extensions.project),
+      },
+      projectMcp: Array.from(projectMcp),
+      projectProviderModules: Array.from(projectProviderModules),
+      userDefaultProjectTrust,
     }
   })
 
@@ -1041,5 +1089,25 @@ export namespace Config {
 
   export async function directories() {
     return state().then((x) => x.directories)
+  }
+
+  export async function executableDirectories(scope: SourceScope) {
+    return state().then((x) => x.scopedDirectories.filter((entry) => entry.scope === scope).map((entry) => entry.path))
+  }
+
+  export async function extensionEntries(scope: SourceScope) {
+    return state().then((x) => x.extensions[scope])
+  }
+
+  export async function isProjectMcp(name: string) {
+    return state().then((x) => x.projectMcp.includes(name))
+  }
+
+  export async function isProjectProviderModule(providerID: string, npm: string) {
+    return state().then((x) => x.projectProviderModules.includes(`${providerID}\0${npm}`))
+  }
+
+  export async function userDefaultProjectTrust() {
+    return state().then((x) => x.userDefaultProjectTrust)
   }
 }

@@ -9,6 +9,7 @@ import {
 import { BusEvent } from "../bus/bus-event"
 import { Bus } from "../bus"
 import z from "zod"
+import { Instance } from "../project/instance"
 
 export const TrustPromptEvent = BusEvent.define(
   "trust.prompt",
@@ -66,7 +67,7 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
     return options.trustOverride
   }
 
-  if (!hasTrustRequiringProjectResources(options.cwd)) {
+  if (!hasTrustRequiringProjectResources(options.cwd, Instance.worktree)) {
     return true
   }
 

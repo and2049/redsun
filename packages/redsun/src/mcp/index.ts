@@ -195,6 +195,16 @@ export namespace MCP {
         status: { status: "disabled" as const },
       }
     }
+    if (mcp.type === "local" && (await Config.isProjectMcp(key))) {
+      const { ToolRegistry } = await import("../tool/registry")
+      if (!(await ToolRegistry.getRunner()).projectTrusted) {
+        log.warn("skipping untrusted project local MCP server", { key })
+        return {
+          mcpClient: undefined,
+          status: { status: "disabled" as const },
+        }
+      }
+    }
     log.info("found", { key, type: mcp.type })
     let mcpClient: MCPClient | undefined
     let status: Status | undefined = undefined

@@ -253,6 +253,57 @@ test("custom provider with npm package", async () => {
   })
 })
 
+test("unregistering a custom provider restores the provider it replaced", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            preserved: {
+              npm: "@ai-sdk/openai-compatible",
+              api: "https://api.example.com/v1",
+              models: {
+                original: {
+                  name: "Original",
+                  limit: { context: 128000, output: 4096 },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      expect((await Provider.list()).preserved.models.original).toBeDefined()
+
+      await Provider.registerProvider("preserved", {
+        models: [
+          {
+            id: "temporary",
+            name: "Temporary",
+            reasoning: false,
+            input: ["text"],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 128000,
+            maxTokens: 4096,
+          },
+        ],
+      })
+      expect((await Provider.list()).preserved.models.temporary).toBeDefined()
+
+      await Provider.unregisterProvider("preserved")
+      const restored = (await Provider.list()).preserved
+      expect(restored.source).toBe("config")
+      expect(restored.models.original).toBeDefined()
+      expect(restored.models.temporary).toBeUndefined()
+    },
+  })
+})
+
 test("Meta models use the OpenAI Responses loader", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

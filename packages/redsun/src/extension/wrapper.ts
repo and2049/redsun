@@ -6,6 +6,8 @@ import path from "path"
 import { Global } from "../global"
 import { Log } from "../util/log"
 import { Permission } from "../permission"
+import { Instance } from "../project/instance"
+import { Patch } from "../patch"
 
 const log = Log.create({ service: "extension.wrapper" })
 
@@ -54,7 +56,7 @@ export function isProtectedPath(filePath: string): { blocked: boolean; reason?: 
 
 function extractPathLikeTokens(command: string): string[] {
   const tokens: string[] = []
-  const delimiterRegex = /[\s'"|;&<>(){}$`\\]+/
+  const delimiterRegex = /[\s'"|;&<>(){}$`]+/
   const parts = command.split(delimiterRegex)
   for (const part of parts) {
     if (part.length > 1 && (part.includes(path.sep) || part.startsWith(".") || part.startsWith("/"))) {
@@ -62,6 +64,29 @@ function extractPathLikeTokens(command: string): string[] {
     }
   }
   return tokens
+}
+
+function resolveProjectPath(filePath: string) {
+  if (path.isAbsolute(filePath)) return filePath
+  try {
+    return path.resolve(Instance.directory, filePath)
+  } catch {
+    return filePath
+  }
+}
+
+function writePaths(toolID: string, args: Record<string, unknown>) {
+  const paths = typeof args.filePath === "string" ? [args.filePath] : []
+  if (toolID !== "patch" || typeof args.patchText !== "string") return paths
+  try {
+    for (const hunk of Patch.parsePatch(args.patchText).hunks) {
+      paths.push(hunk.path)
+      if (hunk.type === "update" && hunk.move_path) paths.push(hunk.move_path)
+    }
+  } catch {
+    // Let the patch tool report parse failures through its normal error path.
+  }
+  return paths
 }
 
 export namespace ExtensionWrapper {
@@ -89,20 +114,20 @@ export namespace ExtensionWrapper {
       execute: async (args, ctx) => {
         const eventCtx = contextFactory()
 
-        // Guardrail: check protected paths for file-writing tools
-        const filePath = (args as Record<string, unknown>).filePath as string | undefined
-        if (filePath) {
-          const guard = isProtectedPath(filePath)
+        // Guardrail: check all path-bearing write requests before execution.
+        for (const filePath of writePaths(tool.id, args)) {
+          const resolvedPath = resolveProjectPath(filePath)
+          const guard = isProtectedPath(resolvedPath)
           if (guard.blocked) {
             if (guard.type === "extension") {
               await Permission.ask({
                 type: "extension_write",
                 title: "Write Extension",
-                pattern: filePath,
+                pattern: resolvedPath,
                 callID: ctx.callID,
                 sessionID: ctx.sessionID,
                 messageID: ctx.messageID,
-                metadata: { filePath },
+                metadata: { filePath: resolvedPath },
               })
             } else {
               throw new Error(guard.reason ?? "blocked by guardrail")
@@ -115,7 +140,7 @@ export namespace ExtensionWrapper {
           if (command) {
             const tokens = extractPathLikeTokens(command)
             for (const token of tokens) {
-              const guard = isProtectedPath(token)
+              const guard = isProtectedPath(resolveProjectPath(token))
               if (guard.blocked) {
                 if (guard.type === "extension") {
                   await Permission.ask({
@@ -153,7 +178,25 @@ export namespace ExtensionWrapper {
           throw new Error(reason)
         }
 
-        const result = await originalExecute(args, ctx)
+        let result: Awaited<ReturnType<typeof originalExecute>>
+        try {
+          result = await originalExecute(args, ctx)
+        } catch (error) {
+          await ExtensionRunner.emit(
+            runner,
+            {
+              type: "tool_result",
+              toolCallId: ctx.callID ?? "",
+              toolName: tool.id,
+              input: args as Record<string, unknown>,
+              output: error instanceof Error ? error.message : String(error),
+              metadata: {},
+              isError: true,
+            } satisfies Extension.ToolResultEvent,
+            eventCtx,
+          )
+          throw error
+        }
 
         const resultEvent: Extension.ToolResultEvent = {
           type: "tool_result",
