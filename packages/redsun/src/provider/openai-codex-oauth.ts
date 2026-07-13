@@ -299,6 +299,27 @@ export namespace OpenAICodexOAuth {
     return typeof Request !== "undefined" && requestInput instanceof Request ? requestInput.headers : undefined
   }
 
+  async function requestInit(requestInput: RequestInfo | URL, init?: RequestInit): Promise<RequestInit> {
+    if (!(requestInput instanceof Request)) return { ...init }
+
+    const method = init?.method ?? requestInput.method
+    const requestBody = method === "GET" || method === "HEAD" ? undefined : await requestInput.clone().text()
+    return {
+      method,
+      body: init?.body ?? requestBody,
+      signal: init?.signal ?? requestInput.signal,
+      cache: init?.cache ?? requestInput.cache,
+      credentials: init?.credentials ?? requestInput.credentials,
+      integrity: init?.integrity ?? requestInput.integrity,
+      keepalive: init?.keepalive ?? requestInput.keepalive,
+      mode: init?.mode ?? requestInput.mode,
+      redirect: init?.redirect ?? requestInput.redirect,
+      referrer: init?.referrer ?? requestInput.referrer,
+      referrerPolicy: init?.referrerPolicy ?? requestInput.referrerPolicy,
+      ...init,
+    }
+  }
+
   export function normalizeCodexRequestBody(body: any) {
     if (!body || typeof body !== "object") return body
     body.store = false
@@ -366,7 +387,7 @@ export namespace OpenAICodexOAuth {
       if (currentAuth.accountId) headers.set("ChatGPT-Account-Id", currentAuth.accountId)
       headers.set("originator", "redsun")
 
-      const nextInit = { ...init, headers }
+      const nextInit = { ...(await requestInit(requestInput, init)), headers }
       if (typeof nextInit.body === "string") {
         try {
           nextInit.body = JSON.stringify(normalizeCodexRequestBody(JSON.parse(nextInit.body)))

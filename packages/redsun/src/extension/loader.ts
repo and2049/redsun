@@ -7,6 +7,7 @@ import path from "path"
 import os from "os"
 import { pathToFileURL, fileURLToPath } from "url"
 import { BunProc } from "../bun"
+import fs from "fs/promises"
 
 export namespace ExtensionLoader {
   const log = Log.create({ service: "extension.loader" })
@@ -14,10 +15,8 @@ export namespace ExtensionLoader {
   export async function load(options?: { extraPaths?: string[]; projectTrusted?: boolean }): Promise<Extension.Loaded[]> {
     const loaded: Extension.Loaded[] = []
     const seen = new Set<string>()
-    const config = await Config.get()
-
-    // 1. Config extension entries
-    for (const entry of config.extension ?? []) {
+    // 1. User config extension entries
+    for (const entry of await Config.extensionEntries("user")) {
       await resolveEntry(entry, "user", loaded, seen)
     }
 
@@ -30,19 +29,26 @@ export namespace ExtensionLoader {
     const globalDir = path.join(Global.Path.home, ".redsun", "extensions")
     await discoverDirectory(globalDir, "user", loaded, seen)
 
-    // 4. Project extensions (if trusted)
-    if (options?.projectTrusted !== false) {
+    // 4. Project extensions require an explicit trust decision.
+    if (options?.projectTrusted === true) {
+      await loadProjectConfigEntriesInto(loaded, seen)
       await loadProjectExtensionsInto(loaded, seen)
     }
 
     return loaded
   }
 
-  export async function loadProjectExtensions(): Promise<Extension.Loaded[]> {
+  export async function loadProjectExtensions(seen = new Set<string>()): Promise<Extension.Loaded[]> {
     const loaded: Extension.Loaded[] = []
-    const seen = new Set<string>()
+    await loadProjectConfigEntriesInto(loaded, seen)
     await loadProjectExtensionsInto(loaded, seen)
     return loaded
+  }
+
+  async function loadProjectConfigEntriesInto(loaded: Extension.Loaded[], seen: Set<string>) {
+    for (const entry of await Config.extensionEntries("project")) {
+      await resolveEntry(entry, "project", loaded, seen)
+    }
   }
 
   async function loadProjectExtensionsInto(loaded: Extension.Loaded[], seen: Set<string>) {
@@ -166,7 +172,20 @@ export namespace ExtensionLoader {
     log.info("loading extension", { path: resolved })
 
     try {
-      const mod = await import(pathToFileURL(resolved).href + "?reload=" + Date.now())
+      const source = await Bun.file(resolved).text()
+      let mod: any
+      if (scope === "npm") {
+        mod = await import(pathToFileURL(resolved).href + "?reload=" + Bun.hash(source))
+      } else {
+        const extension = path.extname(resolved)
+        const reloadPath = path.join(path.dirname(resolved), `.${path.basename(resolved, extension)}.redsun-reload-${Bun.hash(source)}${extension}`)
+        await Bun.write(reloadPath, source)
+        try {
+          mod = await import(pathToFileURL(reloadPath).href)
+        } finally {
+          await fs.unlink(reloadPath).catch(() => {})
+        }
+      }
       const factory = mod.default ?? mod.extension
       if (typeof factory !== "function") {
         log.warn("extension has no default factory export", { path: resolved })

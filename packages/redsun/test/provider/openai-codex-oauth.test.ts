@@ -119,6 +119,41 @@ test("createFetch rewrites responses requests and replaces API auth headers", as
   })
 })
 
+test("createFetch preserves a Request method and body while rewriting", async () => {
+  let seenURL = ""
+  let seenInit: RequestInit | undefined
+  const codexFetch = OpenAICodexOAuth.createFetch({
+    getAuth: async () => ({
+      type: "oauth",
+      access: "access-token",
+      refresh: "refresh-token",
+      expires: Date.now() + 60_000,
+    }),
+    setAuth: async () => {},
+    fetch: (async (input, init) => {
+      seenURL = input.toString()
+      seenInit = init
+      return new Response("{}", { status: 200 })
+    }) as typeof fetch,
+  })
+
+  await codexFetch(
+    new Request("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { Authorization: "Bearer api-key", "Content-Type": "application/json" },
+      body: JSON.stringify({ store: true, input: [{ type: "message", id: "msg_1", role: "user" }] }),
+    }),
+  )
+
+  expect(seenURL).toBe(OpenAICodexOAuth.CODEX_API_ENDPOINT)
+  expect(seenInit?.method).toBe("POST")
+  expect(JSON.parse(seenInit?.body as string)).toMatchObject({
+    store: false,
+    include: ["reasoning.encrypted_content"],
+    input: [{ type: "message", role: "user" }],
+  })
+})
+
 test("createFetch refreshes expired OAuth credentials and stores account ID", async () => {
   const originalFetch = globalThis.fetch
   const refreshedAccess = jwt({

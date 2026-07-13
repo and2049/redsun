@@ -69,21 +69,25 @@ export namespace ToolRegistry {
     const custom = new Map<string, Tool.Info>()
     const glob = new Bun.Glob("tool/*.{js,ts}")
 
-    for (const dir of await Config.directories()) {
-      for await (const match of glob.scan({
-        cwd: dir,
-        absolute: true,
-        followSymlinks: true,
-        dot: true,
-      })) {
-        const namespace = path.basename(match, path.extname(match))
-        const mod = await import(match)
-        for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
-          const tool = fromLegacyDefinition(id === "default" ? namespace : `${namespace}_${id}`, def)
-          custom.set(tool.id, tool)
+    async function loadCustomTools(scope: Config.SourceScope) {
+      for (const dir of await Config.executableDirectories(scope)) {
+        for await (const match of glob.scan({
+          cwd: dir,
+          absolute: true,
+          followSymlinks: true,
+          dot: true,
+        })) {
+          const namespace = path.basename(match, path.extname(match))
+          const mod = await import(match)
+          for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
+            const tool = fromLegacyDefinition(id === "default" ? namespace : `${namespace}_${id}`, def)
+            custom.set(tool.id, tool)
+          }
         }
       }
     }
+
+    await loadCustomTools("user")
 
     let runner: ExtensionRunner.State
     const contextFactory = (): Extension.Context =>
@@ -113,8 +117,7 @@ export namespace ToolRegistry {
     const { resolveProjectTrusted } = await import("../trust/project-trust")
     const { createTrustStore } = await import("../trust/manager")
     const trustStore = createTrustStore()
-    const config = await Config.get()
-    const defaultTrust = config.defaultProjectTrust
+    const defaultTrust = await Config.userDefaultProjectTrust()
     const trustCtx = ExtensionContext.create({
       mode: "rpc",
       cwd: Instance.directory,
@@ -142,7 +145,9 @@ export namespace ToolRegistry {
 
     // Phase 3: Load project extensions if trusted
     if (trusted) {
-      const projectExtensions = await ExtensionLoader.loadProjectExtensions()
+      const projectExtensions = await ExtensionLoader.loadProjectExtensions(
+        new Set(nonProjectExtensions.map((extension) => extension.resolvedPath)),
+      )
       for (const ext of projectExtensions) {
         const api = createExtensionAPI(runner, ext.sourceInfo)
         try {
@@ -151,6 +156,7 @@ export namespace ToolRegistry {
           log.error("extension factory failed", { path: ext.path, error })
         }
       }
+      await loadCustomTools("project")
     }
 
     // Phase 4: Discover tools from all loaded extensions
@@ -162,18 +168,10 @@ export namespace ToolRegistry {
     // Wire provider registrar and flush pending registrations
     const { Provider } = await import("../provider/provider")
     runner.providerRegistrar = {
-      register: (name, config) => {
-        Provider.registerProvider(name, config).catch((err) => {
-          log.error("provider registration failed", { name, error: err })
-        })
-      },
-      unregister: (name) => {
-        Provider.unregisterProvider(name).catch((err) => {
-          log.error("provider unregistration failed", { name, error: err })
-        })
-      },
+      register: (name, config) => Provider.registerProvider(name, config),
+      unregister: (name) => Provider.unregisterProvider(name),
     }
-    ExtensionRunner.flushProviderRegistrations(runner)
+    await ExtensionRunner.flushProviderRegistrations(runner)
 
     const discoverCtx: Extension.Context = ExtensionContext.create({
       mode: "rpc",
@@ -216,7 +214,6 @@ export namespace ToolRegistry {
   export async function reload() {
     const s = await state()
     const oldRunner = s.runner
-    ExtensionRunner.invalidate(oldRunner)
 
     const [{ SessionStatus }, { ExtensionContext: EC }] = await Promise.all([
       import("../session/status"),
@@ -234,6 +231,10 @@ export namespace ToolRegistry {
       })
       await ExtensionRunner.emit(oldRunner, { type: "session_shutdown", reason: "reload" }, ctx)
     }
+
+    await ExtensionRunner.unregisterAllProviders(oldRunner)
+    sessionModelOverrides.clear()
+    ExtensionRunner.invalidate(oldRunner)
 
     State.reset(Instance.directory, initState as () => unknown)
     await state()
@@ -254,6 +255,15 @@ export namespace ToolRegistry {
       { type: "resources_discover", cwd: Instance.directory, reason: "reload" },
       discoverCtx,
     )
+
+    const [{ Skill }, { PromptTemplate }, { Command }] = await Promise.all([
+      import("../skill/skill"),
+      import("../prompt/template"),
+      import("../command"),
+    ])
+    Skill.invalidate()
+    PromptTemplate.invalidate()
+    Command.invalidate()
 
     for (const [sessionID, status] of Object.entries(statuses)) {
       if (status.type === "idle") continue

@@ -175,6 +175,11 @@ export namespace LSP {
   }
 
   async function getClients(file: string) {
+    const { ToolRegistry } = await import("../tool/registry")
+    if (!(await ToolRegistry.getRunner()).projectTrusted) {
+      log.info("skipping LSP startup for untrusted project", { file })
+      return []
+    }
     const s = await state()
     const extension = path.parse(file).ext || file
     const result: LSPClient.Info[] = []

@@ -5,6 +5,8 @@ import { ExtensionContext } from "../../src/extension/context"
 import type { Extension } from "../../src/extension/types"
 import z from "zod"
 import path from "path"
+import { Instance } from "../../src/project/instance"
+import { tmpdir } from "../fixture/fixture"
 
 function makeRunner() {
   return ExtensionRunner.create(() =>
@@ -72,6 +74,26 @@ describe("ExtensionWrapper.wrapExecute", () => {
     expect(result.metadata).toEqual({ extra: true })
   })
 
+  test("emits tool_result with isError when execution fails", async () => {
+    const runner = makeRunner()
+    const events: Extension.ToolResultEvent[] = []
+    ExtensionRunner.on<Extension.ToolResultEvent>(runner, "tool_result", (event) => {
+      events.push(event)
+    })
+    const failing: ExtensionWrapper.ResolvedTool = {
+      ...fakeTool,
+      execute: async () => {
+        throw new Error("tool failed")
+      },
+    }
+    const wrapped = ExtensionWrapper.wrapExecute(failing, runner, { path: "", scope: "builtin" }, makeContextFactory())
+
+    await expect(wrapped.execute({ input: "hi" }, { callID: "failure" } as any)).rejects.toThrow("tool failed")
+    expect(events).toEqual([
+      expect.objectContaining({ toolCallId: "failure", toolName: "fake", output: "tool failed", isError: true }),
+    ])
+  })
+
   test("blocks write tool for .env file", async () => {
     const runner = makeRunner()
     const writeTool: ExtensionWrapper.ResolvedTool = {
@@ -108,6 +130,30 @@ describe("ExtensionWrapper.wrapExecute", () => {
     const wrapped = ExtensionWrapper.wrapExecute(writeTool, runner, { path: "", scope: "builtin" }, makeContextFactory())
     const nmPath = path.resolve("/tmp", "node_modules", "foo", "index.js")
     await expect(wrapped.execute({ filePath: nmPath, content: "x" }, { callID: "1" } as any)).rejects.toThrow("protected")
+  })
+
+  test("blocks patch writes to protected paths before execution", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        let executed = false
+        const patchTool: ExtensionWrapper.ResolvedTool = {
+          id: "patch",
+          description: "patch tool",
+          parameters: z.object({ patchText: z.string() }),
+          execute: async () => {
+            executed = true
+            return { title: "patched", metadata: {}, output: "ok" }
+          },
+        }
+        const wrapped = ExtensionWrapper.wrapExecute(patchTool, makeRunner(), { path: "", scope: "builtin" }, makeContextFactory())
+        const patchText = "*** Begin Patch\n*** Add File: .git/config\n+blocked\n*** End Patch"
+
+        await expect(wrapped.execute({ patchText }, { callID: "patch-protected" } as any)).rejects.toThrow("protected")
+        expect(executed).toBe(false)
+      },
+    })
   })
 })
 
