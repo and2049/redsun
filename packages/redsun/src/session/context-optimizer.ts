@@ -107,31 +107,40 @@ export namespace ContextOptimizer {
   export function limitCustomMessages(messages: ModelMessage[]): ModelMessage[] {
     const maxChars = Flag.REDSUN_EXPERIMENTAL_CUSTOM_MESSAGE_MAX_CHARS ?? DEFAULT_CUSTOM_MESSAGE_MAX_CHARS
     let chars = 0
-    let omitted = 0
-    const result: ModelMessage[] = []
+    const keep = new Set<number>()
 
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index]
       if (!isCustomMessage(message)) {
-        result.push(message)
+        keep.add(index)
         continue
       }
       const size = messageText(message).length
       if (chars + size <= maxChars) {
         chars += size
-        result.push(message)
-      } else {
-        omitted++
+        keep.add(index)
       }
     }
 
-    if (omitted > 0) {
-      result.push({
-        role: "user",
-        content: [{ type: "text" as const, text: `${CUSTOM_OMITTED} omitted_messages: ${omitted}` }],
-      })
+    const result: ModelMessage[] = []
+    const omitted = messages.filter((_, index) => !keep.has(index)).length
+    let markerAdded = false
+    for (let index = 0; index < messages.length; index++) {
+      const message = messages[index]
+      if (keep.has(index)) {
+        result.push(message)
+      } else {
+        if (!markerAdded) {
+          result.push({
+            role: "user",
+            content: [{ type: "text" as const, text: `${CUSTOM_OMITTED} omitted_messages: ${omitted}` }],
+          })
+          markerAdded = true
+        }
+      }
     }
-    return result.reverse()
+
+    return result
   }
 
   export function optimizeModelMessages(messages: ModelMessage[]): ModelMessage[] {
@@ -194,13 +203,23 @@ export namespace ContextOptimizer {
       const text = messageText(item)
       const tokens = Token.estimate(text)
       if (text.includes("[custom:")) customMessages += tokens
-      else message += tokens
-
-      if (Array.isArray(item.content)) {
-        for (const part of item.content as any[]) {
-          if (part.type === "tool-result") toolResult += Token.estimate(JSON.stringify(part))
-          if (part.type === "file" || part.type === "image") attachments += Token.estimate(part.url ?? part.image ?? "")
+      else {
+        let categorized = 0
+        if (Array.isArray(item.content)) {
+          for (const part of item.content as any[]) {
+            if (isToolResultPart(part)) {
+              const count = Token.estimate(JSON.stringify(part))
+              toolResult += count
+              categorized += count
+            }
+            if (part.type === "file" || part.type === "image") {
+              const count = Token.estimate(part.url ?? part.image ?? "")
+              attachments += count
+              categorized += count
+            }
+          }
         }
+        message += Math.max(0, tokens - categorized)
       }
     }
 

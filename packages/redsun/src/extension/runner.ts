@@ -14,7 +14,11 @@ export namespace ExtensionRunner {
     discoveredResources: { skillPaths: string[]; promptPaths: string[]; agentPaths: string[]; themePaths: string[] }
     projectTrusted: boolean
     pendingProviderRegistrations: Array<{ name: string; config: Extension.ProviderConfig; source: string }>
-    providerRegistrar?: { register: (name: string, config: Extension.ProviderConfig) => void; unregister: (name: string) => void }
+    registeredProviders: Map<string, { config: Extension.ProviderConfig; source: string }>
+    providerRegistrar?: {
+      register: (name: string, config: Extension.ProviderConfig) => void | Promise<void>
+      unregister: (name: string) => void | Promise<void>
+    }
     eventBus: Map<string, Array<(data: unknown) => void>>
     currentContext?: Extension.Context
     invalidated?: boolean
@@ -30,6 +34,7 @@ export namespace ExtensionRunner {
       discoveredResources: { skillPaths: [], promptPaths: [], agentPaths: [], themePaths: [] },
       projectTrusted: false,
       pendingProviderRegistrations: [],
+      registeredProviders: new Map(),
       eventBus: new Map(),
     }
   }
@@ -78,6 +83,10 @@ export namespace ExtensionRunner {
     return Array.from(state.activeTools)
   }
 
+  export function isToolActive(state: State, id: string) {
+    return state.activeTools.size === 0 || state.activeTools.has(id)
+  }
+
   export function getAllTools(state: State): Array<{ id: string; description: string; source: Extension.SourceInfo }> {
     return Array.from(state.tools.values()).map(({ tool, source, description }) => ({
       id: tool.id,
@@ -95,31 +104,57 @@ export namespace ExtensionRunner {
   }
 
   export function registerProvider(state: State, name: string, config: Extension.ProviderConfig, source: string) {
+    state.registeredProviders.set(name, { config, source })
     if (state.providerRegistrar) {
-      state.providerRegistrar.register(name, config)
+      void Promise.resolve(state.providerRegistrar.register(name, config)).catch((error) => {
+        log.error("provider registration failed", { name, error })
+      })
     } else {
-      state.pendingProviderRegistrations.push({ name, config, source })
+      const index = state.pendingProviderRegistrations.findIndex((entry) => entry.name === name)
+      const registration = { name, config, source }
+      if (index === -1) state.pendingProviderRegistrations.push(registration)
+      else state.pendingProviderRegistrations[index] = registration
     }
   }
 
   export function unregisterProvider(state: State, name: string) {
+    state.registeredProviders.delete(name)
     if (state.providerRegistrar) {
-      state.providerRegistrar.unregister(name)
+      void Promise.resolve(state.providerRegistrar.unregister(name)).catch((error) => {
+        log.error("provider unregistration failed", { name, error })
+      })
     } else {
       state.pendingProviderRegistrations = state.pendingProviderRegistrations.filter((r) => r.name !== name)
     }
   }
 
-  export function flushProviderRegistrations(state: State) {
+  export async function flushProviderRegistrations(state: State) {
     if (!state.providerRegistrar) return
-    for (const { name, config } of state.pendingProviderRegistrations) {
+    const pending = state.pendingProviderRegistrations
+    state.pendingProviderRegistrations = []
+    for (const { name, config } of pending) {
       try {
-        state.providerRegistrar.register(name, config)
+        await state.providerRegistrar.register(name, config)
       } catch (error) {
         log.error("provider registration failed", { name, error })
       }
     }
+  }
+
+  export async function unregisterAllProviders(state: State) {
+    const names = Array.from(state.registeredProviders.keys())
+    state.registeredProviders.clear()
     state.pendingProviderRegistrations = []
+    if (!state.providerRegistrar) return
+    await Promise.all(
+      names.map(async (name) => {
+        try {
+          await state.providerRegistrar!.unregister(name)
+        } catch (error) {
+          log.error("provider unregistration failed", { name, error })
+        }
+      }),
+    )
   }
 
   export function emitEvent(state: State, channel: string, data: unknown) {
