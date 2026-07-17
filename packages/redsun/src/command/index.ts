@@ -11,6 +11,7 @@ import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 import { ExtensionRuntime } from "@/extension/runtime"
+import { ConfigCommand } from "@/config/command"
 
 type State = {
   commands: Record<string, Info>
@@ -102,7 +103,13 @@ const layer = Layer.effect(
         hints: ["yes", "no"],
       }
 
-      for (const [name, command] of Object.entries(cfg.command ?? {})) {
+      const configured = {
+        ...(cfg.command ?? {}),
+        ...(yield* Effect.promise(() =>
+          ConfigCommand.loadPaths(ExtensionRuntime.resourcesFor(ctx.directory)?.promptPaths ?? []),
+        )),
+      }
+      for (const [name, command] of Object.entries(configured)) {
         commands[name] = {
           name,
           agent: command.agent,

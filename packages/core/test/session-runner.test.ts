@@ -1109,6 +1109,8 @@ describe("SessionRunnerLLM", () => {
 
       expect(requests).toHaveLength(2)
       expect(userTexts(requests[0])[0]).toContain("## Objective")
+      expect(userTexts(requests[0])[0]).toContain("## Structured Inventory")
+      expect(userTexts(requests[0])[0]).toContain("Earlier question")
       expect(userTexts(requests[1])).toHaveLength(1)
       expect(userTexts(requests[1])[0]).toContain("<summary>\n## Objective\n- Preserve the task\n</summary>")
       expect(userTexts(requests[1])[0]).toContain(`[User]: ${"Recent exact request ".repeat(180)}`)

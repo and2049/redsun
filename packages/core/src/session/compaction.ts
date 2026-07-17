@@ -8,6 +8,9 @@ import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { Token } from "../util/token"
+import { extract, serialize as serializeInventory } from "./compaction-inventory"
+
+export { extract as extractInventory, serialize as serializeInventory } from "./compaction-inventory"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -145,24 +148,24 @@ const settings = (documents: readonly Config.Entry[]) => {
 const select = (
   entries: readonly Entry[],
   tokens: number,
-): { readonly head: string; readonly recent: string } | undefined => {
+): { readonly head: string; readonly headMessages: readonly SessionMessage.Message[]; readonly recent: string } | undefined => {
   const conversation = entries
     .filter((entry) => entry.message.type !== "compaction")
-    .map((entry) => serialize(entry.message))
-    .filter(Boolean)
+    .map((entry) => ({ message: entry.message, text: serialize(entry.message) }))
+    .filter((entry) => entry.text)
   if (conversation.length === 0) return
   let total = 0
   let split = conversation.length
   let splitPrefix = ""
   let splitSuffix = ""
   for (let index = conversation.length - 1; index >= 0; index--) {
-    const next = total + Token.estimate(conversation[index])
+    const next = total + Token.estimate(conversation[index].text)
     if (next > tokens) {
+      split = index + 1
       const remaining = Math.max(0, tokens - total) * 4
       if (remaining > 0) {
-        splitPrefix = conversation[index].slice(0, -remaining)
-        splitSuffix = conversation[index].slice(-remaining)
-        split = index + 1
+        splitPrefix = conversation[index].text.slice(0, -remaining)
+        splitSuffix = conversation[index].text.slice(-remaining)
       }
       break
     }
@@ -170,8 +173,9 @@ const select = (
     split = index
   }
   return {
-    head: [...conversation.slice(0, split), splitPrefix].filter(Boolean).join("\n\n"),
-    recent: [splitSuffix, ...conversation.slice(split)].filter(Boolean).join("\n\n"),
+    head: [...conversation.slice(0, split).map((entry) => entry.text), splitPrefix].filter(Boolean).join("\n\n"),
+    headMessages: conversation.slice(0, split).map((entry) => entry.message),
+    recent: [splitSuffix, ...conversation.slice(split).map((entry) => entry.text)].filter(Boolean).join("\n\n"),
   }
 }
 
@@ -234,17 +238,33 @@ export const make = (dependencies: Dependencies) => {
     const source = [previousSummary?.type === "compaction" ? previousSummary.recent : "", selected.head]
       .filter(Boolean)
       .join("\n\n")
-    const inventory = algorithmicSummary({
-      head: source,
-      previousSummary: previous,
-      maxToolResults: config.maxToolResults,
-    })
-    const recent = selected.head.split("\n\n").slice(-config.keepRecent).join("\n\n")
+    const extracted = serializeInventory(extract(selected.headMessages, config.maxToolResults))
+    const inventory =
+      extracted.length <= INVENTORY_MAX_CHARS ? extracted : `${extracted.slice(0, INVENTORY_MAX_CHARS)}\n[truncated]`
+    const recent = [
+      previousSummary?.type === "compaction" ? previousSummary.recent : "",
+      ...selected.headMessages.slice(-config.keepRecent).map(serialize),
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+    const algorithmic = [
+      previous ? `## Previous Summary\n\n${previous}` : "",
+      previousSummary?.type === "compaction" && previousSummary.recent
+        ? `## Recent Exact Context\n\n${previousSummary.recent}`
+        : "",
+      inventory,
+    ]
+      .filter(Boolean)
+      .join("\n\n")
     const summaryPrompt = buildPrompt({
       previousSummary: previous,
-      context: config.strategy === "hybrid" ? [inventory, recent].filter(Boolean) : [source],
+      context:
+        config.strategy === "hybrid"
+          ? [inventory ? `## Structured Inventory\n\n${inventory}` : "", recent].filter(Boolean)
+          : [source],
     })
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
+    if (config.strategy === "algorithmic" && !algorithmic.trim()) return false
     if (config.strategy !== "algorithmic" && Token.estimate(summaryPrompt) > context - summaryOutput) return false
     const messageID = SessionMessage.ID.create()
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
@@ -260,7 +280,7 @@ export const make = (dependencies: Dependencies) => {
         messageID,
         timestamp: yield* DateTime.now,
         reason: "auto",
-        text: inventory,
+        text: algorithmic,
         recent: selected.recent,
       })
       return true

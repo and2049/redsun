@@ -57,3 +57,26 @@ export async function loadMode(dir: string) {
   }
   return result
 }
+
+export async function loadPaths(paths: string[]) {
+  const result: Record<string, ConfigAgentV1.Info> = {}
+  for (const root of paths) {
+    const info = await Bun.file(root).stat().catch(() => undefined)
+    const files = info?.isDirectory()
+      ? await Glob.scan("**/*.md", { cwd: root, absolute: true, dot: true, symlink: true })
+      : info?.isFile() && root.endsWith(".md")
+        ? [root]
+        : []
+    for (const item of files) {
+      const md = await ConfigMarkdown.parse(item).catch(() => undefined)
+      if (!md) continue
+      const name = path.basename(item, ".md")
+      result[name] = ConfigParse.schema(
+        ConfigAgentV1.Info,
+        { name, ...md.data, prompt: md.content.trim() },
+        item,
+      )
+    }
+  }
+  return result
+}

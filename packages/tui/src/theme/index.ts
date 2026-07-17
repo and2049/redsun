@@ -34,6 +34,8 @@ import vesper from "./assets/vesper.json" with { type: "json" }
 import zenburn from "./assets/zenburn.json" with { type: "json" }
 
 export type Theme = {
+  readonly logoGradientStart?: RGBA
+  readonly logoGradientEnd?: RGBA
   readonly primary: RGBA
   readonly secondary: RGBA
   readonly accent: RGBA
@@ -120,7 +122,12 @@ type ColorValue = HexColor | RefName | Variant | RGBA
 export type ThemeJson = {
   $schema?: string
   defs?: Record<string, HexColor | RefName>
-  theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu"> & {
+  theme: Omit<
+    Record<ThemeColor, ColorValue>,
+    "logoGradientStart" | "logoGradientEnd" | "selectedListItemText" | "backgroundMenu"
+  > & {
+    logoGradientStart?: ColorValue
+    logoGradientEnd?: ColorValue
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
     thinkingOpacity?: number
@@ -270,6 +277,9 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
         return [key, resolveColor(value as ColorValue)]
       }),
   ) as Partial<Record<ThemeColor, RGBA>>
+
+  resolved.logoGradientStart = resolveColor(theme.theme.logoGradientStart ?? "#5476E5")
+  resolved.logoGradientEnd = resolveColor(theme.theme.logoGradientEnd ?? "#FF7399")
 
   // Handle selectedListItemText separately since it's optional
   const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined

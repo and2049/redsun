@@ -57,7 +57,8 @@ import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
 import { useLocation } from "../../context/location"
-import { transition, type VimMode } from "../../vim"
+import { useVim } from "../../context/vim"
+import { transition } from "../../vim"
 
 registerOpencodeSpinner()
 
@@ -145,7 +146,7 @@ export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable | undefined>()
-  const [vimMode, setVimMode] = createSignal<VimMode>("insert")
+  const vim = useVim()
 
   const leader = useLeaderActive()
   const local = useLocal()
@@ -250,9 +251,14 @@ export function Prompt(props: PromptProps) {
   })
 
   createEffect(() => {
+    const inactive = props.disabled || vim.mode !== "insert"
     if (!input || input.isDestroyed) return
-    if (props.disabled) input.cursorColor = theme.backgroundElement
-    if (!props.disabled) input.cursorColor = theme.text
+    input.cursorColor = inactive ? theme.backgroundElement : theme.text
+    if (vim.mode === "command") {
+      input.blur()
+      return
+    }
+    if (!props.disabled) input.focus()
   })
 
   const lastUserMessage = createMemo(() => {
@@ -1307,7 +1313,9 @@ export function Prompt(props: PromptProps) {
     () => !!local.agent.current() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
-  const borderHighlight = createMemo(() => tint(theme.border, highlight(), agentMetaAlpha()))
+  const borderHighlight = createMemo(() =>
+    vim.mode === "insert" ? tint(theme.border, highlight(), agentMetaAlpha()) : theme.border,
+  )
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1371,8 +1379,8 @@ export function Prompt(props: PromptProps) {
               width="100%"
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
-              textColor={leader() ? theme.textMuted : theme.text}
-              focusedTextColor={leader() ? theme.textMuted : theme.text}
+              textColor={leader() || vim.mode !== "insert" ? theme.textMuted : theme.text}
+              focusedTextColor={leader() || vim.mode !== "insert" ? theme.textMuted : theme.text}
               minHeight={1}
               maxHeight={maxHeight()}
               onContentChange={() => {
@@ -1388,20 +1396,15 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
-                const next = transition(vimMode(), e)
+                const next = transition(vim.mode, e)
                 if (next) {
                   e.preventDefault()
-                  setVimMode(next)
-                  if (next === "command") {
-                    input.setText("/")
-                    input.gotoBufferEnd()
-                  }
+                  vim.setMode(next)
                   return
                 }
-                if (vimMode() === "normal") e.preventDefault()
+                if (vim.mode !== "insert") e.preventDefault()
               }}
               onSubmit={() => {
-                if (vimMode() === "command") setVimMode("normal")
                 // IME: double-defer so the last composed character (e.g. Korean
                 // hangul) is flushed to plainText before we read it for submission.
                 setTimeout(() => setTimeout(() => submit(), 0), 0)
@@ -1444,17 +1447,16 @@ export function Prompt(props: PromptProps) {
                 setTimeout(() => {
                   // setTimeout is a workaround and needs to be addressed properly
                   if (!input || input.isDestroyed) return
-                  input.cursorColor = theme.text
+                  input.cursorColor = props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
               focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={props.disabled ? theme.backgroundElement : theme.text}
+              cursorColor={props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text}
               syntaxStyle={syntax()}
             />
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1}>
-                <text fg={theme.textMuted}>{vimMode().toUpperCase()}</text>
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
                     <>

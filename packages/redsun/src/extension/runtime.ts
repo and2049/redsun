@@ -18,11 +18,15 @@ export type State = {
   modelOverrides: Map<string, string>
   current?: Extension.Context
   eventBus: Map<string, Array<(data: unknown) => void>>
-  pendingContext: string[]
   providers: Map<string, Extension.ProviderConfig>
   plugin: PluginInput
   resources: { skillPaths: string[]; promptPaths: string[]; themePaths: string[]; agentPaths: string[] }
   turns: Map<string, number>
+  statuses: Map<string, "busy" | "retry">
+  systemPrompts: Map<string, string>
+  extensionCompactions: Set<string>
+  contextWindows: Map<string, number>
+  contextUsage: Map<string, Extension.ContextUsage>
 }
 
 const states = new Map<string, State>()
@@ -70,34 +74,71 @@ export async function runCommand(directory: string, name: string, args: string, 
   const command = state?.commands.get(name)
   if (!state || !command) return false
   const base = context(state, { sessionID, agent })
-  await command.handler(args, {
-    ...base,
-    reload: async () => {
-      const { InstanceRuntime } = await import("@/project/instance-runtime")
-      setTimeout(() => void InstanceRuntime.reloadInstance({ directory: state.plugin.directory }), 250)
-    },
-    newSession: async () => ({ sessionID }),
-    fork: async () => ({ sessionID }),
-  })
+  const previous = state.current
+  state.current = base
+  try {
+    await command.handler(args, {
+      ...base,
+      reload: async () => {
+        const { InstanceRuntime } = await import("@/project/instance-runtime")
+        setTimeout(() => void InstanceRuntime.reloadInstance({ directory: state.plugin.directory }), 250)
+      },
+      newSession: async (options) => {
+        const result = await state.plugin.client.session.create({ body: { parentID: options?.parentSession ?? sessionID } })
+        const created = result.data?.id
+        if (!created) throw new Error("Failed to create session")
+        return { sessionID: created }
+      },
+      fork: async (entryId) => {
+        const result = await state.plugin.client.session.fork({ path: { id: sessionID }, body: { messageID: entryId } })
+        const forked = result.data?.id
+        if (!forked) throw new Error("Failed to fork session")
+        return { sessionID: forked }
+      },
+    })
+  } finally {
+    state.current = previous
+  }
   return true
 }
 
 function context(state: State, input: { sessionID?: string; agent?: string; signal?: AbortSignal } = {}): Extension.Context {
+  const sessionID = input.sessionID ?? ""
   return {
     mode: "rpc",
     hasUI: false,
     cwd: state.directory,
-    sessionID: input.sessionID ?? "",
+    sessionID,
     agent: input.agent ?? "",
     signal: input.signal,
     isProjectTrusted: () => state.trusted,
-    getSystemPrompt: () => "",
-    abort: () => {},
-    isIdle: () => true,
-    hasPendingMessages: () => false,
-    getContextUsage: () => undefined,
-    getEntries: (customType) => readEntries(input.sessionID ?? "", customType),
-    compact: async () => {},
+    getSystemPrompt: () => state.systemPrompts.get(sessionID) ?? "",
+    abort: () => {
+      if (!sessionID) return
+      void state.plugin.client.session
+        .abort({ path: { id: sessionID } })
+        .then(undefined, (error) => console.error(`Failed to abort session ${sessionID}`, error))
+    },
+    isIdle: () => !state.statuses.has(sessionID),
+    hasPendingMessages: () => state.statuses.get(sessionID) === "busy",
+    getContextUsage: () => state.contextUsage.get(sessionID),
+    getEntries: (customType) => readEntries(sessionID, customType),
+    compact: async () => {
+      if (!sessionID) return
+      const result = await state.plugin.client.session.messages({ path: { id: sessionID }, query: { limit: 10 } })
+      const info = result.data?.findLast((message) => message.info.role === "user")?.info
+      if (!info || info.role !== "user") throw new Error(`Cannot compact session ${sessionID} without a user model`)
+      state.extensionCompactions.add(sessionID)
+      await state.plugin.client.session
+        .summarize({
+          path: { id: sessionID },
+          body: { providerID: info.model.providerID, modelID: info.model.modelID },
+        })
+        .catch((error) => {
+          state.extensionCompactions.delete(sessionID)
+          throw error
+        })
+    },
     ui: {
       notify: (message, type = "info") => console[type === "warning" ? "warn" : type](message),
       confirm: async () => false,
@@ -131,10 +172,39 @@ function merge(current: Extension.EventResult, next: Extension.EventResult, type
     return value.block ? value : current
   }
   if (type === "tool_result") return { ...(current as object), ...(next as object) }
+  if (type === "project_trust") {
+    const a = current as { trusted: "yes" | "no" | "undecided" }
+    const b = next as typeof a
+    return a.trusted === "undecided" ? b : a
+  }
+  if (type === "before_agent_start") {
+    const a = current as { systemPrompt?: string }
+    const b = next as typeof a
+    return { systemPrompt: b.systemPrompt ?? a.systemPrompt }
+  }
+  if (type === "context") {
+    const a = current as { messages?: unknown[] }
+    const b = next as typeof a
+    return { messages: b.messages ?? a.messages }
+  }
   if (type === "session_before_compact") {
     const a = current as { context?: string[]; prompt?: string; cancel?: boolean }
     const b = next as typeof a
-    return { ...a, ...b, context: [...(a.context ?? []), ...(b.context ?? [])] }
+    return {
+      prompt: b.prompt ?? a.prompt,
+      cancel: a.cancel === true || b.cancel === true,
+      context: [...(a.context ?? []), ...(b.context ?? [])],
+    }
+  }
+  if (type === "resources_discover" || type === "agents_register") {
+    const a = current as { skillPaths?: string[]; promptPaths?: string[]; themePaths?: string[]; agentPaths?: string[] }
+    const b = next as typeof a
+    return {
+      skillPaths: [...new Set([...(a.skillPaths ?? []), ...(b.skillPaths ?? [])])],
+      promptPaths: [...new Set([...(a.promptPaths ?? []), ...(b.promptPaths ?? [])])],
+      themePaths: [...new Set([...(a.themePaths ?? []), ...(b.themePaths ?? [])])],
+      agentPaths: [...new Set([...(a.agentPaths ?? []), ...(b.agentPaths ?? [])])],
+    }
   }
   return next
 }
@@ -163,14 +233,21 @@ async function appendEntry(sessionID: string, entry: Record<string, unknown>) {
 }
 
 function api(state: State, source: Extension.SourceInfo): Extension.API {
+  const assertActive = () => {
+    if (!state.invalidated) return
+    throw new Error("This extension API is no longer valid because the runtime was reloaded")
+  }
   return {
     on(event, handler) {
+      assertActive()
       const list = state.handlers.get(event) ?? []
       list.push(handler as Extension.Handler)
       state.handlers.set(event, list)
     },
     async registerTool(tool, override) {
+      assertActive()
       const resolved = await tool.init()
+      assertActive()
       state.tools.set(tool.id, {
         description: resolved.description,
         source: override ?? source,
@@ -181,30 +258,95 @@ function api(state: State, source: Extension.SourceInfo): Extension.API {
         },
       })
     },
-    unregisterTool: (id) => state.tools.delete(id),
-    setActiveTools: (ids) => (state.activeTools = new Set(ids)),
-    getActiveTools: () => Array.from(state.activeTools),
-    getAllTools: () => Array.from(state.tools, ([id, item]) => ({ id, description: item.description, source: item.source })),
-    registerCommand: (command) => state.commands.set(command.name, command),
-    unregisterCommand: (name) => state.commands.delete(name),
-    sendMessage: (content) => state.pendingContext.push(content),
-    sendUserMessage: (content) => state.pendingContext.push(content),
-    appendEntry: (sessionID, customType, data) => appendEntry(sessionID, { customType, data }),
-    appendCustomMessageEntry: (sessionID, customType, content, display, details) =>
-      appendEntry(sessionID, { customType, content, display, details, customMessage: true }),
+    unregisterTool(id) {
+      assertActive()
+      state.tools.delete(id)
+    },
+    setActiveTools(ids) {
+      assertActive()
+      state.activeTools = new Set(ids)
+    },
+    getActiveTools() {
+      assertActive()
+      return Array.from(state.activeTools)
+    },
+    getAllTools() {
+      assertActive()
+      return Array.from(state.tools, ([id, item]) => ({ id, description: item.description, source: item.source }))
+    },
+    registerCommand(command) {
+      assertActive()
+      state.commands.set(command.name, command)
+    },
+    unregisterCommand(name) {
+      assertActive()
+      state.commands.delete(name)
+    },
+    sendMessage(content) {
+      assertActive()
+      const sessionID = state.current?.sessionID
+      if (!sessionID) return
+      const agent = state.current?.agent || "build"
+      void appendEntry(sessionID, {
+        customType: "extension.message",
+        content,
+        display: true,
+        customMessage: true,
+      })
+        .then(() => {
+          if (state.invalidated || state.statuses.has(sessionID)) return
+          return state.plugin.client.session.promptAsync({
+            path: { id: sessionID },
+            body: {
+              agent,
+              parts: [{ type: "text", text: "Continue.", synthetic: true }],
+            },
+          })
+        })
+        .then(undefined, (error) => console.error(`Failed to send extension message to ${sessionID}`, error))
+    },
+    sendUserMessage(content) {
+      assertActive()
+      const sessionID = state.current?.sessionID
+      if (!sessionID) return
+      const agent = state.current?.agent || "build"
+      void state.plugin.client.session
+        .promptAsync({
+          path: { id: sessionID },
+          body: { agent, parts: [{ type: "text", text: content }] },
+        })
+        .then(undefined, (error) => console.error(`Failed to send extension user message to ${sessionID}`, error))
+    },
+    appendEntry(sessionID, customType, data) {
+      assertActive()
+      return appendEntry(sessionID, { customType, data })
+    },
+    appendCustomMessageEntry(sessionID, customType, content, display, details) {
+      assertActive()
+      return appendEntry(sessionID, { customType, content, display: display ?? true, details, customMessage: true })
+    },
     async setModel(model) {
+      assertActive()
       const sessionID = state.current?.sessionID
       if (!sessionID || !model.includes("/")) return false
       state.modelOverrides.set(sessionID, model)
       return true
     },
-    registerProvider: (name, config) => state.providers.set(name, config),
-    unregisterProvider: (name) => state.providers.delete(name),
+    registerProvider(name, config) {
+      assertActive()
+      state.providers.set(name, config)
+    },
+    unregisterProvider(name) {
+      assertActive()
+      state.providers.delete(name)
+    },
     events: {
       emit(channel, data) {
+        assertActive()
         for (const handler of state.eventBus.get(channel) ?? []) handler(data)
       },
       on(channel, handler) {
+        assertActive()
         const list = state.eventBus.get(channel) ?? []
         list.push(handler)
         state.eventBus.set(channel, list)
@@ -264,11 +406,15 @@ export async function create(input: {
     activeTools: new Set(),
     modelOverrides: new Map(),
     eventBus: new Map(),
-    pendingContext: [],
     providers: new Map(),
     plugin: input.plugin,
     resources: { skillPaths: [], promptPaths: [], themePaths: [], agentPaths: [] },
     turns: new Map(),
+    statuses: new Map(),
+    systemPrompts: new Map(),
+    extensionCompactions: new Set(),
+    contextWindows: new Map(),
+    contextUsage: new Map(),
   }
   states.set(directory, state)
 
@@ -295,7 +441,11 @@ export async function create(input: {
     if (!result || typeof result !== "object") continue
     for (const key of ["skillPaths", "promptPaths", "themePaths", "agentPaths"] as const) {
       const values = (result as Record<string, unknown>)[key]
-      if (Array.isArray(values)) state.resources[key].push(...values.filter((item): item is string => typeof item === "string"))
+      if (Array.isArray(values)) {
+        state.resources[key] = [
+          ...new Set([...state.resources[key], ...values.filter((item): item is string => typeof item === "string")]),
+        ]
+      }
     }
   }
   await emit(state, { type: "session_start", reason: "startup" })
@@ -347,6 +497,8 @@ export async function create(input: {
       if (input.sessionID) {
         const turnIndex = (state.turns.get(input.sessionID) ?? 0) + 1
         state.turns.set(input.sessionID, turnIndex)
+        state.contextWindows.set(input.sessionID, input.model.limit.context)
+        state.systemPrompts.set(input.sessionID, output.system.join("\n"))
         await emit(state, { type: "turn_start", turnIndex }, context(state, { sessionID: input.sessionID }))
       }
       const current = output.system.join("\n")
@@ -356,7 +508,7 @@ export async function create(input: {
         context(state, { sessionID: input.sessionID }),
       )) as { systemPrompt?: string } | undefined
       if (result?.systemPrompt !== undefined) output.system = [result.systemPrompt]
-      if (state.pendingContext.length) output.system.push(...state.pendingContext.splice(0))
+      if (input.sessionID) state.systemPrompts.set(input.sessionID, output.system.join("\n"))
     },
     async "experimental.chat.messages.transform"(_input, output) {
       const sessionID = output.messages.findLast((message) => "sessionID" in message.info)?.info.sessionID
@@ -381,8 +533,28 @@ export async function create(input: {
       if (result?.prompt) output.prompt = result.prompt
     },
     async event({ event }) {
+      if (event.type === "message.updated") {
+        const info = event.properties.info
+        if (info.role === "assistant") {
+          const contextWindow = state.contextWindows.get(info.sessionID)
+          if (contextWindow !== undefined) {
+            const tokens = info.tokens.input + info.tokens.output + info.tokens.reasoning
+            state.contextUsage.set(info.sessionID, {
+              tokens,
+              contextWindow,
+              percent: contextWindow > 0 ? (tokens / contextWindow) * 100 : null,
+            })
+          }
+        }
+      }
+      if (event.type === "session.status") {
+        const properties = event.properties as { sessionID: string; status: { type: "idle" | "busy" | "retry" } }
+        if (properties.status.type === "idle") state.statuses.delete(properties.sessionID)
+        else state.statuses.set(properties.sessionID, properties.status.type)
+      }
       if (event.type === "session.idle") {
         const properties = event.properties as { sessionID?: string }
+        state.statuses.delete(properties.sessionID ?? "")
         const turnIndex = state.turns.get(properties.sessionID ?? "") ?? 0
         await emit(state, { type: "turn_end", turnIndex }, context(state, { sessionID: properties.sessionID }))
       }
@@ -390,7 +562,11 @@ export async function create(input: {
         const properties = event.properties as { sessionID: string }
         await emit(
           state,
-          { type: "session_compact", sessionID: properties.sessionID, fromExtension: false },
+          {
+            type: "session_compact",
+            sessionID: properties.sessionID,
+            fromExtension: state.extensionCompactions.delete(properties.sessionID),
+          },
           context(state, { sessionID: properties.sessionID }),
         )
       }

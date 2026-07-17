@@ -1,58 +1,60 @@
 import { RGBA, TextAttributes } from "@opentui/core"
-import { For, type JSX } from "solid-js"
-import { tint, useTheme } from "../context/theme"
-import { logo } from "../logo"
+import { For } from "solid-js"
+import { useTheme } from "../context/theme"
+
+const LOGO = [
+  `██╗      ██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗`,
+  `╚██╗     ██╔══██╗██╔════╝██╔══██╗██╔════╝██║░░░██║████╗░░██║`,
+  ` ╚██╗    ██████╔╝█████╗░░██║░░██║███████╗██║░░░██║██╔██╗░██║`,
+  ` ██╔╝    ██╔══██╗██╔══╝░░██║░░██║╚════██║██║░░░██║██║╚██╗██║`,
+  `██╔╝     ██║  ██║███████╗██████╔╝███████║╚██████╔╝██║░╚████║`,
+  `╚═╝      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝`,
+]
+const GRADIENT_START = RGBA.fromHex("#5476E5")
+const GRADIENT_END = RGBA.fromHex("#FF7399")
 
 export function Logo() {
   const { theme } = useTheme()
+  const width = LOGO[0].length
 
-  const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
-    const shadow = tint(theme.background, fg, 0.25)
-    const attrs = bold ? TextAttributes.BOLD : undefined
-    return Array.from(line).map((char) => {
-      if (char === "_") {
-        return (
-          <text fg={fg} bg={shadow} attributes={attrs} selectable={false}>
-            {" "}
-          </text>
-        )
-      }
-      if (char === "^") {
-        return (
-          <text fg={fg} bg={shadow} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
-      if (char === "~") {
-        return (
-          <text fg={shadow} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
-      if (char === ",") {
-        return (
-          <text fg={shadow} attributes={attrs} selectable={false}>
-            ▄
-          </text>
-        )
-      }
-      return (
-        <text fg={fg} attributes={attrs} selectable={false}>
-          {char}
-        </text>
-      )
-    })
+  const color = (index: number) => {
+    const progress = index / width
+    const start = theme.logoGradientStart ?? GRADIENT_START
+    const end = theme.logoGradientEnd ?? GRADIENT_END
+    return RGBA.fromValues(
+      start.r + (end.r - start.r) * progress,
+      start.g + (end.g - start.g) * progress,
+      start.b + (end.b - start.b) * progress,
+      1,
+    )
+  }
+
+  const shadow = (index: number) => {
+    const foreground = color(index)
+    return RGBA.fromValues(
+      foreground.r * 0.4 + theme.background.r * 0.6,
+      foreground.g * 0.4 + theme.background.g * 0.6,
+      foreground.b * 0.4 + theme.background.b * 0.6,
+      1,
+    )
   }
 
   return (
     <box>
-      <For each={logo.left}>
-        {(line, index) => (
-          <box flexDirection="row" gap={1}>
-            <box flexDirection="row">{renderLine(line, theme.textMuted, false)}</box>
-            <box flexDirection="row">{renderLine(logo.right[index()], theme.text, true)}</box>
+      <For each={LOGO}>
+        {(line) => (
+          <box flexDirection="row">
+            <For each={Array.from(line)}>
+              {(char, index) => (
+                <text
+                  fg={char === "█" ? color(index()) : shadow(index())}
+                  attributes={char === "█" ? TextAttributes.BOLD : undefined}
+                  selectable={false}
+                >
+                  {char}
+                </text>
+              )}
+            </For>
           </box>
         )}
       </For>
