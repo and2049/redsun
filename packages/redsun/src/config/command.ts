@@ -7,6 +7,7 @@ import { ConfigCommandV1 } from "@opencode-ai/core/v1/config/command"
 import { configEntryNameFromPath } from "./entry-name"
 import { InvalidError } from "@opencode-ai/core/v1/config/error"
 import * as ConfigMarkdown from "./markdown"
+import { ConfigParse } from "./parse"
 
 const decodeInfo = Schema.decodeUnknownExit(ConfigCommandV1.Info)
 
@@ -34,6 +35,32 @@ export async function load(dir: string) {
       continue
     }
     throw new InvalidError({ path: item, message: Cause.pretty(parsed.cause) }, { cause: Cause.squash(parsed.cause) })
+  }
+  return result
+}
+
+export async function loadPaths(paths: string[]) {
+  const result: Record<string, ConfigCommandV1.Info> = {}
+  for (const root of paths) {
+    const info = await Bun.file(root).stat().catch(() => undefined)
+    const files = info?.isDirectory()
+      ? await Glob.scan("**/*.md", { cwd: root, absolute: true, dot: true, symlink: true })
+      : info?.isFile() && root.endsWith(".md")
+        ? [root]
+        : []
+    for (const item of files) {
+      const md = await ConfigMarkdown.parse(item).catch(() => undefined)
+      if (!md) continue
+      const name = typeof md.data.name === "string" && md.data.name ? md.data.name : path.basename(item, ".md")
+      result[name] = ConfigParse.schema(
+        ConfigCommandV1.Info,
+        {
+          ...Object.fromEntries(Object.entries(md.data).filter(([key]) => key !== "name")),
+          template: md.content.trim(),
+        },
+        item,
+      )
+    }
   }
   return result
 }

@@ -4,6 +4,7 @@ import type { z } from "zod"
 export namespace Extension {
   export type Mode = "tui" | "print" | "rpc"
   export type SourceInfo = { path: string; scope: "user" | "project" | "npm" | "builtin" }
+  export type ContextUsage = { tokens: number | null; contextWindow: number; percent: number | null }
   export type Context = {
     mode: Mode
     hasUI: boolean
@@ -16,7 +17,7 @@ export namespace Extension {
     abort(): void
     isIdle(): boolean
     hasPendingMessages(): boolean
-    getContextUsage(): undefined
+    getContextUsage(): ContextUsage | undefined
     getEntries<T = unknown>(customType: string): Promise<Array<{ customType: string; data?: T; details?: T }>>
     compact(): Promise<void>
     ui: {
@@ -116,4 +117,3 @@ export namespace Extension {
   export type Factory = (api: API) => void | Promise<void>
   export type Loaded = { resolvedPath: string; sourceInfo: SourceInfo; factory: Factory }
 }
-
