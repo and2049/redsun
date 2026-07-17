@@ -15,6 +15,7 @@ import { fileURLToPath } from "url"
 import { Flag } from "@/flag/flag.ts"
 import path from "path"
 import { Shell } from "@/shell/shell"
+import { defer } from "@/util/defer"
 
 const MAX_OUTPUT_LENGTH = Flag.REDSUN_EXPERIMENTAL_BASH_MAX_OUTPUT_LENGTH || 30_000
 const DEFAULT_TIMEOUT = Flag.REDSUN_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS || 2 * 60 * 1000
@@ -89,11 +90,12 @@ export const BashTool = Tool.define("bash", async () => {
       if (!tree) {
         throw new Error("Failed to parse command")
       }
+      using _tree = defer(() => tree.delete())
       const agent = await Agent.get(ctx.agent)
 
       const checkExternalDirectory = async (dir: string) => {
-        if (Filesystem.contains(Instance.directory, dir)) return
-        const title = `This command references paths outside of ${Instance.directory}`
+        if (Instance.containsPath(dir)) return
+        const title = `This command references paths outside of ${Instance.worktree}`
         if (agent.permission.external_directory === "ask") {
           await Permission.ask({
             type: "external_directory",
@@ -120,6 +122,12 @@ export const BashTool = Tool.define("bash", async () => {
       }
 
       await checkExternalDirectory(cwd)
+
+      for (const redirect of tree.rootNode.descendantsOfType("file_redirect")) {
+        const target = redirect?.children.at(-1)?.text
+        if (!target || target.startsWith("&") || target === "/dev/null" || target.toLowerCase() === "nul") continue
+        await checkExternalDirectory(path.resolve(cwd, unquotePathArg(target)))
+      }
 
       const permissions = agent.permission.bash
 
@@ -278,7 +286,7 @@ export const BashTool = Tool.define("bash", async () => {
           ctx.abort.removeEventListener("abort", abortHandler)
         }
 
-proc.once("exit", () => {
+        proc.once("exit", () => {
           exited = true
         })
 

@@ -172,7 +172,7 @@ export namespace OpenAICodexOAuth {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
         res.end(successHTML())
       })
-      server.listen(OAUTH_PORT, "127.0.0.1", () =>
+      server.listen(OAUTH_PORT, "localhost", () =>
         resolve({
           ready: true,
           close: () => server?.close(),

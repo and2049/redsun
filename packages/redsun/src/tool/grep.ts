@@ -4,6 +4,10 @@ import { Ripgrep } from "../file/ripgrep"
 
 import DESCRIPTION from "./grep.txt"
 import { Instance } from "../project/instance"
+import path from "path"
+import { Filesystem } from "../util/filesystem"
+import { Agent } from "../agent/agent"
+import { Permission } from "../permission"
 
 const MAX_LINE_LENGTH = 2000
 
@@ -14,12 +18,36 @@ export const GrepTool = Tool.define("grep", {
     path: z.string().optional().describe("The directory to search in. Defaults to the current working directory."),
     include: z.string().optional().describe('File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")'),
   }),
-  async execute(params) {
+  async execute(params, ctx) {
     if (!params.pattern) {
       throw new Error("pattern is required")
     }
 
-    const searchPath = params.path || Instance.directory
+    const requested = params.path || Instance.directory
+    const searchPath = path.isAbsolute(requested) ? requested : path.join(Instance.directory, requested)
+    if (!Instance.containsPath(searchPath)) {
+      const agent = await Agent.get(ctx.agent)
+      const parentDir = path.dirname(searchPath)
+      if (agent.permission.external_directory === "ask") {
+        await Permission.ask({
+          type: "external_directory",
+          pattern: [searchPath, path.join(parentDir, "*")],
+          sessionID: ctx.sessionID,
+          messageID: ctx.messageID,
+          callID: ctx.callID,
+          title: `Search outside working directory: ${searchPath}`,
+          metadata: { searchPath },
+        })
+      } else if (agent.permission.external_directory === "deny") {
+        throw new Permission.RejectedError(
+          ctx.sessionID,
+          "external_directory",
+          ctx.callID,
+          { searchPath },
+          `Path ${searchPath} is not in the current working directory`,
+        )
+      }
+    }
 
     const rgPath = await Ripgrep.filepath()
     const args = ["-nH", "--field-match-separator=|", "--regexp", params.pattern]

@@ -150,6 +150,7 @@
   "patchedDependencies": {
     "@ai-sdk/xai@2.0.42": "patches/@ai-sdk%2Fxai@2.0.42.patch",
     "@ai-sdk/openai@2.0.71": "patches/@ai-sdk%2Fopenai@2.0.71.patch",
+    "@modelcontextprotocol/sdk@1.15.1": "patches/@modelcontextprotocol%2Fsdk@1.15.1.patch",
   },
   "overrides": {
     "@types/bun": "catalog:",

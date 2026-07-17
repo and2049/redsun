@@ -1,4 +1,4 @@
-import type { APICallError, ModelMessage } from "ai"
+import type { APICallError, ModelMessage, ToolResultPart } from "ai"
 import { mergeDeep, unique } from "remeda"
 import type { JSONSchema } from "zod/v4/core"
 import type { Provider } from "./provider"
@@ -15,6 +15,37 @@ function mimeToModality(mime: string): Modality | undefined {
   if (mime.startsWith("video/")) return "video"
   if (mime === "application/pdf") return "pdf"
   return undefined
+}
+
+function sdkKey(npm: string): string | undefined {
+  switch (npm) {
+    case "@ai-sdk/github-copilot":
+      return "copilot"
+    case "@ai-sdk/azure":
+      return "azure"
+    case "@ai-sdk/openai":
+    case "@ai-sdk/amazon-bedrock/mantle":
+      return "openai"
+    case "@ai-sdk/amazon-bedrock":
+      return "bedrock"
+    case "@ai-sdk/anthropic":
+    case "@ai-sdk/google-vertex/anthropic":
+      return "anthropic"
+    case "@ai-sdk/google-vertex":
+      return "vertex"
+    case "@ai-sdk/google":
+      return "google"
+    case "@ai-sdk/gateway":
+      return "gateway"
+    case "@openrouter/ai-sdk-provider":
+      return "openrouter"
+    case "ai-gateway-provider":
+      return "openaiCompatible"
+  }
+}
+
+export function sanitizeSurrogates(content: string) {
+  return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
 }
 
 function isPlainObject(value: unknown): value is JsonRecord {
@@ -122,7 +153,73 @@ function slimSchema(value: unknown): unknown {
 }
 
 export namespace ProviderTransform {
+  function mapProviderOptions(
+    msgs: ModelMessage[],
+    transform: (options: Record<string, any> | undefined) => Record<string, any> | undefined,
+  ) {
+    return msgs.map((msg) => {
+      if (!Array.isArray(msg.content)) return { ...msg, providerOptions: transform(msg.providerOptions) }
+      return {
+        ...msg,
+        providerOptions: transform(msg.providerOptions),
+        content: msg.content.map((part) => ({
+          ...part,
+          providerOptions: transform(part.providerOptions),
+        })),
+      } as typeof msg
+    })
+  }
+
   function normalizeMessages(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
+    const sanitizeToolResultOutput = (part: ToolResultPart) => {
+      if (part.output.type === "text" || part.output.type === "error-text") {
+        part.output.value = sanitizeSurrogates(part.output.value)
+      }
+      if (part.output.type === "content") {
+        part.output.value = part.output.value.map((item) =>
+          item.type === "text" ? { ...item, text: sanitizeSurrogates(item.text) } : item,
+        )
+      }
+      return part
+    }
+
+    msgs = msgs.map((msg) => {
+      if (typeof msg.content === "string") return { ...msg, content: sanitizeSurrogates(msg.content) }
+      if (!Array.isArray(msg.content)) return msg
+      return {
+        ...msg,
+        content: msg.content.map((part) => {
+          if (part.type === "text" || part.type === "reasoning") {
+            return { ...part, text: sanitizeSurrogates(part.text) }
+          }
+          if (part.type === "tool-result") return sanitizeToolResultOutput({ ...part })
+          return part
+        }),
+      } as typeof msg
+    }) as ModelMessage[]
+
+    const contentKey =
+      model.api.npm === "@ai-sdk/anthropic"
+        ? "anthropic"
+        : model.api.npm === "@ai-sdk/amazon-bedrock"
+          ? "bedrock"
+          : undefined
+    if (contentKey) {
+      msgs = msgs
+        .map((msg) => {
+          if (typeof msg.content === "string") return msg.content === "" ? undefined : msg
+          if (!Array.isArray(msg.content)) return msg
+          const content = msg.content.filter((part) => {
+            if (part.type === "text") return part.text !== ""
+            if (part.type !== "reasoning") return true
+            const metadata = part.providerOptions?.[contentKey]
+            return part.text.trim().length > 0 || metadata?.signature != null || metadata?.redactedData != null
+          })
+          return content.length === 0 ? undefined : ({ ...msg, content } as typeof msg)
+        })
+        .filter((msg): msg is ModelMessage => msg !== undefined)
+    }
+
     if (model.api.id.includes("claude")) {
       return msgs.map((msg) => {
         if ((msg.role === "assistant" || msg.role === "tool") && Array.isArray(msg.content)) {
@@ -139,7 +236,11 @@ export namespace ProviderTransform {
         return msg
       })
     }
-    if (model.providerID === "mistral" || model.api.id.toLowerCase().includes("mistral")) {
+    if (
+      model.providerID === "mistral" ||
+      model.api.id.toLowerCase().includes("mistral") ||
+      model.api.id.toLowerCase().includes("devstral")
+    ) {
       const result: ModelMessage[] = []
       for (let i = 0; i < msgs.length; i++) {
         const msg = msgs[i]
@@ -181,11 +282,29 @@ export namespace ProviderTransform {
       return result
     }
 
+    if (model.api.id.toLowerCase().includes("deepseek")) {
+      msgs = msgs.map((msg) => {
+        if (msg.role !== "assistant") return msg
+        if (Array.isArray(msg.content)) {
+          if (msg.content.some((part) => part.type === "reasoning")) return msg
+          return { ...msg, content: [...msg.content, { type: "reasoning", text: "" }] }
+        }
+        return {
+          ...msg,
+          content: [
+            ...(msg.content ? [{ type: "text" as const, text: msg.content }] : []),
+            { type: "reasoning" as const, text: "" },
+          ],
+        }
+      })
+    }
+
     if (
-      model.capabilities.interleaved &&
       typeof model.capabilities.interleaved === "object" &&
-      model.capabilities.interleaved.field === "reasoning_content"
+      model.capabilities.interleaved.field &&
+      model.api.npm !== "@openrouter/ai-sdk-provider"
     ) {
+      const field = model.capabilities.interleaved.field
       return msgs.map((msg) => {
         if (msg.role === "assistant" && Array.isArray(msg.content)) {
           const reasoningParts = msg.content.filter((part: any) => part.type === "reasoning")
@@ -194,24 +313,16 @@ export namespace ProviderTransform {
           // Filter out reasoning parts from content
           const filteredContent = msg.content.filter((part: any) => part.type !== "reasoning")
 
-          // Include reasoning_content directly on the message for all assistant messages
-          if (reasoningText) {
-            return {
-              ...msg,
-              content: filteredContent,
-              providerOptions: {
-                ...msg.providerOptions,
-                openaiCompatible: {
-                  ...(msg.providerOptions as any)?.openaiCompatible,
-                  reasoning_content: reasoningText,
-                },
-              },
-            }
-          }
-
           return {
             ...msg,
             content: filteredContent,
+            providerOptions: {
+              ...msg.providerOptions,
+              openaiCompatible: {
+                ...(msg.providerOptions as any)?.openaiCompatible,
+                [field]: reasoningText,
+              },
+            },
           }
         }
 
@@ -318,7 +429,7 @@ export namespace ProviderTransform {
     return Math.max(0, Math.floor((trimmed.length * 3) / 4) - padding)
   }
 
-  export function message(msgs: ModelMessage[], model: Provider.Model, providerOptions?: Record<string, any>) {
+  export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, any> = {}) {
     msgs = unsupportedParts(msgs, model)
     msgs = normalizeMessages(msgs, model)
     if (
@@ -327,9 +438,34 @@ export namespace ProviderTransform {
       model.api.id.includes("claude") ||
       model.api.npm === "@ai-sdk/anthropic" ||
       model.api.npm === "@openrouter/ai-sdk-provider" ||
-      (model.api.npm === "@ai-sdk/openai-compatible" && providerOptions?.openaiCompatibleCacheControl === true)
+      (model.api.npm === "@ai-sdk/openai-compatible" && options.openaiCompatibleCacheControl === true)
     ) {
       msgs = applyCaching(msgs, model)
+    }
+
+    const key = sdkKey(model.api.npm)
+    if (key && key !== model.providerID) {
+      msgs = mapProviderOptions(msgs, (providerOptions) => {
+        if (!providerOptions || !(model.providerID in providerOptions)) return providerOptions
+        const result = { ...providerOptions, [key]: providerOptions[model.providerID] }
+        delete result[model.providerID]
+        return result
+      })
+    }
+
+    if (
+      options.store !== true &&
+      key &&
+      ["@ai-sdk/openai", "@ai-sdk/azure", "@ai-sdk/amazon-bedrock/mantle", "@ai-sdk/github-copilot"].includes(
+        model.api.npm,
+      )
+    ) {
+      msgs = mapProviderOptions(msgs, (providerOptions) => {
+        if (!providerOptions?.[key] || !("itemId" in providerOptions[key])) return providerOptions
+        const metadata = { ...providerOptions[key] }
+        delete metadata.itemId
+        return { ...providerOptions, [key]: metadata }
+      })
     }
 
     return msgs

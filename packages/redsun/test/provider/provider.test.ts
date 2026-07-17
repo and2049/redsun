@@ -2,14 +2,32 @@ import { test, expect } from "bun:test"
 import path from "path"
 import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
-import { Provider } from "../../src/provider/provider"
+import { googleVertexAnthropicBaseURL, Provider, resolveBedrockModelID } from "../../src/provider/provider"
 import { Env } from "../../src/env"
 import { ModelsDev } from "../../src/provider/models"
 
 const modelsDev = await ModelsDev.get()
 const anthropicModelIDs = Object.keys(modelsDev.anthropic.models)
-const ANTHROPIC_MODEL_ID = anthropicModelIDs.find((id) => id.includes("sonnet")) ?? anthropicModelIDs[0]
+const ANTHROPIC_MODEL_ID =
+  anthropicModelIDs.find((id) => id.includes("sonnet") && modelsDev.anthropic.models[id].reasoning) ??
+  anthropicModelIDs[0]
 const ANTHROPIC_OTHER_MODEL_ID = anthropicModelIDs.find((id) => id !== ANTHROPIC_MODEL_ID) ?? ANTHROPIC_MODEL_ID
+
+test("Bedrock model IDs use region-specific inference prefixes without double-prefixing", () => {
+  expect(resolveBedrockModelID("anthropic.claude-sonnet-4-5", "ap-northeast-1")).toStartWith("jp.")
+  expect(resolveBedrockModelID("anthropic.claude-sonnet-4-5", "ap-southeast-2")).toStartWith("au.")
+  expect(resolveBedrockModelID("anthropic.claude-sonnet-4-5", "ap-south-1")).toStartWith("apac.")
+  expect(resolveBedrockModelID("eu.anthropic.claude-sonnet-4-5", "eu-west-1")).toBe(
+    "eu.anthropic.claude-sonnet-4-5",
+  )
+})
+
+test("Vertex Anthropic continental locations use REP endpoints", () => {
+  expect(googleVertexAnthropicBaseURL("project", "eu")).toBe(
+    "https://aiplatform.eu.rep.googleapis.com/v1/projects/project/locations/eu/publishers/anthropic/models",
+  )
+  expect(googleVertexAnthropicBaseURL("project", "us-central1")).toBeUndefined()
+})
 
 test("models.dev modes preserve base metadata and normalize OpenAI pro reasoning", () => {
   const provider = {
@@ -580,6 +598,37 @@ test("defaultModel respects config model setting", async () => {
       const model = await Provider.defaultModel()
       expect(model.providerID).toBe("anthropic")
       expect(model.modelID).toBe(ANTHROPIC_MODEL_ID)
+    },
+  })
+})
+
+test("defaultModel throws a typed error when no providers are available", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(path.join(dir, "redsun.json"), JSON.stringify({ enabled_providers: [] }))
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await expect(Provider.defaultModel()).rejects.toBeInstanceOf(Provider.NoProvidersError)
+    },
+  })
+})
+
+test("defaultModel throws a typed error when a provider has no models", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(path.join(dir, "redsun.json"), JSON.stringify({ enabled_providers: ["empty"] }))
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await Provider.registerProvider("empty", { models: [] })
+      const error = await Provider.defaultModel().catch((cause) => cause)
+      expect(error).toBeInstanceOf(Provider.NoModelsError)
+      expect(error.message).toBe("No models are available for provider: empty")
     },
   })
 })
@@ -1189,6 +1238,91 @@ test("getSmallModel returns appropriate small model", async () => {
   })
 })
 
+test("getSmallModel selects the newest model in the preferred family", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            "test-provider": {
+              name: "Test Provider",
+              npm: "@ai-sdk/openai-compatible",
+              options: { apiKey: "test-key" },
+              models: {
+                "old-flash": { family: "gemini-flash", release_date: "2025-01-01" },
+                "new-flash": { family: "gemini-flash", release_date: "2026-01-01" },
+                "newer-haiku": { family: "claude-haiku", release_date: "2026-06-01" },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      expect((await Provider.getSmallModel("test-provider"))?.id).toBe("new-flash")
+    },
+  })
+})
+
+test("getSmallModel matches exact families instead of model id substrings", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            "test-provider": {
+              name: "Test Provider",
+              npm: "@ai-sdk/openai-compatible",
+              options: { apiKey: "test-key" },
+              models: {
+                "glm-flash": { family: "glm-flash", release_date: "2026-06-01" },
+                "claude-haiku": { family: "claude-haiku", release_date: "2026-01-01" },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      expect((await Provider.getSmallModel("test-provider"))?.id).toBe("claude-haiku")
+    },
+  })
+})
+
+test("getSmallModel ignores models without family metadata", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            "test-provider": {
+              name: "Test Provider",
+              npm: "@ai-sdk/openai-compatible",
+              options: { apiKey: "test-key" },
+              models: { "gpt-5-nano": { release_date: "2026-01-01" } },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      expect(await Provider.getSmallModel("test-provider")).toBeUndefined()
+    },
+  })
+})
+
 test("getSmallModel respects config small_model override", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
@@ -1211,6 +1345,28 @@ test("getSmallModel respects config small_model override", async () => {
       expect(model).toBeDefined()
       expect(model?.providerID).toBe("anthropic")
       expect(model?.id).toBe(ANTHROPIC_MODEL_ID)
+    },
+  })
+})
+
+test("getSmallModel ignores an invalid config override", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          small_model: "anthropic/not-a-real-model",
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    init: async () => {
+      Env.set("ANTHROPIC_API_KEY", "test-api-key")
+    },
+    fn: async () => {
+      expect(await Provider.getSmallModel("anthropic")).toBeUndefined()
     },
   })
 })
@@ -1813,6 +1969,14 @@ test("ModelNotFoundError for provider includes suggestions", async () => {
       }
     },
   })
+})
+
+test("provider errors expose their descriptive messages", () => {
+  expect(
+    new Provider.ModelNotFoundError({ providerID: "openai", modelID: "missing", suggestions: ["gpt-5"] }).message,
+  ).toBe("Model not found: openai/missing. Did you mean: gpt-5?")
+  expect(new Provider.InitError({ providerID: "openai" }).message).toBe("Failed to initialize provider: openai")
+  expect(new Provider.NoProvidersError({}).message).toBe("No providers are available")
 })
 
 test("getProvider returns undefined for nonexistent provider", async () => {

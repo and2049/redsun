@@ -18,6 +18,47 @@ export namespace SessionProcessor {
   const DOOM_LOOP_THRESHOLD = 3
   const log = Log.create({ service: "session.processor" })
 
+  export function errorForFinishReason(reason: string) {
+    if (reason !== "content-filter") return
+    return new MessageV2.ContentFilterError({
+      message: "The response was blocked by the provider's content filter",
+    }).toObject()
+  }
+
+  export function toolErrorMetadata(part: MessageV2.ToolPart, error: unknown) {
+    const metadata = {
+      ...(part.metadata ?? {}),
+      ...(part.state.status !== "pending" ? (part.state.metadata ?? {}) : {}),
+      ...(error instanceof Permission.RejectedError ? error.metadata : {}),
+    }
+    return Object.keys(metadata).length ? metadata : undefined
+  }
+
+  export function toolCallMetadata(metadata: Record<string, any> | undefined, providerExecuted?: boolean) {
+    return providerExecuted ? { ...(metadata ?? {}), providerExecuted: true } : metadata
+  }
+
+  export function toolResultOutput(toolName: string, output: unknown) {
+    if (typeof output === "object" && output !== null && !Array.isArray(output) && typeof (output as any).output === "string") {
+      const value = output as Record<string, any>
+      return {
+        title: typeof value.title === "string" ? value.title : toolName,
+        metadata:
+          typeof value.metadata === "object" && value.metadata !== null && !Array.isArray(value.metadata)
+            ? value.metadata
+            : {},
+        output: value.output,
+        attachments: Array.isArray(value.attachments) ? value.attachments : undefined,
+      }
+    }
+    return {
+      title: toolName,
+      metadata: typeof output === "object" && output !== null && !Array.isArray(output) ? output : {},
+      output: typeof output === "string" ? output : (JSON.stringify(output) ?? ""),
+      attachments: undefined,
+    }
+  }
+
   export type Info = Awaited<ReturnType<typeof create>>
   export type Result = Awaited<ReturnType<Info["process"]>>
 
@@ -39,13 +80,16 @@ export namespace SessionProcessor {
       partFromToolCall(toolCallID: string) {
         return toolcalls[toolCallID]
       },
+      updateToolCall(toolCallID: string, part: MessageV2.ToolPart) {
+        toolcalls[toolCallID] = part
+      },
       async process(streamInput: LLM.StreamInput) {
         log.info("process")
         const shouldBreak = (await Config.get()).experimental?.continue_loop_on_deny !== true
         while (true) {
+          let currentText: MessageV2.TextPart | undefined
+          let reasoningMap: Record<string, MessageV2.ReasoningPart> = {}
           try {
-            let currentText: MessageV2.TextPart | undefined
-            let reasoningMap: Record<string, MessageV2.ReasoningPart> = {}
             const stream = await LLM.stream({ ...streamInput, assistantMessageID: input.assistantMessage.id })
 
             for await (const value of stream.fullStream) {
@@ -109,6 +153,7 @@ export namespace SessionProcessor {
                       input: {},
                       raw: "",
                     },
+                    metadata: value.providerExecuted ? { providerExecuted: true } : undefined,
                   })
                   toolcalls[value.id] = part as MessageV2.ToolPart
                   break
@@ -120,7 +165,19 @@ export namespace SessionProcessor {
                   break
 
                 case "tool-call": {
-                  const match = toolcalls[value.toolCallId]
+                  const match =
+                    toolcalls[value.toolCallId] ??
+                    ((await Session.updatePart({
+                      id: Identifier.ascending("part"),
+                      messageID: input.assistantMessage.id,
+                      sessionID: input.assistantMessage.sessionID,
+                      type: "tool",
+                      tool: value.toolName,
+                      callID: value.toolCallId,
+                      state: { status: "pending", input: {}, raw: "" },
+                      metadata: value.providerExecuted ? { providerExecuted: true } : undefined,
+                    })) as MessageV2.ToolPart)
+                  toolcalls[value.toolCallId] = match
                   if (match) {
                     const part = await Session.updatePart({
                       ...match,
@@ -132,7 +189,10 @@ export namespace SessionProcessor {
                           start: Date.now(),
                         },
                       },
-                      metadata: value.providerMetadata,
+                      metadata: toolCallMetadata(
+                        value.providerMetadata,
+                        value.providerExecuted || match.metadata?.providerExecuted === true,
+                      ),
                     })
                     toolcalls[value.toolCallId] = part as MessageV2.ToolPart
 
@@ -182,19 +242,20 @@ export namespace SessionProcessor {
                 case "tool-result": {
                   const match = toolcalls[value.toolCallId]
                   if (match && match.state.status === "running") {
+                    const result = toolResultOutput(value.toolName, value.output)
                     await Session.updatePart({
                       ...match,
                       state: {
                         status: "completed",
                         input: value.input,
-                        output: value.output.output,
-                        metadata: value.output.metadata,
-                        title: value.output.title,
+                        output: result.output,
+                        metadata: result.metadata,
+                        title: result.title,
                         time: {
                           start: match.state.time.start,
                           end: Date.now(),
                         },
-                        attachments: value.output.attachments,
+                        attachments: result.attachments,
                       },
                     })
 
@@ -212,7 +273,7 @@ export namespace SessionProcessor {
                         status: "error",
                         input: value.input,
                         error: (value.error as any).toString(),
-                        metadata: value.error instanceof Permission.RejectedError ? value.error.metadata : undefined,
+                        metadata: toolErrorMetadata(match, value.error),
                         time: {
                           start: match.state.time.start,
                           end: Date.now(),
@@ -248,6 +309,14 @@ export namespace SessionProcessor {
                     metadata: value.providerMetadata,
                   })
                   input.assistantMessage.finish = value.finishReason
+                  const finishError = errorForFinishReason(value.finishReason)
+                  if (finishError) {
+                    input.assistantMessage.error = finishError
+                    Bus.publish(Session.Event.Error, {
+                      sessionID: input.assistantMessage.sessionID,
+                      error: finishError,
+                    })
+                  }
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
                   await ContextOptimizer.writeOpenAIResponse({
@@ -351,7 +420,10 @@ export namespace SessionProcessor {
               error: e,
               stack: JSON.stringify(e.stack),
             })
-            const error = MessageV2.fromError(e, { providerID: input.model.providerID })
+            const error = MessageV2.fromError(e, {
+              providerID: input.model.providerID,
+              aborted: input.abort.aborted,
+            })
             const retry = SessionRetry.retryable(error)
             if (retry !== undefined) {
               attempt++
@@ -371,6 +443,20 @@ export namespace SessionProcessor {
               error: input.assistantMessage.error,
             })
           }
+          if (currentText) {
+            const end = Date.now()
+            currentText.time = { start: currentText.time?.start ?? end, end }
+            await Session.updatePart(currentText)
+            currentText = undefined
+          }
+          for (const part of Object.values(reasoningMap)) {
+            const end = Date.now()
+            await Session.updatePart({
+              ...part,
+              time: { start: part.time.start ?? end, end },
+            })
+          }
+          reasoningMap = {}
           if (snapshot) {
             const patch = await Snapshot.patch(snapshot)
             if (patch.files.length) {
@@ -394,8 +480,12 @@ export namespace SessionProcessor {
                   ...part.state,
                   status: "error",
                   error: "Tool execution aborted",
+                  metadata: {
+                    ...("metadata" in part.state ? (part.state.metadata ?? {}) : {}),
+                    interrupted: true,
+                  },
                   time: {
-                    start: Date.now(),
+                    start: "time" in part.state ? part.state.time.start : Date.now(),
                     end: Date.now(),
                   },
                 },

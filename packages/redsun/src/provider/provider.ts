@@ -37,6 +37,35 @@ import { createGateway } from "@ai-sdk/gateway"
 import { createTogetherAI } from "@ai-sdk/togetherai"
 import { createPerplexity } from "@ai-sdk/perplexity"
 
+export function resolveBedrockModelID(modelID: string, region: string) {
+  if (["global.", "us.", "eu.", "jp.", "apac.", "au."].some((prefix) => modelID.startsWith(prefix))) return modelID
+
+  const prefix = region.split("-")[0]
+  if (prefix === "us") {
+    const required = ["nova-micro", "nova-lite", "nova-pro", "nova-premier", "nova-2", "claude", "deepseek"]
+    return required.some((name) => modelID.includes(name)) && !region.startsWith("us-gov") ? `us.${modelID}` : modelID
+  }
+  if (prefix === "eu") {
+    const supported = ["eu-west-1", "eu-west-2", "eu-west-3", "eu-north-1", "eu-central-1", "eu-south-1", "eu-south-2"]
+    const required = ["claude", "nova-lite", "nova-micro", "llama3", "pixtral"]
+    return supported.includes(region) && required.some((name) => modelID.includes(name)) ? `eu.${modelID}` : modelID
+  }
+  if (prefix !== "ap") return modelID
+
+  const required = ["claude", "nova-lite", "nova-micro", "nova-pro"]
+  if (["ap-southeast-2", "ap-southeast-4"].includes(region)) {
+    const australian = ["anthropic.claude-sonnet-4-5", "anthropic.claude-haiku"]
+    if (australian.some((name) => modelID.includes(name))) return `au.${modelID}`
+  }
+  if (!required.some((name) => modelID.includes(name))) return modelID
+  return `${region === "ap-northeast-1" ? "jp" : "apac"}.${modelID}`
+}
+
+export function googleVertexAnthropicBaseURL(project: string | undefined, location: string | undefined) {
+  if (!project || (location !== "eu" && location !== "us")) return undefined
+  return `https://aiplatform.${location}.rep.googleapis.com/v1/projects/${project}/locations/${location}/publishers/anthropic/models`
+}
+
 export namespace Provider {
   const log = Log.create({ service: "provider" })
 
@@ -185,88 +214,42 @@ export namespace Provider {
         },
       }
     },
-    "amazon-bedrock": async () => {
-      const [awsProfile, awsAccessKeyId, awsBearerToken, awsRegion] = await Promise.all([
-        Env.get("AWS_PROFILE"),
-        Env.get("AWS_ACCESS_KEY_ID"),
-        Env.get("AWS_BEARER_TOKEN_BEDROCK"),
-        Env.get("AWS_REGION"),
-      ])
-      if (!awsProfile && !awsAccessKeyId && !awsBearerToken) return { autoload: false }
+    "amazon-bedrock": async (provider) => {
+      const auth = await Auth.get("amazon-bedrock")
+      const region = provider.options?.region ?? Env.get("AWS_REGION") ?? "us-east-1"
+      const profile = provider.options?.profile ?? Env.get("AWS_PROFILE")
+      const awsAccessKeyId = Env.get("AWS_ACCESS_KEY_ID")
+      const configApiKey = provider.options?.apiKey
+      const envBearerToken = Env.get("AWS_BEARER_TOKEN_BEDROCK")
+      const awsBearerToken = envBearerToken ?? (auth?.type === "api" ? auth.key : undefined)
+      const webIdentityToken = Env.get("AWS_WEB_IDENTITY_TOKEN_FILE")
+      const containerCredentials = Boolean(
+        process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI,
+      )
+      if (!envBearerToken && awsBearerToken) Env.set("AWS_BEARER_TOKEN_BEDROCK", awsBearerToken)
+      if (
+        !profile &&
+        !awsAccessKeyId &&
+        !awsBearerToken &&
+        !configApiKey &&
+        !webIdentityToken &&
+        !containerCredentials
+      )
+        return { autoload: false }
 
-      const region = awsRegion ?? "us-east-1"
+      const options: Record<string, any> = { region }
+      if (!awsBearerToken && !configApiKey) {
+        const { fromNodeProviderChain } = await import(await BunProc.install("@aws-sdk/credential-providers"))
+        options.credentialProvider = fromNodeProviderChain(profile ? { profile } : {})
+      }
+      const endpoint = provider.options?.endpoint ?? provider.options?.baseURL
+      if (endpoint) options.baseURL = endpoint
 
-      const { fromNodeProviderChain } = await import(await BunProc.install("@aws-sdk/credential-providers"))
       return {
         autoload: true,
-        options: {
-          region,
-          credentialProvider: fromNodeProviderChain(),
-        },
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          // Skip region prefixing if model already has global prefix
-          if (modelID.startsWith("global.")) {
-            return sdk.languageModel(modelID)
-          }
-
-          let regionPrefix = region.split("-")[0]
-
-          switch (regionPrefix) {
-            case "us": {
-              const modelRequiresPrefix = [
-                "nova-micro",
-                "nova-lite",
-                "nova-pro",
-                "nova-premier",
-                "claude",
-                "deepseek",
-              ].some((m) => modelID.includes(m))
-              const isGovCloud = region.startsWith("us-gov")
-              if (modelRequiresPrefix && !isGovCloud) {
-                modelID = `${regionPrefix}.${modelID}`
-              }
-              break
-            }
-            case "eu": {
-              const regionRequiresPrefix = [
-                "eu-west-1",
-                "eu-west-2",
-                "eu-west-3",
-                "eu-north-1",
-                "eu-central-1",
-                "eu-south-1",
-                "eu-south-2",
-              ].some((r) => region.includes(r))
-              const modelRequiresPrefix = ["claude", "nova-lite", "nova-micro", "llama3", "pixtral"].some((m) =>
-                modelID.includes(m),
-              )
-              if (regionRequiresPrefix && modelRequiresPrefix) {
-                modelID = `${regionPrefix}.${modelID}`
-              }
-              break
-            }
-            case "ap": {
-              const isAustraliaRegion = ["ap-southeast-2", "ap-southeast-4"].includes(region)
-              if (
-                isAustraliaRegion &&
-                ["anthropic.claude-sonnet-4-5", "anthropic.claude-haiku"].some((m) => modelID.includes(m))
-              ) {
-                regionPrefix = "au"
-                modelID = `${regionPrefix}.${modelID}`
-              } else {
-                const modelRequiresPrefix = ["claude", "nova-lite", "nova-micro", "nova-pro"].some((m) =>
-                  modelID.includes(m),
-                )
-                if (modelRequiresPrefix) {
-                  regionPrefix = "apac"
-                  modelID = `${regionPrefix}.${modelID}`
-                }
-              }
-              break
-            }
-          }
-
-          return sdk.languageModel(modelID)
+        options,
+        async getModel(sdk: any, modelID: string, requestOptions?: Record<string, any>) {
+          return sdk.languageModel(resolveBedrockModelID(modelID, requestOptions?.region ?? region))
         },
       }
     },
@@ -275,8 +258,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://github.com/and2049/redsun",
+            "X-Title": "Redsun",
           },
         },
       }
@@ -286,15 +269,25 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "http-referer": "https://opencode.ai/",
-            "x-title": "opencode",
+            "http-referer": "https://github.com/and2049/redsun",
+            "x-title": "Redsun",
           },
         },
       }
     },
-    "google-vertex": async () => {
-      const project = Env.get("GOOGLE_CLOUD_PROJECT") ?? Env.get("GCP_PROJECT") ?? Env.get("GCLOUD_PROJECT")
-      const location = Env.get("GOOGLE_CLOUD_LOCATION") ?? Env.get("VERTEX_LOCATION") ?? "us-east5"
+    "google-vertex": async (provider) => {
+      const project =
+        provider.options?.project ??
+        Env.get("GOOGLE_VERTEX_PROJECT") ??
+        Env.get("GOOGLE_CLOUD_PROJECT") ??
+        Env.get("GCP_PROJECT") ??
+        Env.get("GCLOUD_PROJECT")
+      const location =
+        provider.options?.location ??
+        Env.get("GOOGLE_VERTEX_LOCATION") ??
+        Env.get("GOOGLE_CLOUD_LOCATION") ??
+        Env.get("VERTEX_LOCATION") ??
+        "us-central1"
       const autoload = Boolean(project)
       if (!autoload) return { autoload: false }
       return {
@@ -319,6 +312,9 @@ export namespace Provider {
         options: {
           project,
           location,
+          ...(googleVertexAnthropicBaseURL(project, location)
+            ? { baseURL: googleVertexAnthropicBaseURL(project, location) }
+            : {}),
         },
         async getModel(sdk: any, modelID) {
           const id = String(modelID).trim()
@@ -353,8 +349,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://github.com/and2049/redsun",
+            "X-Title": "Redsun",
           },
         },
       }
@@ -385,8 +381,8 @@ export namespace Provider {
             // Cloudflare AI Gateway uses cf-aig-authorization for authenticated gateways
             // This enables Unified Billing where Cloudflare handles upstream provider auth
             ...(apiToken ? { "cf-aig-authorization": `Bearer ${apiToken}` } : {}),
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://github.com/and2049/redsun",
+            "X-Title": "Redsun",
           },
           // Custom fetch to strip Authorization header - AI Gateway uses cf-aig-authorization instead
           // Sending Authorization header with invalid value causes auth errors
@@ -403,7 +399,7 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "X-Cerebras-3rd-Party-Integration": "opencode",
+            "X-Cerebras-3rd-Party-Integration": "redsun",
           },
         },
       }
@@ -807,7 +803,7 @@ export namespace Provider {
     for (const [providerID, fn] of Object.entries(CUSTOM_LOADERS)) {
       if (disabled.has(providerID)) continue
       const result = await fn(database[providerID])
-      if (result && (result.autoload || providers[providerID])) {
+      if (result && (result.autoload || providers[providerID] || config.provider?.[providerID])) {
         if (result.getModel) modelLoaders[providerID] = result.getModel
         mergeProvider(providerID, {
           source: "custom",
@@ -914,7 +910,7 @@ export namespace Provider {
           ...model.headers,
         }
 
-      const key = Bun.hash.xxHash32(JSON.stringify({ npm: model.api.npm, options }))
+      const key = Bun.hash.xxHash32(JSON.stringify({ providerID: model.providerID, npm: model.api.npm, options }))
       const existing = s.sdk.get(key)
       if (existing) return existing
 
@@ -1056,43 +1052,56 @@ export namespace Provider {
 
     if (cfg.small_model) {
       const parsed = parseModel(cfg.small_model)
-      return getModel(parsed.providerID, parsed.modelID)
+      return getModel(parsed.providerID, parsed.modelID).catch((error) => {
+        if (error instanceof ModelNotFoundError) return undefined
+        throw error
+      })
     }
 
     const provider = await state().then((state) => state.providers[providerID])
-    if (provider) {
-      let priority = [
-        "claude-haiku-4-5",
-        "claude-haiku-4.5",
-        "3-5-haiku",
-        "3.5-haiku",
-        "gemini-2.5-flash",
-        "gpt-5-nano",
-      ]
-      // claude-haiku-4.5 is considered a premium model in github copilot, we shouldn't use premium requests for title gen
-      if (providerID === "github-copilot") {
-        priority = priority.filter((m) => m !== "claude-haiku-4.5")
-      }
-      if (providerID.startsWith("opencode")) {
-        priority = ["gpt-5-nano"]
-      }
-      for (const item of priority) {
-        for (const model of Object.keys(provider.models)) {
-          if (model.includes(item)) return getModel(providerID, model)
-        }
-      }
-    }
+    if (!provider) return undefined
 
-    // Check if opencode provider is available before using it
-    const opencodeProvider = await state().then((state) => state.providers["opencode"])
-    if (opencodeProvider && opencodeProvider.models["gpt-5-nano"]) {
-      return getModel("opencode", "gpt-5-nano")
+    // Azure deployments do not reliably expose enough catalog metadata to infer a valid deployment name.
+    if (providerID === "azure" || providerID === "azure-cognitive-services") return undefined
+
+    const priority = providerID.startsWith("opencode")
+      ? ["gpt-nano"]
+      : providerID.startsWith("github-copilot")
+        ? ["gpt-mini", ...smallModelFamilyPriority]
+        : smallModelFamilyPriority
+    const models = sortBy(
+      Object.values(provider.models),
+      [(model) => model.release_date, "desc"],
+      [(model) => model.id, "desc"],
+    )
+    for (const family of priority) {
+      const candidates = models.filter((model) => model.family === family)
+      if (providerID === "amazon-bedrock") {
+        const crossRegionPrefixes = ["global.", "us.", "eu."]
+        const globalMatch = candidates.find((model) => model.id.startsWith("global."))
+        if (globalMatch) return globalMatch
+
+        const region = provider.options?.region
+        if (typeof region === "string") {
+          const regionPrefix = region.split("-")[0]
+          if (regionPrefix === "us" || regionPrefix === "eu") {
+            const regionalMatch = candidates.find((model) => model.id.startsWith(`${regionPrefix}.`))
+            if (regionalMatch) return regionalMatch
+          }
+        }
+
+        const unprefixed = candidates.find((model) => !crossRegionPrefixes.some((prefix) => model.id.startsWith(prefix)))
+        if (unprefixed) return unprefixed
+        continue
+      }
+      if (candidates[0]) return candidates[0]
     }
 
     return undefined
   }
 
   const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
+  const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
   export function sort(models: Model[]) {
     return sortBy(
       models,
@@ -1112,9 +1121,9 @@ export namespace Provider {
         const configured = Object.keys(cfg.provider ?? {})
         return x.find((p) => configured.length === 0 || configured.includes(p.id))
       })
-    if (!provider) throw new Error("no providers found")
+    if (!provider) throw new NoProvidersError({})
     const [model] = sort(Object.values(provider.models))
-    if (!model) throw new Error("no models found")
+    if (!model) throw new NoModelsError({ providerID: provider.id })
     return {
       providerID: provider.id,
       modelID: model.id,
@@ -1269,6 +1278,25 @@ export namespace Provider {
     override get message() {
       const data = this.data as { providerID: string }
       return `Failed to initialize provider: ${data.providerID}`
+    }
+  }
+
+  const _NoProvidersError = NamedError.create("ProviderNoProvidersError", z.object({}))
+  export class NoProvidersError extends _NoProvidersError {
+    override get message() {
+      return "No providers are available"
+    }
+  }
+
+  const _NoModelsError = NamedError.create(
+    "ProviderNoModelsError",
+    z.object({
+      providerID: z.string(),
+    }),
+  )
+  export class NoModelsError extends _NoModelsError {
+    override get message() {
+      return `No models are available for provider: ${this.data.providerID}`
     }
   }
 }

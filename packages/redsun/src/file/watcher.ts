@@ -12,8 +12,12 @@ import { lazy } from "@/util/lazy"
 import type ParcelWatcher from "@parcel/watcher"
 import { $ } from "bun"
 import { Flag } from "@/flag/flag"
+import { readdir, realpath } from "fs/promises"
+import { withTimeout } from "../util/timeout"
+import { Protected } from "./protected"
 
 declare const REDSUN_LIBC: string | undefined
+const SUBSCRIBE_TIMEOUT_MS = 10_000
 
 export namespace FileWatcher {
   const log = Log.create({ service: "file.watcher" })
@@ -28,16 +32,29 @@ export namespace FileWatcher {
     ),
   }
 
-  const watcher = lazy(() => {
-    const binding = require(
-      `@parcel/watcher-${process.platform}-${process.arch}${process.platform === "linux" ? `-${REDSUN_LIBC || "glibc"}` : ""}`,
-    )
-    return createWrapper(binding) as typeof import("@parcel/watcher")
+  const watcher = lazy((): typeof import("@parcel/watcher") | undefined => {
+    try {
+      const binding = require(
+        `@parcel/watcher-${process.platform}-${process.arch}${process.platform === "linux" ? `-${REDSUN_LIBC || "glibc"}` : ""}`,
+      )
+      return createWrapper(binding) as typeof import("@parcel/watcher")
+    } catch (error) {
+      log.error("failed to load watcher binding", { error })
+      return undefined
+    }
   })
+
+  export async function resolveGitDirectory(worktree: string) {
+    const result = await $`git rev-parse --git-dir`.quiet().nothrow().cwd(worktree)
+    if (result.exitCode !== 0) return
+    const value = result.text().trim()
+    if (!value) return
+    const resolved = path.resolve(worktree, value)
+    return realpath(resolved).catch(() => resolved)
+  }
 
   const state = Instance.state(
     async () => {
-      if (Instance.project.vcs !== "git") return {}
       log.info("init")
       const cfg = await Config.get()
       const backend = (() => {
@@ -61,29 +78,32 @@ export namespace FileWatcher {
 
       const subs: ParcelWatcher.AsyncSubscription[] = []
       const cfgIgnores = cfg.watcher?.ignore ?? []
+      const w = watcher()
+      if (!w) return {}
 
       if (Flag.REDSUN_EXPERIMENTAL_FILEWATCHER) {
-        subs.push(
-          await watcher().subscribe(Instance.directory, subscribe, {
-            ignore: [...FileIgnore.PATTERNS, ...cfgIgnores],
-            backend,
-          }),
-        )
+        const pending = w.subscribe(Instance.directory, subscribe, {
+          ignore: [...FileIgnore.PATTERNS, ...cfgIgnores, ...Protected.paths()],
+          backend,
+        })
+        const sub = await withTimeout(pending, SUBSCRIBE_TIMEOUT_MS).catch((error) => {
+          log.error("failed to subscribe to project directory", { error })
+          pending.then((value) => value.unsubscribe()).catch(() => {})
+          return undefined
+        })
+        if (sub) subs.push(sub)
       }
 
-      const vcsDir = await $`git rev-parse --git-dir`
-        .quiet()
-        .nothrow()
-        .cwd(Instance.worktree)
-        .text()
-        .then((x) => path.resolve(Instance.worktree, x.trim()))
+      const vcsDir = Instance.project.vcs === "git" ? await resolveGitDirectory(Instance.worktree) : undefined
       if (vcsDir && !cfgIgnores.includes(".git") && !cfgIgnores.includes(vcsDir)) {
-        subs.push(
-          await watcher().subscribe(vcsDir, subscribe, {
-            ignore: ["hooks", "info", "logs", "objects", "refs", "worktrees", "modules", "lfs"],
-            backend,
-          }),
-        )
+        const ignore = (await readdir(vcsDir).catch(() => [])).filter((entry) => entry !== "HEAD")
+        const pending = w.subscribe(vcsDir, subscribe, { ignore, backend })
+        const sub = await withTimeout(pending, SUBSCRIBE_TIMEOUT_MS).catch((error) => {
+          log.error("failed to subscribe to git directory", { error })
+          pending.then((value) => value.unsubscribe()).catch(() => {})
+          return undefined
+        })
+        if (sub) subs.push(sub)
       }
 
       return { subs }

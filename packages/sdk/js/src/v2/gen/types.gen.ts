@@ -219,6 +219,13 @@ export type MessageAbortedError = {
   };
 };
 
+export type ContentFilterError = {
+  name: "ContentFilterError";
+  data: {
+    message: string;
+  };
+};
+
 export type ApiError = {
   name: "APIError";
   data: {
@@ -249,6 +256,7 @@ export type AssistantMessage = {
     | MessageOutputLengthError
     | ContextOverflowError
     | MessageAbortedError
+    | ContentFilterError
     | ApiError;
   parentID: string;
   modelID: string;
@@ -696,6 +704,7 @@ export type EventSessionError = {
       | MessageOutputLengthError
       | ContextOverflowError
       | MessageAbortedError
+      | ContentFilterError
       | ApiError;
   };
 };
@@ -1858,7 +1867,7 @@ export type TextPartInput = {
 export type FilePartInput = {
   id?: string;
   type: "file";
-  mime: string;
+  mime?: string;
   filename?: string;
   url: string;
   source?: FilePartSource;

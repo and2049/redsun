@@ -103,7 +103,7 @@ export namespace Server {
         "/global/health",
         describeRoute({
           summary: "Get health",
-          description: "Get health information about the OpenCode server.",
+          description: "Get health information about the Redsun server.",
           operationId: "global.health",
           responses: {
             200: {
@@ -124,7 +124,7 @@ export namespace Server {
         "/global/event",
         describeRoute({
           summary: "Get global events",
-          description: "Subscribe to global events from the OpenCode system using server-sent events.",
+          description: "Subscribe to global events from the Redsun system using server-sent events.",
           operationId: "global.event",
           responses: {
             200: {
@@ -191,7 +191,7 @@ export namespace Server {
         "/global/dispose",
         describeRoute({
           summary: "Dispose instance",
-          description: "Clean up and dispose all OpenCode instances, releasing all resources.",
+          description: "Clean up and dispose all Redsun instances, releasing all resources.",
           operationId: "global.dispose",
           responses: {
             200: {
@@ -217,7 +217,11 @@ export namespace Server {
         },
       )
       .use(async (c, next) => {
-        const directory = c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd()
+        const directory =
+          c.req.query("directory") ||
+          c.req.header("x-redsun-directory") ||
+          c.req.header("x-opencode-directory") ||
+          process.cwd()
         return Instance.provide({
           directory,
           init: InstanceBootstrap,
@@ -233,7 +237,7 @@ export namespace Server {
             info: {
               title: "redsun",
               version: "0.0.3",
-              description: "opencode api",
+              description: "redsun api",
             },
             openapi: "3.1.1",
           },
@@ -247,7 +251,7 @@ export namespace Server {
         "/pty",
         describeRoute({
           summary: "List PTY sessions",
-          description: "Get a list of all active pseudo-terminal (PTY) sessions managed by OpenCode.",
+          description: "Get a list of all active pseudo-terminal (PTY) sessions managed by Redsun.",
           operationId: "pty.list",
           responses: {
             200: {
@@ -406,7 +410,7 @@ export namespace Server {
         "/config",
         describeRoute({
           summary: "Get configuration",
-          description: "Retrieve the current OpenCode configuration settings and preferences.",
+          description: "Retrieve the current Redsun configuration settings and preferences.",
           operationId: "config.get",
           responses: {
             200: {
@@ -428,7 +432,7 @@ export namespace Server {
         "/config",
         describeRoute({
           summary: "Update configuration",
-          description: "Update OpenCode configuration settings and preferences.",
+          description: "Update Redsun configuration settings and preferences.",
           operationId: "config.update",
           responses: {
             200: {
@@ -527,7 +531,7 @@ export namespace Server {
         "/instance/dispose",
         describeRoute({
           summary: "Dispose instance",
-          description: "Clean up and dispose the current OpenCode instance, releasing all resources.",
+          description: "Clean up and dispose the current Redsun instance, releasing all resources.",
           operationId: "instance.dispose",
           responses: {
             200: {
@@ -549,7 +553,7 @@ export namespace Server {
         "/path",
         describeRoute({
           summary: "Get paths",
-          description: "Retrieve the current working directory and related path information for the OpenCode instance.",
+          description: "Retrieve the current working directory and related path information for the Redsun instance.",
           operationId: "path.get",
           responses: {
             200: {
@@ -612,7 +616,7 @@ export namespace Server {
         "/session",
         describeRoute({
           summary: "List sessions",
-          description: "Get a list of all OpenCode sessions, sorted by most recently updated.",
+          description: "Get a list of all Redsun sessions, sorted by most recently updated.",
           operationId: "session.list",
           responses: {
             200: {
@@ -626,11 +630,10 @@ export namespace Server {
           },
         }),
         async (c) => {
-          const sessions = await Array.fromAsync(Session.list())
-          pipe(
+          const sessions = pipe(
             await Array.fromAsync(Session.list()),
             filter((s) => !s.time.archived),
-            sortBy((s) => s.time.updated),
+            sortBy((s) => -s.time.updated),
           )
           return c.json(sessions)
         },
@@ -662,7 +665,7 @@ export namespace Server {
         "/session/:sessionID",
         describeRoute({
           summary: "Get session",
-          description: "Retrieve detailed information about a specific OpenCode session.",
+          description: "Retrieve detailed information about a specific Redsun session.",
           tags: ["Session"],
           operationId: "session.get",
           responses: {
@@ -755,7 +758,7 @@ export namespace Server {
         "/session",
         describeRoute({
           summary: "Create session",
-          description: "Create a new OpenCode session for interacting with AI assistants and managing conversations.",
+          description: "Create a new Redsun session for interacting with AI assistants and managing conversations.",
           operationId: "session.create",
           responses: {
             ...errors(400),
@@ -1522,7 +1525,7 @@ export namespace Server {
         "/command",
         describeRoute({
           summary: "List commands",
-          description: "Get a list of all available commands in the OpenCode system.",
+          description: "Get a list of all available commands in the Redsun system.",
           operationId: "command.list",
           responses: {
             200: {
@@ -1958,7 +1961,7 @@ export namespace Server {
         "/agent",
         describeRoute({
           summary: "List agents",
-          description: "Get a list of all available AI agents in the OpenCode system.",
+          description: "Get a list of all available AI agents in the Redsun system.",
           operationId: "app.agents",
           responses: {
             200: {
