@@ -1,99 +1,102 @@
-import { describe, expect, test } from "bun:test"
+import { test, expect, describe } from "bun:test"
 import { determineScope } from "@modelcontextprotocol/sdk/client/auth.js"
-import os from "os"
-import path from "path"
+import { McpOAuthProvider, OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH } from "../../src/mcp/oauth-provider"
+import type { McpAuth } from "../../src/mcp/auth"
 
-const xdgRoot = path.join(os.tmpdir(), "redsun-oauth-provider-test-" + Math.random().toString(36).slice(2))
-process.env.XDG_CACHE_HOME = path.join(xdgRoot, "cache")
-process.env.XDG_CONFIG_HOME = path.join(xdgRoot, "config")
-process.env.XDG_DATA_HOME = path.join(xdgRoot, "data")
-process.env.XDG_STATE_HOME = path.join(xdgRoot, "state")
+// Stub auth — only synchronous getters are exercised in these tests
+const stubAuth = {} as McpAuth.Interface
 
-const { McpAuth } = await import("../../src/mcp/auth")
-const { McpOAuthPendingProvider, parseRedirectUri } = await import("../../src/mcp/oauth-provider")
-const serverName = "pending-provider-" + Math.random().toString(36).slice(2)
+const makeProvider = (config: ConstructorParameters<typeof McpOAuthProvider>[2]) =>
+  new McpOAuthProvider("test-server", "https://mcp.example.com/mcp", config, { onRedirect: async () => {} }, stubAuth)
 
-describe("McpOAuthPendingProvider", () => {
-  test("does not persist tokens before commit", async () => {
-    const provider = new McpOAuthPendingProvider(
-      serverName,
-      "https://example.com/mcp",
-      {},
-      {
-        onRedirect() {},
-      },
-    )
+describe("McpOAuthProvider.redirectUrl", () => {
+  test("defaults to 127.0.0.1:19876/mcp/oauth/callback", () => {
+    const provider = makeProvider({})
+    expect(provider.redirectUrl).toBe(`http://127.0.0.1:${OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`)
+  })
 
-    await provider.saveClientInformation({
-      client_id: "client",
-      client_secret: "secret",
-      redirect_uris: ["http://127.0.0.1/callback"],
+  test("uses callbackPort when set", () => {
+    const provider = makeProvider({ callbackPort: 6620 })
+    expect(provider.redirectUrl).toBe(`http://127.0.0.1:6620${OAUTH_CALLBACK_PATH}`)
+  })
+
+  test("redirectUri takes precedence over callbackPort", () => {
+    const provider = makeProvider({
+      callbackPort: 6620,
+      redirectUri: "http://127.0.0.1:9999/custom/callback",
     })
-    await provider.saveTokens({ access_token: "access", refresh_token: "refresh", token_type: "Bearer", expires_in: 60 })
+    expect(provider.redirectUrl).toBe("http://127.0.0.1:9999/custom/callback")
+  })
 
-    expect(await McpAuth.get(serverName)).toBeUndefined()
+  test("uses explicit redirectUri when set without callbackPort", () => {
+    const provider = makeProvider({ redirectUri: "http://127.0.0.1:8080/oauth/callback" })
+    expect(provider.redirectUrl).toBe("http://127.0.0.1:8080/oauth/callback")
+  })
+})
 
-    await provider.commit()
+describe("McpOAuthProvider.clientMetadata", () => {
+  test("includes redirect_uris from redirectUrl", () => {
+    const provider = makeProvider({ callbackPort: 6620 })
+    expect(provider.clientMetadata.redirect_uris).toEqual([`http://127.0.0.1:6620${OAUTH_CALLBACK_PATH}`])
+  })
 
-    const stored = await McpAuth.getForUrl(serverName, "https://example.com/mcp")
-    expect(stored?.tokens?.accessToken).toBe("access")
-    expect(stored?.tokens?.refreshToken).toBe("refresh")
-    expect(stored?.clientInfo?.clientId).toBe("client")
+  test("includes scope when set in config", () => {
+    const provider = makeProvider({ scope: "openid offline_access" })
+    expect(provider.clientMetadata.scope).toBe("openid offline_access")
+  })
 
-    await McpAuth.remove(serverName)
+  test("omits scope when not set in config", () => {
+    const provider = makeProvider({})
+    expect(provider.clientMetadata.scope).toBeUndefined()
+  })
+
+  test("sets token_endpoint_auth_method to client_secret_post when clientSecret provided", () => {
+    const provider = makeProvider({ clientSecret: "secret" })
+    expect(provider.clientMetadata.token_endpoint_auth_method).toBe("client_secret_post")
+  })
+
+  test("sets token_endpoint_auth_method to none when no clientSecret", () => {
+    const provider = makeProvider({})
+    expect(provider.clientMetadata.token_endpoint_auth_method).toBe("none")
   })
 })
 
 describe("MCP OAuth scope selection", () => {
-  test("preserves configured scopes in client metadata", () => {
-    const provider = new McpOAuthPendingProvider(serverName, "https://example.com/mcp", { scope: "resource.read" }, {
-      onRedirect() {},
-    })
-
-    expect(provider.clientMetadata.scope).toBe("resource.read")
-  })
-
-  test("requests refresh tokens only when the authorization server supports them", () => {
-    const clientMetadata = new McpOAuthPendingProvider(serverName, "https://example.com/mcp", {}, {
-      onRedirect() {},
-    }).clientMetadata
-    const authServerMetadata = (scopes_supported: string[]) => ({
-      issuer: "https://example.com",
-      authorization_endpoint: "https://example.com/authorize",
-      token_endpoint: "https://example.com/token",
-      response_types_supported: ["code"],
-      scopes_supported,
-    })
-
+  test("adds offline_access when the authorization server and client support refresh tokens", () => {
     expect(
       determineScope({
-        resourceMetadata: { resource: "https://example.com/mcp", scopes_supported: ["resource.read"] },
-        authServerMetadata: authServerMetadata(["resource.read", "offline_access"]),
-        clientMetadata,
+        resourceMetadata: {
+          resource: "https://mcp.example.com/mcp",
+          scopes_supported: ["resource.read"],
+        },
+        authServerMetadata: {
+          issuer: "https://auth.example.com",
+          authorization_endpoint: "https://auth.example.com/authorize",
+          token_endpoint: "https://auth.example.com/token",
+          response_types_supported: ["code"],
+          scopes_supported: ["resource.read", "offline_access"],
+        },
+        clientMetadata: makeProvider({}).clientMetadata,
       }),
     ).toBe("resource.read offline_access")
-    expect(
-      determineScope({
-        resourceMetadata: { resource: "https://example.com/mcp", scopes_supported: ["resource.read"] },
-        authServerMetadata: authServerMetadata(["resource.read"]),
-        clientMetadata,
-      }),
-    ).toBe("resource.read")
   })
 
-  test("uses configured callback ports and redirect URIs", () => {
-    const portProvider = new McpOAuthPendingProvider(serverName, "https://example.com/mcp", { callbackPort: 23456 }, {
-      onRedirect() {},
-    })
-    const redirectProvider = new McpOAuthPendingProvider(
-      serverName,
-      "https://example.com/mcp",
-      { callbackPort: 23456, redirectUri: "http://127.0.0.1:34567/custom/callback" },
-      { onRedirect() {} },
-    )
-
-    expect(portProvider.redirectUrl).toBe("http://127.0.0.1:23456/mcp/oauth/callback")
-    expect(redirectProvider.redirectUrl).toBe("http://127.0.0.1:34567/custom/callback")
-    expect(parseRedirectUri(redirectProvider.redirectUrl)).toEqual({ port: 34567, path: "/custom/callback" })
+  test("does not add unsupported authorization server scopes", () => {
+    expect(
+      determineScope({
+        resourceMetadata: {
+          resource: "https://mcp.example.com/mcp",
+          scopes_supported: ["resource.read"],
+        },
+        authServerMetadata: {
+          issuer: "https://auth.example.com",
+          authorization_endpoint: "https://auth.example.com/authorize",
+          token_endpoint: "https://auth.example.com/token",
+          response_types_supported: ["code"],
+          scopes_supported: ["resource.read"],
+        },
+        clientMetadata: makeProvider({}).clientMetadata,
+      }),
+    ).toBe("resource.read")
   })
 })

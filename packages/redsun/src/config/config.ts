@@ -1,1143 +1,760 @@
-import { Log } from "../util/log"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
+import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import path from "path"
-import os from "os"
 import { pathToFileURL } from "url"
-import z from "zod"
-import { Filesystem } from "../util/filesystem"
-import { ModelsDev } from "../provider/models"
-import { mergeDeep, pipe } from "remeda"
-import { Global } from "../global"
-import fs from "fs/promises"
-import { lazy } from "../util/lazy"
-import { NamedError } from "@redsun/util/error"
-import { Flag } from "../flag/flag"
+import os from "os"
+import { mergeDeep } from "remeda"
+import { Global } from "@opencode-ai/core/global"
+import fsNode from "fs/promises"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { Auth } from "../auth"
-import { type ParseError as JsoncParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
-import { Instance } from "../project/instance"
-import { LSPServer } from "../lsp/server"
-import { BunProc } from "@/bun"
-import { Installation } from "@/installation"
-import { ConfigMarkdown } from "./markdown"
+import { Env } from "../env"
+import { applyEdits, modify } from "jsonc-parser"
+import { InstallationLocal, InstallationVersion } from "@opencode-ai/core/installation/version"
+import { existsSync } from "fs"
+import { Account } from "@/account/account"
+import { isRecord } from "@/util/record"
+import type { ConsoleState } from "@opencode-ai/core/v1/config/console-state"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { InstanceState } from "@/effect/instance-state"
+import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
+import { containsPath, type InstanceContext } from "../project/instance-context"
+import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { RemoteAuthError } from "@opencode-ai/core/v1/config/error"
+import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
+import { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
+import { ConfigAgent } from "./agent"
+import { ConfigCommand } from "./command"
+import { ConfigManaged } from "./managed"
+import { ConfigParse } from "./parse"
+import { ConfigPaths } from "./paths"
+import { ConfigPlugin } from "./plugin"
+import { ConfigVariable } from "./variable"
+import { Npm } from "@opencode-ai/core/npm"
+import { withTransientReadRetry } from "@/util/effect-http-client"
+import { ProjectTrust } from "@/trust"
 
-export namespace Config {
-  const log = Log.create({ service: "config" })
-  export type SourceScope = "user" | "project"
+// Custom merge function that concatenates array fields instead of replacing them
+// Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
+function mergeConfig(target: Info, source: Info): Info {
+  return mergeDeep(target, source) as Info
+}
 
-  // Custom merge function that concatenates extension arrays instead of replacing them
-  function mergeConfigWithExtensions(target: Info, source: Info): Info {
-    const merged = mergeDeep(target, source)
-    // If both configs have extension arrays, concatenate them instead of replacing
-    if (target.extension && source.extension) {
-      const extensionSet = new Set([...target.extension, ...source.extension])
-      merged.extension = Array.from(extensionSet)
-    }
-    return merged
+function mergeConfigConcatArrays(target: Info, source: Info): Info {
+  const merged = mergeConfig(target, source)
+  if (target.instructions && source.instructions) {
+    merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
   }
+  if (target.extension && source.extension) {
+    merged.extension = Array.from(new Set([...target.extension, ...source.extension]))
+  }
+  return merged
+}
 
-  export const state = Instance.state(async () => {
-    const auth = await Auth.all()
-    let result = await global()
-    const extensions = {
-      user: new Set(result.extension ?? []),
-      project: new Set<string>(),
-    }
-    const projectMcp = new Set<string>()
-    const projectProviderModules = new Set<string>()
-    let userDefaultProjectTrust = result.defaultProjectTrust
+function normalizeLoadedConfig(data: unknown) {
+  if (!isRecord(data)) return data
+  const copy = { ...data }
+  const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
+  if (!hadLegacy) return copy
+  delete copy.theme
+  delete copy.keybinds
+  delete copy.tui
+  return copy
+}
 
-    const mergeSource = (source: Info, scope: SourceScope) => {
-      for (const entry of source.extension ?? []) extensions[scope].add(entry)
-      if (scope === "project" && source.mcp && typeof source.mcp === "object") {
-        for (const name of Object.keys(source.mcp)) projectMcp.add(name)
-      }
-      if (scope === "project") {
-        for (const [providerID, provider] of Object.entries(source.provider ?? {})) {
-          if (provider.npm) projectProviderModules.add(`${providerID}\0${provider.npm}`)
-          for (const model of Object.values(provider.models ?? {})) {
-            if (model.provider?.npm) projectProviderModules.add(`${providerID}\0${model.provider.npm}`)
-          }
-        }
-      }
-      if (scope === "user" && source.defaultProjectTrust !== undefined) {
-        userDefaultProjectTrust = source.defaultProjectTrust
-      }
-      result = mergeConfigWithExtensions(result, source)
-    }
+async function substituteWellKnownRemoteConfig(input: {
+  value: unknown
+  dir: string
+  source: string
+  env: Record<string, string>
+}) {
+  if (!isRecord(input.value) || typeof input.value.url !== "string") return undefined
 
-    // Override with custom config if provided
-    if (Flag.REDSUN_CONFIG) {
-      mergeSource(await loadFile(Flag.REDSUN_CONFIG), "user")
-      log.debug("loaded custom config", { path: Flag.REDSUN_CONFIG })
-    }
-
-    for (const file of ["redsun.jsonc", "redsun.json"]) {
-      const found = await Filesystem.findUp(file, Instance.directory, Instance.worktree)
-      for (const resolved of found.toReversed()) {
-        mergeSource(await loadFile(resolved), "project")
-      }
-    }
-
-    for (const [key, value] of Object.entries(auth)) {
-      if (value.type === "wellknown") {
-        process.env[value.key] = value.token
-        const wellknown = (await fetch(`${key}/.well-known/redsun`).then((x) => x.json())) as any
-        mergeSource(await load(JSON.stringify(wellknown.config ?? {}), process.cwd()), "user")
-      }
-    }
-
-    result.agent = result.agent || {}
-    result.mode = result.mode || {}
-    result.extension = result.extension || []
-
-    const directoryEntries: Array<{ path: string; scope: SourceScope }> = [
-      { path: Global.Path.config, scope: "user" },
-      ...(await Array.fromAsync(
-        Filesystem.up({
-          targets: [".redsun"],
-          start: Instance.directory,
-          stop: Instance.worktree,
-        }),
-      )).map((path) => ({ path, scope: "project" as const })),
-      ...(await Array.fromAsync(
-        Filesystem.up({
-          targets: [".redsun"],
-          start: Global.Path.home,
-          stop: Global.Path.home,
-        }),
-      )).map((path) => ({ path, scope: "user" as const })),
-    ]
-
-    const configDir = process.env["REDSUN_CONFIG_DIR"]
-    if (configDir) {
-      try {
-        await Filesystem.ensureDir(configDir)
-        directoryEntries.push({ path: configDir, scope: "user" })
-        log.debug("loading config from REDSUN_CONFIG_DIR", { path: configDir })
-      } catch (error) {
-        if (!isUnavailable(error)) throw error
-        log.warn("skipping unavailable REDSUN_CONFIG_DIR", { path: configDir })
-      }
-    }
-
-    const scopedDirectories = Array.from(
-      directoryEntries
-        .reduce((result, entry) => {
-          const previous = result.get(entry.path)
-          result.set(entry.path, {
-            path: entry.path,
-            scope: previous?.scope === "project" || entry.scope === "project" ? "project" : "user",
-          })
-          return result
-        }, new Map<string, { path: string; scope: SourceScope }>())
-        .values(),
-    )
-    const directories = scopedDirectories.map((entry) => entry.path)
-    const promises: Promise<void>[] = []
-    for (const { path: dir, scope } of scopedDirectories) {
-      try {
-        await fs.readdir(dir)
-        await assertValid(dir)
-      } catch (error) {
-        if (isUnavailable(error)) {
-          log.warn("skipping unavailable config directory", { path: dir })
-          continue
-        }
-        throw error
-      }
-
-      if (dir.endsWith(".redsun") || dir === configDir) {
-        for (const file of ["redsun.jsonc", "redsun.json"]) {
-          log.debug(`loading config from ${path.join(dir, file)}`)
-          mergeSource(await loadFile(path.join(dir, file)), scope)
-          // to satisy the type checker
-          result.agent ??= {}
-          result.mode ??= {}
-          result.extension ??= []
-        }
-      }
-
-      promises.push(installDependencies(dir))
-      result.command = mergeDeep(result.command ?? {}, await loadCommand(dir))
-      result.agent = mergeDeep(result.agent, await loadAgent(dir))
-      result.agent = mergeDeep(result.agent, await loadMode(dir))
-    }
-    await Promise.allSettled(promises)
-
-    if (Flag.REDSUN_CONFIG_CONTENT) {
-      mergeSource(await load(Flag.REDSUN_CONFIG_CONTENT, path.join(Instance.directory, "REDSUN_CONFIG_CONTENT")), "user")
-      log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
-    }
-
-    // Migrate deprecated mode field to agent field
-    for (const [name, mode] of Object.entries(result.mode)) {
-      result.agent = mergeDeep(result.agent ?? {}, {
-        [name]: {
-          ...mode,
-          mode: "primary" as const,
-        },
-      })
-    }
-
-    if (Flag.REDSUN_PERMISSION) {
-      try {
-        result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.REDSUN_PERMISSION))
-      } catch (error) {
-        log.warn("REDSUN_PERMISSION contains invalid JSON, skipping", { error })
-      }
-    }
-
-    if (!result.username) {
-      try {
-        result.username = os.userInfo().username || "user"
-      } catch (error) {
-        log.warn("failed to read system username, using fallback", { error })
-        result.username = "user"
-      }
-    }
-
-
-
-    if (!result.keybinds) result.keybinds = Info.shape.keybinds.parse({})
-
-    // Apply flag overrides for compaction settings
-    if (Flag.REDSUN_DISABLE_AUTOCOMPACT) {
-      result.compaction = { ...result.compaction, auto: false }
-    }
-    if (Flag.REDSUN_DISABLE_PRUNE) {
-      result.compaction = { ...result.compaction, prune: false }
-    }
-
-    return {
-      config: result,
-      directories,
-      scopedDirectories,
-      extensions: {
-        user: Array.from(extensions.user),
-        project: Array.from(extensions.project),
-      },
-      projectMcp: Array.from(projectMcp),
-      projectProviderModules: Array.from(projectProviderModules),
-      userDefaultProjectTrust,
-    }
+  const url = await ConfigVariable.substitute({
+    text: input.value.url,
+    type: "virtual",
+    dir: input.dir,
+    source: input.source,
+    env: input.env,
   })
-
-  const INVALID_DIRS = new Bun.Glob(`{${["agents", "commands", "extensions", "tools", "skills"].join(",")}}/`)
-  async function assertValid(dir: string) {
-    const invalid = await Array.fromAsync(
-      INVALID_DIRS.scan({
-        onlyFiles: false,
-        cwd: dir,
-      }),
-    )
-    for (const item of invalid) {
-      throw new ConfigDirectoryTypoError({
-        path: dir,
-        dir: item,
-        suggestion: item.substring(0, item.length - 1),
-      })
-    }
-  }
-
-  async function installDependencies(dir: string) {
-    if (Installation.isLocal()) return
-
-    const pkg = path.join(dir, "package.json")
-
-    if (!(await Bun.file(pkg).exists())) {
-      await Bun.write(pkg, "{}")
-    }
-
-    const gitignore = path.join(dir, ".gitignore")
-    const hasGitIgnore = await Bun.file(gitignore).exists()
-    if (!hasGitIgnore) await Bun.write(gitignore, ["node_modules", "package.json", "bun.lock", ".gitignore"].join("\n"))
-  }
-
-  const COMMAND_GLOB = new Bun.Glob("command/**/*.md")
-  async function loadCommand(dir: string) {
-    const result: Record<string, Command> = {}
-    for await (const item of COMMAND_GLOB.scan({
-      absolute: true,
-      followSymlinks: true,
-      dot: true,
-      cwd: dir,
-    })) {
-      const md = await ConfigMarkdown.parse(item)
-      if (!md.data) continue
-
-      const name = (() => {
-        const patterns = ["/.redsun/command/", "/command/"]
-        const pattern = patterns.find((p) => item.includes(p))
-
-        if (pattern) {
-          const index = item.indexOf(pattern)
-          return item.slice(index + pattern.length, -3)
-        }
-        return path.basename(item, ".md")
-      })()
-
-      const config = {
-        name,
-        ...md.data,
-        template: md.content.trim(),
-      }
-      const parsed = Command.safeParse(config)
-      if (parsed.success) {
-        result[config.name] = parsed.data
-        continue
-      }
-      throw new InvalidError({ path: item, issues: parsed.error.issues }, { cause: parsed.error })
-    }
-    return result
-  }
-
-  const AGENT_GLOB = new Bun.Glob("agent/**/*.md")
-  async function loadAgent(dir: string) {
-    const result: Record<string, Agent> = {}
-
-    for await (const item of AGENT_GLOB.scan({
-      absolute: true,
-      followSymlinks: true,
-      dot: true,
-      cwd: dir,
-    })) {
-      const md = await ConfigMarkdown.parse(item)
-      if (!md.data) continue
-
-      // Extract relative path from agent folder for nested agents
-      let agentName = path.basename(item, ".md")
-      const agentFolderPath = item.includes("/.redsun/agent/")
-        ? item.split("/.redsun/agent/")[1]
-        : item.includes("/agent/")
-          ? item.split("/agent/")[1]
-          : agentName + ".md"
-
-      // If agent is in a subfolder, include folder path in name
-      if (agentFolderPath.includes("/")) {
-        const relativePath = agentFolderPath.replace(".md", "")
-        const pathParts = relativePath.split("/")
-        agentName = pathParts.slice(0, -1).join("/") + "/" + pathParts[pathParts.length - 1]
-      }
-
-      const config = {
-        name: agentName,
-        ...md.data,
-        prompt: md.content.trim(),
-      }
-      const parsed = Agent.safeParse(config)
-      if (parsed.success) {
-        result[config.name] = parsed.data
-        continue
-      }
-      throw new InvalidError({ path: item, issues: parsed.error.issues }, { cause: parsed.error })
-    }
-    return result
-  }
-
-  const MODE_GLOB = new Bun.Glob("mode/*.md")
-  async function loadMode(dir: string) {
-    const result: Record<string, Agent> = {}
-    for await (const item of MODE_GLOB.scan({
-      absolute: true,
-      followSymlinks: true,
-      dot: true,
-      cwd: dir,
-    })) {
-      const md = await ConfigMarkdown.parse(item)
-      if (!md.data) continue
-
-      const config = {
-        name: path.basename(item, ".md"),
-        ...md.data,
-        prompt: md.content.trim(),
-      }
-      const parsed = Agent.safeParse(config)
-      if (parsed.success) {
-        result[config.name] = {
-          ...parsed.data,
-          mode: "primary" as const,
-        }
-        continue
-      }
-    }
-    return result
-  }
-
-  export const McpLocal = z
-    .object({
-      type: z.literal("local").describe("Type of MCP server connection"),
-      command: z.string().array().describe("Command and arguments to run the MCP server"),
-      environment: z
-        .record(z.string(), z.string())
-        .optional()
-        .describe("Environment variables to set when running the MCP server"),
-      enabled: z.boolean().optional().describe("Enable or disable the MCP server on startup"),
-      timeout: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe(
-          "Timeout in ms for fetching tools from the MCP server. Defaults to 5000 (5 seconds) if not specified.",
-        ),
-    })
-    .strict()
-    .meta({
-      ref: "McpLocalConfig",
-    })
-
-  export const McpOAuth = z
-    .object({
-      clientId: z
-        .string()
-        .optional()
-        .describe("OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted."),
-      clientSecret: z.string().optional().describe("OAuth client secret (if required by the authorization server)"),
-      scope: z.string().optional().describe("OAuth scopes to request during authorization"),
-      callbackPort: z
-        .number()
-        .int()
-        .min(1)
-        .max(65535)
-        .optional()
-        .describe("Port for the local OAuth callback server. Ignored when redirectUri is set."),
-      redirectUri: z.string().optional().describe("OAuth redirect URI for this MCP server"),
-    })
-    .strict()
-    .meta({
-      ref: "McpOAuthConfig",
-    })
-  export type McpOAuth = z.infer<typeof McpOAuth>
-
-  export const McpRemote = z
-    .object({
-      type: z.literal("remote").describe("Type of MCP server connection"),
-      url: z.string().describe("URL of the remote MCP server"),
-      enabled: z.boolean().optional().describe("Enable or disable the MCP server on startup"),
-      headers: z.record(z.string(), z.string()).optional().describe("Headers to send with the request"),
-      oauth: z
-        .union([McpOAuth, z.literal(false)])
-        .optional()
-        .describe(
-          "OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.",
-        ),
-      timeout: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe(
-          "Timeout in ms for fetching tools from the MCP server. Defaults to 5000 (5 seconds) if not specified.",
-        ),
-    })
-    .strict()
-    .meta({
-      ref: "McpRemoteConfig",
-    })
-
-  export const Mcp = z.discriminatedUnion("type", [McpLocal, McpRemote])
-  export type Mcp = z.infer<typeof Mcp>
-
-  export const Permission = z.enum(["ask", "allow", "deny"])
-  export type Permission = z.infer<typeof Permission>
-
-  export const Command = z.object({
-    template: z.string(),
-    description: z.string().optional(),
-    agent: z.string().optional(),
-    model: z.string().optional(),
-    variant: z.string().optional(),
-    subtask: z.boolean().optional(),
-  })
-  export type Command = z.infer<typeof Command>
-
-  export const Agent = z
-    .object({
-      model: z.string().optional(),
-      variant: z.string().optional().describe("Default model variant when this agent uses its configured model"),
-      temperature: z.number().optional(),
-      top_p: z.number().optional(),
-      prompt: z.string().optional(),
-      tools: z.record(z.string(), z.boolean()).optional(),
-      disable: z.boolean().optional(),
-      description: z.string().optional().describe("Description of when to use the agent"),
-      mode: z.enum(["subagent", "primary", "all"]).optional(),
-      color: z
-        .string()
-        .regex(/^#[0-9a-fA-F]{6}$/, "Invalid hex color format")
-        .optional()
-        .describe("Hex color code for the agent (e.g., #FF5733)"),
-      maxSteps: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("Maximum number of agentic iterations before forcing text-only response"),
-      hidden: z
-        .boolean()
-        .optional()
-        .describe("Hide the agent from the TUI agent list"),
-      permission: z
-        .object({
-          edit: Permission.optional(),
-          bash: z.union([Permission, z.record(z.string(), Permission)]).optional(),
-          skill: z.union([Permission, z.record(z.string(), Permission)]).optional(),
-          webfetch: Permission.optional(),
-          doom_loop: Permission.optional(),
-          external_directory: Permission.optional(),
-        })
-        .optional(),
-    })
-    .catchall(z.any())
-    .meta({
-      ref: "AgentConfig",
-    })
-  export type Agent = z.infer<typeof Agent>
-
-  export const Keybinds = z
-    .object({
-      leader: z.string().optional().default("ctrl+x").describe("Leader key for keybind combinations"),
-      app_exit: z.string().optional().default("ctrl+c,ctrl+d,<leader>q").describe("Exit the application"),
-      editor_open: z.string().optional().default("<leader>e").describe("Open external editor"),
-      theme_list: z.string().optional().default("<leader>t").describe("List available themes"),
-      sidebar_toggle: z.string().optional().default("<leader>b").describe("Toggle sidebar"),
-      scrollbar_toggle: z.string().optional().default("none").describe("Toggle session scrollbar"),
-      username_toggle: z.string().optional().default("none").describe("Toggle username visibility"),
-      status_view: z.string().optional().default("<leader>s").describe("View status"),
-      session_export: z.string().optional().default("<leader>x").describe("Export session to editor"),
-      session_copy: z.string().optional().default("none").describe("Copy current session transcript"),
-      session_new: z.string().optional().default("ctrl+n").describe("Create a new session"),
-      session_list: z.string().optional().default("<leader>l").describe("List all sessions"),
-      session_timeline: z.string().optional().default("<leader>g").describe("Show session timeline"),
-      session_fork: z.string().optional().default("none").describe("Fork session from message"),
-      session_rename: z.string().optional().default("none").describe("Rename session"),
-
-      session_interrupt: z.string().optional().default("ctrl+\\").describe("Interrupt current session"),
-      session_compact: z.string().optional().default("<leader>c").describe("Compact the session"),
-      messages_page_up: z.string().optional().default("pageup").describe("Scroll messages up by one page"),
-      messages_page_down: z.string().optional().default("pagedown").describe("Scroll messages down by one page"),
-      messages_half_page_up: z.string().optional().default("ctrl+alt+u").describe("Scroll messages up by half page"),
-      messages_half_page_down: z
-        .string()
-        .optional()
-        .default("ctrl+alt+d")
-        .describe("Scroll messages down by half page"),
-      messages_first: z.string().optional().default("ctrl+g,home").describe("Navigate to first message"),
-      messages_last: z.string().optional().default("ctrl+alt+g,end").describe("Navigate to last message"),
-      messages_next: z.string().optional().default("none").describe("Navigate to next message"),
-      messages_previous: z.string().optional().default("none").describe("Navigate to previous message"),
-      messages_last_user: z.string().optional().default("none").describe("Navigate to last user message"),
-      messages_copy: z.string().optional().default("<leader>y").describe("Copy message"),
-      messages_undo: z.string().optional().default("<leader>u").describe("Undo message"),
-      messages_redo: z.string().optional().default("<leader>r").describe("Redo message"),
-      messages_toggle_conceal: z
-        .string()
-        .optional()
-        .default("<leader>h")
-        .describe("Toggle code block concealment in messages"),
-      tool_details: z.string().optional().default("none").describe("Toggle tool details visibility"),
-      model_list: z.string().optional().default("<leader>m").describe("List available models"),
-      model_cycle_recent: z.string().optional().default("f2").describe("Next recently used model"),
-      model_cycle_recent_reverse: z.string().optional().default("shift+f2").describe("Previous recently used model"),
-      model_cycle_favorite: z.string().optional().default("none").describe("Next favorite model"),
-      model_cycle_favorite_reverse: z.string().optional().default("none").describe("Previous favorite model"),
-      command_list: z.string().optional().default("ctrl+p").describe("List available commands"),
-      agent_list: z.string().optional().default("<leader>a").describe("List agents"),
-      agent_cycle: z.string().optional().default("tab").describe("Next agent"),
-      agent_cycle_reverse: z.string().optional().default("shift+tab").describe("Previous agent"),
-      input_clear: z.string().optional().default("ctrl+c").describe("Clear input field"),
-      input_paste: z.string().optional().default("ctrl+v").describe("Paste from clipboard"),
-      input_submit: z.string().optional().default("return").describe("Submit input"),
-      input_newline: z
-        .string()
-        .optional()
-        .default("shift+return,ctrl+return,alt+return,ctrl+j")
-        .describe("Insert newline in input"),
-      input_move_left: z.string().optional().default("left,ctrl+b").describe("Move cursor left in input"),
-      input_move_right: z.string().optional().default("right,ctrl+f").describe("Move cursor right in input"),
-      input_move_up: z.string().optional().default("up").describe("Move cursor up in input"),
-      input_move_down: z.string().optional().default("down").describe("Move cursor down in input"),
-      input_select_left: z.string().optional().default("shift+left").describe("Select left in input"),
-      input_select_right: z.string().optional().default("shift+right").describe("Select right in input"),
-      input_select_up: z.string().optional().default("shift+up").describe("Select up in input"),
-      input_select_down: z.string().optional().default("shift+down").describe("Select down in input"),
-      input_line_home: z.string().optional().default("ctrl+a").describe("Move to start of line in input"),
-      input_line_end: z.string().optional().default("ctrl+e").describe("Move to end of line in input"),
-      input_select_line_home: z
-        .string()
-        .optional()
-        .default("ctrl+shift+a")
-        .describe("Select to start of line in input"),
-      input_select_line_end: z.string().optional().default("ctrl+shift+e").describe("Select to end of line in input"),
-      input_visual_line_home: z.string().optional().default("alt+a").describe("Move to start of visual line in input"),
-      input_visual_line_end: z.string().optional().default("alt+e").describe("Move to end of visual line in input"),
-      input_select_visual_line_home: z
-        .string()
-        .optional()
-        .default("alt+shift+a")
-        .describe("Select to start of visual line in input"),
-      input_select_visual_line_end: z
-        .string()
-        .optional()
-        .default("alt+shift+e")
-        .describe("Select to end of visual line in input"),
-      input_buffer_home: z.string().optional().default("home").describe("Move to start of buffer in input"),
-      input_buffer_end: z.string().optional().default("end").describe("Move to end of buffer in input"),
-      input_select_buffer_home: z
-        .string()
-        .optional()
-        .default("shift+home")
-        .describe("Select to start of buffer in input"),
-      input_select_buffer_end: z.string().optional().default("shift+end").describe("Select to end of buffer in input"),
-      input_delete_line: z.string().optional().default("ctrl+shift+d").describe("Delete line in input"),
-      input_delete_to_line_end: z.string().optional().default("ctrl+k").describe("Delete to end of line in input"),
-      input_delete_to_line_start: z.string().optional().default("ctrl+u").describe("Delete to start of line in input"),
-      input_backspace: z.string().optional().default("backspace,shift+backspace").describe("Backspace in input"),
-      input_delete: z.string().optional().default("ctrl+d,delete,shift+delete").describe("Delete character in input"),
-      input_undo: z.string().optional().default("ctrl+-,super+z").describe("Undo in input"),
-      input_redo: z.string().optional().default("ctrl+.,super+shift+z").describe("Redo in input"),
-      input_word_forward: z
-        .string()
-        .optional()
-        .default("alt+f,alt+right,ctrl+right")
-        .describe("Move word forward in input"),
-      input_word_backward: z
-        .string()
-        .optional()
-        .default("alt+b,alt+left,ctrl+left")
-        .describe("Move word backward in input"),
-      input_select_word_forward: z
-        .string()
-        .optional()
-        .default("alt+shift+f,alt+shift+right")
-        .describe("Select word forward in input"),
-      input_select_word_backward: z
-        .string()
-        .optional()
-        .default("alt+shift+b,alt+shift+left")
-        .describe("Select word backward in input"),
-      input_delete_word_forward: z
-        .string()
-        .optional()
-        .default("alt+d,alt+delete,ctrl+delete")
-        .describe("Delete word forward in input"),
-      input_delete_word_backward: z
-        .string()
-        .optional()
-        .default("ctrl+w,ctrl+backspace,alt+backspace")
-        .describe("Delete word backward in input"),
-      history_previous: z.string().optional().default("up").describe("Previous history item"),
-      history_next: z.string().optional().default("down").describe("Next history item"),
-      session_child_cycle: z.string().optional().default("<leader>down,<leader>right").describe("Next child session"),
-      session_child_cycle_reverse: z.string().optional().default("<leader>left").describe("Previous child session"),
-      session_parent: z.string().optional().default("<leader>up").describe("Go to parent session"),
-      terminal_suspend: z.string().optional().default("ctrl+z").describe("Suspend terminal"),
-      terminal_title_toggle: z.string().optional().default("none").describe("Toggle terminal title"),
-      tips_toggle: z.string().optional().default("<leader>h").describe("Toggle tips on home screen"),
-    })
-    .strict()
-    .meta({
-      ref: "KeybindsConfig",
-    })
-
-  export const TUI = z.object({
-    scroll_speed: z.number().min(0.001).optional().describe("TUI scroll speed"),
-    scroll_acceleration: z
-      .object({
-        enabled: z.boolean().describe("Enable scroll acceleration"),
-      })
-      .optional()
-      .describe("Scroll acceleration settings"),
-    diff_style: z
-      .enum(["auto", "stacked"])
-      .optional()
-      .describe("Control diff rendering style: 'auto' adapts to terminal width, 'stacked' always shows single column"),
-  })
-
-  export const Server = z
-    .object({
-      port: z.number().int().positive().optional().describe("Port to listen on"),
-      hostname: z.string().optional().describe("Hostname to listen on"),
-      mdns: z.boolean().optional().describe("Enable mDNS service discovery"),
-    })
-    .strict()
-    .meta({
-      ref: "ServerConfig",
-    })
-
-  export const Layout = z.enum(["auto", "stretch"]).meta({
-    ref: "LayoutConfig",
-  })
-  export type Layout = z.infer<typeof Layout>
-
-  export const Provider = ModelsDev.Provider.partial()
-    .extend({
-      whitelist: z.array(z.string()).optional(),
-      blacklist: z.array(z.string()).optional(),
-      models: z.record(z.string(), ModelsDev.Model.partial()).optional(),
-      options: z
-        .object({
-          apiKey: z.string().optional(),
-          baseURL: z.string().optional(),
-          enterpriseUrl: z.string().optional().describe("GitHub Enterprise URL for copilot authentication"),
-          setCacheKey: z.boolean().optional().describe("Enable promptCacheKey for this provider (default false)"),
-          openaiCompatibleCacheControl: z
-            .boolean()
-            .optional()
-            .describe("Opt in to cache_control provider metadata for OpenAI-compatible providers that support it"),
-          experimentalResponsesContinuation: z
-            .union([z.literal(false), z.literal("api-only")])
-            .optional()
-            .describe("Experimental OpenAI Responses API continuation mode. Defaults to false."),
-          timeout: z
-            .union([
-              z
-                .number()
-                .int()
-                .positive()
-                .describe(
-                  "Timeout in milliseconds for requests to this provider. Default is 300000 (5 minutes). Set to false to disable timeout.",
-                ),
-              z.literal(false).describe("Disable timeout for this provider entirely."),
-            ])
-            .optional()
-            .describe(
-              "Timeout in milliseconds for requests to this provider. Default is 300000 (5 minutes). Set to false to disable timeout.",
-            ),
-        })
-        .catchall(z.any())
-        .optional(),
-    })
-    .strict()
-    .meta({
-      ref: "ProviderConfig",
-    })
-  export type Provider = z.infer<typeof Provider>
-
-  export const Info = z
-    .object({
-      $schema: z.string().optional().describe("JSON schema reference for configuration validation"),
-      theme: z.string().optional().describe("Theme name to use for the interface"),
-      keybinds: Keybinds.optional().describe("Custom keybind configurations"),
-      logLevel: Log.Level.optional().describe("Log level"),
-      tui: TUI.optional().describe("TUI specific settings"),
-      server: Server.optional()        .describe("Server configuration for redsun serve and web commands"),
-      command: z
-        .record(z.string(), Command)
-        .optional()
-        .describe("Command configuration, see https://opencode.ai/docs/commands"),
-      watcher: z
-        .object({
-          ignore: z.array(z.string()).optional(),
-        })
-        .optional(),
-      extension: z.string().array().optional(),
-      defaultProjectTrust: z.enum(["ask", "always", "never"]).optional().describe("Default behavior for project trust prompts (default: ask)"),
-      snapshot: z.boolean().optional(),
-
-      disabled_providers: z.array(z.string()).optional().describe("Disable providers that are loaded automatically"),
-      enabled_providers: z
-        .array(z.string())
-        .optional()
-        .describe("When set, ONLY these providers will be enabled. All other providers will be ignored"),
-      model: z.string().describe("Model to use in the format of provider/model, eg anthropic/claude-2").optional(),
-      small_model: z
-        .string()
-        .describe("Small model to use for tasks like title generation in the format of provider/model")
-        .optional(),
-      task_router: z
-        .object({
-          compact: z.string().optional().describe("Model for context compaction"),
-          summary: z.string().optional().describe("Model for session summaries"),
-          title: z.string().optional().describe("Model for title generation"),
-          explore: z.string().optional().describe("Model for exploration subagents"),
-        })
-        .optional()
-        .describe("Per-task model routing for different task types"),
-      default_agent: z
-        .string()
-        .optional()
-        .describe(
-          "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
-        ),
-      subagent_depth: z
-        .number()
-        .int()
-        .nonnegative()
-        .optional()
-        .describe("Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents."),
-      username: z
-        .string()
-        .optional()
-        .describe("Custom username to display in conversations instead of system username"),
-      mode: z
-        .object({
-          build: Agent.optional(),
-          plan: Agent.optional(),
-        })
-        .catchall(Agent)
-        .optional()
-        .describe("@deprecated Use `agent` field instead."),
-      agent: z
-        .object({
-          // primary
-          plan: Agent.optional(),
-          build: Agent.optional(),
-          // subagent
-          general: Agent.optional(),
-          explore: Agent.optional(),
-          // specialized
-          title: Agent.optional(),
-          summary: Agent.optional(),
-          compaction: Agent.optional(),
-        })
-        .catchall(Agent)
-        .optional()
-        .describe("Agent configuration, see https://opencode.ai/docs/agent"),
-      provider: z
-        .record(z.string(), Provider)
-        .optional()
-        .describe("Custom provider configurations and model overrides"),
-      mcp: z.record(z.string(), Mcp).optional().describe("MCP (Model Context Protocol) server configurations"),
-      formatter: z
-        .union([
-          z.literal(false),
-          z.record(
-            z.string(),
-            z.object({
-              disabled: z.boolean().optional(),
-              command: z.array(z.string()).optional(),
-              environment: z.record(z.string(), z.string()).optional(),
-              extensions: z.array(z.string()).optional(),
-            }),
-          ),
-        ])
-        .optional(),
-      lsp: z
-        .union([
-          z.literal(false),
-          z.record(
-            z.string(),
-            z.union([
-              z.object({
-                disabled: z.literal(true),
-              }),
-              z.object({
-                command: z.array(z.string()),
-                extensions: z.array(z.string()).optional(),
-                disabled: z.boolean().optional(),
-                env: z.record(z.string(), z.string()).optional(),
-                initialization: z.record(z.string(), z.any()).optional(),
+  const headers = isRecord(input.value.headers)
+    ? Object.fromEntries(
+        await Promise.all(
+          Object.entries(input.value.headers)
+            .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+            .map(async ([key, value]) => [
+              key,
+              await ConfigVariable.substitute({
+                text: value,
+                type: "virtual",
+                dir: input.dir,
+                source: input.source,
+                env: input.env,
               }),
             ]),
-          ),
-        ])
-        .optional()
-        .refine(
-          (data) => {
-            if (!data) return true
-            if (typeof data === "boolean") return true
-            const serverIds = new Set(Object.values(LSPServer).map((s) => s.id))
-
-            return Object.entries(data).every(([id, config]) => {
-              if (config.disabled) return true
-              if (serverIds.has(id)) return true
-              return Boolean(config.extensions)
-            })
-          },
-          {
-            error: "For custom LSP servers, 'extensions' array is required.",
-          },
         ),
-      instructions: z.array(z.string()).optional().describe("Additional instruction files or patterns to include"),
-      layout: Layout.optional().describe("@deprecated Always uses stretch layout."),
-      permission: z
-        .object({
-          edit: Permission.optional(),
-          bash: z.union([Permission, z.record(z.string(), Permission)]).optional(),
-          skill: z.union([Permission, z.record(z.string(), Permission)]).optional(),
-          webfetch: Permission.optional(),
-          doom_loop: Permission.optional(),
-          external_directory: Permission.optional(),
-        })
-        .optional(),
-      tools: z.record(z.string(), z.boolean()).optional(),
-      compaction: z
-        .object({
-          auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),
-          prune: z.boolean().optional().describe("Enable pruning of old tool outputs (default: true)"),
-          strategy: z
-            .enum(["hybrid", "algorithmic", "llm"])
-            .optional()
-            .describe("Compaction strategy: 'hybrid' = algorithmic extraction + LLM synthesis (default), 'algorithmic' = rule-based only (0 LLM tokens), 'llm' = full LLM summarization"),
-          keepRecent: z
-            .number()
-            .int()
-            .min(0)
-            .optional()
-            .describe("Number of recent messages to keep verbatim in hybrid mode LLM input (default: 4)"),
-          triggerThreshold: z
-            .number()
-            .gt(0)
-            .max(1)
-            .optional()
-            .describe("Context usage ratio that triggers automatic compaction (default: 0.7)"),
-          resetThreshold: z
-            .number()
-            .min(0)
-            .max(1)
-            .optional()
-            .describe("Context usage ratio that rearms automatic compaction after a trigger (default: 0.4)"),
-          maxToolResults: z
-            .number()
-            .int()
-            .min(0)
-            .optional()
-            .describe("Maximum number of tool result summaries to keep in algorithmic compaction inventory (default: 30)"),
-        })
-        .refine(
-          (value) => (value.resetThreshold ?? 0.4) < (value.triggerThreshold ?? 0.7),
-          "compaction.resetThreshold must be lower than compaction.triggerThreshold",
-        )
-        .optional(),
-      experimental: z
-        .object({
-          hook: z
-            .object({
-              file_edited: z
-                .record(
-                  z.string(),
-                  z
-                    .object({
-                      command: z.string().array(),
-                      environment: z.record(z.string(), z.string()).optional(),
-                    })
-                    .array(),
-                )
-                .optional(),
-              session_completed: z
-                .object({
-                  command: z.string().array(),
-                  environment: z.record(z.string(), z.string()).optional(),
-                })
-                .array()
-                .optional(),
-            })
-            .optional(),
-          chatMaxRetries: z.number().optional().describe("Number of retries for chat completions on failure"),
-          disable_paste_summary: z.boolean().optional(),
-          batch_tool: z.boolean().optional().describe("Enable the batch tool"),
-          openTelemetry: z
-            .boolean()
-            .optional()
-            .describe("Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)"),
-          primary_tools: z
-            .array(z.string())
-            .optional()
-            .describe("Tools that should only be available to primary agents."),
-          continue_loop_on_deny: z.boolean().optional().describe("Continue the agent loop when a tool call is denied"),
-        })
-        .optional(),
-    })
-    .strict()
-    .meta({
-      ref: "Config",
-    })
+      )
+    : undefined
 
-  export type Info = z.output<typeof Info>
+  return { url, headers }
+}
 
-  export const global = lazy(async () => {
-    let result: Info = pipe(
-      {},
-      mergeDeep(await loadFile(path.join(Global.Path.config, "config.json"))),
-      mergeDeep(await loadFile(path.join(Global.Path.config, "redsun.json"))),
-      mergeDeep(await loadFile(path.join(Global.Path.config, "redsun.jsonc"))),
-    )
+async function resolveLoadedPlugins<T extends { plugin?: ConfigPluginV1.Spec[] }>(config: T, filepath: string) {
+  if (!config.plugin) return config
+  for (let i = 0; i < config.plugin.length; i++) {
+    // Normalize path-like plugin specs while we still know which config file declared them.
+    // This prevents `./plugin.ts` from being reinterpreted relative to some later merge location.
+    config.plugin[i] = await ConfigPlugin.resolvePluginSpec(config.plugin[i], filepath)
+  }
+  return config
+}
 
-    await import(path.join(Global.Path.config, "config"), {
-      with: {
-        type: "toml",
+type Info = ConfigV1.Info & {
+  // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
+  // with the file and scope it came from so later runtime code can make location-sensitive decisions.
+  plugin_origins?: ConfigPlugin.Origin[]
+}
+
+type State = {
+  config: Info
+  userConfig: Info
+  directories: string[]
+  scopedDirectories: Array<{ path: string; scope: "user" | "project" }>
+  extensions: { user: string[]; project: string[] }
+  userDefaultProjectTrust?: "ask" | "always" | "never"
+  deps: Fiber.Fiber<void>[]
+  consoleState: ConsoleState
+}
+
+export interface Interface {
+  readonly get: () => Effect.Effect<Info>
+  readonly getExecutable: () => Effect.Effect<Info>
+  readonly projectTrusted: () => Effect.Effect<boolean>
+  readonly getGlobal: () => Effect.Effect<Info>
+  readonly getConsoleState: () => Effect.Effect<ConsoleState>
+  readonly update: (config: Info) => Effect.Effect<void>
+  readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
+  readonly invalidate: () => Effect.Effect<void>
+  readonly directories: () => Effect.Effect<string[]>
+  readonly scopedDirectories: (scope: "user" | "project") => Effect.Effect<string[]>
+  readonly extensionEntries: (scope: "user" | "project") => Effect.Effect<string[]>
+  readonly userDefaultProjectTrust: () => Effect.Effect<"ask" | "always" | "never" | undefined>
+  readonly waitForDependencies: () => Effect.Effect<void>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/Config") {}
+
+export const use = serviceUse(Service)
+
+function globalConfigFile() {
+  const candidates = ["redsun.jsonc", "redsun.json", "config.json"].map((file) =>
+    path.join(Global.Path.config, file),
+  )
+  for (const file of candidates) {
+    if (existsSync(file)) return file
+  }
+  return candidates[0]
+}
+
+function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
+  if (!isRecord(patch)) {
+    const edits = modify(input, path, patch, {
+      formattingOptions: {
+        insertSpaces: true,
+        tabSize: 2,
       },
     })
-      .then(async (mod) => {
-        const { provider, model, ...rest } = mod.default
-        if (provider && model) result.model = `${provider}/${model}`
-        result["$schema"] = "https://redsun.sh/config.json"
-        result = mergeDeep(result, rest)
-        await Bun.write(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
-        await fs.unlink(path.join(Global.Path.config, "config"))
-      })
-      .catch(() => {})
-
-    return result
-  })
-
-  async function loadFile(filepath: string): Promise<Info> {
-    log.info("loading", { path: filepath })
-    let text = await Bun.file(filepath)
-      .text()
-      .catch((err) => {
-        if (isUnavailable(err)) return
-        throw new JsonError({ path: filepath }, { cause: err })
-      })
-    if (!text) return {}
-    return load(text, filepath)
+    return applyEdits(input, edits)
   }
 
-  function isUnavailable(error: unknown) {
-    const code = (error as NodeJS.ErrnoException)?.code
-    return code === "ENOENT" || code === "EACCES" || code === "EPERM"
-  }
+  return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
+}
 
-  async function load(text: string, configFilepath: string) {
-    text = text.replace(/\{env:([^}]+)\}/g, (_, varName) => {
-      return process.env[varName] || ""
+function writable(info: Info) {
+  const { plugin_origins: _plugin_origins, ...next } = info
+  return next
+}
+
+function writableGlobal(info: Info) {
+  const next = writable(info)
+  // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
+  if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
+  return next
+}
+
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const fs = yield* FSUtil.Service
+    const authSvc = yield* Auth.Service
+    const accountSvc = yield* Account.Service
+    const env = yield* Env.Service
+    const npmSvc = yield* Npm.Service
+    const http = yield* HttpClient.HttpClient
+
+    const readConfigFile = (filepath: string) => fs.readFileStringSafe(filepath).pipe(Effect.orDie)
+
+    const fetchRemoteJson = Effect.fnUntraced(function* <S extends Schema.Top>(
+      url: string,
+      headers: Record<string, string> | undefined,
+      schema: S,
+      loginOrigin: string,
+    ) {
+      const response = yield* HttpClient.filterStatusOk(withTransientReadRetry(http))
+        .execute(
+          HttpClientRequest.get(url).pipe(HttpClientRequest.acceptJson, HttpClientRequest.setHeaders(headers ?? {})),
+        )
+        .pipe(
+          Effect.catch((error) => Effect.die(new Error(`failed to fetch remote config from ${url}: ${String(error)}`))),
+        )
+      const body = yield* response.text.pipe(
+        Effect.catch((error) => Effect.die(new Error(`failed to read remote config from ${url}: ${String(error)}`))),
+      )
+      // An auth proxy can answer with an HTML login page at HTTP 200 (passes filterStatusOk); treat it as a re-auth error, not a decode failure.
+      const contentType = (response.headers["content-type"] ?? "").toLowerCase()
+      if (contentType.includes("html") || /^\s*<!doctype|^\s*<html/i.test(body)) {
+        return yield* Effect.die(new RemoteAuthError({ url: loginOrigin, remote: url }))
+      }
+      return yield* Schema.decodeEffect(Schema.fromJsonString(schema))(body).pipe(
+        Effect.catch((error) => Effect.die(new Error(`failed to decode remote config from ${url}: ${String(error)}`))),
+      )
     })
 
-    const fileMatches = text.match(/\{file:[^}]+\}/g)
-    if (fileMatches) {
-      const configDir = path.dirname(configFilepath)
-      const lines = text.split("\n")
+    const loadConfig = Effect.fnUntraced(function* (
+      text: string,
+      options: { path: string } | { dir: string; source: string },
+      env?: Record<string, string>,
+    ) {
+      const source = "path" in options ? options.path : options.source
+      const expanded = yield* Effect.promise(() =>
+        ConfigVariable.substitute(
+          "path" in options
+            ? { text, type: "path", path: options.path, env }
+            : { text, type: "virtual", ...options, env },
+        ),
+      )
+      const parsed = ConfigParse.jsonc(expanded, source)
+      const data = ConfigParse.schema(ConfigV1.Info, normalizeLoadedConfig(parsed), source)
+      if (!("path" in options)) return data
 
-      for (const match of fileMatches) {
-        const lineIndex = lines.findIndex((line) => line.includes(match))
-        if (lineIndex !== -1 && lines[lineIndex].trim().startsWith("//")) {
-          continue // Skip if line is commented
-        }
-        let filePath = match.replace(/^\{file:/, "").replace(/\}$/, "")
-        if (filePath.startsWith("~/")) {
-          filePath = path.join(os.homedir(), filePath.slice(2))
-        }
-        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(configDir, filePath)
-        const fileContent = (
-          await Bun.file(resolvedPath)
-            .text()
-            .catch((error) => {
-              const errMsg = `bad file reference: "${match}"`
-              if (error.code === "ENOENT") {
-                throw new InvalidError(
-                  {
-                    path: configFilepath,
-                    message: errMsg + ` ${resolvedPath} does not exist`,
-                  },
-                  { cause: error },
-                )
-              }
-              throw new InvalidError({ path: configFilepath, message: errMsg }, { cause: error })
-            })
-        ).trim()
-        // escape newlines/quotes, strip outer quotes
-        text = text.replace(match, () => JSON.stringify(fileContent).slice(1, -1))
-      }
-    }
-
-    const errors: JsoncParseError[] = []
-    const data = parseJsonc(text, errors, { allowTrailingComma: true })
-    if (errors.length) {
-      const lines = text.split("\n")
-      const errorDetails = errors
-        .map((e) => {
-          const beforeOffset = text.substring(0, e.offset).split("\n")
-          const line = beforeOffset.length
-          const column = beforeOffset[beforeOffset.length - 1].length + 1
-          const problemLine = lines[line - 1]
-
-          const error = `${printParseErrorCode(e.error)} at line ${line}, column ${column}`
-          if (!problemLine) return error
-
-          return `${error}\n   Line ${line}: ${problemLine}\n${"".padStart(column + 9)}^`
-        })
-        .join("\n")
-
-      throw new JsonError({
-        path: configFilepath,
-        message: `\n--- JSONC Input ---\n${text}\n--- Errors ---\n${errorDetails}\n--- End ---`,
-      })
-    }
-
-    const parsed = Info.safeParse(data)
-    if (parsed.success) {
-      if (!parsed.data.$schema) {
-        parsed.data.$schema = "https://redsun.sh/config.json"
-        await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2)).catch((error) => {
-          log.warn("failed to add schema to config", { path: configFilepath, error })
-        })
-      }
-      const data = parsed.data
-      if (data.extension) {
-        const configDirUrl = pathToFileURL(path.dirname(configFilepath)).href
-        for (let i = 0; i < data.extension.length; i++) {
-          const extension = data.extension[i]
-          try {
-            data.extension[i] = import.meta.resolve!(extension, configDirUrl)
-          } catch (err) {}
-        }
+      yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
+      if (!data.$schema) {
+        data.$schema = "https://opencode.ai/config.json"
+        const updated = text.replace(/^\s*\{/, '{\n  "$schema": "https://opencode.ai/config.json",')
+        yield* fs.writeFileString(options.path, updated).pipe(Effect.catch(() => Effect.void))
       }
       return data
-    }
-
-    throw new InvalidError({
-      path: configFilepath,
-      issues: parsed.error.issues,
     })
-  }
-  export const JsonError = NamedError.create(
-    "ConfigJsonError",
-    z.object({
-      path: z.string(),
-      message: z.string().optional(),
-    }),
-  )
 
-  export const ConfigDirectoryTypoError = NamedError.create(
-    "ConfigDirectoryTypoError",
-    z.object({
-      path: z.string(),
-      dir: z.string(),
-      suggestion: z.string(),
-    }),
-  )
+    const loadFile = Effect.fnUntraced(function* (filepath: string, env?: Record<string, string>) {
+      yield* Effect.logInfo("loading", { path: filepath })
+      const text = yield* readConfigFile(filepath)
+      if (!text) return {} as Info
+      return yield* loadConfig(text, { path: filepath }, env)
+    })
 
-  export const InvalidError = NamedError.create(
-    "ConfigInvalidError",
-    z.object({
-      path: z.string(),
-      issues: z.custom<z.core.$ZodIssue[]>().optional(),
-      message: z.string().optional(),
-    }),
-  )
+    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
+      let result: Info = {}
+      // Seed the default global config with the schema for editor completion, but avoid writing when the user
+      // explicitly routes config through env-provided paths or content.
+      if (!Flag.OPENCODE_CONFIG && !Flag.OPENCODE_CONFIG_DIR && !Flag.OPENCODE_CONFIG_CONTENT) {
+        const file = globalConfigFile()
+        if (!existsSync(file)) {
+          yield* fs
+            .writeWithDirs(file, JSON.stringify({ $schema: "https://opencode.ai/config.json" }, null, 2))
+            .pipe(Effect.catch(() => Effect.void))
+        }
+      }
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "redsun.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "redsun.jsonc"), env))
 
-  export async function get() {
-    return state().then((x) => x.config)
-  }
+      const legacy = path.join(Global.Path.config, "config")
+      if (existsSync(legacy)) {
+        yield* Effect.promise(() =>
+          import(pathToFileURL(legacy).href, { with: { type: "toml" } })
+            .then(async (mod) => {
+              const { provider, model, ...rest } = mod.default
+              if (provider && model) result.model = `${provider}/${model}`
+              result["$schema"] = "https://opencode.ai/config.json"
+              result = mergeConfig(result, rest)
+              await fsNode.writeFile(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
+              await fsNode.unlink(legacy)
+            })
+            .catch(() => {}),
+        )
+      }
 
-  export async function update(config: Info) {
-    const filepath = path.join(Instance.directory, "redsun.json")
-    const existing = await loadFile(filepath)
-    await Bun.write(filepath, JSON.stringify(mergeDeep(existing, config), null, 2))
-    await Instance.dispose()
-  }
+      return result
+    })
 
-  export async function directories() {
-    return state().then((x) => x.directories)
-  }
+    const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
+      loadGlobal().pipe(
+        Effect.tapError((error) =>
+          Effect.logError("failed to load global config, using defaults", { error: String(error) }),
+        ),
+        Effect.orElseSucceed((): Info => ({})),
+      ),
+      Duration.infinity,
+    )
 
-  export async function executableDirectories(scope: SourceScope) {
-    return state().then((x) => x.scopedDirectories.filter((entry) => entry.scope === scope).map((entry) => entry.path))
-  }
+    const getGlobal = Effect.fn("Config.getGlobal")(function* () {
+      return yield* cachedGlobal
+    })
 
-  export async function extensionEntries(scope: SourceScope) {
-    return state().then((x) => x.extensions[scope])
-  }
+    const ensureGitignore = Effect.fn("Config.ensureGitignore")(function* (dir: string) {
+      yield* fs.ensureDir(dir)
+      const gitignore = path.join(dir, ".gitignore")
+      const hasIgnore = yield* fs.existsSafe(gitignore)
+      if (!hasIgnore) {
+        yield* fs
+          .writeFileString(
+            gitignore,
+            ["node_modules", "package.json", "package-lock.json", "bun.lock", ".gitignore"].join("\n"),
+          )
+          .pipe(
+            Effect.catchIf(
+              (e) => e.reason._tag === "PermissionDenied",
+              () => Effect.void,
+            ),
+          )
+      }
+    })
 
-  export async function isProjectMcp(name: string) {
-    return state().then((x) => x.projectMcp.includes(name))
-  }
+    const loadInstanceState = Effect.fn("Config.loadInstanceState")(
+      function* (ctx: InstanceContext) {
+        const auth = yield* authSvc.all().pipe(Effect.orDie)
 
-  export async function isProjectProviderModule(providerID: string, npm: string) {
-    return state().then((x) => x.projectProviderModules.includes(`${providerID}\0${npm}`))
-  }
+        let result: Info = {}
+        let userConfig: Info = {}
+        const extensions = { user: new Set<string>(), project: new Set<string>() }
+        let userDefaultProjectTrust: "ask" | "always" | "never" | undefined
+        const authEnv: Record<string, string> = {}
+        const consoleManagedProviders = new Set<string>()
+        let activeOrgName: string | undefined
 
-  export async function userDefaultProjectTrust() {
-    return state().then((x) => x.userDefaultProjectTrust)
-  }
-}
+        const pluginScopeForSource = Effect.fnUntraced(function* (source: string) {
+          if (source.startsWith("http://") || source.startsWith("https://")) return "global"
+          if (source === "OPENCODE_CONFIG_CONTENT") return "local"
+          if (containsPath(source, ctx)) return "local"
+          return "global"
+        })
+
+        const mergePluginOrigins = Effect.fnUntraced(function* (
+          source: string,
+          // mergePluginOrigins receives raw Specs from one config source, before provenance for this merge step
+          // is attached.
+          list: ConfigPluginV1.Spec[] | undefined,
+          // Scope can be inferred from the source path, but some callers already know whether the config should
+          // behave as global or local and can pass that explicitly.
+          kind?: ConfigPlugin.Scope,
+        ) {
+          if (!list?.length) return
+          const hit = kind ?? (yield* pluginScopeForSource(source))
+          // Merge newly seen plugin origins with previously collected ones, then dedupe by plugin identity while
+          // keeping the winning source/scope metadata for downstream installs, writes, and diagnostics.
+          const plugins = ConfigPlugin.deduplicatePluginOrigins([
+            ...(result.plugin_origins ?? []),
+            ...list.map((spec) => ({ spec, source, scope: hit })),
+          ])
+          result.plugin = plugins.map((item) => item.spec)
+          result.plugin_origins = plugins
+        })
+
+        const merge = (source: string, next: Info, kind?: ConfigPlugin.Scope) => {
+          const scope = kind ?? (containsPath(source, ctx) ? "local" : "global")
+          const extensionScope = scope === "local" ? "project" : "user"
+          const base = source.endsWith(".json") || source.endsWith(".jsonc") ? path.dirname(source) : source
+          for (const entry of next.extension ?? []) {
+            const resolved =
+              entry.startsWith("npm:") || entry.startsWith("file:") || path.isAbsolute(entry)
+                ? entry
+                : path.resolve(base === "OPENCODE_CONFIG_CONTENT" ? ctx.directory : base, entry)
+            extensions[extensionScope].add(resolved)
+          }
+          if (extensionScope === "user" && next.defaultProjectTrust !== undefined) {
+            userDefaultProjectTrust = next.defaultProjectTrust
+          }
+          if (extensionScope === "user") userConfig = mergeConfigConcatArrays(userConfig, next)
+          result = mergeConfigConcatArrays(result, next)
+          return mergePluginOrigins(source, next.plugin, scope)
+        }
+
+        for (const [key, value] of Object.entries(auth)) {
+          if (value.type === "wellknown") {
+            const url = key.replace(/\/+$/, "")
+            authEnv[value.key] = value.token
+            const wellknownURL = `${url}/.well-known/opencode`
+            yield* Effect.logDebug("fetching remote config", { url: wellknownURL })
+            const wellknown = yield* fetchRemoteJson(wellknownURL, undefined, ConfigV1.WellKnown, url)
+            const remote = yield* Effect.promise(() =>
+              substituteWellKnownRemoteConfig({
+                value: wellknown.remote_config,
+                dir: url,
+                source: wellknownURL,
+                env: authEnv,
+              }),
+            )
+            const fetchedConfig = remote
+              ? yield* Effect.gen(function* () {
+                  yield* Effect.logDebug("fetching remote config", { url: remote.url })
+                  const data = yield* fetchRemoteJson(remote.url, remote.headers, Schema.Json, url)
+                  if (isRecord(data) && isRecord(data.config)) return data.config
+                  if (isRecord(data)) return data
+                  return yield* Effect.die(
+                    new Error(`failed to decode remote config from ${remote.url}: expected object`),
+                  )
+                })
+              : {}
+            const remoteConfig = mergeConfig(isRecord(wellknown.config) ? wellknown.config : {}, fetchedConfig)
+            if (!remoteConfig.$schema) remoteConfig.$schema = "https://opencode.ai/config.json"
+            const source = wellknownURL
+            const next = yield* loadConfig(
+              JSON.stringify(remoteConfig),
+              {
+                dir: path.dirname(source),
+                source,
+              },
+              authEnv,
+            )
+            yield* merge(source, next, "global")
+            yield* Effect.logDebug("loaded remote config from well-known", { url })
+          }
+        }
+
+        const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
+        yield* merge(Global.Path.config, global, "global")
+
+        if (Flag.OPENCODE_CONFIG) {
+          yield* merge(Flag.OPENCODE_CONFIG, yield* loadFile(Flag.OPENCODE_CONFIG, authEnv))
+          yield* Effect.logDebug("loaded custom config", { path: Flag.OPENCODE_CONFIG })
+        }
+
+        if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+          for (const file of yield* ConfigPaths.files("redsun", ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
+            yield* merge(file, yield* loadFile(file, authEnv), "local")
+          }
+        }
+
+        result.agent = result.agent || {}
+        result.mode = result.mode || {}
+        result.plugin = result.plugin || []
+
+        const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
+        const scopedDirectories = directories.map((directory) => ({
+          path: directory,
+          scope:
+            directory === Global.Path.config || directory === Flag.OPENCODE_CONFIG_DIR || !containsPath(directory, ctx)
+              ? ("user" as const)
+              : ("project" as const),
+        }))
+
+        if (Flag.OPENCODE_CONFIG_DIR) {
+          yield* Effect.logDebug("loading config from OPENCODE_CONFIG_DIR", { path: Flag.OPENCODE_CONFIG_DIR })
+        }
+
+        const deps: Fiber.Fiber<void>[] = []
+
+        for (const dir of directories) {
+          const directoryScope = scopedDirectories.find((entry) => entry.path === dir)?.scope ?? "project"
+          if (dir.endsWith(".redsun") || dir === Flag.OPENCODE_CONFIG_DIR) {
+            for (const file of ["redsun.json", "redsun.jsonc"]) {
+              const source = path.join(dir, file)
+              yield* Effect.logDebug(`loading config from ${source}`)
+              yield* merge(source, yield* loadFile(source, authEnv), directoryScope === "user" ? "global" : "local")
+              result.agent ??= {}
+              result.mode ??= {}
+              result.plugin ??= []
+            }
+          }
+
+          yield* ensureGitignore(dir).pipe(Effect.orDie)
+
+          const dep = yield* npmSvc
+            .install(dir, {
+              add: [
+                {
+                  name: "@opencode-ai/plugin",
+                  version: InstallationLocal ? undefined : InstallationVersion,
+                },
+              ],
+            })
+            .pipe(
+              Effect.exit,
+              Effect.tap((exit) =>
+                Exit.isFailure(exit)
+                  ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
+                  : Effect.void,
+              ),
+              Effect.asVoid,
+              Effect.forkDetach,
+            )
+          deps.push(dep)
+
+          result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
+          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
+          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
+          // Auto-discovered plugins under `.redsun/plugin(s)` are already local files, so ConfigPlugin.load
+          // returns normalized Specs and we only need to attach origin metadata here.
+          const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
+          yield* mergePluginOrigins(dir, list, directoryScope === "user" ? "global" : "local")
+        }
+
+        if (process.env.OPENCODE_CONFIG_CONTENT) {
+          const source = "OPENCODE_CONFIG_CONTENT"
+          const next = yield* loadConfig(process.env.OPENCODE_CONFIG_CONTENT, {
+            dir: ctx.directory,
+            source,
+          })
+          yield* merge(source, next, "global")
+          yield* Effect.logDebug("loaded custom config from OPENCODE_CONFIG_CONTENT")
+        }
+
+        const activeAccount = Option.getOrUndefined(
+          yield* accountSvc.active().pipe(Effect.catch(() => Effect.succeed(Option.none()))),
+        )
+        if (activeAccount?.active_org_id) {
+          const accountID = activeAccount.id
+          const orgID = activeAccount.active_org_id
+          const url = activeAccount.url
+          yield* Effect.gen(function* () {
+            const [configOpt, tokenOpt] = yield* Effect.all(
+              [accountSvc.config(accountID, orgID), accountSvc.token(accountID)],
+              { concurrency: 2 },
+            )
+            if (Option.isSome(tokenOpt)) {
+              process.env["OPENCODE_CONSOLE_TOKEN"] = tokenOpt.value
+              yield* env.set("OPENCODE_CONSOLE_TOKEN", tokenOpt.value)
+            }
+
+            if (Option.isSome(configOpt)) {
+              const source = `${url}/api/config`
+              const next = yield* loadConfig(JSON.stringify(configOpt.value), {
+                dir: path.dirname(source),
+                source,
+              })
+              for (const providerID of Object.keys(next.provider ?? {})) {
+                consoleManagedProviders.add(providerID)
+              }
+              yield* merge(source, next, "global")
+            }
+          }).pipe(
+            Effect.withSpan("Config.loadActiveOrgConfig"),
+            Effect.catch((err) =>
+              Effect.logDebug("failed to fetch remote account config", {
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            ),
+          )
+        }
+
+        const managedDir = ConfigManaged.managedConfigDir()
+        if (existsSync(managedDir)) {
+          for (const file of ["redsun.json", "redsun.jsonc"]) {
+            const source = path.join(managedDir, file)
+            yield* merge(source, yield* loadFile(source), "global")
+          }
+        }
+
+        // macOS managed preferences (.mobileconfig deployed via MDM) override everything
+        const managed = yield* Effect.promise(() => ConfigManaged.readManagedPreferences())
+        if (managed) {
+          result = mergeConfigConcatArrays(
+            result,
+            yield* loadConfig(managed.text, {
+              dir: path.dirname(managed.source),
+              source: managed.source,
+            }),
+          )
+        }
+
+        for (const [name, mode] of Object.entries(result.mode ?? {})) {
+          result.agent = mergeDeep(result.agent ?? {}, {
+            [name]: {
+              ...mode,
+              mode: "primary" as const,
+            },
+          })
+        }
+
+        if (Flag.OPENCODE_PERMISSION) {
+          try {
+            result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.OPENCODE_PERMISSION))
+          } catch (err) {
+            yield* Effect.logWarning("OPENCODE_PERMISSION contains invalid JSON, skipping", { err })
+          }
+        }
+
+        if (result.tools) {
+          const perms: Record<string, ConfigPermissionV1.Action> = {}
+          for (const [tool, enabled] of Object.entries(result.tools)) {
+            const action: ConfigPermissionV1.Action = enabled ? "allow" : "deny"
+            if (tool === "write" || tool === "edit" || tool === "patch") {
+              perms.edit = action
+              continue
+            }
+            perms[tool] = action
+          }
+          result.permission = mergeDeep(perms, result.permission ?? {})
+        }
+
+        if (!result.username) {
+          try {
+            result.username = os.userInfo().username || "user"
+          } catch (err) {
+            yield* Effect.logWarning("failed to read system username, using fallback", { err })
+            result.username = "user"
+          }
+        }
+
+        if (result.autoshare === true && !result.share) {
+          result.share = "auto"
+        }
+
+        if (Flag.OPENCODE_DISABLE_AUTOCOMPACT) {
+          result.compaction = { ...result.compaction, auto: false }
+        }
+        if (Flag.OPENCODE_DISABLE_PRUNE) {
+          result.compaction = { ...result.compaction, prune: false }
+        }
+
+        return {
+          config: result,
+          userConfig,
+          directories,
+          scopedDirectories,
+          extensions: { user: Array.from(extensions.user), project: Array.from(extensions.project) },
+          userDefaultProjectTrust,
+          deps,
+          consoleState: {
+            consoleManagedProviders: Array.from(consoleManagedProviders),
+            activeOrgName,
+            switchableOrgCount: 0,
+          },
+        }
+      },
+      Effect.provideService(FSUtil.Service, fs),
+    )
+
+    const state = yield* InstanceState.make<State>(
+      Effect.fn("Config.state")(function* (ctx) {
+        return yield* loadInstanceState(ctx).pipe(Effect.orDie)
+      }),
+    )
+
+    const get = Effect.fn("Config.get")(function* () {
+      return yield* InstanceState.use(state, (s) => s.config)
+    })
+
+    const directories = Effect.fn("Config.directories")(function* () {
+      return yield* InstanceState.use(state, (s) => s.directories)
+    })
+
+    const projectTrusted = Effect.fn("Config.projectTrusted")(function* () {
+      const directory = yield* InstanceState.directory
+      const policy = yield* InstanceState.use(state, (s) => s.userDefaultProjectTrust)
+      return ProjectTrust.resolveDefault(directory, policy)
+    })
+
+    const getExecutable = Effect.fn("Config.getExecutable")(function* () {
+      const s = yield* InstanceState.get(state)
+      if (yield* projectTrusted()) return s.config
+      return {
+        ...s.config,
+        plugin: s.userConfig.plugin ?? [],
+        plugin_origins: (s.config.plugin_origins ?? []).filter((entry) => entry.scope === "global"),
+        formatter: s.userConfig.formatter,
+        lsp: s.userConfig.lsp,
+        mcp: s.userConfig.mcp,
+        provider: s.userConfig.provider,
+      }
+    })
+
+    const scopedDirectories: Interface["scopedDirectories"] = Effect.fn("Config.scopedDirectories")(function* (scope) {
+      return yield* InstanceState.use(state, (s) => s.scopedDirectories.filter((item) => item.scope === scope).map((item) => item.path))
+    })
+
+    const extensionEntries: Interface["extensionEntries"] = Effect.fn("Config.extensionEntries")(function* (scope) {
+      return yield* InstanceState.use(state, (s) => s.extensions[scope])
+    })
+
+    const defaultTrust: Interface["userDefaultProjectTrust"] = Effect.fn("Config.userDefaultProjectTrust")(function* () {
+      return yield* InstanceState.use(state, (s) => s.userDefaultProjectTrust)
+    })
+
+    const getConsoleState = Effect.fn("Config.getConsoleState")(function* () {
+      return yield* InstanceState.use(state, (s) => s.consoleState)
+    })
+
+    const waitForDependencies = Effect.fn("Config.waitForDependencies")(function* () {
+      yield* InstanceState.useEffect(state, (s) =>
+        Effect.forEach(s.deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.asVoid),
+      )
+    })
+
+    const update = Effect.fn("Config.update")(function* (config: Info) {
+      const dir = yield* InstanceState.directory
+      const file = path.join(dir, "config.json")
+      const existing = yield* loadFile(file)
+      yield* fs
+        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
+        .pipe(Effect.orDie)
+    })
+
+    const invalidate = Effect.fn("Config.invalidate")(function* () {
+      yield* invalidateGlobal
+    })
+
+    const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
+      const file = globalConfigFile()
+      const before = (yield* readConfigFile(file)) ?? "{}"
+      const patch = writableGlobal(config)
+
+      let next: Info
+      let changed: boolean
+      if (!file.endsWith(".jsonc")) {
+        const existing = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(before, file), file)
+        const merged = mergeDeep(writable(existing), patch)
+        const serialized = JSON.stringify(merged, null, 2)
+        changed = serialized !== before
+        if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
+        next = merged
+      } else {
+        const updated = patchJsonc(before, patch)
+        next = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(updated, file), file)
+        changed = updated !== before
+        if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+      }
+
+      if (changed) yield* invalidate()
+      return { info: next, changed }
+    })
+
+    return Service.of({
+      get,
+      getExecutable,
+      projectTrusted,
+      getGlobal,
+      getConsoleState,
+      update,
+      updateGlobal,
+      invalidate,
+      directories,
+      scopedDirectories,
+      extensionEntries,
+      userDefaultProjectTrust: defaultTrust,
+      waitForDependencies,
+    })
+  }),
+)
+
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [FSUtil.node, Auth.node, Account.node, Env.node, Npm.node, httpClient],
+})
+
+export * as Config from "./config"

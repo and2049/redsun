@@ -1,32 +1,90 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import os from "os"
-import path from "path"
+import { test, expect, describe, afterEach } from "bun:test"
+import { createConnection, createServer as createNetServer } from "net"
+import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
+import { parseRedirectUri } from "../../src/mcp/oauth-provider"
 
-const xdgRoot = path.join(os.tmpdir(), "redsun-oauth-test-" + Math.random().toString(36).slice(2))
-process.env.XDG_CACHE_HOME = path.join(xdgRoot, "cache")
-process.env.XDG_CONFIG_HOME = path.join(xdgRoot, "config")
-process.env.XDG_DATA_HOME = path.join(xdgRoot, "data")
-process.env.XDG_STATE_HOME = path.join(xdgRoot, "state")
+async function getFreeLoopbackPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createNetServer()
+    probe.once("error", reject)
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address()
+      probe.close(() => {
+        if (typeof address === "object" && address) {
+          resolve(address.port)
+          return
+        }
+        reject(new Error("Could not allocate a loopback port"))
+      })
+    })
+  })
+}
 
-const { McpOAuthCallback, OAUTH_CALLBACK_HOST } = await import("../../src/mcp/oauth-callback")
-const { OAUTH_CALLBACK_PATH, OAUTH_CALLBACK_PORT } = await import("../../src/mcp/oauth-provider")
-const callbackUrl = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`
+async function canConnect(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host, port })
+    const done = (ok: boolean) => {
+      socket.removeAllListeners()
+      socket.destroy()
+      resolve(ok)
+    }
 
-describe("McpOAuthCallback", () => {
-  test("binds callbacks to IPv4 loopback", () => {
-    expect(OAUTH_CALLBACK_HOST).toBe("127.0.0.1")
+    socket.setTimeout(500)
+    socket.once("connect", () => done(true))
+    socket.once("error", () => done(false))
+    socket.once("timeout", () => done(false))
+  })
+}
+
+describe("parseRedirectUri", () => {
+  test("returns defaults when no URI provided", () => {
+    const result = parseRedirectUri()
+    expect(result.port).toBe(19876)
+    expect(result.path).toBe("/mcp/oauth/callback")
   })
 
+  test("parses port and path from URI", () => {
+    const result = parseRedirectUri("http://127.0.0.1:8080/oauth/callback")
+    expect(result.port).toBe(8080)
+    expect(result.path).toBe("/oauth/callback")
+  })
+
+  test("returns defaults for invalid URI", () => {
+    const result = parseRedirectUri("not-a-valid-url")
+    expect(result.port).toBe(19876)
+    expect(result.path).toBe("/mcp/oauth/callback")
+  })
+})
+
+describe("McpOAuthCallback.ensureRunning", () => {
   afterEach(async () => {
     await McpOAuthCallback.stop()
   })
 
+  test("starts server with custom redirectUri port and path", async () => {
+    await McpOAuthCallback.ensureRunning("http://127.0.0.1:18000/custom/callback")
+    expect(McpOAuthCallback.isRunning()).toBe(true)
+  })
+
+  test("stops after the callback completes", async () => {
+    const redirectUri = "http://127.0.0.1:18003/custom/callback"
+    await McpOAuthCallback.ensureRunning(redirectUri)
+    const callback = McpOAuthCallback.waitForCallback("success")
+
+    const response = await fetch(`${redirectUri}?code=code&state=success`)
+
+    expect(response.status).toBe(200)
+    expect(await callback).toBe("code")
+    expect(McpOAuthCallback.isRunning()).toBe(false)
+  })
+
   test("escapes provider error markup in callback HTML", async () => {
-    await McpOAuthCallback.ensureRunning()
+    const redirectUri = "http://127.0.0.1:18001/custom/callback"
+    await McpOAuthCallback.ensureRunning(redirectUri)
 
     const error = `<script>alert("xss" & 'more')</script>`
     const response = await fetch(
-      `${callbackUrl}?state=test&error=access_denied&error_description=${encodeURIComponent(error)}`,
+      `${redirectUri}?state=test&error=access_denied&error_description=${encodeURIComponent(error)}`,
     )
     const body = await response.text()
 
@@ -36,33 +94,21 @@ describe("McpOAuthCallback", () => {
   })
 
   test("keeps normal provider errors readable", async () => {
-    await McpOAuthCallback.ensureRunning()
+    const redirectUri = "http://127.0.0.1:18002/custom/callback"
+    await McpOAuthCallback.ensureRunning(redirectUri)
 
     const response = await fetch(
-      `${callbackUrl}?state=test&error=access_denied&error_description=${encodeURIComponent("The user denied access")}`,
+      `${redirectUri}?state=test&error=access_denied&error_description=${encodeURIComponent("The user denied access")}`,
     )
 
-    expect(await response.text()).toContain('<div class="error">The user denied access</div>')
+    expect(await response.text()).toContain('<pre class="detail" id="oc-detail">The user denied access</pre>')
   })
 
-  test("stops after the callback completes", async () => {
-    await McpOAuthCallback.ensureRunning()
-    const callback = McpOAuthCallback.waitForCallback("success")
+  test("binds the callback server to IPv4 loopback", async () => {
+    const port = await getFreeLoopbackPort()
+    await McpOAuthCallback.ensureRunning(`http://127.0.0.1:${port}/custom/callback`)
 
-    const response = await fetch(`${callbackUrl}?code=code&state=success`)
-
-    expect(response.status).toBe(200)
-    expect(await callback).toBe("code")
-    expect(McpOAuthCallback.isRunning()).toBe(false)
-  })
-
-  test("stops after cancellation by MCP name", async () => {
-    await McpOAuthCallback.ensureRunning()
-    const callback = McpOAuthCallback.waitForCallback("cancel-state", "test-server")
-
-    McpOAuthCallback.cancelPending("test-server")
-
-    await expect(callback).rejects.toThrow("Authorization cancelled")
-    expect(McpOAuthCallback.isRunning()).toBe(false)
+    expect(await canConnect("127.0.0.1", port)).toBe(true)
+    expect(await canConnect("::1", port)).toBe(false)
   })
 })

@@ -1,540 +1,521 @@
-import { BashTool } from "./bash"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
+import { Ripgrep } from "@opencode-ai/core/ripgrep"
+import { PlanExitTool } from "./plan"
+import { Session } from "@/session/session"
+import { QuestionTool } from "./question"
+import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
-import { ListTool } from "./ls"
-import { BatchTool } from "./batch"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
-import { TodoWriteTool, TodoReadTool } from "./todo"
+import { Database } from "@opencode-ai/core/database/database"
+import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
-import { ReloadTool } from "./reload"
-import type { Agent } from "../agent/agent"
-import { Tool } from "./tool"
-import { Instance } from "../project/instance"
-import { State } from "../project/state"
-import { Config } from "../config/config"
-import { Bus } from "../bus"
-import { BusEvent } from "../bus/bus-event"
-import path from "path"
+import * as Tool from "./tool"
+import { Config } from "@/config/config"
+import { type ToolContext as PluginToolContext, type ToolDefinition } from "@opencode-ai/plugin"
+import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
+import { Schema } from "effect"
 import z from "zod"
+import { Plugin } from "../plugin"
+import { Provider } from "@/provider/provider"
+
 import { WebSearchTool } from "./websearch"
-import { CodeSearchTool } from "./codesearch"
-import { Flag } from "@/flag/flag"
-import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
+import * as Truncate from "./truncate"
+import { ApplyPatchTool } from "./apply_patch"
+import { Glob } from "@opencode-ai/core/util/glob"
+import path from "path"
+import { pathToFileURL } from "url"
+import { Effect, Layer, Context } from "effect"
+import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Format } from "../format"
+import { InstanceState } from "@/effect/instance-state"
+import { EffectBridge } from "@/effect/bridge"
+import { Question } from "../question"
+import { Todo } from "../session/todo"
+import { LSP } from "@/lsp/lsp"
+import { Instruction } from "../session/instruction"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { Agent } from "../agent/agent"
+import { Skill } from "../skill"
+import { Permission } from "@/permission"
+import { BackgroundJob } from "@/background/job"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { MCP } from "@/mcp"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { McpCatalog } from "@/mcp/catalog"
+import { ExtensionRuntime } from "@/extension/runtime"
+import { MultiEditTool } from "./multiedit"
+import { ListTool } from "./list"
+import { CodeSearchTool } from "./codesearch"
 import { ProjectTool } from "./project"
-import { ExtensionLoader } from "../extension/loader"
-import { ExtensionRunner } from "../extension/runner"
-import { ExtensionContext } from "../extension/context"
-import type { Extension } from "../extension/types"
-import { Entry } from "../entry/entry"
-import { iife } from "@/util/iife"
+import { ReloadTool } from "./reload"
 
-let trustOverride: boolean | undefined
-
-const sessionModelOverrides = new Map<string, { providerID: string; modelID: string }>()
-
-export namespace TrustFlag {
-  export function set(trusted: boolean) {
-    trustOverride = trusted
-  }
-  export function get() {
-    return trustOverride
-  }
-  export function clear() {
-    trustOverride = undefined
-  }
+export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
+  return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
 }
 
-export namespace ToolRegistry {
-  const log = Log.create({ service: "tool.registry" })
+type TaskDef = Tool.InferDef<typeof TaskTool>
+type ReadDef = Tool.InferDef<typeof ReadTool>
 
-  export const ChangeEvent = BusEvent.define(
-    "tool.registry.changed",
-    z.object({
-      directory: z.string(),
-    }),
-  )
+type State = {
+  custom: Tool.Def[]
+  builtin: Tool.Def[]
+  task: TaskDef
+  read: ReadDef
+}
 
-  export interface State {
-    custom: Map<string, Tool.Info>
-    runner: ExtensionRunner.State
-  }
+export interface Interface {
+  readonly ids: () => Effect.Effect<string[]>
+  readonly all: () => Effect.Effect<Tool.Def[]>
+  readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
+  readonly tools: (model: {
+    providerID: ProviderV2.ID
+    modelID: ModelV2.ID
+    agent: Agent.Info
+    permission?: PermissionV1.Ruleset
+  }) => Effect.Effect<Tool.Def[]>
+}
 
-  async function initState(): Promise<State> {
-    const custom = new Map<string, Tool.Info>()
-    const glob = new Bun.Glob("tool/*.{js,ts}")
+export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
 
-    async function loadCustomTools(scope: Config.SourceScope) {
-      for (const dir of await Config.executableDirectories(scope)) {
-        for await (const match of glob.scan({
-          cwd: dir,
-          absolute: true,
-          followSymlinks: true,
-          dot: true,
-        })) {
-          const namespace = path.basename(match, path.extname(match))
-          const mod = await import(match)
-          for (const [id, def] of Object.entries<ToolDefinition>(mod)) {
-            const tool = fromLegacyDefinition(id === "default" ? namespace : `${namespace}_${id}`, def)
-            custom.set(tool.id, tool)
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const config = yield* Config.Service
+    const plugin = yield* Plugin.Service
+    const agents = yield* Agent.Service
+    const truncate = yield* Truncate.Service
+    const flags = yield* RuntimeFlags.Service
+    const mcp = yield* MCP.Service
+
+    const invalid = yield* InvalidTool
+    const task = yield* TaskTool
+    const read = yield* ReadTool
+    const question = yield* QuestionTool
+    const todo = yield* TodoWriteTool
+    const lsptool = yield* LspTool
+    const plan = yield* PlanExitTool
+    const webfetch = yield* WebFetchTool
+    const websearch = yield* WebSearchTool
+    const shell = yield* ShellTool
+    const globtool = yield* GlobTool
+    const writetool = yield* WriteTool
+    const edit = yield* EditTool
+    const greptool = yield* GrepTool
+    const patchtool = yield* ApplyPatchTool
+    const skilltool = yield* SkillTool
+    const multiedit = yield* MultiEditTool
+    const listtool = yield* ListTool
+    const codesearch = yield* CodeSearchTool
+    const projecttool = yield* ProjectTool
+    const reloadtool = yield* ReloadTool
+    const agent = yield* Agent.Service
+    const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
+    const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
+
+    const state = yield* InstanceState.make<State>(
+      Effect.fn("ToolRegistry.state")(function* (ctx) {
+        const custom: Tool.Def[] = []
+
+        function fromPlugin(id: string, def: ToolDefinition): Tool.Def {
+          // Plugin tools still expose Zod args publicly; keep that compatibility
+          // boxed at the registry boundary and give the LLM the original JSON Schema.
+          // Normalize missing args to `{}` once — pre-1.14.49 the code was
+          // `z.object(def.args)` and Zod silently tolerated undefined (#27451, #27630).
+          const args = def.args ?? {}
+          const entries = Object.entries(args)
+          const allZod = entries.every((entry) => isZodType(entry[1]))
+          const zodParams = allZod ? z.object(args) : undefined
+          const jsonSchema = zodParams ? zodJsonSchema(zodParams) : legacyJsonSchema(entries)
+          const parameters = zodParams
+            ? Schema.declare<unknown>((u): u is unknown => zodParams.safeParse(u).success)
+            : Schema.Unknown
+          return {
+            id,
+            parameters,
+            jsonSchema,
+            description: def.description,
+            execute: (args, toolCtx) =>
+              Effect.gen(function* () {
+                // Bridge the host's Effect-based `ask` into a Promise-returning
+                // function for the plugin to make sure context persists
+                const bridge = yield* EffectBridge.make()
+                const pluginCtx: PluginToolContext = {
+                  ...toolCtx,
+                  ask: (req) => bridge.promise(toolCtx.ask(req)),
+                  directory: ctx.directory,
+                  worktree: ctx.worktree,
+                }
+                const result = yield* Effect.promise(() => def.execute(args as any, pluginCtx))
+                const output = typeof result === "string" ? result : result.output
+                const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
+                const attachments = typeof result === "string" ? undefined : result.attachments
+                const info = yield* agent.get(toolCtx.agent)
+                const out = yield* truncate.output(output, {}, info)
+                return {
+                  title: typeof result === "string" ? "" : (result.title ?? ""),
+                  output: out.truncated ? out.content : output,
+                  attachments,
+                  metadata: {
+                    ...metadata,
+                    truncated: out.truncated,
+                    ...(out.truncated && { outputPath: out.outputPath }),
+                  },
+                }
+              }).pipe(
+                Effect.withSpan("Tool.execute", {
+                  attributes: {
+                    "tool.name": id,
+                    "session.id": toolCtx.sessionID,
+                    "message.id": toolCtx.messageID,
+                    ...(toolCtx.callID ? { "tool.call_id": toolCtx.callID } : {}),
+                  },
+                }),
+              ),
           }
         }
-      }
-    }
 
-    await loadCustomTools("user")
-
-    let runner: ExtensionRunner.State
-    const contextFactory = (): Extension.Context =>
-      ExtensionContext.create({
-        mode: "rpc",
-        cwd: Instance.directory,
-        sessionID: "",
-        agent: "",
-        projectTrusted: runner?.projectTrusted ?? false,
-        getSystemPrompt: () => "",
-      })
-
-    runner = ExtensionRunner.create(contextFactory)
-
-    // Phase 1: Load non-project extensions first (config, CLI, global)
-    const nonProjectExtensions = await ExtensionLoader.load({ projectTrusted: false })
-    for (const ext of nonProjectExtensions) {
-      const api = createExtensionAPI(runner, ext.sourceInfo)
-      try {
-        await ext.factory(api)
-      } catch (error) {
-        log.error("extension factory failed", { path: ext.path, error })
-      }
-    }
-
-    // Phase 2: Resolve project trust, allowing non-project extensions to vote
-    const { resolveProjectTrusted } = await import("../trust/project-trust")
-    const { createTrustStore } = await import("../trust/manager")
-    const trustStore = createTrustStore()
-    const defaultTrust = await Config.userDefaultProjectTrust()
-    const trustCtx = ExtensionContext.create({
-      mode: "rpc",
-      cwd: Instance.directory,
-      sessionID: "",
-      agent: "",
-      projectTrusted: false,
-      getSystemPrompt: () => "",
-    })
-    const trusted = await resolveProjectTrusted({
-      cwd: Instance.directory,
-      trustStore,
-      trustOverride: iife((): boolean | undefined => {
-        if (trustOverride !== undefined) return trustOverride
-        if (defaultTrust === "always") return true
-        if (defaultTrust === "never") return false
-        return undefined
-      }),
-      defaultProjectTrust: defaultTrust as "ask" | "always" | "never" | undefined,
-      runner,
-      mode: "rpc",
-      hasUI: false,
-      ui: trustCtx.ui,
-    })
-    runner.projectTrusted = trusted
-
-    // Phase 3: Load project extensions if trusted
-    if (trusted) {
-      const projectExtensions = await ExtensionLoader.loadProjectExtensions(
-        new Set(nonProjectExtensions.map((extension) => extension.resolvedPath)),
-      )
-      for (const ext of projectExtensions) {
-        const api = createExtensionAPI(runner, ext.sourceInfo)
-        try {
-          await ext.factory(api)
-        } catch (error) {
-          log.error("extension factory failed", { path: ext.path, error })
-        }
-      }
-      await loadCustomTools("project")
-    }
-
-    // Phase 4: Discover tools from all loaded extensions
-    for (const [id, { tool, source }] of runner.tools) {
-      custom.set(id, tool)
-      log.info("registered extension tool", { id, source: source.scope })
-    }
-
-    // Wire provider registrar and flush pending registrations
-    const { Provider } = await import("../provider/provider")
-    runner.providerRegistrar = {
-      register: (name, config) => Provider.registerProvider(name, config),
-      unregister: (name) => Provider.unregisterProvider(name),
-    }
-    await ExtensionRunner.flushProviderRegistrations(runner)
-
-    const discoverCtx: Extension.Context = ExtensionContext.create({
-      mode: "rpc",
-      cwd: Instance.directory,
-      sessionID: "",
-      agent: "",
-      projectTrusted: trusted,
-      getSystemPrompt: () => "",
-    })
-    await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(
-      runner,
-      { type: "resources_discover", cwd: Instance.directory, reason: "startup" },
-      discoverCtx,
-    )
-    await ExtensionRunner.emit<Extension.AgentsRegisterEvent>(
-      runner,
-      { type: "agents_register", cwd: Instance.directory, reason: "startup" },
-      discoverCtx,
-    )
-
-    return { custom, runner }
-  }
-
-  export const state = Instance.state(initState)
-
-  let pendingReload = false
-
-  export function setPendingReload() {
-    pendingReload = true
-  }
-
-  export function consumePendingReload(): boolean {
-    if (pendingReload) {
-      pendingReload = false
-      return true
-    }
-    return false
-  }
-
-  export async function reload() {
-    const s = await state()
-    const oldRunner = s.runner
-
-    const [{ SessionStatus }, { ExtensionContext: EC }] = await Promise.all([
-      import("../session/status"),
-      import("../extension/context"),
-    ])
-    const statuses = SessionStatus.list()
-    for (const [sessionID, status] of Object.entries(statuses)) {
-      if (status.type === "idle") continue
-      const ctx = EC.forSession({
-        mode: "rpc",
-        sessionID,
-        agent: "",
-        projectTrusted: oldRunner.projectTrusted,
-        getSystemPrompt: () => "",
-      })
-      await ExtensionRunner.emit(oldRunner, { type: "session_shutdown", reason: "reload" }, ctx)
-    }
-
-    await ExtensionRunner.unregisterAllProviders(oldRunner)
-    sessionModelOverrides.clear()
-    ExtensionRunner.invalidate(oldRunner)
-
-    State.reset(Instance.directory, initState as () => unknown)
-    await state()
-
-    const newState = await state()
-    const newRunner = newState.runner
-
-    const discoverCtx: Extension.Context = ExtensionContext.create({
-      mode: "rpc",
-      cwd: Instance.directory,
-      sessionID: "",
-      agent: "",
-      projectTrusted: newRunner.projectTrusted,
-      getSystemPrompt: () => "",
-    })
-    await ExtensionRunner.emit<Extension.ResourcesDiscoverEvent>(
-      newRunner,
-      { type: "resources_discover", cwd: Instance.directory, reason: "reload" },
-      discoverCtx,
-    )
-
-    const [{ Skill }, { PromptTemplate }, { Command }] = await Promise.all([
-      import("../skill/skill"),
-      import("../prompt/template"),
-      import("../command"),
-    ])
-    Skill.invalidate()
-    PromptTemplate.invalidate()
-    Command.invalidate()
-
-    for (const [sessionID, status] of Object.entries(statuses)) {
-      if (status.type === "idle") continue
-      const ctx = EC.forSession({
-        mode: "rpc",
-        sessionID,
-        agent: "",
-        projectTrusted: newRunner.projectTrusted,
-        getSystemPrompt: () => "",
-      })
-      await ExtensionRunner.emit(newRunner, { type: "session_start", reason: "reload" }, ctx)
-    }
-
-    log.info("reload completed")
-    emitChanged()
-  }
-
-  export function createExtensionAPI(runner: ExtensionRunner.State, source: Extension.SourceInfo): Extension.API {
-    const assertActive = () => {
-      if (ExtensionRunner.isInvalidated(runner)) {
-        throw new Error(
-          "This extension context is no longer valid. The runtime was reloaded — " +
-          "the extension factory will be called again with a fresh API object. " +
-          "Discard any captured references to the old api or ctx."
+        const dirs = (yield* config.projectTrusted())
+          ? yield* config.directories()
+          : yield* config.scopedDirectories("user")
+        const matches = dirs.flatMap((dir) =>
+          Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true }),
         )
-      }
-    }
-    return {
-      on: (event, handler) => { assertActive(); ExtensionRunner.on(runner, event, handler as any) },
-      registerTool: async (tool) => {
-        assertActive()
-        await ExtensionRunner.registerTool(runner, tool, source)
-        const s = await state()
-        s.custom.set(tool.id, tool)
-        emitChanged()
-      },
-      unregisterTool: (id) => {
-        assertActive()
-        ExtensionRunner.unregisterTool(runner, id)
-        state().then((s) => {
-          s.custom.delete(id)
-          emitChanged()
-        })
-      },
-      setActiveTools: (toolNames) => { assertActive(); ExtensionRunner.setActiveTools(runner, toolNames) },
-      getActiveTools: () => { assertActive(); return ExtensionRunner.getActiveTools(runner) },
-      getAllTools: () => { assertActive(); return ExtensionRunner.getAllTools(runner) },
-      registerCommand: (command) => { assertActive(); ExtensionRunner.registerCommand(runner, command) },
-      unregisterCommand: (name) => { assertActive(); ExtensionRunner.unregisterCommand(runner, name) },
-      sendMessage: (content: string) => {
-        assertActive()
-        const sessionID = runner.currentContext?.sessionID
-        if (!sessionID) {
-          log.warn("sendMessage called outside session context", { content })
-          return
-        }
-        Entry.append(sessionID, {
-          type: "custom_message",
-          customType: "extension.message",
-          content,
-          display: true,
-        }).then(async () => {
-          log.info("sendMessage delivered", { sessionID })
-          const { SessionStatus } = await import("../session/status")
-          if (SessionStatus.get(sessionID).type === "idle") {
-            import("../session/prompt").then(({ SessionPrompt }) => {
-              SessionPrompt.loop(sessionID)
-            }).catch((err) => {
-              log.error("sendMessage loop trigger failed", { sessionID, error: err })
-            })
+        if (matches.length) yield* config.waitForDependencies()
+        for (const match of matches) {
+          const namespace = path.basename(match, path.extname(match))
+          // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
+          // Import it as `file://` so Node on Windows accepts the dynamic import.
+          const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
+          for (const [id, def] of Object.entries(mod)) {
+            if (!isPluginTool(def)) continue
+            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
           }
-        }).catch((err) => {
-          log.error("sendMessage failed", { sessionID, error: err })
-        })
-      },
-      sendUserMessage: (content: string) => {
-        assertActive()
-        const sessionID = runner.currentContext?.sessionID
-        if (!sessionID) {
-          log.warn("sendUserMessage called outside session context", { content })
-          return
         }
-        import("../session/prompt").then(({ SessionPrompt }) => {
-          SessionPrompt.sendUserMessage(sessionID, content)
-        }).catch((err) => {
-          log.error("sendUserMessage failed", { sessionID, error: err })
-        })
-      },
-      appendEntry: async (sessionID, customType, data) => {
-        assertActive()
-        return Entry.append(sessionID, { type: "custom", customType, data })
-      },
-      appendCustomMessageEntry: async (sessionID, customType, content, display, details) => {
-        assertActive()
-        return Entry.append(sessionID, {
-          type: "custom_message",
-          customType,
-          content,
-          display: display ?? true,
-          details,
-        })
-      },
-      setModel: async (model: string) => {
-        assertActive()
-        const sessionID = runner.currentContext?.sessionID
-        if (!sessionID) {
-          log.warn("setModel called outside session context", { model })
-          return false
-        }
-        try {
-          const { Provider } = await import("../provider/provider")
-          const parsed = Provider.parseModel(model)
-          await Provider.getModel(parsed.providerID, parsed.modelID)
-          sessionModelOverrides.set(sessionID, { providerID: parsed.providerID, modelID: parsed.modelID })
-          log.info("setModel", { model, sessionID })
-          return true
-        } catch (error) {
-          log.warn("setModel failed", { model, error })
-          return false
-        }
-      },
-      registerProvider: (name, config) => { assertActive(); ExtensionRunner.registerProvider(runner, name, config, source.path) },
-      unregisterProvider: (name) => { assertActive(); ExtensionRunner.unregisterProvider(runner, name) },
-      events: {
-        emit: (channel: string, data: unknown) => { assertActive(); ExtensionRunner.emitEvent(runner, channel, data) },
-        on: (channel: string, handler: (data: unknown) => void) => { assertActive(); return ExtensionRunner.onEvent(runner, channel, handler) },
-      },
-    }
-  }
 
-  export interface ToolDefinition {
-    description: string
-    args: Record<string, z.ZodType>
-    execute(args: Record<string, unknown>, ctx: Tool.Context): Promise<string>
-  }
-
-  function fromLegacyDefinition(id: string, def: ToolDefinition): Tool.Info {
-    return {
-      id,
-      init: async () => ({
-        parameters: z.object(def.args),
-        description: def.description,
-        execute: async (args, ctx) => {
-          const result = await def.execute(args as any, ctx)
-          return {
-            title: "",
-            output: result,
-            metadata: {},
+        const plugins = yield* plugin.list()
+        for (const p of plugins) {
+          for (const [id, def] of Object.entries(p.tool ?? {})) {
+            custom.push(fromPlugin(id, def))
           }
-        },
+        }
+
+        const cfg = yield* config.get()
+        const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
+
+        const tool = yield* Effect.all({
+          invalid: Tool.init(invalid),
+          shell: Tool.init(shell),
+          read: Tool.init(read),
+          glob: Tool.init(globtool),
+          grep: Tool.init(greptool),
+          edit: Tool.init(edit),
+          write: Tool.init(writetool),
+          task: Tool.init(task),
+          fetch: Tool.init(webfetch),
+          todo: Tool.init(todo),
+          search: Tool.init(websearch),
+          skill: Tool.init(skilltool),
+          patch: Tool.init(patchtool),
+          multiedit: Tool.init(multiedit),
+          list: Tool.init(listtool),
+          codesearch: Tool.init(codesearch),
+          project: Tool.init(projecttool),
+          reload: Tool.init(reloadtool),
+          question: Tool.init(question),
+          lsp: Tool.init(lsptool),
+          plan: Tool.init(plan),
+          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
+        })
+
+        return {
+          custom,
+          builtin: [
+            tool.invalid,
+            ...(questionEnabled ? [tool.question] : []),
+            tool.shell,
+            tool.read,
+            tool.glob,
+            tool.grep,
+            tool.edit,
+            tool.write,
+            tool.task,
+            tool.fetch,
+            tool.todo,
+            tool.search,
+            tool.skill,
+            tool.patch,
+            tool.multiedit,
+            tool.list,
+            tool.codesearch,
+            tool.project,
+            tool.reload,
+            ...(cfg.experimental?.batch_tool
+              ? [{
+                  id: "batch",
+                  description: "Execute up to 10 independent tool calls concurrently.",
+                  parameters: Schema.Struct({
+                    tool_calls: Schema.Array(Schema.Struct({
+                      tool: Schema.String,
+                      parameters: Schema.Record(Schema.String, Schema.Unknown),
+                    })),
+                  }),
+                  execute: (
+                    input: { tool_calls: Array<{ tool: string; parameters: Record<string, unknown> }> },
+                    ctx: Tool.Context,
+                  ) =>
+                    Effect.gen(function* () {
+                      const available = new Map(
+                        Object.values(tool).flatMap((item) =>
+                          item && typeof item === "object" && "id" in item
+                            ? [[item.id, item as Tool.Def] as const]
+                            : [],
+                        ),
+                      )
+                      const results = yield* Effect.forEach(
+                        input.tool_calls.slice(0, 10),
+                        (call) => {
+                          const selected = call.tool === "batch" ? undefined : available.get(call.tool)
+                          if (!selected)
+                            return Effect.succeed({ tool: call.tool, error: `Unknown or disallowed tool: ${call.tool}` })
+                          return selected.execute(call.parameters, ctx).pipe(
+                            Effect.map((result) => ({ tool: call.tool, output: result.output })),
+                            Effect.catch((error) =>
+                              Effect.succeed({ tool: call.tool, error: String(error) }),
+                            ),
+                          )
+                        },
+                        { concurrency: "unbounded" },
+                      )
+                      return {
+                        title: "Batch complete",
+                        output: JSON.stringify(results, null, 2),
+                        metadata: { results },
+                      }
+                    }),
+                } satisfies Tool.Def]
+              : []),
+            ...(tool.execute ? [tool.execute] : []),
+            ...(flags.experimentalLspTool ? [tool.lsp] : []),
+            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+          ],
+          task: tool.task,
+          read: tool.read,
+        }
       }),
-    }
-  }
+    )
 
-  export async function register(tool: Tool.Info, source?: Extension.SourceInfo) {
-    const { custom, runner } = await state()
-    custom.set(tool.id, tool)
-    await ExtensionRunner.registerTool(runner, tool, source)
-    emitChanged()
-  }
+    const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
+      const s = yield* InstanceState.get(state)
+      return [...s.builtin, ...s.custom] as Tool.Def[]
+    })
 
-  export async function unregister(id: string) {
-    const { custom, runner } = await state()
-    custom.delete(id)
-    runner.tools.delete(id)
-    runner.activeTools.delete(id)
-    emitChanged()
-  }
+    const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
+      return (yield* all()).map((tool) => tool.id)
+    })
 
-  export async function get(id: string): Promise<Tool.Info | undefined> {
-    const tools = await allTools()
-    return tools.find((t) => t.id === id)
-  }
+    const describeTask = Effect.fn("ToolRegistry.describeTask")(function* (agent: Agent.Info) {
+      const items = (yield* agents.list()).filter((item) => item.mode !== "primary")
+      const filtered = items.filter(
+        (item) => Permission.evaluate("task", item.name, agent.permission).action !== "deny",
+      )
+      const list = filtered.toSorted((a, b) => a.name.localeCompare(b.name))
+      const description = list
+        .map(
+          (item) =>
+            `- ${item.name}: ${item.description ?? "This subagent should only be called manually by the user."}`,
+        )
+        .join("\n")
+      return ["Available agent types and the tools they have access to:", description].join("\n")
+    })
 
-  export async function all(): Promise<Tool.Info[]> {
-    return allTools()
-  }
+    const describeCodeMode = Effect.fn("ToolRegistry.describeCodeMode")(function* (input: {
+      agent: Agent.Info
+      permission?: PermissionV1.Ruleset
+    }) {
+      if (!codeMode) return
+      const ruleset = Permission.merge(input.agent.permission, input.permission ?? [])
+      const tools = Permission.visibleTools(yield* mcp.tools(), ruleset)
+      if (Object.keys(tools).length === 0) return
+      return codeMode.describeCatalog(tools, Object.keys(yield* mcp.clients()).map(McpCatalog.sanitize))
+    })
 
-  export async function ids() {
-    return allTools().then((x) => x.map((t) => t.id))
-  }
+    const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const ctx = yield* InstanceState.context
+      const active = ExtensionRuntime.activeToolIDs(ctx.directory)
+      const filtered = (yield* all()).filter((tool) => {
+        if (active?.size && !active.has(tool.id)) return false
+        if (tool.id === WebSearchTool.id) {
+          return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
+        }
 
-  async function allTools(): Promise<Tool.Info[]> {
-    const { custom } = await state()
-    const config = await Config.get()
-    const customIds = new Set(Array.from(custom.keys()))
+        const usePatch =
+          input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
+        if (tool.id === ApplyPatchTool.id) return usePatch
+        if (tool.id === EditTool.id || tool.id === WriteTool.id) return !usePatch
 
-    const builtins: Tool.Info[] = [
-      InvalidTool,
-      BashTool,
-      ReadTool,
-      GlobTool,
-      GrepTool,
-      EditTool,
-      WriteTool,
-      TaskTool,
-      WebFetchTool,
-      TodoWriteTool,
-      TodoReadTool,
-      WebSearchTool,
-      CodeSearchTool,
-      SkillTool,
-      ReloadTool,
-      ProjectTool,
-      ...(Flag.REDSUN_EXPERIMENTAL_LSP_TOOL ? [LspTool] : []),
-      ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
-    ]
+        return true
+      })
 
-    const customTools = Array.from(custom.values()).sort((a, b) => a.id.localeCompare(b.id))
-    return [...builtins.filter((t) => !customIds.has(t.id)), ...customTools]
-  }
+      const codeModeDescription = filtered.some((tool) => tool.id === "execute")
+        ? yield* describeCodeMode(input)
+        : undefined
+      const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
 
-  export async function tools(providerID: string, agent?: Agent.Info) {
-    const tools = await allTools()
-    const result = await Promise.all(
-      tools
-        .filter((t) => {
-          if (t.id === "codesearch" || t.id === "websearch") {
-            return Flag.REDSUN_ENABLE_EXA
+      return yield* Effect.forEach(
+        visible,
+        Effect.fnUntraced(function* (tool: Tool.Def) {
+          const output = {
+            description: tool.description,
+            parameters: tool.parameters,
+            jsonSchema: tool.jsonSchema,
           }
-          return true
-        })
-        .map(async (t) => {
-          using _ = log.time(t.id)
+          yield* plugin.trigger("tool.definition", { toolID: tool.id }, output)
+          const jsonSchema =
+            output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
+              ? output.jsonSchema
+              : undefined
           return {
-            id: t.id,
-            ...(await t.init({ agent })),
+            id: tool.id,
+            description: [
+              output.description,
+              tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
+              tool.id === "execute" ? codeModeDescription : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            parameters: output.parameters,
+            jsonSchema,
+            execute: tool.execute,
+            formatValidationError: tool.formatValidationError,
           }
         }),
-    )
-    return result
-  }
-
-  export async function enabled(agent: Agent.Info): Promise<Record<string, boolean>> {
-    const result: Record<string, boolean> = {}
-
-    if (agent.permission.edit === "deny") {
-      result["edit"] = false
-      result["write"] = false
-    }
-    if (agent.permission.bash["*"] === "deny" && Object.keys(agent.permission.bash).length === 1) {
-      result["bash"] = false
-    }
-    if (agent.permission.webfetch === "deny") {
-      result["webfetch"] = false
-      result["codesearch"] = false
-      result["websearch"] = false
-    }
-    if (agent.permission.skill["*"] === "deny" && Object.keys(agent.permission.skill).length === 1) {
-      result["skill"] = false
-    }
-
-    return result
-  }
-
-  export async function getRunner(): Promise<ExtensionRunner.State> {
-    return state().then((s) => s.runner)
-  }
-
-  export function consumeModelOverride(sessionID: string): { providerID: string; modelID: string } | undefined {
-    const model = sessionModelOverrides.get(sessionID)
-    if (model) {
-      sessionModelOverrides.delete(sessionID)
-      return model
-    }
-    return undefined
-  }
-
-  function emitChanged() {
-    Bus.publish(ChangeEvent, {
-      directory: Instance.directory,
+        { concurrency: "unbounded" },
+      )
     })
+
+    const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {
+      const s = yield* InstanceState.get(state)
+      return { task: s.task, read: s.read }
+    })
+
+    return Service.of({ ids, all, named, tools })
+  }),
+)
+
+function isZodType(value: unknown): value is z.ZodType {
+  return typeof value === "object" && value !== null && "_zod" in value
+}
+
+function isPluginTool(value: unknown): value is ToolDefinition {
+  return typeof value === "object" && value !== null && "args" in value && "description" in value && "execute" in value
+}
+
+function isJsonSchemaDefinition(value: unknown): value is JSONSchema7Definition {
+  return typeof value === "boolean" || (typeof value === "object" && value !== null && !Array.isArray(value))
+}
+
+function legacyJsonSchema(entries: [string, unknown][]): JSONSchema7 {
+  const properties = Object.fromEntries(
+    entries.filter((entry): entry is [string, JSONSchema7Definition] => isJsonSchemaDefinition(entry[1])),
+  )
+  return {
+    type: "object",
+    properties,
+    required: Object.keys(properties),
   }
 }
+
+function zodJsonSchema(schema: z.ZodType): JSONSchema7 {
+  const result = normalizeZodJsonSchema(z.toJSONSchema(schema, { io: "input", metadata: zodMetadataRegistry(schema) }))
+  if (!isJsonSchemaObject(result)) throw new Error("plugin tool Zod schema produced a non-object JSON Schema")
+  const { $defs, ...rest } = result
+  return (
+    $defs && isJsonSchemaObject($defs) ? { ...rest, definitions: $defs as JSONSchema7["definitions"] } : rest
+  ) as JSONSchema7
+}
+
+function zodMetadataRegistry(schema: z.ZodType) {
+  const registry = z.registry<Record<string, unknown>>()
+  const seen = new WeakSet<object>()
+  const collect = (value: unknown) => {
+    if (typeof value !== "object" || value === null) return
+    if (seen.has(value)) return
+    seen.add(value)
+
+    if (isZodType(value)) {
+      const metadata = typeof value.meta === "function" ? value.meta() : undefined
+      const description = typeof value.description === "string" ? value.description : undefined
+      const merged = {
+        ...(metadata && typeof metadata === "object" ? metadata : {}),
+        ...(description ? { description } : {}),
+      }
+      if (Object.keys(merged).length) registry.add(value, merged)
+      collect(value._zod.def)
+      return
+    }
+
+    for (const item of Object.values(value)) collect(item)
+  }
+  collect(schema)
+  return registry
+}
+
+function normalizeZodJsonSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalizeZodJsonSchema(item))
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry) =>
+        (entry[0] === "exclusiveMaximum" || entry[0] === "exclusiveMinimum") && typeof entry[1] === "boolean"
+          ? false
+          : true,
+      )
+      .map(([key, item]) => [key, normalizeZodJsonSchema(item)]),
+  )
+}
+
+function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [
+    Config.node,
+    Plugin.node,
+    Question.node,
+    Todo.node,
+    Agent.node,
+    Skill.node,
+    Session.node,
+    BackgroundJob.node,
+    Provider.node,
+    LSP.node,
+    Instruction.node,
+    FSUtil.node,
+    EventV2Bridge.node,
+    httpClient,
+    CrossSpawnSpawner.node,
+    Format.node,
+    Truncate.node,
+    RuntimeFlags.node,
+    MCP.node,
+    Database.node,
+    Ripgrep.node,
+  ],
+})
+
+export * as ToolRegistry from "./registry"

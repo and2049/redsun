@@ -1,268 +1,105 @@
-import z from "zod"
-import type { Tool } from "../tool/tool"
+import type { ToolContext, ToolResult } from "@opencode-ai/plugin"
+import type { z } from "zod"
 
 export namespace Extension {
   export type Mode = "tui" | "print" | "rpc"
-
-  export interface UIContext {
-    notify(message: string, type?: "info" | "warning" | "error"): void
-    confirm(title: string, message: string): Promise<boolean>
-    input(title: string, placeholder?: string): Promise<string | undefined>
-    select(title: string, options: string[]): Promise<string | undefined>
-  }
-
-  export interface ContextUsage {
-    tokens: number | null
-    contextWindow: number
-    percent: number | null
-  }
-
-  export interface Context {
-    ui: UIContext
+  export type SourceInfo = { path: string; scope: "user" | "project" | "npm" | "builtin" }
+  export type Context = {
     mode: Mode
     hasUI: boolean
     cwd: string
     sessionID: string
     agent: string
-    isIdle(): boolean
+    signal?: AbortSignal
     isProjectTrusted(): boolean
-    signal: AbortSignal | undefined
-    abort(): void
-    hasPendingMessages(): boolean
-    getContextUsage(): ContextUsage | undefined
     getSystemPrompt(): string
+    abort(): void
+    isIdle(): boolean
+    hasPendingMessages(): boolean
+    getContextUsage(): undefined
     getEntries<T = unknown>(customType: string): Promise<Array<{ customType: string; data?: T; details?: T }>>
     compact(): Promise<void>
+    ui: {
+      notify(message: string, type?: "info" | "warning" | "error"): void
+      confirm(title: string, message: string): Promise<boolean>
+      input(title: string, placeholder?: string): Promise<string | undefined>
+      select(title: string, options: string[]): Promise<string | undefined>
+    }
   }
-
-  export interface CommandContext extends Context {
+  export type CommandContext = Context & {
     reload(): Promise<void>
     newSession(options?: { parentSession?: string }): Promise<{ sessionID: string }>
     fork(entryId: string): Promise<{ sessionID: string }>
   }
-
-  export interface SourceInfo {
-    path: string
-    scope: "user" | "project" | "npm" | "builtin"
+  export type ToolInfo = {
+    id: string
+    init():
+      | Promise<{
+          description: string
+          parameters: z.ZodObject<any>
+          execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> | ToolResult
+        }>
+      | {
+          description: string
+          parameters: z.ZodObject<any>
+          execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> | ToolResult
+        }
   }
-
-  export interface RegisteredTool {
-    tool: Tool.Info
-    source: SourceInfo
-    description?: string
-  }
-
-  export interface RegisteredCommand {
+  export type RegisteredCommand = {
     name: string
     description?: string
-    handler: (args: string, ctx: CommandContext) => Promise<void> | void
-  }
-
-  // Event types
-  export interface ProjectTrustEvent {
-    type: "project_trust"
-    cwd: string
-  }
-
-  export interface ProjectTrustResult {
-    trusted: "yes" | "no" | "undecided"
-    remember?: boolean
-  }
-
-  export interface ProjectTrustContext {
-    cwd: string
-    mode: Mode
-    hasUI: boolean
-    ui: Pick<UIContext, "select" | "confirm" | "input" | "notify">
-  }
-
-  export interface ResourcesDiscoverEvent {
-    type: "resources_discover"
-    cwd: string
-    reason: "startup" | "reload"
-  }
-
-  export interface ResourcesDiscoverResult {
-    skillPaths?: string[]
-    promptPaths?: string[]
-    themePaths?: string[]
-  }
-
-  export interface AgentsRegisterEvent {
-    type: "agents_register"
-    cwd: string
-    reason: "startup" | "reload"
-  }
-
-  export interface AgentsRegisterResult {
-    agentPaths?: string[]
-  }
-
-  export interface SessionStartEvent {
-    type: "session_start"
-    reason: "startup" | "reload" | "new" | "resume" | "fork"
-  }
-
-  export interface SessionShutdownEvent {
-    type: "session_shutdown"
-    reason: "quit" | "reload" | "new" | "resume" | "fork"
-  }
-
-  export interface SessionBeforeCompactEvent {
-    type: "session_before_compact"
-    sessionID: string
-    signal: AbortSignal
-  }
-
-  export interface SessionBeforeCompactResult {
-    cancel?: boolean
-    prompt?: string
-    context?: string[]
-  }
-
-  export interface SessionCompactEvent {
-    type: "session_compact"
-    sessionID: string
-    fromExtension: boolean
-  }
-
-  export interface SessionBeforeSwitchEvent {
-    type: "session_before_switch"
-    reason: "new" | "resume"
-    targetSessionFile?: string
-  }
-
-  export interface SessionBeforeSwitchResult {
-    cancel?: boolean
-  }
-
-  export interface SessionBeforeForkEvent {
-    type: "session_before_fork"
-    entryId: string
-    position: "before" | "at"
-  }
-
-  export interface SessionBeforeForkResult {
-    cancel?: boolean
-  }
-
-  export interface ContextEvent {
-    type: "context"
-    messages: unknown[]
-  }
-
-  export interface ContextEventResult {
-    messages?: unknown[]
-  }
-
-  export interface BeforeAgentStartEvent {
-    type: "before_agent_start"
-    prompt: string
-    systemPrompt: string
-  }
-
-  export interface BeforeAgentStartResult {
-    systemPrompt?: string
-  }
-
-  export interface ToolCallEvent {
-    type: "tool_call"
-    toolCallId: string
-    toolName: string
-    input: Record<string, unknown>
-  }
-
-  export interface ToolCallResult {
-    block?: boolean
-    reason?: string
-  }
-
-  export interface ToolResultEvent {
-    type: "tool_result"
-    toolCallId: string
-    toolName: string
-    input: Record<string, unknown>
-    output: string
-    metadata: Record<string, unknown>
-    isError: boolean
-  }
-
-  export interface ToolResultEventResult {
-    output?: string
-    metadata?: Record<string, unknown>
-    isError?: boolean
-  }
-
-  export interface TurnStartEvent {
-    type: "turn_start"
-    turnIndex: number
-  }
-
-  export interface TurnEndEvent {
-    type: "turn_end"
-    turnIndex: number
-  }
-
-  export interface InputEvent {
-    type: "input"
-    text: string
-  }
-
-  export interface InputEventResult {
-    action?: "continue" | "handled" | "transform"
-    text?: string
+    handler(args: string, ctx: CommandContext): Promise<void> | void
   }
 
   export type Event =
-    | ProjectTrustEvent
-    | ResourcesDiscoverEvent
-    | AgentsRegisterEvent
-    | SessionStartEvent
-    | SessionShutdownEvent
-    | SessionBeforeCompactEvent
-    | SessionCompactEvent
-    | SessionBeforeSwitchEvent
-    | SessionBeforeForkEvent
-    | ContextEvent
-    | BeforeAgentStartEvent
-    | ToolCallEvent
-    | ToolResultEvent
-    | TurnStartEvent
-    | TurnEndEvent
-    | InputEvent
+    | { type: "project_trust"; cwd: string }
+    | { type: "resources_discover"; cwd: string; reason: "startup" | "reload" }
+    | { type: "agents_register"; cwd: string; reason: "startup" | "reload" }
+    | { type: "session_start"; reason: "startup" | "reload" | "new" | "resume" | "fork" }
+    | { type: "session_shutdown"; reason: "quit" | "reload" | "new" | "resume" | "fork" }
+    | { type: "session_before_compact"; sessionID: string; signal: AbortSignal }
+    | { type: "session_compact"; sessionID: string; fromExtension: boolean }
+    | { type: "context"; messages: unknown[] }
+    | { type: "before_agent_start"; prompt: string; systemPrompt: string }
+    | { type: "tool_call"; toolCallId: string; toolName: string; input: Record<string, unknown> }
+    | {
+        type: "tool_result"
+        toolCallId: string
+        toolName: string
+        input: Record<string, unknown>
+        output: string
+        metadata: Record<string, unknown>
+        isError: boolean
+      }
+    | { type: "turn_start"; turnIndex: number }
+    | { type: "turn_end"; turnIndex: number }
+    | { type: "input"; text: string }
 
   export type EventResult =
-    | ProjectTrustResult
-    | ResourcesDiscoverResult
-    | AgentsRegisterResult
-    | SessionBeforeCompactResult
-    | SessionBeforeSwitchResult
-    | SessionBeforeForkResult
-    | ContextEventResult
-    | BeforeAgentStartResult
-    | ToolCallResult
-    | ToolResultEventResult
-    | InputEventResult
+    | { trusted: "yes" | "no" | "undecided"; remember?: boolean }
+    | { skillPaths?: string[]; promptPaths?: string[]; themePaths?: string[]; agentPaths?: string[] }
+    | { cancel?: boolean; prompt?: string; context?: string[] }
+    | { messages?: unknown[] }
+    | { systemPrompt?: string }
+    | { block?: boolean; reason?: string }
+    | { output?: string; metadata?: Record<string, unknown>; isError?: boolean }
+    | { action?: "continue" | "handled" | "transform"; text?: string }
     | void
     | undefined
 
-  export type Handler<E extends Event, R extends EventResult> = (event: E, ctx: Context) => R | Promise<R>
-
+  export type Handler<E extends Event = Event> = (event: E, ctx: Context) => EventResult | Promise<EventResult>
+  export type ProviderConfig = Record<string, unknown>
   export interface API {
-    on<E extends Event>(event: E["type"], handler: Handler<E, EventResult>): void
-
-    registerTool(tool: Tool.Info, source?: SourceInfo): Promise<void>
+    on<E extends Event>(event: E["type"], handler: Handler<E>): void
+    registerTool(tool: ToolInfo, source?: SourceInfo): Promise<void>
     unregisterTool(id: string): void
     setActiveTools(toolNames: string[]): void
     getActiveTools(): string[]
     getAllTools(): Array<{ id: string; description: string; source: SourceInfo }>
-
     registerCommand(command: RegisteredCommand): void
     unregisterCommand(name: string): void
-
     sendMessage(content: string): void
     sendUserMessage(content: string): void
-
     appendEntry<T = unknown>(sessionID: string, customType: string, data?: T): Promise<string>
     appendCustomMessageEntry<T = unknown>(
       sessionID: string,
@@ -271,49 +108,12 @@ export namespace Extension {
       display?: boolean,
       details?: T,
     ): Promise<string>
-
     setModel(model: string): Promise<boolean>
-
     registerProvider(name: string, config: ProviderConfig): void
     unregisterProvider(name: string): void
-
-    events: {
-      emit(channel: string, data: unknown): void
-      on(channel: string, handler: (data: unknown) => void): () => void
-    }
+    events: { emit(channel: string, data: unknown): void; on(channel: string, fn: (data: unknown) => void): () => void }
   }
-
-  export interface ProviderConfig {
-    name?: string
-    baseUrl?: string
-    apiKey?: string
-    api?: string
-    models?: ProviderModelConfig[]
-    headers?: Record<string, string>
-  }
-
-  export interface ProviderModelConfig {
-    id: string
-    name: string
-    api?: string
-    reasoning: boolean
-    input: ("text" | "image")[]
-    cost: { input: number; output: number; cacheRead: number; cacheWrite: number }
-    contextWindow: number
-    maxTokens: number
-    headers?: Record<string, string>
-  }
-
   export type Factory = (api: API) => void | Promise<void>
-
-  export interface Loaded {
-    path: string
-    resolvedPath: string
-    sourceInfo: SourceInfo
-    factory: Factory
-  }
-
-  export interface Manifest {
-    extensions?: string[]
-  }
+  export type Loaded = { resolvedPath: string; sourceInfo: SourceInfo; factory: Factory }
 }
+

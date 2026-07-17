@@ -1,122 +1,202 @@
-import { Bus } from "@/bus"
-import { BusEvent } from "@/bus/bus-event"
-import z from "zod"
-import { Config } from "../config/config"
-import { Instance } from "../project/instance"
-import { Identifier } from "../id/id"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import path from "path"
+import { InstanceState } from "@/effect/instance-state"
+import { EffectBridge } from "@/effect/bridge"
+import type { InstanceContext } from "@/project/instance-context"
+import { Effect, Layer, Context, Schema } from "effect"
+import { Config } from "@/config/config"
+import { MCP } from "../mcp"
+import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
-import { ToolRegistry } from "../tool/registry"
-import { PromptTemplate } from "../prompt/template"
-import type { Extension } from "../extension/types"
-import { State } from "../project/state"
-import { GlobalBus } from "../bus/global"
+import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
+import { ExtensionRuntime } from "@/extension/runtime"
 
-export namespace Command {
-  export const Event = {
-    Executed: BusEvent.define(
-      "command.executed",
-      z.object({
-        name: z.string(),
-        sessionID: Identifier.schema("session"),
-        arguments: z.string(),
-        messageID: Identifier.schema("message"),
-      }),
-    ),
+type State = {
+  commands: Record<string, Info>
+}
+
+export const Event = {
+  Executed: LegacyEvent.CommandExecuted,
+}
+
+export const Info = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  agent: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  source: Schema.optional(Schema.Literals(["command", "mcp", "skill"])),
+  // Some command templates are lazy promises from MCP prompt resolution.
+  template: Schema.Unknown,
+  subtask: Schema.optional(Schema.Boolean),
+  hints: Schema.Array(Schema.String),
+}).annotate({ identifier: "Command" })
+
+export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & { template: Promise<string> | string }
+
+export function hints(template: string) {
+  const result: string[] = []
+  const numbered = template.match(/\$\d+/g)
+  if (numbered) {
+    for (const match of [...new Set(numbered)].sort()) result.push(match)
   }
+  if (template.includes("$ARGUMENTS")) result.push("$ARGUMENTS")
+  return result
+}
 
-  export const Info = z
-    .object({
-      name: z.string(),
-      description: z.string().optional(),
-      agent: z.string().optional(),
-      model: z.string().optional(),
-      variant: z.string().optional(),
-      template: z.string(),
-      subtask: z.boolean().optional(),
-    })
-    .meta({
-      ref: "Command",
-    })
-  export interface Info extends z.infer<typeof Info> {
-    handler?: Extension.RegisteredCommand["handler"]
-  }
+export const Default = {
+  INIT: "init",
+  REVIEW: "review",
+  GOAL: "goal",
+  TRUST: "trust",
+} as const
 
-  export const Default = {
-    INIT: "init",
-    REVIEW: "review",
-    GOAL: "goal",
-  } as const
+export interface Interface {
+  readonly get: (name: string) => Effect.Effect<Info | undefined>
+  readonly list: () => Effect.Effect<Info[]>
+}
 
-  async function initState() {
-    const cfg = await Config.get()
+export class Service extends Context.Service<Service, Interface>()("@opencode/Command") {}
 
-    const result: Record<string, Info> = {
-      [Default.INIT]: {
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const config = yield* Config.Service
+    const mcp = yield* MCP.Service
+    const skill = yield* Skill.Service
+
+    const init = Effect.fn("Command.state")(function* (ctx: InstanceContext) {
+      const cfg = yield* config.get()
+      const bridge = yield* EffectBridge.make()
+      const commands: Record<string, Info> = {}
+
+      commands[Default.INIT] = {
         name: Default.INIT,
-        description: "create/update AGENTS.md",
-        template: PROMPT_INITIALIZE.replace("${path}", Instance.worktree),
-      },
-      [Default.REVIEW]: {
+        description: "guided AGENTS.md setup",
+        source: "command",
+        get template() {
+          return PROMPT_INITIALIZE.replace("${path}", ctx.worktree)
+        },
+        hints: hints(PROMPT_INITIALIZE),
+      }
+      commands[Default.REVIEW] = {
         name: Default.REVIEW,
         description: "review changes [commit|branch|pr], defaults to uncommitted",
-        template: PROMPT_REVIEW.replace("${path}", Instance.worktree),
+        source: "command",
+        get template() {
+          return PROMPT_REVIEW.replace("${path}", ctx.worktree)
+        },
         subtask: true,
-      },
-    }
-
-    for (const [name, command] of Object.entries(cfg.command ?? {})) {
-      result[name] = {
-        name,
-        agent: command.agent,
-        model: command.model,
-        variant: command.variant,
-        description: command.description,
-        template: command.template,
-        subtask: command.subtask,
+        hints: hints(PROMPT_REVIEW),
       }
-    }
+      commands[Default.GOAL] = {
+        name: Default.GOAL,
+        description: "set or clear a persistent stop condition",
+        template: "",
+        hints: ["$ARGUMENTS"],
+      }
+      commands[Default.TRUST] = {
+        name: Default.TRUST,
+        description: "show or set project trust (yes|no)",
+        template: "",
+        hints: ["yes", "no"],
+      }
 
-    try {
-      const runner = await ToolRegistry.getRunner()
-      for (const [name, cmd] of runner.commands) {
-        result[name] = {
+      for (const [name, command] of Object.entries(cfg.command ?? {})) {
+        commands[name] = {
           name,
-          description: cmd.description,
-          template: "",
-          handler: cmd.handler,
+          agent: command.agent,
+          model: command.model,
+          description: command.description,
+          source: "command",
+          get template() {
+            return command.template
+          },
+          subtask: command.subtask,
+          hints: hints(command.template),
         }
       }
-    } catch {}
 
-    for (const pt of await PromptTemplate.all()) {
-      result[pt.name] = {
-        name: pt.name,
-        description: pt.description,
-        template: pt.content,
+      for (const [name, prompt] of Object.entries(yield* mcp.prompts())) {
+        commands[name] = {
+          name,
+          source: "mcp",
+          description: prompt.description,
+          get template() {
+            return bridge.promise(
+              mcp
+                .getPrompt(
+                  prompt.client,
+                  prompt.name,
+                  prompt.arguments
+                    ? Object.fromEntries(prompt.arguments.map((argument, i) => [argument.name, `$${i + 1}`]))
+                    : {},
+                )
+                .pipe(
+                  Effect.map(
+                    (template) =>
+                      template?.messages
+                        .map((message) => (message.content.type === "text" ? message.content.text : ""))
+                        .join("\n") || "",
+                  ),
+                ),
+            )
+          },
+          hints: prompt.arguments?.map((_, i) => `$${i + 1}`) ?? [],
+        }
       }
-    }
 
-    return result
-  }
+      for (const item of yield* skill.all()) {
+        if (commands[item.name]) continue
+        const dir = item.location === "<built-in>" ? undefined : path.dirname(item.location)
+        commands[item.name] = {
+          name: item.name,
+          description: item.description,
+          source: "skill",
+          get template() {
+            if (!dir) return item.content
+            return [
+              item.content,
+              "",
+              `Base directory for this skill: ${dir}`,
+              "Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.",
+            ].join("\n")
+          },
+          hints: [],
+        }
+      }
 
-  const state = Instance.state(initState)
+      for (const item of ExtensionRuntime.commandsFor(ctx.directory)) {
+        commands[item.name] = {
+          name: item.name,
+          description: item.description,
+          source: "command",
+          template: "",
+          hints: ["$ARGUMENTS"],
+        }
+      }
 
-  export function invalidate(directory = Instance.directory) {
-    State.reset(directory, initState)
-  }
+      return {
+        commands,
+      }
+    })
 
-  GlobalBus.on("event", (evt) => {
-    if (evt.payload?.type === "tool.registry.changed" && evt.directory) {
-      invalidate(evt.directory)
-    }
-  })
+    const state = yield* InstanceState.make<State>((ctx) => init(ctx))
 
-  export async function get(name: string) {
-    return state().then((x) => x[name])
-  }
+    const get = Effect.fn("Command.get")(function* (name: string) {
+      const s = yield* InstanceState.get(state)
+      return s.commands[name]
+    })
 
-  export async function list() {
-    return state().then((x) => Object.values(x))
-  }
-}
+    const list = Effect.fn("Command.list")(function* () {
+      const s = yield* InstanceState.get(state)
+      return Object.values(s.commands)
+    })
+
+    return Service.of({ get, list })
+  }),
+)
+
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
+
+export * as Command from "."
