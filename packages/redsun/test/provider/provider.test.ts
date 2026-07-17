@@ -11,6 +11,66 @@ const anthropicModelIDs = Object.keys(modelsDev.anthropic.models)
 const ANTHROPIC_MODEL_ID = anthropicModelIDs.find((id) => id.includes("sonnet")) ?? anthropicModelIDs[0]
 const ANTHROPIC_OTHER_MODEL_ID = anthropicModelIDs.find((id) => id !== ANTHROPIC_MODEL_ID) ?? ANTHROPIC_MODEL_ID
 
+test("models.dev modes preserve base metadata and normalize OpenAI pro reasoning", () => {
+  const provider = {
+    id: "openai",
+    name: "OpenAI",
+    env: [],
+    npm: "@ai-sdk/openai",
+    api: "https://api.openai.com/v1",
+    models: {
+      "gpt-5.6-sol": {
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        release_date: "2026-07-01",
+        attachment: true,
+        reasoning: true,
+        temperature: false,
+        tool_call: true,
+        options: {},
+        cost: {
+          input: 2,
+          output: 10,
+          tiers: [
+            {
+              input: 4,
+              output: 20,
+              tier: { type: "context", size: 200_000 },
+            },
+          ],
+        },
+        limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+        experimental: {
+          modes: {
+            pro: {
+              provider: {
+                body: {
+                  reasoning: { mode: "pro" },
+                  service_tier: "priority",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  } as unknown as ModelsDev.Provider
+
+  const models = Provider.fromModelsDevProvider(provider).models
+  expect(models["gpt-5.6-sol"].limit.input).toBe(922_000)
+  expect(models["gpt-5.6-sol"].cost.tiers?.[0]).toEqual({
+    input: 4,
+    output: 20,
+    cache: { read: 0, write: 0 },
+    tier: { type: "context", size: 200_000 },
+  })
+  expect(models["gpt-5.6-sol-pro"].api.id).toBe("gpt-5.6-sol")
+  expect(models["gpt-5.6-sol-pro"].options).toEqual({
+    reasoningMode: "pro",
+    serviceTier: "priority",
+  })
+})
+
 test("provider loaded from env variable", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
@@ -785,6 +845,83 @@ test("provider api field sets model api.url", async () => {
       const providers = await Provider.list()
       // api field is stored on model.api.url, used by getSDK to set baseURL
       expect(providers["custom-api"].models["model-1"].api.url).toBe("https://api.example.com/v1")
+    },
+  })
+})
+
+test("model provider fields override provider API and SDK", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            "custom-api": {
+              npm: "@ai-sdk/openai-compatible",
+              api: "https://provider.example/v1",
+              env: [],
+              options: { apiKey: "test-key" },
+              models: {
+                "model-1": {
+                  reasoning: true,
+                  provider: {
+                    npm: "@ai-sdk/anthropic",
+                    api: "https://model.example/v1",
+                  },
+                  limit: { context: 8000, output: 2000 },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const model = (await Provider.list())["custom-api"].models["model-1"]
+      expect(model.api).toMatchObject({
+        npm: "@ai-sdk/anthropic",
+        url: "https://model.example/v1",
+      })
+    },
+  })
+})
+
+test("changing a catalog model SDK recomputes and merges reasoning variants", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "redsun.json"),
+        JSON.stringify({
+          provider: {
+            anthropic: {
+              models: {
+                [ANTHROPIC_MODEL_ID]: {
+                  provider: { npm: "@ai-sdk/openai-compatible" },
+                  variants: {
+                    medium: { disabled: true },
+                    custom: { reasoningEffort: "custom" },
+                  },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    init: async () => {
+      Env.set("ANTHROPIC_API_KEY", "test-api-key")
+    },
+    fn: async () => {
+      const model = (await Provider.list()).anthropic.models[ANTHROPIC_MODEL_ID]
+      expect(model.api.npm).toBe("@ai-sdk/openai-compatible")
+      expect(Object.keys(model.variants ?? {})).toEqual(["low", "high", "custom"])
+      expect(model.variants?.custom).toEqual({ reasoningEffort: "custom" })
     },
   })
 })

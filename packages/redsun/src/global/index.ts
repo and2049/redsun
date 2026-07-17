@@ -2,6 +2,7 @@ import fs from "fs/promises"
 import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import path from "path"
 import os from "os"
+import { Filesystem } from "../util/filesystem"
 
 const app = "redsun"
 
@@ -23,11 +24,11 @@ export namespace Global {
 }
 
 await Promise.all([
-  fs.mkdir(Global.Path.data, { recursive: true }),
-  fs.mkdir(Global.Path.config, { recursive: true }),
-  fs.mkdir(Global.Path.state, { recursive: true }),
-  fs.mkdir(Global.Path.log, { recursive: true }),
-  fs.mkdir(Global.Path.bin, { recursive: true }),
+  Filesystem.ensureDir(Global.Path.data),
+  Filesystem.ensureDir(Global.Path.config),
+  Filesystem.ensureDir(Global.Path.state),
+  Filesystem.ensureDir(Global.Path.log),
+  Filesystem.ensureDir(Global.Path.bin),
 ])
 
 const CACHE_VERSION = "14"

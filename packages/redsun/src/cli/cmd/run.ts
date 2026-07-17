@@ -57,6 +57,10 @@ export const RunCommand = cmd({
         alias: ["m"],
         describe: "model to use in the format of provider/model",
       })
+      .option("variant", {
+        type: "string",
+        describe: "model variant (provider-specific reasoning effort, e.g. high, max, minimal)",
+      })
       .option("agent", {
         type: "string",
         describe: "agent to use",
@@ -270,11 +274,12 @@ export const RunCommand = cmd({
           sessionID,
           agent: resolvedAgent,
           model: args.model,
+          variant: args.variant,
           command: args.command,
           arguments: message,
         })
       } else {
-        const modelParam = args.model ? Provider.parseModel(args.model) : undefined
+        const modelParam = args.model ? { ...Provider.parseModel(args.model), variant: args.variant } : undefined
         await sdk.session.prompt({
           sessionID,
           agent: resolvedAgent,

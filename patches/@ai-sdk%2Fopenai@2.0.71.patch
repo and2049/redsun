@@ -1,0 +1,138 @@
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+index 67dc4ce17d6889d925850a59b69022516b916126..5acd0a4d6a85ca35c4cc54890894ee6c0957f2ee 100644
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -335,7 +335,9 @@ declare const openaiResponsesProviderOptionsSchema: _ai_sdk_provider_utils.LazyV
+     previousResponseId?: string | null | undefined;
+     promptCacheKey?: string | null | undefined;
+     promptCacheRetention?: "in_memory" | "24h" | null | undefined;
++    forceReasoning?: boolean | null | undefined;
+     reasoningEffort?: string | null | undefined;
++    reasoningMode?: string | null | undefined;
+     reasoningSummary?: string | null | undefined;
+     safetyIdentifier?: string | null | undefined;
+     serviceTier?: "default" | "auto" | "flex" | "priority" | null | undefined;
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 67dc4ce17d6889d925850a59b69022516b916126..5acd0a4d6a85ca35c4cc54890894ee6c0957f2ee 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -335,7 +335,9 @@ declare const openaiResponsesProviderOptionsSchema: _ai_sdk_provider_utils.LazyV
+     previousResponseId?: string | null | undefined;
+     promptCacheKey?: string | null | undefined;
+     promptCacheRetention?: "in_memory" | "24h" | null | undefined;
++    forceReasoning?: boolean | null | undefined;
+     reasoningEffort?: string | null | undefined;
++    reasoningMode?: string | null | undefined;
+     reasoningSummary?: string | null | undefined;
+     safetyIdentifier?: string | null | undefined;
+     serviceTier?: "default" | "auto" | "flex" | "priority" | null | undefined;
+diff --git a/dist/index.js b/dist/index.js
+index 7481f3b3511078068d87d03855b568b20bb86971..a6b34065865c05bff591e6c42c4a8aed4aea015a 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -2961,7 +2961,9 @@ var openaiResponsesProviderOptionsSchema = (0, import_provider_utils22.lazyValid
+        * @default 'in_memory'
+        */
+       promptCacheRetention: import_v417.z.enum(["in_memory", "24h"]).nullish(),
++      forceReasoning: import_v417.z.boolean().nullish(),
+       reasoningEffort: import_v417.z.string().nullish(),
++      reasoningMode: import_v417.z.string().nullish(),
+       reasoningSummary: import_v417.z.string().nullish(),
+       safetyIdentifier: import_v417.z.string().nullish(),
+       serviceTier: import_v417.z.enum(["auto", "flex", "priority", "default"]).nullish(),
+@@ -3179,6 +3181,7 @@ var OpenAIResponsesLanguageModel = class {
+         details: "conversation and previousResponseId cannot be used together"
+       });
+     }
++    const isReasoningModel = modelConfig.isReasoningModel || (openaiOptions == null ? void 0 : openaiOptions.forceReasoning) === true;
+     const { input, warnings: inputWarnings } = await convertToOpenAIResponsesInput({
+       prompt,
+       systemMessageMode: modelConfig.systemMessageMode,
+@@ -3215,7 +3218,7 @@ var OpenAIResponsesLanguageModel = class {
+       addInclude("code_interpreter_call.outputs");
+     }
+     const store = openaiOptions == null ? void 0 : openaiOptions.store;
+-    if (store === false && modelConfig.isReasoningModel) {
++    if (store === false && isReasoningModel) {
+       addInclude("reasoning.encrypted_content");
+     }
+     const baseArgs = {
+@@ -3257,18 +3260,21 @@ var OpenAIResponsesLanguageModel = class {
+       top_logprobs: topLogprobs,
+       truncation: openaiOptions == null ? void 0 : openaiOptions.truncation,
+       // model-specific settings:
+-      ...modelConfig.isReasoningModel && ((openaiOptions == null ? void 0 : openaiOptions.reasoningEffort) != null || (openaiOptions == null ? void 0 : openaiOptions.reasoningSummary) != null) && {
++      ...isReasoningModel && ((openaiOptions == null ? void 0 : openaiOptions.reasoningEffort) != null || (openaiOptions == null ? void 0 : openaiOptions.reasoningMode) != null || (openaiOptions == null ? void 0 : openaiOptions.reasoningSummary) != null) && {
+         reasoning: {
+           ...(openaiOptions == null ? void 0 : openaiOptions.reasoningEffort) != null && {
+             effort: openaiOptions.reasoningEffort
+           },
++          ...(openaiOptions == null ? void 0 : openaiOptions.reasoningMode) != null && {
++            mode: openaiOptions.reasoningMode
++          },
+           ...(openaiOptions == null ? void 0 : openaiOptions.reasoningSummary) != null && {
+             summary: openaiOptions.reasoningSummary
+           }
+         }
+       }
+     };
+-    if (modelConfig.isReasoningModel) {
++    if (isReasoningModel) {
+       if (baseArgs.temperature != null) {
+         baseArgs.temperature = void 0;
+         warnings.push({
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 14dfe3426f336d323edd6aef81b3a25603169aea..2bded89fe8370301e9f29d020081e9fea2182ed8 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -3032,7 +3032,9 @@ var openaiResponsesProviderOptionsSchema = lazyValidator9(
+        * @default 'in_memory'
+        */
+       promptCacheRetention: z17.enum(["in_memory", "24h"]).nullish(),
++      forceReasoning: z17.boolean().nullish(),
+       reasoningEffort: z17.string().nullish(),
++      reasoningMode: z17.string().nullish(),
+       reasoningSummary: z17.string().nullish(),
+       safetyIdentifier: z17.string().nullish(),
+       serviceTier: z17.enum(["auto", "flex", "priority", "default"]).nullish(),
+@@ -3252,6 +3254,7 @@ var OpenAIResponsesLanguageModel = class {
+         details: "conversation and previousResponseId cannot be used together"
+       });
+     }
++    const isReasoningModel = modelConfig.isReasoningModel || (openaiOptions == null ? void 0 : openaiOptions.forceReasoning) === true;
+     const { input, warnings: inputWarnings } = await convertToOpenAIResponsesInput({
+       prompt,
+       systemMessageMode: modelConfig.systemMessageMode,
+@@ -3288,7 +3291,7 @@ var OpenAIResponsesLanguageModel = class {
+       addInclude("code_interpreter_call.outputs");
+     }
+     const store = openaiOptions == null ? void 0 : openaiOptions.store;
+-    if (store === false && modelConfig.isReasoningModel) {
++    if (store === false && isReasoningModel) {
+       addInclude("reasoning.encrypted_content");
+     }
+     const baseArgs = {
+@@ -3330,18 +3333,21 @@ var OpenAIResponsesLanguageModel = class {
+       top_logprobs: topLogprobs,
+       truncation: openaiOptions == null ? void 0 : openaiOptions.truncation,
+       // model-specific settings:
+-      ...modelConfig.isReasoningModel && ((openaiOptions == null ? void 0 : openaiOptions.reasoningEffort) != null || (openaiOptions == null ? void 0 : openaiOptions.reasoningSummary) != null) && {
++      ...isReasoningModel && ((openaiOptions == null ? void 0 : openaiOptions.reasoningEffort) != null || (openaiOptions == null ? void 0 : openaiOptions.reasoningMode) != null || (openaiOptions == null ? void 0 : openaiOptions.reasoningSummary) != null) && {
+         reasoning: {
+           ...(openaiOptions == null ? void 0 : openaiOptions.reasoningEffort) != null && {
+             effort: openaiOptions.reasoningEffort
+           },
++          ...(openaiOptions == null ? void 0 : openaiOptions.reasoningMode) != null && {
++            mode: openaiOptions.reasoningMode
++          },
+           ...(openaiOptions == null ? void 0 : openaiOptions.reasoningSummary) != null && {
+             summary: openaiOptions.reasoningSummary
+           }
+         }
+       }
+     };
+-    if (modelConfig.isReasoningModel) {
++    if (isReasoningModel) {
+       if (baseArgs.temperature != null) {
+         baseArgs.temperature = void 0;
+         warnings.push({

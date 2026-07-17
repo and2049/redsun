@@ -10,6 +10,38 @@ export namespace ModelsDev {
   const log = Log.create({ service: "models.dev" })
   const filepath = path.join(Global.Path.cache, "models.json")
 
+  const Cost = z.object({
+    input: z.number(),
+    output: z.number(),
+    cache_read: z.number().optional(),
+    cache_write: z.number().optional(),
+    tiers: z
+      .array(
+        z.object({
+          input: z.number(),
+          output: z.number(),
+          cache_read: z.number().optional(),
+          cache_write: z.number().optional(),
+          tier: z.object({ type: z.literal("context"), size: z.number() }),
+        }),
+      )
+      .optional(),
+    context_over_200k: z
+      .object({
+        input: z.number(),
+        output: z.number(),
+        cache_read: z.number().optional(),
+        cache_write: z.number().optional(),
+      })
+      .optional(),
+  })
+
+  const ReasoningOption = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("effort"), values: z.array(z.string().nullable()) }),
+    z.object({ type: z.literal("toggle") }),
+    z.object({ type: z.literal("budget_tokens"), min: z.number().optional(), max: z.number().optional() }),
+  ])
+
   export const Model = z.object({
     id: z.string(),
     name: z.string(),
@@ -17,6 +49,7 @@ export namespace ModelsDev {
     release_date: z.string(),
     attachment: z.boolean(),
     reasoning: z.boolean(),
+    reasoning_options: z.array(ReasoningOption).optional(),
     temperature: z.boolean(),
     tool_call: z.boolean(),
     interleaved: z
@@ -24,29 +57,15 @@ export namespace ModelsDev {
         z.literal(true),
         z
           .object({
-            field: z.enum(["reasoning_content", "reasoning_details"]),
+            field: z.enum(["reasoning", "reasoning_content", "reasoning_details"]),
           })
           .strict(),
       ])
       .optional(),
-    cost: z
-      .object({
-        input: z.number(),
-        output: z.number(),
-        cache_read: z.number().optional(),
-        cache_write: z.number().optional(),
-        context_over_200k: z
-          .object({
-            input: z.number(),
-            output: z.number(),
-            cache_read: z.number().optional(),
-            cache_write: z.number().optional(),
-          })
-          .optional(),
-      })
-      .optional(),
+    cost: Cost.optional(),
     limit: z.object({
       context: z.number(),
+      input: z.number().optional(),
       output: z.number(),
     }),
     modalities: z
@@ -55,11 +74,32 @@ export namespace ModelsDev {
         output: z.array(z.enum(["text", "audio", "image", "video", "pdf"])),
       })
       .optional(),
-    experimental: z.boolean().optional(),
+    experimental: z
+      .union([
+        z.boolean(),
+        z.object({
+          modes: z
+            .record(
+              z.string(),
+              z.object({
+                cost: Cost.optional(),
+                provider: z
+                  .object({
+                    body: z.record(z.string(), z.any()).optional(),
+                    headers: z.record(z.string(), z.string()).optional(),
+                  })
+                  .optional(),
+              }),
+            )
+            .optional(),
+        }),
+      ])
+      .optional(),
     status: z.enum(["alpha", "beta", "deprecated"]).optional(),
     options: z.record(z.string(), z.any()),
     headers: z.record(z.string(), z.string()).optional(),
-    provider: z.object({ npm: z.string() }).optional(),
+    variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+    provider: z.object({ npm: z.string().optional(), api: z.string().optional() }).optional(),
   })
   export type Model = z.infer<typeof Model>
 

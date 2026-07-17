@@ -31,6 +31,7 @@ export namespace Command {
       description: z.string().optional(),
       agent: z.string().optional(),
       model: z.string().optional(),
+      variant: z.string().optional(),
       template: z.string(),
       subtask: z.boolean().optional(),
     })
@@ -69,6 +70,7 @@ export namespace Command {
         name,
         agent: command.agent,
         model: command.model,
+        variant: command.variant,
         description: command.description,
         template: command.template,
         subtask: command.subtask,

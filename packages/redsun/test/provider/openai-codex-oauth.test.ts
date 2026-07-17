@@ -37,6 +37,30 @@ test("buildAuthorizeUrl includes OpenAI Codex OAuth parameters", async () => {
   expect(url.searchParams.get("originator")).toBe("redsun")
 })
 
+test("OpenAI OAuth model policy filters unsupported aliases and pro modes", () => {
+  const model = (id: string, options: Record<string, any> = {}) => ({ api: { id }, options })
+  expect(OpenAICodexOAuth.supportsModel(model("gpt-5.4"))).toBe(true)
+  expect(OpenAICodexOAuth.supportsModel(model("gpt-5.6-sol"))).toBe(true)
+  expect(OpenAICodexOAuth.supportsModel(model("gpt-5.6"))).toBe(false)
+  expect(OpenAICodexOAuth.supportsModel(model("gpt-5.5-pro"))).toBe(false)
+  expect(OpenAICodexOAuth.supportsModel(model("gpt-5.4", { reasoningMode: "pro" }))).toBe(false)
+})
+
+test("OpenAI OAuth applies Codex context limits to GPT 5.5 and 5.6 families", () => {
+  const limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+  expect(OpenAICodexOAuth.contextLimits({ id: "gpt-5.5", limit })).toEqual({
+    context: 400_000,
+    input: 272_000,
+    output: 128_000,
+  })
+  expect(OpenAICodexOAuth.contextLimits({ id: "gpt-5.6-sol", limit })).toEqual({
+    context: 500_000,
+    input: 372_000,
+    output: 128_000,
+  })
+  expect(OpenAICodexOAuth.contextLimits({ id: "gpt-5.4", limit })).toBe(limit)
+})
+
 test("extractAccountId supports current OpenAI JWT claim shapes", () => {
   expect(
     OpenAICodexOAuth.extractAccountId({

@@ -111,6 +111,7 @@ export namespace SessionPrompt {
       .object({
         providerID: z.string(),
         modelID: z.string(),
+        variant: z.string().optional(),
       })
       .optional(),
     agent: z.string().optional(),
@@ -697,6 +698,7 @@ export namespace SessionPrompt {
           sessionID,
           agent,
           model,
+          variant: lastUser.model.variant,
         })
         if (goalStop.action === "continue") continue
         if (drainSteering(sessionID).length > 0) {
@@ -734,6 +736,7 @@ export namespace SessionPrompt {
     sessionID: string
     agent: Agent.Info
     model: Provider.Model
+    variant?: string
     evaluate?: typeof Goal.evaluate
   }): Promise<{ action: "stop" } | { action: "continue" }> {
     const activeGoal = await Goal.get(input.sessionID)
@@ -799,7 +802,7 @@ export namespace SessionPrompt {
         role: "user",
         time: { created: Date.now() },
         agent: input.agent.name,
-        model: { providerID: input.model.providerID, modelID: input.model.id },
+        model: { providerID: input.model.providerID, modelID: input.model.id, variant: input.variant },
       })
       await Session.updatePart({
         id: Identifier.ascending("part"),
@@ -1554,6 +1557,7 @@ export namespace SessionPrompt {
       .object({
         providerID: z.string(),
         modelID: z.string(),
+        variant: z.string().optional(),
       })
       .optional(),
     command: z.string(),
@@ -1602,6 +1606,7 @@ export namespace SessionPrompt {
       model: {
         providerID: model.providerID,
         modelID: model.modelID,
+        variant: "variant" in model && typeof model.variant === "string" ? model.variant : undefined,
       },
     }
     await Session.updateMessage(userMsg)
@@ -1802,6 +1807,7 @@ export namespace SessionPrompt {
     sessionID: Identifier.schema("session"),
     agent: z.string().optional(),
     model: z.string().optional(),
+    variant: z.string().optional(),
     arguments: z.string(),
     command: z.string(),
   })
@@ -1999,7 +2005,7 @@ export namespace SessionPrompt {
     const result = (await prompt({
       sessionID: input.sessionID,
       messageID: input.messageID,
-      model,
+      model: { ...model, variant: command.variant ?? input.variant ?? model.variant },
       agent: agentName,
       parts,
     })) as MessageV2.WithParts
