@@ -396,22 +396,6 @@ export function Session() {
       },
     },
     {
-      title: "Unshare session",
-      value: "session.unshare",
-      keybind: "session_unshare",
-      disabled: !session()?.share?.url,
-      category: "Session",
-      onSelect: async (dialog) => {
-        await sdk.client.session
-          .unshare({
-            sessionID: route.sessionID,
-          })
-          .then(() => toast.show({ message: "Session unshared successfully", variant: "success" }))
-          .catch(() => toast.show({ message: "Failed to unshare session", variant: "error" }))
-        dialog.clear()
-      },
-    },
-    {
       title: "Undo previous message",
       value: "session.undo",
       keybind: "messages_undo",

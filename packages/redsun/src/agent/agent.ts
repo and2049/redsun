@@ -45,6 +45,7 @@ export namespace Agent {
         .object({
           modelID: z.string(),
           providerID: z.string(),
+          variant: z.string().optional(),
         })
         .optional(),
       prompt: z.string().optional(),
@@ -281,6 +282,7 @@ export namespace Agent {
       const {
         name,
         model,
+        variant,
         prompt,
         tools,
         description,
@@ -297,7 +299,7 @@ export namespace Agent {
         ...item.options,
         ...extra,
       }
-      if (model) item.model = Provider.parseModel(model)
+      if (model) item.model = { ...Provider.parseModel(model), variant }
       if (prompt) item.prompt = prompt
       if (tools)
         item.tools = {
@@ -343,10 +345,24 @@ export namespace Agent {
             native: false,
           }
         }
-        const { name, model, prompt, tools, description, temperature, top_p, mode, permission, color, maxSteps, hidden: extHidden, ...extra } =
-          value
+        const {
+          name,
+          model,
+          variant,
+          prompt,
+          tools,
+          description,
+          temperature,
+          top_p,
+          mode,
+          permission,
+          color,
+          maxSteps,
+          hidden: extHidden,
+          ...extra
+        } = value
         item.options = { ...item.options, ...extra }
-        if (model) item.model = Provider.parseModel(model)
+        if (model) item.model = { ...Provider.parseModel(model), variant }
         if (prompt) item.prompt = prompt
         if (tools) item.tools = { ...item.tools, ...tools }
         item.tools = { ...defaultTools, ...item.tools }

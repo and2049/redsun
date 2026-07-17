@@ -353,6 +353,7 @@ export namespace SessionCompaction {
       model: z.object({
         providerID: z.string(),
         modelID: z.string(),
+        variant: z.string().optional(),
       }),
       auto: z.boolean(),
       overflow: z.boolean().optional(),

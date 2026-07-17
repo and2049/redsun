@@ -1,5 +1,5 @@
 import { createMemo, createSignal } from "solid-js"
-import { useLocal } from "@tui/context/local"
+import { modelSelectionKey, useLocal, type ModelSelection } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect, type DialogSelectRef } from "@tui/ui/dialog-select"
@@ -38,7 +38,7 @@ export function DialogModel(props: { providerID?: string }) {
 
     const recentList = showExtra()
       ? recents.filter(
-          (item) => !favorites.some((fav) => fav.providerID === item.providerID && fav.modelID === item.modelID),
+          (item) => !favorites.some((fav) => modelSelectionKey(fav) === modelSelectionKey(item)),
         )
       : []
 
@@ -50,11 +50,8 @@ export function DialogModel(props: { providerID?: string }) {
       return [
         {
           key: item,
-          value: {
-            providerID: provider.id,
-            modelID: model.id,
-          },
-          title: model.name ?? item.modelID,
+          value: item,
+          title: `${model.name ?? item.modelID}${item.variant ? ` (${item.variant})` : ""}`,
           description: provider.name,
           category: "Favorites",
           disabled: provider.id === "opencode" && model.id.includes("-nano"),
@@ -62,10 +59,7 @@ export function DialogModel(props: { providerID?: string }) {
           onSelect: () => {
             dialog.clear()
             local.model.set(
-              {
-                providerID: provider.id,
-                modelID: model.id,
-              },
+              item,
               { recent: true },
             )
           },
@@ -81,11 +75,8 @@ export function DialogModel(props: { providerID?: string }) {
       return [
         {
           key: item,
-          value: {
-            providerID: provider.id,
-            modelID: model.id,
-          },
-          title: model.name ?? item.modelID,
+          value: item,
+          title: `${model.name ?? item.modelID}${item.variant ? ` (${item.variant})` : ""}`,
           description: provider.name,
           category: "Recent",
           disabled: provider.id === "opencode" && model.id.includes("-nano"),
@@ -93,10 +84,7 @@ export function DialogModel(props: { providerID?: string }) {
           onSelect: () => {
             dialog.clear()
             local.model.set(
-              {
-                providerID: provider.id,
-                modelID: model.id,
-              },
+              item,
               { recent: true },
             )
           },
@@ -113,43 +101,34 @@ export function DialogModel(props: { providerID?: string }) {
           entries(),
           filter(([_, info]) => info.status !== "deprecated"),
           filter(([_, info]) => (props.providerID ? info.providerID === props.providerID : true)),
-          map(([model, info]) => {
-            const value = {
-              providerID: provider.id,
-              modelID: model,
-            }
-            return {
-              value,
-              title: info.name ?? model,
-              description: favorites.some(
-                (item) => item.providerID === value.providerID && item.modelID === value.modelID,
-              )
-                ? "(Favorite)"
-                : undefined,
-              category: connected() ? provider.name : undefined,
-              footer: info.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
+          flatMap(([model, info]) =>
+            [undefined, ...Object.keys(info.variants ?? {})].map((variant) => {
+              const value: ModelSelection = {
+                providerID: provider.id,
+                modelID: model,
+                variant,
+              }
+              const key = modelSelectionKey(value)
+              return {
+                value,
+                title: `${info.name ?? model}${variant ? ` (${variant})` : ""}`,
+                description: favorites.some((item) => modelSelectionKey(item) === key) ? "(Favorite)" : undefined,
+                category: connected() ? provider.name : undefined,
+                footer: info.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
 
-              onSelect() {
-                dialog.clear()
-                local.model.set(
-                  {
-                    providerID: provider.id,
-                    modelID: model,
-                  },
-                  { recent: true },
-                )
-              },
-            }
-          }),
+                onSelect() {
+                  dialog.clear()
+                  local.model.set(value, { recent: true })
+                },
+              }
+            }),
+          ),
           filter((x) => {
             const value = x.value
-            const inFavorites = favorites.some(
-              (item) => item.providerID === value.providerID && item.modelID === value.modelID,
-            )
+            const key = modelSelectionKey(value)
+            const inFavorites = favorites.some((item) => modelSelectionKey(item) === key)
             if (inFavorites) return false
-            const inRecents = recents.some(
-              (item) => item.providerID === value.providerID && item.modelID === value.modelID,
-            )
+            const inRecents = recents.some((item) => modelSelectionKey(item) === key)
             if (inRecents) return false
             return true
           }),
@@ -213,7 +192,7 @@ export function DialogModel(props: { providerID?: string }) {
           title: "Favorite",
           disabled: !connected(),
           onTrigger: (option) => {
-            local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
+            local.model.toggleFavorite(option.value as ModelSelection)
           },
         },
       ]}

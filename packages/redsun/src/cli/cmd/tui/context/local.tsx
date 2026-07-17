@@ -13,6 +13,16 @@ import { useArgs } from "./args"
 import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 
+export type ModelSelection = {
+  providerID: string
+  modelID: string
+  variant?: string
+}
+
+export function modelSelectionKey(model: ModelSelection) {
+  return `${model.providerID}/${model.modelID}/${model.variant ?? ""}`
+}
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
@@ -20,12 +30,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const toast = useToast()
 
-    function isModelValid(model: { providerID: string; modelID: string }) {
+    function isModelValid(model: ModelSelection) {
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
-      return !!provider?.models[model.modelID]
+      const info = provider?.models[model.modelID]
+      if (!info) return false
+      return !model.variant || !!info.variants?.[model.variant]
     }
 
-    function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
+    function getFirstValidModel(...modelFns: (() => ModelSelection | undefined)[]) {
       for (const modelFn of modelFns) {
         const model = modelFn()
         if (!model) continue
@@ -41,6 +53,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           model.set({
             providerID: value.model.providerID,
             modelID: value.model.modelID,
+            variant: value.model.variant,
           })
         else
           toast.show({
@@ -109,21 +122,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{
         ready: boolean
-        model: Record<
-          string,
-          {
-            providerID: string
-            modelID: string
-          }
-        >
-        recent: {
-          providerID: string
-          modelID: string
-        }[]
-        favorite: {
-          providerID: string
-          modelID: string
-        }[]
+        model: Record<string, ModelSelection>
+        recent: ModelSelection[]
+        favorite: ModelSelection[]
       }>({
         ready: false,
         model: {},
@@ -158,10 +159,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const fallbackModel = createMemo(() => {
         if (args.model) {
           const { providerID, modelID } = Provider.parseModel(args.model)
-          if (isModelValid({ providerID, modelID })) {
+          if (isModelValid({ providerID, modelID, variant: args.variant })) {
             return {
               providerID,
               modelID,
+              variant: args.variant,
             }
           }
         }
@@ -228,14 +230,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const info = provider?.models[value.modelID]
           return {
             provider: provider?.name ?? value.providerID,
-            model: info?.name ?? value.modelID,
+            model: `${info?.name ?? value.modelID}${value.variant ? ` (${value.variant})` : ""}`,
           }
         }),
         cycle(direction: 1 | -1) {
           const current = currentModel()
           if (!current) return
           const recent = modelStore.recent
-          const index = recent.findIndex((x) => x.providerID === current.providerID && x.modelID === current.modelID)
+          const index = recent.findIndex((x) => modelSelectionKey(x) === modelSelectionKey(current))
           if (index === -1) return
           let next = index + direction
           if (next < 0) next = recent.length - 1
@@ -257,7 +259,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const current = currentModel()
           let index = -1
           if (current) {
-            index = favorites.findIndex((x) => x.providerID === current.providerID && x.modelID === current.modelID)
+            index = favorites.findIndex((x) => modelSelectionKey(x) === modelSelectionKey(current))
           }
           if (index === -1) {
             index = direction === 1 ? 0 : favorites.length - 1
@@ -269,12 +271,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const next = favorites[index]
           if (!next) return
           setModelStore("model", agent.current().name, { ...next })
-          const uniq = uniqueBy([next, ...modelStore.recent], (x) => x.providerID + x.modelID)
+          const uniq = uniqueBy([next, ...modelStore.recent], modelSelectionKey)
           if (uniq.length > 10) uniq.pop()
           setModelStore("recent", uniq)
           save()
         },
-        set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
+        set(model: ModelSelection, options?: { recent?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -286,14 +288,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             }
             setModelStore("model", agent.current().name, model)
             if (options?.recent) {
-              const uniq = uniqueBy([model, ...modelStore.recent], (x) => x.providerID + x.modelID)
+              const uniq = uniqueBy([model, ...modelStore.recent], modelSelectionKey)
               if (uniq.length > 10) uniq.pop()
               setModelStore("recent", uniq)
               save()
             }
           })
         },
-        toggleFavorite(model: { providerID: string; modelID: string }) {
+        toggleFavorite(model: ModelSelection) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -303,11 +305,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               })
               return
             }
-            const exists = modelStore.favorite.some(
-              (x) => x.providerID === model.providerID && x.modelID === model.modelID,
-            )
+            const key = modelSelectionKey(model)
+            const exists = modelStore.favorite.some((x) => modelSelectionKey(x) === key)
             const next = exists
-              ? modelStore.favorite.filter((x) => x.providerID !== model.providerID || x.modelID !== model.modelID)
+              ? modelStore.favorite.filter((x) => modelSelectionKey(x) !== key)
               : [model, ...modelStore.favorite]
             setModelStore("favorite", next)
             save()

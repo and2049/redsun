@@ -115,7 +115,7 @@ export namespace Config {
     const configDir = process.env["REDSUN_CONFIG_DIR"]
     if (configDir) {
       try {
-        await fs.mkdir(configDir, { recursive: true })
+        await Filesystem.ensureDir(configDir)
         directoryEntries.push({ path: configDir, scope: "user" })
         log.debug("loading config from REDSUN_CONFIG_DIR", { path: configDir })
       } catch (error) {
@@ -426,6 +426,7 @@ export namespace Config {
     description: z.string().optional(),
     agent: z.string().optional(),
     model: z.string().optional(),
+    variant: z.string().optional(),
     subtask: z.boolean().optional(),
   })
   export type Command = z.infer<typeof Command>
@@ -433,6 +434,7 @@ export namespace Config {
   export const Agent = z
     .object({
       model: z.string().optional(),
+      variant: z.string().optional().describe("Default model variant when this agent uses its configured model"),
       temperature: z.number().optional(),
       top_p: z.number().optional(),
       prompt: z.string().optional(),
@@ -483,6 +485,7 @@ export namespace Config {
       username_toggle: z.string().optional().default("none").describe("Toggle username visibility"),
       status_view: z.string().optional().default("<leader>s").describe("View status"),
       session_export: z.string().optional().default("<leader>x").describe("Export session to editor"),
+      session_copy: z.string().optional().default("none").describe("Copy current session transcript"),
       session_new: z.string().optional().default("ctrl+n").describe("Create a new session"),
       session_list: z.string().optional().default("<leader>l").describe("List all sessions"),
       session_timeline: z.string().optional().default("<leader>g").describe("Show session timeline"),
@@ -737,6 +740,12 @@ export namespace Config {
         .describe(
           "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
         ),
+      subagent_depth: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents."),
       username: z
         .string()
         .optional()

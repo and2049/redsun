@@ -14,6 +14,7 @@ import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
 import { OpenAICodexOAuth } from "./openai-codex-oauth"
+import { ProviderTransform } from "./transform"
 
 // Direct imports for bundled providers
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
@@ -442,7 +443,7 @@ export namespace Provider {
         interleaved: z.union([
           z.boolean(),
           z.object({
-            field: z.enum(["reasoning_content", "reasoning_details"]),
+            field: z.enum(["reasoning", "reasoning_content", "reasoning_details"]),
           }),
         ]),
       }),
@@ -453,6 +454,16 @@ export namespace Provider {
           read: z.number(),
           write: z.number(),
         }),
+        tiers: z
+          .array(
+            z.object({
+              input: z.number(),
+              output: z.number(),
+              cache: z.object({ read: z.number(), write: z.number() }),
+              tier: z.object({ type: z.literal("context"), size: z.number() }),
+            }),
+          )
+          .optional(),
         experimentalOver200K: z
           .object({
             input: z.number(),
@@ -466,12 +477,14 @@ export namespace Provider {
       }),
       limit: z.object({
         context: z.number(),
+        input: z.number().optional(),
         output: z.number(),
       }),
       status: z.enum(["alpha", "beta", "deprecated", "active"]),
       options: z.record(z.string(), z.any()),
       headers: z.record(z.string(), z.string()),
       release_date: z.string(),
+      variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
     })
     .meta({
       ref: "Model",
@@ -493,40 +506,51 @@ export namespace Provider {
     })
   export type Info = z.infer<typeof Info>
 
-  function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+  function cost(value: ModelsDev.Model["cost"]): Model["cost"] {
     return {
+      input: value?.input ?? 0,
+      output: value?.output ?? 0,
+      cache: {
+        read: value?.cache_read ?? 0,
+        write: value?.cache_write ?? 0,
+      },
+      tiers: value?.tiers?.map((item) => ({
+        input: item.input,
+        output: item.output,
+        cache: { read: item.cache_read ?? 0, write: item.cache_write ?? 0 },
+        tier: item.tier,
+      })),
+      experimentalOver200K: value?.context_over_200k
+        ? {
+            cache: {
+              read: value.context_over_200k.cache_read ?? 0,
+              write: value.context_over_200k.cache_write ?? 0,
+            },
+            input: value.context_over_200k.input,
+            output: value.context_over_200k.output,
+          }
+        : undefined,
+    }
+  }
+
+  function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+    const base: Model = {
       id: model.id,
       providerID: provider.id,
       name: model.name,
       family: model.family,
       api: {
         id: model.id,
-        url: provider.api!,
+        url: model.provider?.api ?? provider.api ?? "",
         npm: model.provider?.npm ?? provider.npm ?? provider.id,
       },
       status: model.status ?? "active",
       headers: model.headers ?? {},
       options: model.options ?? {},
-      cost: {
-        input: model.cost?.input ?? 0,
-        output: model.cost?.output ?? 0,
-        cache: {
-          read: model.cost?.cache_read ?? 0,
-          write: model.cost?.cache_write ?? 0,
-        },
-        experimentalOver200K: model.cost?.context_over_200k
-          ? {
-              cache: {
-                read: model.cost.context_over_200k.cache_read ?? 0,
-                write: model.cost.context_over_200k.cache_write ?? 0,
-              },
-              input: model.cost.context_over_200k.input,
-              output: model.cost.context_over_200k.output,
-            }
-          : undefined,
-      },
+      cost: cost(model.cost),
       limit: {
         context: model.limit.context,
+        input: model.limit.input,
         output: model.limit.output,
       },
       capabilities: {
@@ -552,17 +576,54 @@ export namespace Provider {
       },
       release_date: model.release_date,
     }
+    base.variants = ProviderTransform.reasoningVariants(model, base) ?? ProviderTransform.variants(base)
+    return base
   }
 
   export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
+    const models: Record<string, Model> = {}
+    for (const [key, model] of Object.entries(provider.models)) {
+      models[key] = fromModelsDevModel(provider, model)
+      const modes = typeof model.experimental === "object" ? model.experimental.modes : undefined
+      for (const [mode, options] of Object.entries(modes ?? {})) {
+        const id = `${model.id}-${mode}`
+        const base = fromModelsDevModel(provider, model)
+        models[id] = {
+          ...base,
+          id,
+          name: `${model.name} ${mode[0].toUpperCase()}${mode.slice(1)}`,
+          cost: options.cost ? mergeDeep(base.cost, cost(options.cost)) : base.cost,
+          options: modeOptions(base, options.provider?.body),
+          headers: options.provider?.headers ?? base.headers,
+        }
+      }
+    }
     return {
       id: provider.id,
       source: "custom",
       name: provider.name,
       env: provider.env ?? [],
       options: {},
-      models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
+      models,
     }
+  }
+
+  function modeOptions(model: Model, body: Record<string, unknown> | undefined) {
+    if (!body) return model.options
+    const options = Object.fromEntries(
+      Object.entries(body).map(([key, value]) => [key.replace(/_([a-z])/g, (_, char) => char.toUpperCase()), value]),
+    )
+    const reasoning = body.reasoning
+    if (
+      model.api.npm !== "@ai-sdk/openai" ||
+      typeof reasoning !== "object" ||
+      reasoning === null ||
+      Array.isArray(reasoning) ||
+      typeof (reasoning as Record<string, unknown>).mode !== "string"
+    )
+      return options
+    const { reasoning: _, ...rest } = options
+    return { ...rest, reasoningMode: (reasoning as Record<string, unknown>).mode }
   }
 
   const state = Instance.state(async () => {
@@ -637,13 +698,19 @@ export namespace Provider {
           if (model.id && model.id !== modelID) return modelID
           return existingModel?.name ?? modelID
         })
+        const apiID = model.id ?? existingModel?.api.id ?? modelID
+        const apiNpm =
+          model.provider?.npm ??
+          provider.npm ??
+          existingModel?.api.npm ??
+          modelsDev[providerID]?.npm ??
+          "@ai-sdk/openai-compatible"
         const parsedModel: Model = {
           id: modelID,
           api: {
-            id: model.id ?? existingModel?.api.id ?? modelID,
-            npm:
-              model.provider?.npm ?? provider.npm ?? existingModel?.api.npm ?? modelsDev[providerID]?.npm ?? providerID,
-            url: provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
+            id: apiID,
+            npm: apiNpm,
+            url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
           },
           status: model.status ?? existingModel?.status ?? "active",
           name,
@@ -667,7 +734,12 @@ export namespace Provider {
               video: model.modalities?.output?.includes("video") ?? existingModel?.capabilities.output.video ?? false,
               pdf: model.modalities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
             },
-            interleaved: model.interleaved ?? false,
+            interleaved:
+              model.interleaved ??
+              existingModel?.capabilities.interleaved ??
+              (!existingModel && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
+                ? { field: "reasoning_content" }
+                : false),
           },
           cost: {
             input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
@@ -680,12 +752,27 @@ export namespace Provider {
           options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
           limit: {
             context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
+            input: model.limit?.input ?? existingModel?.limit?.input,
             output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
           },
           headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
           family: model.family ?? existingModel?.family ?? "",
           release_date: model.release_date ?? existingModel?.release_date ?? "",
+          variants: {},
         }
+        const defaults =
+          existingModel?.api.npm === parsedModel.api.npm
+            ? (existingModel.variants ?? ProviderTransform.variants(parsedModel))
+            : ProviderTransform.variants(parsedModel)
+        const merged = mergeDeep(defaults, model.variants ?? {})
+        parsedModel.variants = Object.fromEntries(
+          Object.entries(merged)
+            .filter(([, value]) => !(value as Record<string, any>).disabled)
+            .map(([key, value]) => {
+              const { disabled: _, ...options } = value as Record<string, any>
+              return [key, options]
+            }),
+        )
         parsed.models[modelID] = parsedModel
       }
       database[providerID] = parsed
@@ -759,6 +846,7 @@ export namespace Provider {
 
       for (const [modelID, model] of Object.entries(provider.models)) {
         model.api.id = model.api.id ?? model.id ?? modelID
+        if (model.variants === undefined) model.variants = ProviderTransform.variants(model)
         if (modelID === "gpt-5-chat-latest" || (providerID === "openrouter" && modelID === "openai/gpt-5-chat"))
           delete provider.models[modelID]
         if (model.status === "alpha" && !Flag.REDSUN_ENABLE_EXPERIMENTAL_MODELS) delete provider.models[modelID]
@@ -768,6 +856,11 @@ export namespace Provider {
         )
           delete provider.models[modelID]
         if (providerID === "openai" && auth?.type === "oauth") {
+          if (!OpenAICodexOAuth.supportsModel(model)) {
+            delete provider.models[modelID]
+            continue
+          }
+          model.limit = OpenAICodexOAuth.contextLimits(model)
           model.cost = {
             input: 0,
             output: 0,
@@ -1028,7 +1121,9 @@ export namespace Provider {
     }
   }
 
-  export function parseModel(model: string) {
+  export type ModelRef = { providerID: string; modelID: string; variant?: string }
+
+  export function parseModel(model: string): ModelRef {
     const [providerID, ...rest] = model.split("/")
     return {
       providerID: providerID,

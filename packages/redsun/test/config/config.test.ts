@@ -6,6 +6,12 @@ import path from "path"
 import fs from "fs/promises"
 import { pathToFileURL } from "url"
 
+test("validates subagent_depth", () => {
+  expect(Config.Info.parse({ subagent_depth: 0 }).subagent_depth).toBe(0)
+  expect(() => Config.Info.parse({ subagent_depth: -1 })).toThrow()
+  expect(() => Config.Info.parse({ subagent_depth: 1.5 })).toThrow()
+})
+
 test("creates a missing REDSUN_CONFIG_DIR", async () => {
   await using tmp = await tmpdir()
   const configDir = path.join(tmp.path, "missing-config")

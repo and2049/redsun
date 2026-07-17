@@ -314,6 +314,7 @@ export namespace MessageV2 {
     model: z.object({
       providerID: z.string(),
       modelID: z.string(),
+      variant: z.string().optional(),
     }),
     system: z.string().optional(),
     tools: z.record(z.string(), z.boolean()).optional(),

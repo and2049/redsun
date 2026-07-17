@@ -149,6 +149,7 @@
   ],
   "patchedDependencies": {
     "@ai-sdk/xai@2.0.42": "patches/@ai-sdk%2Fxai@2.0.42.patch",
+    "@ai-sdk/openai@2.0.71": "patches/@ai-sdk%2Fopenai@2.0.71.patch",
   },
   "overrides": {
     "@types/bun": "catalog:",
@@ -177,7 +178,7 @@
     "hono": "4.10.7",
     "hono-openapi": "1.1.2",
     "luxon": "3.6.1",
-    "marked": "17.0.1",
+    "marked": "17.0.6",
     "marked-shiki": "1.2.1",
     "remeda": "2.26.0",
     "shiki": "3.20.0",
