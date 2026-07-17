@@ -165,7 +165,7 @@ export function CommandBar() {
         </Match>
         <Match when={true}>
           <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
-            {vim.mode}
+            {vim.tempRemaining() != null ? `normal (${vim.tempRemaining()}s)` : vim.mode}
           </text>
         </Match>
       </Switch>
