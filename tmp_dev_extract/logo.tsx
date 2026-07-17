@@ -1,6 +1,6 @@
 import { TextAttributes, RGBA } from "@opentui/core"
 import { For } from "solid-js"
-import { useTheme } from "../context/theme"
+import { useTheme } from "@tui/context/theme"
 
 const LOGO = [
   `██╗      ██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗`,
@@ -12,7 +12,7 @@ const LOGO = [
 ]
 
 export function Logo() {
-  const { theme, terminalDefaultBackground } = useTheme()
+  const { theme, mode, terminalDefaultBackground } = useTheme()
   const logoWidth = LOGO[0].length
 
   const actualBg = () =>

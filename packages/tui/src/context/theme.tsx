@@ -1,4 +1,4 @@
-import { CliRenderEvents, SyntaxStyle, type TerminalColors } from "@opentui/core"
+import { CliRenderEvents, RGBA, SyntaxStyle, type TerminalColors } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import {
   DEFAULT_THEMES,
@@ -87,6 +87,7 @@ type State = {
   lock: "dark" | "light" | undefined
   active: string
   ready: boolean
+  terminalDefaultBackground: RGBA | null
 }
 
 const [store, setStore] = createStore<State>({
@@ -95,6 +96,7 @@ const [store, setStore] = createStore<State>({
   lock: undefined,
   active: "cursor",
   ready: false,
+  terminalDefaultBackground: null,
 })
 
 subscribeThemes((themes) => setStore("themes", themes))
@@ -164,6 +166,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
           }
           const next = store.lock ?? terminalMode(colors) ?? mode
           if (store.mode !== next) setStore("mode", next)
+          setStore("terminalDefaultBackground", RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!))
           const signature = JSON.stringify(colors)
           hasResolvedSystemTheme = true
           if (store.themes.system && systemThemeSignature === signature && systemThemeMode === next) return
@@ -298,6 +301,9 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       },
       get ready() {
         return store.ready
+      },
+      get terminalDefaultBackground() {
+        return store.terminalDefaultBackground
       },
     }
   },

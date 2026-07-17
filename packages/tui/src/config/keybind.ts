@@ -222,7 +222,7 @@ export const Definitions = {
 
   terminal_suspend: keybind("ctrl+z", "Suspend terminal"),
   terminal_title_toggle: keybind("none", "Toggle terminal title"),
-  tips_toggle: keybind("<leader>h", "Toggle tips on home screen"),
+  tips_toggle: keybind("none", "Toggle tips on home screen"),
   plugin_manager: keybind("none", "Open plugin manager dialog"),
   plugin_install: keybind("none", "Install plugin"),
 

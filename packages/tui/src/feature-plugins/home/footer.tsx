@@ -85,7 +85,7 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 100,
     slots: {
-      home_footer() {
+      home_top() {
         return <View api={api} />
       },
     },
