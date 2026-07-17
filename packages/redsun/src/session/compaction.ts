@@ -253,7 +253,7 @@ export namespace SessionCompaction {
       const state = CompactionExtractor.extract(input.messages, { maxToolResults })
       const inventory = CompactionExtractor.serialize(state)
       const recentMessages = CompactionExtractor.extractRecentMessages(input.messages, keepRecent)
-      const recentModelMessages = MessageV2.toModelMessage(recentMessages)
+      const recentModelMessages = MessageV2.toModelMessage(recentMessages, model)
       const inventoryMessage = {
         role: "user" as const,
         content: [{ type: "text" as const, text: `## Structured Inventory\n\n${inventory}` }],
@@ -296,7 +296,7 @@ export namespace SessionCompaction {
         tools: {},
         system: [],
         messages: [
-          ...MessageV2.toModelMessage(input.messages),
+          ...MessageV2.toModelMessage(input.messages, model),
           {
             role: "user",
             content: [
@@ -353,6 +353,7 @@ export namespace SessionCompaction {
       model: z.object({
         providerID: z.string(),
         modelID: z.string(),
+        variant: z.string().optional(),
       }),
       auto: z.boolean(),
       overflow: z.boolean().optional(),

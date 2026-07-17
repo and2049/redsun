@@ -170,4 +170,79 @@ describe("tool.read env file blocking", () => {
       },
     })
   })
+
+  test("allows reading elsewhere in the same git worktree from a subdirectory", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "sibling.txt"), "worktree content")
+        await Bun.write(path.join(dir, "redsun.json"), JSON.stringify({ permission: { external_directory: "deny" } }))
+        await Bun.write(path.join(dir, "packages", "app", ".keep"), "")
+      },
+    })
+    await Instance.provide({
+      directory: path.join(tmp.path, "packages", "app"),
+      fn: async () => {
+        expect(Instance.containsPath(path.join(tmp.path, "sibling.txt"))).toBe(true)
+        const read = await ReadTool.init()
+        const result = await read.execute({ filePath: path.join(tmp.path, "sibling.txt") }, ctx)
+        expect(result.output).toContain("worktree content")
+      },
+    })
+  })
+})
+
+describe("tool.read bounded file handling", () => {
+  test("resolves relative paths from the active project", async () => {
+    await using tmp = await tmpdir({ init: (dir) => Bun.write(path.join(dir, "relative.txt"), "project file") })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const read = await ReadTool.init()
+        expect((await read.execute({ filePath: "relative.txt" }, ctx)).output).toContain("project file")
+      },
+    })
+  })
+
+  test("sniffs supported attachment MIME from file content", async () => {
+    await using tmp = await tmpdir({
+      init: (dir) => Bun.write(path.join(dir, "image.txt"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const read = await ReadTool.init()
+        const result = await read.execute({ filePath: "image.txt" }, ctx)
+        expect(result.attachments?.[0]?.mime).toBe("image/png")
+      },
+    })
+  })
+
+  test("does not send unsupported image formats as attachments", async () => {
+    await using tmp = await tmpdir({
+      init: (dir) => Bun.write(path.join(dir, "image.bmp"), Buffer.from([0x42, 0x4d, 0, 0, 0, 0, 0, 0])),
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const read = await ReadTool.init()
+        await expect(read.execute({ filePath: "image.bmp" }, ctx)).rejects.toThrow("Cannot read binary file")
+      },
+    })
+  })
+
+  test("caps model-visible text output by bytes", async () => {
+    await using tmp = await tmpdir({
+      init: (dir) => Bun.write(path.join(dir, "large.txt"), Array.from({ length: 100 }, () => "x".repeat(1000)).join("\n")),
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const read = await ReadTool.init()
+        const result = await read.execute({ filePath: "large.txt", limit: 100 }, ctx)
+        expect(result.output).toContain("Output capped at 50 KB")
+        expect(result.output.length).toBeLessThan(55_000)
+      },
+    })
+  })
 })

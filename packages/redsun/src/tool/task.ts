@@ -12,6 +12,18 @@ import { iife } from "@/util/iife"
 import { defer } from "@/util/defer"
 import { Config } from "../config/config"
 
+export async function assertSubagentDepth(sessionID: string, maximum: number) {
+  let current = await Session.get(sessionID)
+  let depth = 0
+  while (current.parentID) {
+    depth++
+    current = await Session.get(current.parentID)
+  }
+  if (depth >= maximum) {
+    throw new Error(`Subagent depth limit reached (${maximum}). Increase "subagent_depth" to allow nested subagents.`)
+  }
+}
+
 export const TaskTool = Tool.define("task", async () => {
   const agents = await Agent.list().then((x) => x.filter((a) => a.mode !== "primary"))
   const description = DESCRIPTION.replace(
@@ -30,6 +42,8 @@ export const TaskTool = Tool.define("task", async () => {
       command: z.string().describe("The command that triggered this task").optional(),
     }),
     async execute(params, ctx) {
+      const config = await Config.get()
+      await assertSubagentDepth(ctx.sessionID, config.subagent_depth ?? 1)
       const agent = await Agent.get(params.subagent_type)
       if (!agent) throw new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`)
       const session = await iife(async () => {
@@ -76,11 +90,17 @@ export const TaskTool = Tool.define("task", async () => {
           },
         })
       })
+      using _subscription = defer(unsub)
 
       const exploreModel = await resolveTaskModel("explore", async () => undefined)
       const model = agent.model ?? (exploreModel ? { modelID: exploreModel.id, providerID: exploreModel.providerID } : undefined) ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
+      }
+      let variant = agent.model?.variant
+      if (!agent.model && !exploreModel) {
+        const parent = await MessageV2.get({ sessionID: ctx.sessionID, messageID: msg.info.parentID })
+        if (parent.info.role === "user") variant = parent.info.model.variant
       }
 
       function cancel() {
@@ -90,13 +110,13 @@ export const TaskTool = Tool.define("task", async () => {
       using _ = defer(() => ctx.abort.removeEventListener("abort", cancel))
       const promptParts = await SessionPrompt.resolvePromptParts(params.prompt)
 
-      const config = await Config.get()
       const result = await SessionPrompt.prompt({
         messageID,
         sessionID: session.id,
         model: {
           modelID: model.modelID,
           providerID: model.providerID,
+          variant,
         },
         agent: agent.name,
         tools: {
@@ -108,7 +128,6 @@ export const TaskTool = Tool.define("task", async () => {
         },
         parts: promptParts,
       })
-      unsub()
       const messages = await Session.messages({ sessionID: session.id })
       const summary = messages
         .filter((x) => x.info.role === "assistant")

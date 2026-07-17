@@ -36,7 +36,7 @@
       "hono-openapi": "1.1.2",
       "fuzzysort": "3.1.0",
       "luxon": "3.6.1",
-      "marked": "17.0.1",
+      "marked": "17.0.6",
       "marked-shiki": "1.2.1",
       "typescript": "5.8.2",
       "@typescript/native-preview": "7.0.0-dev.20251207.1",
@@ -75,6 +75,8 @@
     "@types/node": "catalog:"
   },
   "patchedDependencies": {
-    "@ai-sdk/xai@2.0.42": "patches/@ai-sdk%2Fxai@2.0.42.patch"
+    "@ai-sdk/xai@2.0.42": "patches/@ai-sdk%2Fxai@2.0.42.patch",
+    "@ai-sdk/openai@2.0.71": "patches/@ai-sdk%2Fopenai@2.0.71.patch",
+    "@modelcontextprotocol/sdk@1.15.1": "patches/@modelcontextprotocol%2Fsdk@1.15.1.patch"
   }
 }

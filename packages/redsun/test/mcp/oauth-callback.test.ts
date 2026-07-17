@@ -8,11 +8,15 @@ process.env.XDG_CONFIG_HOME = path.join(xdgRoot, "config")
 process.env.XDG_DATA_HOME = path.join(xdgRoot, "data")
 process.env.XDG_STATE_HOME = path.join(xdgRoot, "state")
 
-const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
+const { McpOAuthCallback, OAUTH_CALLBACK_HOST } = await import("../../src/mcp/oauth-callback")
 const { OAUTH_CALLBACK_PATH, OAUTH_CALLBACK_PORT } = await import("../../src/mcp/oauth-provider")
 const callbackUrl = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`
 
 describe("McpOAuthCallback", () => {
+  test("binds callbacks to IPv4 loopback", () => {
+    expect(OAUTH_CALLBACK_HOST).toBe("127.0.0.1")
+  })
+
   afterEach(async () => {
     await McpOAuthCallback.stop()
   })

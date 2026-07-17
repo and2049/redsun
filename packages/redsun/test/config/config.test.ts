@@ -6,6 +6,12 @@ import path from "path"
 import fs from "fs/promises"
 import { pathToFileURL } from "url"
 
+test("validates subagent_depth", () => {
+  expect(Config.Info.parse({ subagent_depth: 0 }).subagent_depth).toBe(0)
+  expect(() => Config.Info.parse({ subagent_depth: -1 })).toThrow()
+  expect(() => Config.Info.parse({ subagent_depth: 1.5 })).toThrow()
+})
+
 test("creates a missing REDSUN_CONFIG_DIR", async () => {
   await using tmp = await tmpdir()
   const configDir = path.join(tmp.path, "missing-config")
@@ -164,7 +170,7 @@ test("handles environment variable substitution", async () => {
 test("handles file inclusion substitution", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(dir, "included.txt"), "test_theme")
+      await Bun.write(path.join(dir, "included.txt"), "test_$&_theme")
       await Bun.write(
         path.join(dir, "redsun.json"),
         JSON.stringify({
@@ -178,7 +184,7 @@ test("handles file inclusion substitution", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await Config.get()
-      expect(config.theme).toBe("test_theme")
+      expect(config.theme).toBe("test_$&_theme")
     },
   })
 })

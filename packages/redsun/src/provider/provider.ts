@@ -14,6 +14,7 @@ import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { iife } from "@/util/iife"
 import { OpenAICodexOAuth } from "./openai-codex-oauth"
+import { ProviderTransform } from "./transform"
 
 // Direct imports for bundled providers
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
@@ -35,6 +36,35 @@ import { createCohere } from "@ai-sdk/cohere"
 import { createGateway } from "@ai-sdk/gateway"
 import { createTogetherAI } from "@ai-sdk/togetherai"
 import { createPerplexity } from "@ai-sdk/perplexity"
+
+export function resolveBedrockModelID(modelID: string, region: string) {
+  if (["global.", "us.", "eu.", "jp.", "apac.", "au."].some((prefix) => modelID.startsWith(prefix))) return modelID
+
+  const prefix = region.split("-")[0]
+  if (prefix === "us") {
+    const required = ["nova-micro", "nova-lite", "nova-pro", "nova-premier", "nova-2", "claude", "deepseek"]
+    return required.some((name) => modelID.includes(name)) && !region.startsWith("us-gov") ? `us.${modelID}` : modelID
+  }
+  if (prefix === "eu") {
+    const supported = ["eu-west-1", "eu-west-2", "eu-west-3", "eu-north-1", "eu-central-1", "eu-south-1", "eu-south-2"]
+    const required = ["claude", "nova-lite", "nova-micro", "llama3", "pixtral"]
+    return supported.includes(region) && required.some((name) => modelID.includes(name)) ? `eu.${modelID}` : modelID
+  }
+  if (prefix !== "ap") return modelID
+
+  const required = ["claude", "nova-lite", "nova-micro", "nova-pro"]
+  if (["ap-southeast-2", "ap-southeast-4"].includes(region)) {
+    const australian = ["anthropic.claude-sonnet-4-5", "anthropic.claude-haiku"]
+    if (australian.some((name) => modelID.includes(name))) return `au.${modelID}`
+  }
+  if (!required.some((name) => modelID.includes(name))) return modelID
+  return `${region === "ap-northeast-1" ? "jp" : "apac"}.${modelID}`
+}
+
+export function googleVertexAnthropicBaseURL(project: string | undefined, location: string | undefined) {
+  if (!project || (location !== "eu" && location !== "us")) return undefined
+  return `https://aiplatform.${location}.rep.googleapis.com/v1/projects/${project}/locations/${location}/publishers/anthropic/models`
+}
 
 export namespace Provider {
   const log = Log.create({ service: "provider" })
@@ -184,88 +214,42 @@ export namespace Provider {
         },
       }
     },
-    "amazon-bedrock": async () => {
-      const [awsProfile, awsAccessKeyId, awsBearerToken, awsRegion] = await Promise.all([
-        Env.get("AWS_PROFILE"),
-        Env.get("AWS_ACCESS_KEY_ID"),
-        Env.get("AWS_BEARER_TOKEN_BEDROCK"),
-        Env.get("AWS_REGION"),
-      ])
-      if (!awsProfile && !awsAccessKeyId && !awsBearerToken) return { autoload: false }
+    "amazon-bedrock": async (provider) => {
+      const auth = await Auth.get("amazon-bedrock")
+      const region = provider.options?.region ?? Env.get("AWS_REGION") ?? "us-east-1"
+      const profile = provider.options?.profile ?? Env.get("AWS_PROFILE")
+      const awsAccessKeyId = Env.get("AWS_ACCESS_KEY_ID")
+      const configApiKey = provider.options?.apiKey
+      const envBearerToken = Env.get("AWS_BEARER_TOKEN_BEDROCK")
+      const awsBearerToken = envBearerToken ?? (auth?.type === "api" ? auth.key : undefined)
+      const webIdentityToken = Env.get("AWS_WEB_IDENTITY_TOKEN_FILE")
+      const containerCredentials = Boolean(
+        process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI,
+      )
+      if (!envBearerToken && awsBearerToken) Env.set("AWS_BEARER_TOKEN_BEDROCK", awsBearerToken)
+      if (
+        !profile &&
+        !awsAccessKeyId &&
+        !awsBearerToken &&
+        !configApiKey &&
+        !webIdentityToken &&
+        !containerCredentials
+      )
+        return { autoload: false }
 
-      const region = awsRegion ?? "us-east-1"
+      const options: Record<string, any> = { region }
+      if (!awsBearerToken && !configApiKey) {
+        const { fromNodeProviderChain } = await import(await BunProc.install("@aws-sdk/credential-providers"))
+        options.credentialProvider = fromNodeProviderChain(profile ? { profile } : {})
+      }
+      const endpoint = provider.options?.endpoint ?? provider.options?.baseURL
+      if (endpoint) options.baseURL = endpoint
 
-      const { fromNodeProviderChain } = await import(await BunProc.install("@aws-sdk/credential-providers"))
       return {
         autoload: true,
-        options: {
-          region,
-          credentialProvider: fromNodeProviderChain(),
-        },
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          // Skip region prefixing if model already has global prefix
-          if (modelID.startsWith("global.")) {
-            return sdk.languageModel(modelID)
-          }
-
-          let regionPrefix = region.split("-")[0]
-
-          switch (regionPrefix) {
-            case "us": {
-              const modelRequiresPrefix = [
-                "nova-micro",
-                "nova-lite",
-                "nova-pro",
-                "nova-premier",
-                "claude",
-                "deepseek",
-              ].some((m) => modelID.includes(m))
-              const isGovCloud = region.startsWith("us-gov")
-              if (modelRequiresPrefix && !isGovCloud) {
-                modelID = `${regionPrefix}.${modelID}`
-              }
-              break
-            }
-            case "eu": {
-              const regionRequiresPrefix = [
-                "eu-west-1",
-                "eu-west-2",
-                "eu-west-3",
-                "eu-north-1",
-                "eu-central-1",
-                "eu-south-1",
-                "eu-south-2",
-              ].some((r) => region.includes(r))
-              const modelRequiresPrefix = ["claude", "nova-lite", "nova-micro", "llama3", "pixtral"].some((m) =>
-                modelID.includes(m),
-              )
-              if (regionRequiresPrefix && modelRequiresPrefix) {
-                modelID = `${regionPrefix}.${modelID}`
-              }
-              break
-            }
-            case "ap": {
-              const isAustraliaRegion = ["ap-southeast-2", "ap-southeast-4"].includes(region)
-              if (
-                isAustraliaRegion &&
-                ["anthropic.claude-sonnet-4-5", "anthropic.claude-haiku"].some((m) => modelID.includes(m))
-              ) {
-                regionPrefix = "au"
-                modelID = `${regionPrefix}.${modelID}`
-              } else {
-                const modelRequiresPrefix = ["claude", "nova-lite", "nova-micro", "nova-pro"].some((m) =>
-                  modelID.includes(m),
-                )
-                if (modelRequiresPrefix) {
-                  regionPrefix = "apac"
-                  modelID = `${regionPrefix}.${modelID}`
-                }
-              }
-              break
-            }
-          }
-
-          return sdk.languageModel(modelID)
+        options,
+        async getModel(sdk: any, modelID: string, requestOptions?: Record<string, any>) {
+          return sdk.languageModel(resolveBedrockModelID(modelID, requestOptions?.region ?? region))
         },
       }
     },
@@ -274,8 +258,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://github.com/and2049/redsun",
+            "X-Title": "Redsun",
           },
         },
       }
@@ -285,15 +269,25 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "http-referer": "https://opencode.ai/",
-            "x-title": "opencode",
+            "http-referer": "https://github.com/and2049/redsun",
+            "x-title": "Redsun",
           },
         },
       }
     },
-    "google-vertex": async () => {
-      const project = Env.get("GOOGLE_CLOUD_PROJECT") ?? Env.get("GCP_PROJECT") ?? Env.get("GCLOUD_PROJECT")
-      const location = Env.get("GOOGLE_CLOUD_LOCATION") ?? Env.get("VERTEX_LOCATION") ?? "us-east5"
+    "google-vertex": async (provider) => {
+      const project =
+        provider.options?.project ??
+        Env.get("GOOGLE_VERTEX_PROJECT") ??
+        Env.get("GOOGLE_CLOUD_PROJECT") ??
+        Env.get("GCP_PROJECT") ??
+        Env.get("GCLOUD_PROJECT")
+      const location =
+        provider.options?.location ??
+        Env.get("GOOGLE_VERTEX_LOCATION") ??
+        Env.get("GOOGLE_CLOUD_LOCATION") ??
+        Env.get("VERTEX_LOCATION") ??
+        "us-central1"
       const autoload = Boolean(project)
       if (!autoload) return { autoload: false }
       return {
@@ -318,6 +312,9 @@ export namespace Provider {
         options: {
           project,
           location,
+          ...(googleVertexAnthropicBaseURL(project, location)
+            ? { baseURL: googleVertexAnthropicBaseURL(project, location) }
+            : {}),
         },
         async getModel(sdk: any, modelID) {
           const id = String(modelID).trim()
@@ -352,8 +349,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://github.com/and2049/redsun",
+            "X-Title": "Redsun",
           },
         },
       }
@@ -384,8 +381,8 @@ export namespace Provider {
             // Cloudflare AI Gateway uses cf-aig-authorization for authenticated gateways
             // This enables Unified Billing where Cloudflare handles upstream provider auth
             ...(apiToken ? { "cf-aig-authorization": `Bearer ${apiToken}` } : {}),
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://github.com/and2049/redsun",
+            "X-Title": "Redsun",
           },
           // Custom fetch to strip Authorization header - AI Gateway uses cf-aig-authorization instead
           // Sending Authorization header with invalid value causes auth errors
@@ -402,7 +399,7 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "X-Cerebras-3rd-Party-Integration": "opencode",
+            "X-Cerebras-3rd-Party-Integration": "redsun",
           },
         },
       }
@@ -442,7 +439,7 @@ export namespace Provider {
         interleaved: z.union([
           z.boolean(),
           z.object({
-            field: z.enum(["reasoning_content", "reasoning_details"]),
+            field: z.enum(["reasoning", "reasoning_content", "reasoning_details"]),
           }),
         ]),
       }),
@@ -453,6 +450,16 @@ export namespace Provider {
           read: z.number(),
           write: z.number(),
         }),
+        tiers: z
+          .array(
+            z.object({
+              input: z.number(),
+              output: z.number(),
+              cache: z.object({ read: z.number(), write: z.number() }),
+              tier: z.object({ type: z.literal("context"), size: z.number() }),
+            }),
+          )
+          .optional(),
         experimentalOver200K: z
           .object({
             input: z.number(),
@@ -466,12 +473,14 @@ export namespace Provider {
       }),
       limit: z.object({
         context: z.number(),
+        input: z.number().optional(),
         output: z.number(),
       }),
       status: z.enum(["alpha", "beta", "deprecated", "active"]),
       options: z.record(z.string(), z.any()),
       headers: z.record(z.string(), z.string()),
       release_date: z.string(),
+      variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
     })
     .meta({
       ref: "Model",
@@ -493,40 +502,51 @@ export namespace Provider {
     })
   export type Info = z.infer<typeof Info>
 
-  function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+  function cost(value: ModelsDev.Model["cost"]): Model["cost"] {
     return {
+      input: value?.input ?? 0,
+      output: value?.output ?? 0,
+      cache: {
+        read: value?.cache_read ?? 0,
+        write: value?.cache_write ?? 0,
+      },
+      tiers: value?.tiers?.map((item) => ({
+        input: item.input,
+        output: item.output,
+        cache: { read: item.cache_read ?? 0, write: item.cache_write ?? 0 },
+        tier: item.tier,
+      })),
+      experimentalOver200K: value?.context_over_200k
+        ? {
+            cache: {
+              read: value.context_over_200k.cache_read ?? 0,
+              write: value.context_over_200k.cache_write ?? 0,
+            },
+            input: value.context_over_200k.input,
+            output: value.context_over_200k.output,
+          }
+        : undefined,
+    }
+  }
+
+  function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+    const base: Model = {
       id: model.id,
       providerID: provider.id,
       name: model.name,
       family: model.family,
       api: {
         id: model.id,
-        url: provider.api!,
+        url: model.provider?.api ?? provider.api ?? "",
         npm: model.provider?.npm ?? provider.npm ?? provider.id,
       },
       status: model.status ?? "active",
       headers: model.headers ?? {},
       options: model.options ?? {},
-      cost: {
-        input: model.cost?.input ?? 0,
-        output: model.cost?.output ?? 0,
-        cache: {
-          read: model.cost?.cache_read ?? 0,
-          write: model.cost?.cache_write ?? 0,
-        },
-        experimentalOver200K: model.cost?.context_over_200k
-          ? {
-              cache: {
-                read: model.cost.context_over_200k.cache_read ?? 0,
-                write: model.cost.context_over_200k.cache_write ?? 0,
-              },
-              input: model.cost.context_over_200k.input,
-              output: model.cost.context_over_200k.output,
-            }
-          : undefined,
-      },
+      cost: cost(model.cost),
       limit: {
         context: model.limit.context,
+        input: model.limit.input,
         output: model.limit.output,
       },
       capabilities: {
@@ -552,17 +572,54 @@ export namespace Provider {
       },
       release_date: model.release_date,
     }
+    base.variants = ProviderTransform.reasoningVariants(model, base) ?? ProviderTransform.variants(base)
+    return base
   }
 
   export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
+    const models: Record<string, Model> = {}
+    for (const [key, model] of Object.entries(provider.models)) {
+      models[key] = fromModelsDevModel(provider, model)
+      const modes = typeof model.experimental === "object" ? model.experimental.modes : undefined
+      for (const [mode, options] of Object.entries(modes ?? {})) {
+        const id = `${model.id}-${mode}`
+        const base = fromModelsDevModel(provider, model)
+        models[id] = {
+          ...base,
+          id,
+          name: `${model.name} ${mode[0].toUpperCase()}${mode.slice(1)}`,
+          cost: options.cost ? mergeDeep(base.cost, cost(options.cost)) : base.cost,
+          options: modeOptions(base, options.provider?.body),
+          headers: options.provider?.headers ?? base.headers,
+        }
+      }
+    }
     return {
       id: provider.id,
       source: "custom",
       name: provider.name,
       env: provider.env ?? [],
       options: {},
-      models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
+      models,
     }
+  }
+
+  function modeOptions(model: Model, body: Record<string, unknown> | undefined) {
+    if (!body) return model.options
+    const options = Object.fromEntries(
+      Object.entries(body).map(([key, value]) => [key.replace(/_([a-z])/g, (_, char) => char.toUpperCase()), value]),
+    )
+    const reasoning = body.reasoning
+    if (
+      model.api.npm !== "@ai-sdk/openai" ||
+      typeof reasoning !== "object" ||
+      reasoning === null ||
+      Array.isArray(reasoning) ||
+      typeof (reasoning as Record<string, unknown>).mode !== "string"
+    )
+      return options
+    const { reasoning: _, ...rest } = options
+    return { ...rest, reasoningMode: (reasoning as Record<string, unknown>).mode }
   }
 
   const state = Instance.state(async () => {
@@ -637,13 +694,19 @@ export namespace Provider {
           if (model.id && model.id !== modelID) return modelID
           return existingModel?.name ?? modelID
         })
+        const apiID = model.id ?? existingModel?.api.id ?? modelID
+        const apiNpm =
+          model.provider?.npm ??
+          provider.npm ??
+          existingModel?.api.npm ??
+          modelsDev[providerID]?.npm ??
+          "@ai-sdk/openai-compatible"
         const parsedModel: Model = {
           id: modelID,
           api: {
-            id: model.id ?? existingModel?.api.id ?? modelID,
-            npm:
-              model.provider?.npm ?? provider.npm ?? existingModel?.api.npm ?? modelsDev[providerID]?.npm ?? providerID,
-            url: provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
+            id: apiID,
+            npm: apiNpm,
+            url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
           },
           status: model.status ?? existingModel?.status ?? "active",
           name,
@@ -667,7 +730,12 @@ export namespace Provider {
               video: model.modalities?.output?.includes("video") ?? existingModel?.capabilities.output.video ?? false,
               pdf: model.modalities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
             },
-            interleaved: model.interleaved ?? false,
+            interleaved:
+              model.interleaved ??
+              existingModel?.capabilities.interleaved ??
+              (!existingModel && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
+                ? { field: "reasoning_content" }
+                : false),
           },
           cost: {
             input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
@@ -680,12 +748,27 @@ export namespace Provider {
           options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
           limit: {
             context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
+            input: model.limit?.input ?? existingModel?.limit?.input,
             output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
           },
           headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
           family: model.family ?? existingModel?.family ?? "",
           release_date: model.release_date ?? existingModel?.release_date ?? "",
+          variants: {},
         }
+        const defaults =
+          existingModel?.api.npm === parsedModel.api.npm
+            ? (existingModel.variants ?? ProviderTransform.variants(parsedModel))
+            : ProviderTransform.variants(parsedModel)
+        const merged = mergeDeep(defaults, model.variants ?? {})
+        parsedModel.variants = Object.fromEntries(
+          Object.entries(merged)
+            .filter(([, value]) => !(value as Record<string, any>).disabled)
+            .map(([key, value]) => {
+              const { disabled: _, ...options } = value as Record<string, any>
+              return [key, options]
+            }),
+        )
         parsed.models[modelID] = parsedModel
       }
       database[providerID] = parsed
@@ -720,7 +803,7 @@ export namespace Provider {
     for (const [providerID, fn] of Object.entries(CUSTOM_LOADERS)) {
       if (disabled.has(providerID)) continue
       const result = await fn(database[providerID])
-      if (result && (result.autoload || providers[providerID])) {
+      if (result && (result.autoload || providers[providerID] || config.provider?.[providerID])) {
         if (result.getModel) modelLoaders[providerID] = result.getModel
         mergeProvider(providerID, {
           source: "custom",
@@ -759,6 +842,7 @@ export namespace Provider {
 
       for (const [modelID, model] of Object.entries(provider.models)) {
         model.api.id = model.api.id ?? model.id ?? modelID
+        if (model.variants === undefined) model.variants = ProviderTransform.variants(model)
         if (modelID === "gpt-5-chat-latest" || (providerID === "openrouter" && modelID === "openai/gpt-5-chat"))
           delete provider.models[modelID]
         if (model.status === "alpha" && !Flag.REDSUN_ENABLE_EXPERIMENTAL_MODELS) delete provider.models[modelID]
@@ -768,6 +852,11 @@ export namespace Provider {
         )
           delete provider.models[modelID]
         if (providerID === "openai" && auth?.type === "oauth") {
+          if (!OpenAICodexOAuth.supportsModel(model)) {
+            delete provider.models[modelID]
+            continue
+          }
+          model.limit = OpenAICodexOAuth.contextLimits(model)
           model.cost = {
             input: 0,
             output: 0,
@@ -821,7 +910,7 @@ export namespace Provider {
           ...model.headers,
         }
 
-      const key = Bun.hash.xxHash32(JSON.stringify({ npm: model.api.npm, options }))
+      const key = Bun.hash.xxHash32(JSON.stringify({ providerID: model.providerID, npm: model.api.npm, options }))
       const existing = s.sdk.get(key)
       if (existing) return existing
 
@@ -963,43 +1052,56 @@ export namespace Provider {
 
     if (cfg.small_model) {
       const parsed = parseModel(cfg.small_model)
-      return getModel(parsed.providerID, parsed.modelID)
+      return getModel(parsed.providerID, parsed.modelID).catch((error) => {
+        if (error instanceof ModelNotFoundError) return undefined
+        throw error
+      })
     }
 
     const provider = await state().then((state) => state.providers[providerID])
-    if (provider) {
-      let priority = [
-        "claude-haiku-4-5",
-        "claude-haiku-4.5",
-        "3-5-haiku",
-        "3.5-haiku",
-        "gemini-2.5-flash",
-        "gpt-5-nano",
-      ]
-      // claude-haiku-4.5 is considered a premium model in github copilot, we shouldn't use premium requests for title gen
-      if (providerID === "github-copilot") {
-        priority = priority.filter((m) => m !== "claude-haiku-4.5")
-      }
-      if (providerID.startsWith("opencode")) {
-        priority = ["gpt-5-nano"]
-      }
-      for (const item of priority) {
-        for (const model of Object.keys(provider.models)) {
-          if (model.includes(item)) return getModel(providerID, model)
-        }
-      }
-    }
+    if (!provider) return undefined
 
-    // Check if opencode provider is available before using it
-    const opencodeProvider = await state().then((state) => state.providers["opencode"])
-    if (opencodeProvider && opencodeProvider.models["gpt-5-nano"]) {
-      return getModel("opencode", "gpt-5-nano")
+    // Azure deployments do not reliably expose enough catalog metadata to infer a valid deployment name.
+    if (providerID === "azure" || providerID === "azure-cognitive-services") return undefined
+
+    const priority = providerID.startsWith("opencode")
+      ? ["gpt-nano"]
+      : providerID.startsWith("github-copilot")
+        ? ["gpt-mini", ...smallModelFamilyPriority]
+        : smallModelFamilyPriority
+    const models = sortBy(
+      Object.values(provider.models),
+      [(model) => model.release_date, "desc"],
+      [(model) => model.id, "desc"],
+    )
+    for (const family of priority) {
+      const candidates = models.filter((model) => model.family === family)
+      if (providerID === "amazon-bedrock") {
+        const crossRegionPrefixes = ["global.", "us.", "eu."]
+        const globalMatch = candidates.find((model) => model.id.startsWith("global."))
+        if (globalMatch) return globalMatch
+
+        const region = provider.options?.region
+        if (typeof region === "string") {
+          const regionPrefix = region.split("-")[0]
+          if (regionPrefix === "us" || regionPrefix === "eu") {
+            const regionalMatch = candidates.find((model) => model.id.startsWith(`${regionPrefix}.`))
+            if (regionalMatch) return regionalMatch
+          }
+        }
+
+        const unprefixed = candidates.find((model) => !crossRegionPrefixes.some((prefix) => model.id.startsWith(prefix)))
+        if (unprefixed) return unprefixed
+        continue
+      }
+      if (candidates[0]) return candidates[0]
     }
 
     return undefined
   }
 
   const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
+  const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
   export function sort(models: Model[]) {
     return sortBy(
       models,
@@ -1019,16 +1121,18 @@ export namespace Provider {
         const configured = Object.keys(cfg.provider ?? {})
         return x.find((p) => configured.length === 0 || configured.includes(p.id))
       })
-    if (!provider) throw new Error("no providers found")
+    if (!provider) throw new NoProvidersError({})
     const [model] = sort(Object.values(provider.models))
-    if (!model) throw new Error("no models found")
+    if (!model) throw new NoModelsError({ providerID: provider.id })
     return {
       providerID: provider.id,
       modelID: model.id,
     }
   }
 
-  export function parseModel(model: string) {
+  export type ModelRef = { providerID: string; modelID: string; variant?: string }
+
+  export function parseModel(model: string): ModelRef {
     const [providerID, ...rest] = model.split("/")
     return {
       providerID: providerID,
@@ -1174,6 +1278,25 @@ export namespace Provider {
     override get message() {
       const data = this.data as { providerID: string }
       return `Failed to initialize provider: ${data.providerID}`
+    }
+  }
+
+  const _NoProvidersError = NamedError.create("ProviderNoProvidersError", z.object({}))
+  export class NoProvidersError extends _NoProvidersError {
+    override get message() {
+      return "No providers are available"
+    }
+  }
+
+  const _NoModelsError = NamedError.create(
+    "ProviderNoModelsError",
+    z.object({
+      providerID: z.string(),
+    }),
+  )
+  export class NoModelsError extends _NoModelsError {
+    override get message() {
+      return `No models are available for provider: ${this.data.providerID}`
     }
   }
 }

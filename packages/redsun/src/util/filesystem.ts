@@ -1,8 +1,18 @@
 import { realpathSync } from "fs"
-import { exists } from "fs/promises"
+import { exists, mkdir, stat } from "fs/promises"
 import { dirname, join, relative } from "path"
 
 export namespace Filesystem {
+  export async function ensureDir(path: string) {
+    try {
+      return await mkdir(path, { recursive: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      if (!(await stat(path).catch(() => undefined))?.isDirectory()) throw error
+      return undefined
+    }
+  }
+
   /**
    * On Windows, normalize a path to its canonical casing using the filesystem.
    * This is needed because Windows paths are case-insensitive but LSP servers

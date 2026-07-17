@@ -77,11 +77,6 @@ export namespace Config {
       }
     }
 
-    if (Flag.REDSUN_CONFIG_CONTENT) {
-      mergeSource(JSON.parse(Flag.REDSUN_CONFIG_CONTENT), "user")
-      log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
-    }
-
     for (const [key, value] of Object.entries(auth)) {
       if (value.type === "wellknown") {
         process.env[value.key] = value.token
@@ -115,7 +110,7 @@ export namespace Config {
     const configDir = process.env["REDSUN_CONFIG_DIR"]
     if (configDir) {
       try {
-        await fs.mkdir(configDir, { recursive: true })
+        await Filesystem.ensureDir(configDir)
         directoryEntries.push({ path: configDir, scope: "user" })
         log.debug("loading config from REDSUN_CONFIG_DIR", { path: configDir })
       } catch (error) {
@@ -168,6 +163,11 @@ export namespace Config {
     }
     await Promise.allSettled(promises)
 
+    if (Flag.REDSUN_CONFIG_CONTENT) {
+      mergeSource(await load(Flag.REDSUN_CONFIG_CONTENT, path.join(Instance.directory, "REDSUN_CONFIG_CONTENT")), "user")
+      log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
+    }
+
     // Migrate deprecated mode field to agent field
     for (const [name, mode] of Object.entries(result.mode)) {
       result.agent = mergeDeep(result.agent ?? {}, {
@@ -179,10 +179,21 @@ export namespace Config {
     }
 
     if (Flag.REDSUN_PERMISSION) {
-      result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.REDSUN_PERMISSION))
+      try {
+        result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.REDSUN_PERMISSION))
+      } catch (error) {
+        log.warn("REDSUN_PERMISSION contains invalid JSON, skipping", { error })
+      }
     }
 
-    if (!result.username) result.username = os.userInfo().username
+    if (!result.username) {
+      try {
+        result.username = os.userInfo().username || "user"
+      } catch (error) {
+        log.warn("failed to read system username, using fallback", { error })
+        result.username = "user"
+      }
+    }
 
 
 
@@ -382,6 +393,14 @@ export namespace Config {
         .describe("OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted."),
       clientSecret: z.string().optional().describe("OAuth client secret (if required by the authorization server)"),
       scope: z.string().optional().describe("OAuth scopes to request during authorization"),
+      callbackPort: z
+        .number()
+        .int()
+        .min(1)
+        .max(65535)
+        .optional()
+        .describe("Port for the local OAuth callback server. Ignored when redirectUri is set."),
+      redirectUri: z.string().optional().describe("OAuth redirect URI for this MCP server"),
     })
     .strict()
     .meta({
@@ -426,6 +445,7 @@ export namespace Config {
     description: z.string().optional(),
     agent: z.string().optional(),
     model: z.string().optional(),
+    variant: z.string().optional(),
     subtask: z.boolean().optional(),
   })
   export type Command = z.infer<typeof Command>
@@ -433,6 +453,7 @@ export namespace Config {
   export const Agent = z
     .object({
       model: z.string().optional(),
+      variant: z.string().optional().describe("Default model variant when this agent uses its configured model"),
       temperature: z.number().optional(),
       top_p: z.number().optional(),
       prompt: z.string().optional(),
@@ -483,6 +504,7 @@ export namespace Config {
       username_toggle: z.string().optional().default("none").describe("Toggle username visibility"),
       status_view: z.string().optional().default("<leader>s").describe("View status"),
       session_export: z.string().optional().default("<leader>x").describe("Export session to editor"),
+      session_copy: z.string().optional().default("none").describe("Copy current session transcript"),
       session_new: z.string().optional().default("ctrl+n").describe("Create a new session"),
       session_list: z.string().optional().default("<leader>l").describe("List all sessions"),
       session_timeline: z.string().optional().default("<leader>g").describe("Show session timeline"),
@@ -737,6 +759,12 @@ export namespace Config {
         .describe(
           "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
         ),
+      subagent_depth: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents."),
       username: z
         .string()
         .optional()
@@ -998,7 +1026,7 @@ export namespace Config {
             })
         ).trim()
         // escape newlines/quotes, strip outer quotes
-        text = text.replace(match, JSON.stringify(fileContent).slice(1, -1))
+        text = text.replace(match, () => JSON.stringify(fileContent).slice(1, -1))
       }
     }
 
@@ -1030,7 +1058,9 @@ export namespace Config {
     if (parsed.success) {
       if (!parsed.data.$schema) {
         parsed.data.$schema = "https://redsun.sh/config.json"
-        await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2))
+        await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2)).catch((error) => {
+          log.warn("failed to add schema to config", { path: configFilepath, error })
+        })
       }
       const data = parsed.data
       if (data.extension) {

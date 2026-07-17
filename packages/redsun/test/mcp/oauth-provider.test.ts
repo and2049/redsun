@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { determineScope } from "@modelcontextprotocol/sdk/client/auth.js"
 import os from "os"
 import path from "path"
 
@@ -9,7 +10,7 @@ process.env.XDG_DATA_HOME = path.join(xdgRoot, "data")
 process.env.XDG_STATE_HOME = path.join(xdgRoot, "state")
 
 const { McpAuth } = await import("../../src/mcp/auth")
-const { McpOAuthPendingProvider } = await import("../../src/mcp/oauth-provider")
+const { McpOAuthPendingProvider, parseRedirectUri } = await import("../../src/mcp/oauth-provider")
 const serverName = "pending-provider-" + Math.random().toString(36).slice(2)
 
 describe("McpOAuthPendingProvider", () => {
@@ -40,5 +41,59 @@ describe("McpOAuthPendingProvider", () => {
     expect(stored?.clientInfo?.clientId).toBe("client")
 
     await McpAuth.remove(serverName)
+  })
+})
+
+describe("MCP OAuth scope selection", () => {
+  test("preserves configured scopes in client metadata", () => {
+    const provider = new McpOAuthPendingProvider(serverName, "https://example.com/mcp", { scope: "resource.read" }, {
+      onRedirect() {},
+    })
+
+    expect(provider.clientMetadata.scope).toBe("resource.read")
+  })
+
+  test("requests refresh tokens only when the authorization server supports them", () => {
+    const clientMetadata = new McpOAuthPendingProvider(serverName, "https://example.com/mcp", {}, {
+      onRedirect() {},
+    }).clientMetadata
+    const authServerMetadata = (scopes_supported: string[]) => ({
+      issuer: "https://example.com",
+      authorization_endpoint: "https://example.com/authorize",
+      token_endpoint: "https://example.com/token",
+      response_types_supported: ["code"],
+      scopes_supported,
+    })
+
+    expect(
+      determineScope({
+        resourceMetadata: { resource: "https://example.com/mcp", scopes_supported: ["resource.read"] },
+        authServerMetadata: authServerMetadata(["resource.read", "offline_access"]),
+        clientMetadata,
+      }),
+    ).toBe("resource.read offline_access")
+    expect(
+      determineScope({
+        resourceMetadata: { resource: "https://example.com/mcp", scopes_supported: ["resource.read"] },
+        authServerMetadata: authServerMetadata(["resource.read"]),
+        clientMetadata,
+      }),
+    ).toBe("resource.read")
+  })
+
+  test("uses configured callback ports and redirect URIs", () => {
+    const portProvider = new McpOAuthPendingProvider(serverName, "https://example.com/mcp", { callbackPort: 23456 }, {
+      onRedirect() {},
+    })
+    const redirectProvider = new McpOAuthPendingProvider(
+      serverName,
+      "https://example.com/mcp",
+      { callbackPort: 23456, redirectUri: "http://127.0.0.1:34567/custom/callback" },
+      { onRedirect() {} },
+    )
+
+    expect(portProvider.redirectUrl).toBe("http://127.0.0.1:23456/mcp/oauth/callback")
+    expect(redirectProvider.redirectUrl).toBe("http://127.0.0.1:34567/custom/callback")
+    expect(parseRedirectUri(redirectProvider.redirectUrl)).toEqual({ port: 34567, path: "/custom/callback" })
   })
 })

@@ -584,10 +584,7 @@ export function Prompt(props: PromptProps) {
       sdk.client.session.shell({
         sessionID,
         agent: local.agent.current().name,
-        model: {
-          providerID: selectedModel.providerID,
-          modelID: selectedModel.modelID,
-        },
+        model: selectedModel,
         command: inputText,
       })
       setStore("entryMode", "normal")
@@ -606,6 +603,7 @@ export function Prompt(props: PromptProps) {
         arguments: args.join(" "),
         agent: local.agent.current().name,
         model: `${selectedModel.providerID}/${selectedModel.modelID}`,
+        variant: selectedModel.variant,
         messageID,
       })
     } else {

@@ -8,6 +8,8 @@ export namespace OpenAICodexOAuth {
   export const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
   export const OAUTH_PORT = 1455
   export const DUMMY_API_KEY = "chatgpt-oauth"
+  const ALLOWED_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
+  const DISALLOWED_MODELS = new Set(["gpt-5.5-pro"])
 
   type Pkce = {
     verifier: string
@@ -170,7 +172,7 @@ export namespace OpenAICodexOAuth {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
         res.end(successHTML())
       })
-      server.listen(OAUTH_PORT, "127.0.0.1", () =>
+      server.listen(OAUTH_PORT, "localhost", () =>
         resolve({
           ready: true,
           close: () => server?.close(),
@@ -344,6 +346,20 @@ export namespace OpenAICodexOAuth {
     const url = input instanceof URL ? input : new URL(typeof input === "string" ? input : input.url)
     if (url.pathname.endsWith("/responses") || url.pathname.includes("/v1/responses")) return new URL(CODEX_API_ENDPOINT)
     return url
+  }
+
+  export function supportsModel(model: { api: { id: string }; options: Record<string, any> }) {
+    if (model.options.reasoningMode === "pro") return false
+    if (ALLOWED_MODELS.has(model.api.id)) return true
+    if (DISALLOWED_MODELS.has(model.api.id) || model.api.id === "gpt-5.6") return false
+    const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
+    return match ? Number.parseFloat(match[1]) > 5.4 : false
+  }
+
+  export function contextLimits(model: { id: string; limit: { context: number; input?: number; output: number } }) {
+    if (model.id.includes("gpt-5.5")) return { context: 400_000, input: 272_000, output: 128_000 }
+    if (model.id.includes("gpt-5.6")) return { context: 500_000, input: 372_000, output: 128_000 }
+    return model.limit
   }
 
   export function createFetch(input: {

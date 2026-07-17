@@ -352,6 +352,25 @@ describe("tool.bash permissions", () => {
     })
   })
 
+  test("denies output redirection outside the project", async () => {
+    await using tmp = await tmpdir({
+      init: (dir) =>
+        Bun.write(
+          path.join(dir, "redsun.json"),
+          JSON.stringify({ permission: { external_directory: "deny", bash: { "*": "allow" } } }),
+        ),
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await BashTool.init()
+        await expect(
+          bash.execute({ command: "echo blocked > ../outside.txt", description: "Write outside project" }, ctx),
+        ).rejects.toThrow("not allowed")
+      },
+    })
+  })
+
   test("denies workdir outside project when external_directory is deny", async () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
