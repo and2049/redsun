@@ -1,136 +1,126 @@
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { generateObject, type ModelMessage } from "ai"
-import z from "zod"
-import { Bus } from "@/bus"
-import { BusEvent } from "@/bus/bus-event"
-import { MessageV2 } from "./message-v2"
+import { Context, Effect, Layer, Option, Schema } from "effect"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { Provider } from "@/provider/provider"
-import { Identifier } from "@/id/id"
-import { Log } from "@/util/log"
 import { Storage } from "@/storage/storage"
+import { MessageV2 } from "./message-v2"
+import { SessionID } from "./schema"
+import { NonNegativeInt } from "@opencode-ai/core/schema"
+import { customMessages } from "@/extension/runtime"
 
-const log = Log.create({ service: "SessionGoal" })
-
-export type Goal = {
-  condition: string
-  react: number
-}
-
-export const Verdict = z.object({
-  ok: z.boolean(),
-  impossible: z.boolean().optional(),
-  reason: z.string(),
+export const Info = Schema.Struct({
+  condition: Schema.String,
+  react: NonNegativeInt,
 })
-export type Verdict = z.infer<typeof Verdict>
+export type Info = typeof Info.Type
 
-export const Event = {
-  Updated: BusEvent.define(
-    "session.goal",
-    z.object({
-      sessionID: Identifier.schema("session"),
-      goal: z.object({ condition: z.string() }).optional(),
-      lastVerdict: Verdict.extend({
-        attempt: z.number(),
-        messageID: z.string().optional(),
-        error: z.boolean().optional(),
-      }).optional(),
-    }),
-  ),
-}
+export const Verdict = Schema.Struct({
+  ok: Schema.Boolean,
+  impossible: Schema.optional(Schema.Boolean),
+  reason: Schema.String,
+})
+export type Verdict = typeof Verdict.Type
 
-const JUDGE_SYSTEM = `You are evaluating a stop-condition hook. Read the conversation transcript carefully, then judge whether the user-provided condition is satisfied.
+const JUDGE_SYSTEM = `You are evaluating a stop condition. Judge only from the conversation transcript.
 
-Your response must be a JSON object with one of these shapes:
-- {"ok": true, "reason": "<quote evidence from the transcript that satisfies the condition>"}
-- {"ok": false, "reason": "<quote what is missing or what blocks the condition>"}
-- {"ok": false, "impossible": true, "reason": "<explain why the condition can never be satisfied>"}
+Return JSON with {"ok":true,"reason":"evidence"} when the condition is satisfied, {"ok":false,"reason":"what is missing"} when work remains, or {"ok":false,"impossible":true,"reason":"why"} only when the condition genuinely cannot be achieved in this session. Always include a specific reason.`
 
-Always include a "reason" field, quoting specific text from the transcript whenever possible. If the transcript does not contain clear evidence that the condition is satisfied, return {"ok": false, "reason": "insufficient evidence in transcript"}.
+const key = (sessionID: SessionID) => ["session_goal", sessionID]
 
-Only use {"ok": false, "impossible": true} when the condition is genuinely unachievable in this session — for example: the condition is self-contradictory, it depends on a resource or capability that is unavailable, or the assistant has explicitly tried, exhausted reasonable approaches, and stated it cannot be done. Apply your own judgment when deciding this — the assistant claiming the goal is impossible is evidence, not proof; independently confirm the condition is genuinely unachievable rather than deferring to the assistant's self-assessment. Do not use it just because the goal has not been reached yet or because progress is slow. When in doubt, return {"ok": false} without "impossible".`
-
-const judgeUser = (condition: string) =>
-  `Based on the conversation transcript above, has the following stopping condition been satisfied? Answer based on transcript evidence only.
-
-Condition: ${condition}`
-
-export namespace Goal {
-  const key = (sessionID: string) => ["session_goal", sessionID]
-
-  export async function set(sessionID: string, condition: string) {
-    await Storage.write(key(sessionID), { condition, react: 0 } satisfies Goal)
-    log.info("goal set", { sessionID, condition })
-    Bus.publish(Event.Updated, { sessionID, goal: { condition } })
-  }
-
-  export async function get(sessionID: string): Promise<Goal | undefined> {
-    return Storage.read<Goal>(key(sessionID)).catch(() => undefined)
-  }
-
-  export async function clear(sessionID: string) {
-    await Storage.remove(key(sessionID))
-    log.info("goal cleared", { sessionID })
-    Bus.publish(Event.Updated, { sessionID, goal: undefined })
-  }
-
-  export function publishVerdict(input: {
-    sessionID: string
+export interface Interface {
+  readonly set: (sessionID: SessionID, condition: string) => Effect.Effect<void>
+  readonly get: (sessionID: SessionID) => Effect.Effect<Info | undefined>
+  readonly clear: (sessionID: SessionID) => Effect.Effect<void>
+  readonly bumpReact: (sessionID: SessionID) => Effect.Effect<number>
+  readonly publishVerdict: (input: {
+    sessionID: SessionID
     goal?: { condition: string }
     verdict: Verdict
     attempt: number
     messageID?: string
     error?: boolean
-  }) {
-    Bus.publish(Event.Updated, {
-      sessionID: input.sessionID,
-      goal: input.goal,
-      lastVerdict: {
-        ...input.verdict,
-        attempt: input.attempt,
-        messageID: input.messageID,
-        error: input.error,
-      },
-    })
-  }
-
-  export async function bumpReact(sessionID: string) {
-    const goal = await get(sessionID)
-    if (!goal) return 0
-    const next = { ...goal, react: goal.react + 1 }
-    await Storage.write(key(sessionID), next)
-    return next.react
-  }
-
-  export async function evaluate(input: {
-    sessionID: string
+  }) => Effect.Effect<void>
+  readonly evaluate: (input: {
+    sessionID: SessionID
     condition: string
-    msgs: MessageV2.WithParts[]
+    messages: SessionV1.WithParts[]
     model: Provider.Model
-  }): Promise<Verdict> {
-    const language = await Provider.getLanguage(input.model)
-
-    // Use toModelMessageWithCustom so judge sees the same compacted custom-message window as the main model.
-    const compactionCutoff = input.msgs.find(
-      (m) => m.info.role === "user" && m.parts.some((p) => p.type === "compaction"),
-    )?.info.time.created
-    const conversation = await MessageV2.toModelMessageWithCustom(input.sessionID, input.msgs, compactionCutoff)
-
-    const params = {
-      temperature: 0,
-      messages: [
-        { role: "system", content: JUDGE_SYSTEM } as ModelMessage,
-        ...conversation,
-        {
-          role: "user",
-          content: judgeUser(input.condition),
-        } as ModelMessage,
-      ],
-      model: language,
-      schema: Verdict,
-    }
-
-    log.debug("goal judge evaluate", { condition: input.condition })
-    
-    const result = await generateObject(params)
-    return Verdict.parse(result.object)
-  }
+  }) => Effect.Effect<Verdict, Provider.ModelNotFoundError>
 }
+
+export class Service extends Context.Service<Service, Interface>()("@redsun/SessionGoal") {}
+
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const storage = yield* Storage.Service
+    const provider = yield* Provider.Service
+    const events = yield* EventV2Bridge.Service
+
+    const get: Interface["get"] = Effect.fn("SessionGoal.get")(function* (sessionID) {
+      return Option.getOrUndefined(yield* storage.read<Info>(key(sessionID)).pipe(Effect.option))
+    })
+
+    const publish = (input: Parameters<Interface["publishVerdict"]>[0] | { sessionID: SessionID; goal?: { condition: string } }) =>
+      events.publish(SessionV1.Event.GoalUpdated, input)
+
+    const set: Interface["set"] = Effect.fn("SessionGoal.set")(function* (sessionID, condition) {
+      yield* storage.write(key(sessionID), { condition, react: 0 } satisfies Info).pipe(Effect.orDie)
+      yield* publish({ sessionID, goal: { condition } })
+    })
+
+    const clear: Interface["clear"] = Effect.fn("SessionGoal.clear")(function* (sessionID) {
+      yield* storage.remove(key(sessionID)).pipe(Effect.orDie)
+      yield* publish({ sessionID })
+    })
+
+    const bumpReact: Interface["bumpReact"] = Effect.fn("SessionGoal.bumpReact")(function* (sessionID) {
+      const current = yield* get(sessionID)
+      if (!current) return 0
+      const next = current.react + 1
+      yield* storage.write(key(sessionID), { ...current, react: next }).pipe(Effect.orDie)
+      return next
+    })
+
+    const publishVerdict: Interface["publishVerdict"] = Effect.fn("SessionGoal.publishVerdict")(function* (input) {
+      yield* publish(input)
+    })
+
+    const evaluate: Interface["evaluate"] = Effect.fn("SessionGoal.evaluate")(function* (input) {
+      const language = yield* provider.getLanguage(input.model)
+      const conversation = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
+      const custom = yield* Effect.promise(() => customMessages(input.sessionID))
+      const result = yield* Effect.promise(() =>
+        generateObject({
+          model: language,
+          temperature: 0,
+          messages: [
+            { role: "system", content: JUDGE_SYSTEM } as ModelMessage,
+            ...conversation,
+            ...(custom.length
+              ? [{ role: "user", content: `<extension-context>\n${custom.join("\n\n")}\n</extension-context>` } as ModelMessage]
+              : []),
+            {
+              role: "user",
+              content: `Has this stopping condition been satisfied?\n\nCondition: ${input.condition}`,
+            } as ModelMessage,
+          ],
+          schema: Object.assign(Schema.toStandardSchemaV1(Verdict), Schema.toStandardJSONSchemaV1(Verdict)),
+        }).then((result) => Schema.decodeUnknownSync(Verdict)(result.object)),
+      )
+      return result
+    })
+
+    return Service.of({ set, get, clear, bumpReact, publishVerdict, evaluate })
+  }),
+)
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [Storage.node, Provider.node, EventV2Bridge.node],
+})
+
+export * as Goal from "./goal"

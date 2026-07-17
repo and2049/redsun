@@ -1,384 +1,579 @@
-import { BusEvent } from "@/bus/bus-event"
-import { Bus } from "@/bus"
-import { Session } from "."
-import { Identifier } from "../id/id"
-import { Instance } from "../project/instance"
-import { Provider } from "../provider/provider"
-import { resolveTaskModel } from "../provider/router"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { Session } from "./session"
+import { SessionID, MessageID, PartID } from "./schema"
+import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
-import z from "zod"
-import { SessionPrompt } from "./prompt"
-import { Token } from "../util/token"
-import { Log } from "../util/log"
+import { Token } from "@/util/token"
 import { SessionProcessor } from "./processor"
-import { fn } from "@/util/fn"
 import { Agent } from "@/agent/agent"
+import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
-import { ToolRegistry } from "../tool/registry"
-import { ExtensionRunner } from "../extension/runner"
-import { ExtensionContext } from "../extension/context"
-import type { Extension } from "../extension/types"
+import { NotFoundError } from "@/storage/storage"
+
+import { Effect, Layer, Context } from "effect"
+import { InstanceState } from "@/effect/instance-state"
+import { isOverflow as overflow, usable } from "./overflow"
+import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { buildPrompt } from "@opencode-ai/core/session/compaction"
+import { SessionCompactionEvent } from "@opencode-ai/schema/session-compaction-event"
 import { CompactionExtractor } from "./compaction-extractor"
-import PROMPT_COMPACTION_HYBRID from "../agent/prompt/compaction-hybrid.txt"
+import PROMPT_COMPACTION_HYBRID from "@/agent/prompt/compaction-hybrid.txt"
 
-export namespace SessionCompaction {
-  const log = Log.create({ service: "session.compaction" })
-  export const DEFAULT_TRIGGER_THRESHOLD = 0.7
-  export const DEFAULT_RESET_THRESHOLD = 0.4
+export const Event = SessionCompactionEvent
 
-  const autoState = new Map<string, { waitingForReset: boolean }>()
+export const PRUNE_MINIMUM = 20_000
+export const PRUNE_PROTECT = 40_000
+const TOOL_OUTPUT_MAX_CHARS = 2_000
+const PRUNE_PROTECTED_TOOLS = ["skill"]
+const DEFAULT_TAIL_TURNS = 2
+const MIN_PRESERVE_RECENT_TOKENS = 2_000
+const MAX_PRESERVE_RECENT_TOKENS = 8_000
+type Turn = {
+  start: number
+  end: number
+  id: MessageID
+}
 
-  export const Event = {
-    Compacted: BusEvent.define(
-      "session.compacted",
-      z.object({
-        sessionID: z.string(),
-      }),
-    ),
+type Tail = {
+  start: number
+  id: MessageID
+}
+
+type CompletedCompaction = {
+  userIndex: number
+  assistantIndex: number
+  summary: string | undefined
+}
+
+function summaryText(message: SessionV1.WithParts) {
+  const text = message.parts
+    .filter((part): part is SessionV1.TextPart => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+  return text || undefined
+}
+
+function completedCompactions(messages: SessionV1.WithParts[]) {
+  const users = new Map<MessageID, number>()
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg.info.role !== "user") continue
+    if (!msg.parts.some((part) => part.type === "compaction")) continue
+    users.set(msg.info.id, i)
   }
 
-  export function tokenUsageRatio(input: { tokens: MessageV2.Assistant["tokens"]; model: Provider.Model }) {
-    const context = input.model.limit.context
-    if (context === 0) return 0
-    const output = Math.min(input.model.limit.output, SessionPrompt.OUTPUT_TOKEN_MAX) || SessionPrompt.OUTPUT_TOKEN_MAX
-    const usable = context - output
-    if (usable <= 0) return 1
-    const count = input.tokens.input + input.tokens.cache.read + input.tokens.output
-    return count / usable
-  }
+  return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
+    if (msg.info.role !== "assistant") return []
+    if (!msg.info.summary || !msg.info.finish || msg.info.error) return []
+    const userIndex = users.get(msg.info.parentID)
+    if (userIndex === undefined) return []
+    return [{ userIndex, assistantIndex, summary: summaryText(msg) }]
+  })
+}
 
-  export function resetAutoState(sessionID?: string) {
-    if (sessionID) autoState.delete(sessionID)
-    else autoState.clear()
-  }
+function preserveRecentBudget(input: { cfg: ConfigV1.Info; model: Provider.Model }) {
+  return (
+    input.cfg.compaction?.preserve_recent_tokens ??
+    Math.min(MAX_PRESERVE_RECENT_TOKENS, Math.max(MIN_PRESERVE_RECENT_TOKENS, Math.floor(usable(input) * 0.25)))
+  )
+}
 
-  export async function isOverflow(input: {
-    tokens: MessageV2.Assistant["tokens"]
-    model: Provider.Model
-    sessionID?: string
-  }) {
-    const config = await Config.get()
-    if (config.compaction?.auto === false) return false
-    if (input.model.limit.context === 0) return false
-
-    const triggerThreshold = config.compaction?.triggerThreshold ?? DEFAULT_TRIGGER_THRESHOLD
-    const resetThreshold = config.compaction?.resetThreshold ?? DEFAULT_RESET_THRESHOLD
-    const usage = tokenUsageRatio(input)
-
-    if (!input.sessionID) return usage > triggerThreshold
-
-    const state = autoState.get(input.sessionID) ?? { waitingForReset: false }
-    if (usage <= resetThreshold) {
-      if (state.waitingForReset) autoState.delete(input.sessionID)
-      return false
-    }
-    if (state.waitingForReset) return false
-    if (usage > triggerThreshold) {
-      autoState.set(input.sessionID, { waitingForReset: true })
-      return true
-    }
-    return false
-  }
-
-  export async function isPreSamplingOverflow(input: {
-    tokens: number
-    model: Provider.Model
-    sessionID?: string
-  }) {
-    return isOverflow({
-      model: input.model,
-      sessionID: input.sessionID,
-      tokens: {
-        input: input.tokens,
-        output: 0,
-        reasoning: 0,
-        cache: { read: 0, write: 0 },
-      },
+function turns(messages: SessionV1.WithParts[]) {
+  const result: Turn[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg.info.role !== "user") continue
+    if (msg.parts.some((part) => part.type === "compaction")) continue
+    result.push({
+      start: i,
+      end: messages.length,
+      id: msg.info.id,
     })
   }
+  for (let i = 0; i < result.length - 1; i++) {
+    result[i].end = result[i + 1].start
+  }
+  return result
+}
 
-  export const PRUNE_MINIMUM = 20_000
-  export const PRUNE_PROTECT = 40_000
-
-  const PRUNE_PROTECTED_TOOLS = ["skill"]
-
-  // goes backwards through parts until there are 40_000 tokens worth of tool
-  // calls. then erases output of previous tool calls. idea is to throw away old
-  // tool calls that are no longer relevant.
-  export async function prune(input: { sessionID: string }) {
-    const config = await Config.get()
-    if (config.compaction?.prune === false) return
-    log.info("pruning")
-    const msgs = await Session.messages({ sessionID: input.sessionID })
-    let total = 0
-    let pruned = 0
-    const toPrune = []
-    let turns = 0
-
-    loop: for (let msgIndex = msgs.length - 1; msgIndex >= 0; msgIndex--) {
-      const msg = msgs[msgIndex]
-      if (msg.info.role === "user") turns++
-      if (turns < 2) continue
-      if (msg.info.role === "assistant" && msg.info.summary) break loop
-      for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
-        const part = msg.parts[partIndex]
-        if (part.type === "tool")
-          if (part.state.status === "completed") {
-            if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
-
-            if (part.state.time.compacted) break loop
-            const estimate = Token.estimate(part.state.output)
-            total += estimate
-            if (total > PRUNE_PROTECT) {
-              pruned += estimate
-              toPrune.push(part)
-            }
-          }
-      }
+function splitTurn(input: {
+  messages: SessionV1.WithParts[]
+  turn: Turn
+  model: Provider.Model
+  budget: number
+  estimate: (input: { messages: SessionV1.WithParts[]; model: Provider.Model }) => Effect.Effect<number>
+}) {
+  return Effect.gen(function* () {
+    if (input.budget <= 0) return undefined
+    if (input.turn.end - input.turn.start <= 1) return undefined
+    for (let start = input.turn.start + 1; start < input.turn.end; start++) {
+      const size = yield* input.estimate({
+        messages: input.messages.slice(start, input.turn.end),
+        model: input.model,
+      })
+      if (size > input.budget) continue
+      return {
+        start,
+        id: input.messages[start]!.info.id,
+      } satisfies Tail
     }
-    log.info("found", { pruned, total })
-    if (pruned > PRUNE_MINIMUM) {
-      for (const part of toPrune) {
-        if (part.state.status === "completed") {
-          part.state.time.compacted = Date.now()
-          await Session.updatePart(part)
+    return undefined
+  })
+}
+
+export interface Interface {
+  readonly isOverflow: (input: {
+    tokens: SessionV1.Assistant["tokens"]
+    model: Provider.Model
+  }) => Effect.Effect<boolean>
+  readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
+  readonly process: (input: {
+    parentID: MessageID
+    messages: SessionV1.WithParts[]
+    sessionID: SessionID
+    auto: boolean
+    overflow?: boolean
+  }) => Effect.Effect<"continue" | "stop">
+  readonly create: (input: {
+    sessionID: SessionID
+    agent: string
+    model: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
+    auto: boolean
+    overflow?: boolean
+  }) => Effect.Effect<void>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/SessionCompaction") {}
+
+export const use = serviceUse(Service)
+
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const config = yield* Config.Service
+    const session = yield* Session.Service
+    const agents = yield* Agent.Service
+    const plugin = yield* Plugin.Service
+    const processors = yield* SessionProcessor.Service
+    const provider = yield* Provider.Service
+    const events = yield* EventV2Bridge.Service
+    const flags = yield* RuntimeFlags.Service
+
+    const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
+      tokens: SessionV1.Assistant["tokens"]
+      model: Provider.Model
+    }) {
+      return overflow({
+        cfg: yield* config.get(),
+        tokens: input.tokens,
+        model: input.model,
+        outputTokenMax: flags.outputTokenMax,
+      })
+    })
+
+    const estimate = Effect.fn("SessionCompaction.estimate")(function* (input: {
+      messages: SessionV1.WithParts[]
+      model: Provider.Model
+    }) {
+      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
+      return Token.estimate(JSON.stringify(msgs))
+    })
+
+    const select = Effect.fn("SessionCompaction.select")(function* (input: {
+      messages: SessionV1.WithParts[]
+      cfg: ConfigV1.Info
+      model: Provider.Model
+    }) {
+      const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS
+      if (limit <= 0) return { head: input.messages, tail_start_id: undefined }
+      const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model })
+      const all = turns(input.messages)
+      if (!all.length) return { head: input.messages, tail_start_id: undefined }
+      const recent = all.slice(-limit)
+      const sizes = yield* Effect.forEach(
+        recent,
+        (turn) =>
+          estimate({
+            messages: input.messages.slice(turn.start, turn.end),
+            model: input.model,
+          }),
+        { concurrency: 1 },
+      )
+
+      let total = 0
+      let keep: Tail | undefined
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const turn = recent[i]!
+        const size = sizes[i]
+        if (total + size <= budget) {
+          total += size
+          keep = { start: turn.start, id: turn.id }
+          continue
+        }
+        const remaining = budget - total
+        const split = yield* splitTurn({
+          messages: input.messages,
+          turn,
+          model: input.model,
+          budget: remaining,
+          estimate,
+        })
+        if (split) keep = split
+        else if (!keep) {
+          yield* Effect.logInfo("tail fallback", { budget, size, total })
+        }
+        break
+      }
+
+      if (!keep || keep.start === 0) return { head: input.messages, tail_start_id: undefined }
+      return {
+        head: input.messages.slice(0, keep.start),
+        tail_start_id: keep.id,
+      }
+    })
+
+    // goes backwards through parts until there are PRUNE_PROTECT tokens worth of tool
+    // calls, then erases output of older tool calls to free context space
+    const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID }) {
+      const cfg = yield* config.get()
+      if (!cfg.compaction?.prune) return
+      yield* Effect.logInfo("pruning")
+
+      const msgs = yield* session
+        .messages({ sessionID: input.sessionID })
+        .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)))
+      if (!msgs) return
+
+      let total = 0
+      let pruned = 0
+      const toPrune: SessionV1.ToolPart[] = []
+      let turns = 0
+
+      loop: for (let msgIndex = msgs.length - 1; msgIndex >= 0; msgIndex--) {
+        const msg = msgs[msgIndex]
+        if (msg.info.role === "user") turns++
+        if (turns < 2) continue
+        if (msg.info.role === "assistant" && msg.info.summary) break loop
+        for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
+          const part = msg.parts[partIndex]
+          if (part.type !== "tool") continue
+          if (part.state.status !== "completed") continue
+          if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
+          if (part.state.time.compacted) break loop
+          const estimate = Token.estimate(part.state.output)
+          total += estimate
+          if (total <= PRUNE_PROTECT) continue
+          pruned += estimate
+          toPrune.push(part)
         }
       }
-      log.info("pruned", { count: toPrune.length })
-    }
-  }
 
-  export async function process(input: {
-    parentID: string
-    messages: MessageV2.WithParts[]
-    sessionID: string
-    abort: AbortSignal
-    auto: boolean
-    fromExtension?: boolean
-  }) {
-    // Emit session_before_compact for extensions to cancel or customize
-    const runner = await ToolRegistry.getRunner()
-    const compactCtx = ExtensionContext.forSession({
-      mode: "rpc",
-      sessionID: input.sessionID,
-      agent: "compaction",
-      projectTrusted: runner.projectTrusted,
-      getSystemPrompt: () => "",
-      signal: input.abort,
+      yield* Effect.logInfo("found", { pruned, total })
+      if (pruned > PRUNE_MINIMUM) {
+        for (const part of toPrune) {
+          if (part.state.status === "completed") {
+            part.state.time.compacted = Date.now()
+            yield* session.updatePart(part)
+          }
+        }
+        yield* Effect.logInfo("pruned", { count: toPrune.length })
+      }
     })
-    const beforeResult = await ExtensionRunner.emit(
-      runner,
-      { type: "session_before_compact", sessionID: input.sessionID, signal: input.abort } as Extension.SessionBeforeCompactEvent,
-      compactCtx,
-    )
-    if ((beforeResult as Extension.SessionBeforeCompactResult)?.cancel) {
-      log.info("compaction cancelled by extension")
-      return "cancelled"
-    }
 
-    const userMessage = input.messages.findLast((m) => m.info.id === input.parentID)?.info as MessageV2.User | undefined
-    if (!userMessage) {
-      log.error("parent message not found for compaction", { parentID: input.parentID })
-      return "stop"
-    }
-    const agent = await Agent.get("compaction")
-    const model = agent.model
-      ? await Provider.getModel(agent.model.providerID, agent.model.modelID)
-      : await resolveTaskModel("compact", () => Provider.getModel(userMessage.model.providerID, userMessage.model.modelID))
-    if (!model) {
-      log.error("no model available for compaction", { agent: agent.model, userModel: userMessage.model })
-      return "stop"
-    }
-
-    const cfg = await Config.get()
-    const strategy = cfg.compaction?.strategy ?? "hybrid"
-    const keepRecent = cfg.compaction?.keepRecent ?? 4
-    const maxToolResults = cfg.compaction?.maxToolResults ?? CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS
-
-    const msg = (await Session.updateMessage({
-      id: Identifier.ascending("message"),
-      role: "assistant",
-      parentID: input.parentID,
-      sessionID: input.sessionID,
-      mode: "compaction",
-      agent: "compaction",
-      summary: true,
-      path: {
-        cwd: Instance.directory,
-        root: Instance.worktree,
-      },
-      cost: 0,
-      tokens: {
-        output: 0,
-        input: 0,
-        reasoning: 0,
-        cache: { read: 0, write: 0 },
-      },
-      modelID: model.id,
-      providerID: model.providerID,
-      time: {
-        created: Date.now(),
-      },
-    })) as MessageV2.Assistant
-
-    const defaultPrompt =
-      "Provide a detailed prompt for continuing our conversation above. Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next considering new session will not have access to our conversation."
-    const compactResult = beforeResult as Extension.SessionBeforeCompactResult | undefined
-    const promptText = compactResult?.prompt ?? [defaultPrompt, ...(compactResult?.context ?? [])].join("\n\n")
-
-    let result: "continue" | "stop" = "continue"
-
-    if (strategy === "algorithmic") {
-      log.info("algorithmic compaction")
-      const state = CompactionExtractor.extract(input.messages, { maxToolResults })
-      const summary = CompactionExtractor.serialize(state)
-      if (summary.trim().length < 50) {
-        log.info("algorithmic summary too short, aborting")
-        return "stop"
+    const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
+      parentID: MessageID
+      messages: SessionV1.WithParts[]
+      sessionID: SessionID
+      auto: boolean
+      overflow?: boolean
+    }) {
+      const parent = input.messages.findLast((m) => m.info.id === input.parentID)
+      if (!parent || parent.info.role !== "user") {
+        throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
       }
-      await Session.updatePart({
-        id: Identifier.ascending("part"),
-        messageID: msg.id,
-        sessionID: input.sessionID,
-        type: "text",
-        text: summary,
-        time: { start: Date.now(), end: Date.now() },
+      const userMessage = parent.info
+      const compactionPart = parent.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
+
+      let messages = input.messages
+      let replay:
+        | {
+            info: SessionV1.User
+            parts: SessionV1.Part[]
+          }
+        | undefined
+      if (input.overflow) {
+        const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
+        for (let i = idx - 1; i >= 0; i--) {
+          const msg = input.messages[i]
+          if (msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction")) {
+            replay = { info: msg.info, parts: msg.parts }
+            messages = input.messages.slice(0, i)
+            break
+          }
+        }
+        const hasContent =
+          replay && messages.some((m) => m.info.role === "user" && !m.parts.some((p) => p.type === "compaction"))
+        if (!hasContent) {
+          replay = undefined
+          messages = input.messages
+        }
+      }
+
+      const cfg = yield* config.get()
+      const agent = yield* agents.get("compaction")
+      const route = cfg.task_router?.compact?.split("/")
+      const fallbackModel = agent.model ?? userMessage.model
+      const model = route?.[0] && route.length > 1
+        ? yield* provider
+            .getModel(ProviderV2.ID.make(route[0]), ModelV2.ID.make(route.slice(1).join("/")))
+            .pipe(Effect.catch(() => provider.getModel(fallbackModel.providerID, fallbackModel.modelID)), Effect.orDie)
+        : yield* provider.getModel(fallbackModel.providerID, fallbackModel.modelID).pipe(Effect.orDie)
+      const strategy = cfg.compaction?.strategy ?? "hybrid"
+      const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      const prior = completedCompactions(history)
+      const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
+      const previousSummary = prior.at(-1)?.summary
+      const selected = yield* select({
+        messages: history.filter((_, index) => !hidden.has(index)),
+        cfg,
+        model,
       })
-      msg.finish = "stop"
-      msg.time.completed = Date.now()
-      await Session.updateMessage(msg)
-      result = "continue"
-    } else if (strategy === "hybrid") {
-      log.info("hybrid compaction")
-      const state = CompactionExtractor.extract(input.messages, { maxToolResults })
-      const inventory = CompactionExtractor.serialize(state)
-      const recentMessages = CompactionExtractor.extractRecentMessages(input.messages, keepRecent)
-      const recentModelMessages = MessageV2.toModelMessage(recentMessages, model)
-      const inventoryMessage = {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: `## Structured Inventory\n\n${inventory}` }],
+      // Allow plugins to inject context or replace compaction prompt.
+      const compacting = yield* plugin.trigger(
+        "experimental.session.compacting",
+        { sessionID: input.sessionID },
+        { context: [], prompt: undefined },
+      )
+      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      const inventory = CompactionExtractor.serialize(
+        CompactionExtractor.extract(selected.head, cfg.compaction?.maxToolResults),
+      )
+      const source = strategy === "hybrid"
+        ? CompactionExtractor.recent(selected.head, cfg.compaction?.keepRecent ?? 4)
+        : selected.head
+      const msgs = structuredClone(source)
+      yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+      const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
+        stripMedia: true,
+        toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+      })
+      const ctx = yield* InstanceState.context
+      const msg: SessionV1.Assistant = {
+        id: MessageID.ascending(),
+        role: "assistant",
+        parentID: input.parentID,
+        sessionID: input.sessionID,
+        mode: "compaction",
+        agent: "compaction",
+        variant: userMessage.model.variant,
+        summary: true,
+        path: {
+          cwd: ctx.directory,
+          root: ctx.worktree,
+        },
+        cost: 0,
+        tokens: {
+          output: 0,
+          input: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+        modelID: model.id,
+        providerID: model.providerID,
+        time: {
+          created: Date.now(),
+        },
       }
-      const synthesisMessage = {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: promptText }],
+      yield* session.updateMessage(msg)
+
+      const complete = Effect.fn("SessionCompaction.complete")(function* () {
+        if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
+          yield* session.updatePart({ ...compactionPart, tail_start_id: selected.tail_start_id })
+        }
+        if (input.auto && replay) {
+          const original = replay.info
+          const replayMsg = yield* session.updateMessage({
+            id: MessageID.ascending(),
+            role: "user",
+            sessionID: input.sessionID,
+            time: { created: Date.now() },
+            agent: original.agent,
+            model: original.model,
+            format: original.format,
+            tools: original.tools,
+            system: original.system,
+          })
+          for (const part of replay.parts) {
+            if (part.type === "compaction") continue
+            const replayPart =
+              part.type === "file" && MessageV2.isMedia(part.mime)
+                ? { type: "text" as const, text: `[Attached ${part.mime}: ${part.filename ?? "file"}]` }
+                : part
+            yield* session.updatePart({
+              ...replayPart,
+              id: PartID.ascending(),
+              messageID: replayMsg.id,
+              sessionID: input.sessionID,
+            })
+          }
+        }
+        if (input.auto && !replay) {
+          const info = yield* provider.getProvider(userMessage.model.providerID)
+          const enabled = yield* plugin.trigger(
+            "experimental.compaction.autocontinue",
+            {
+              sessionID: input.sessionID,
+              agent: userMessage.agent,
+              model: yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie),
+              provider: { source: info.source, info, options: info.options },
+              message: userMessage,
+              overflow: input.overflow === true,
+            },
+            { enabled: true },
+          )
+          if (enabled.enabled) {
+            const continueMsg = yield* session.updateMessage({
+              id: MessageID.ascending(),
+              role: "user",
+              sessionID: input.sessionID,
+              time: { created: Date.now() },
+              agent: userMessage.agent,
+              model: userMessage.model,
+            })
+            const text =
+              (input.overflow
+                ? "The previous request exceeded the provider's size limit due to large media attachments. The conversation was compacted and media files were removed from context. If the user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files.\n\n"
+                : "") +
+              "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+            yield* session.updatePart({
+              id: PartID.ascending(),
+              messageID: continueMsg.id,
+              sessionID: input.sessionID,
+              type: "text",
+              metadata: { compaction_continue: true },
+              synthetic: true,
+              text,
+              time: { start: Date.now(), end: Date.now() },
+            })
+          }
+        }
+        yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
+      })
+
+      if (strategy === "algorithmic") {
+        if (!inventory.trim()) return "stop"
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: msg.id,
+          sessionID: input.sessionID,
+          type: "text",
+          text: inventory,
+          time: { start: Date.now(), end: Date.now() },
+        })
+        msg.finish = "stop"
+        msg.time.completed = Date.now()
+        yield* session.updateMessage(msg)
+        yield* complete()
+        return "continue"
       }
-      const hybridAgent = { ...agent, prompt: PROMPT_COMPACTION_HYBRID }
-      const processor = SessionProcessor.create({
+
+      const processor = yield* processors.create({
         assistantMessage: msg,
         sessionID: input.sessionID,
         model,
-        abort: input.abort,
       })
-      result = await processor.process({
+      const result = yield* processor.process({
         user: userMessage,
-        agent: hybridAgent,
-        abort: input.abort,
-        sessionID: input.sessionID,
-        tools: {},
-        system: [],
-        messages: [inventoryMessage, ...recentModelMessages, synthesisMessage],
-        model,
-      })
-      if (processor.message.error) return "stop"
-    } else {
-      log.info("llm compaction")
-      const processor = SessionProcessor.create({
-        assistantMessage: msg,
-        sessionID: input.sessionID,
-        model,
-        abort: input.abort,
-      })
-      result = await processor.process({
-        user: userMessage,
-        agent,
-        abort: input.abort,
+        agent: strategy === "hybrid" ? { ...agent, prompt: PROMPT_COMPACTION_HYBRID } : agent,
         sessionID: input.sessionID,
         tools: {},
         system: [],
         messages: [
-          ...MessageV2.toModelMessage(input.messages, model),
+          ...(strategy === "hybrid" && inventory
+            ? [{ role: "user" as const, content: [{ type: "text" as const, text: `## Structured Inventory\n\n${inventory}` }] }]
+            : []),
+          ...modelMessages,
           {
             role: "user",
-            content: [
-              {
-                type: "text",
-                text: promptText,
-              },
-            ],
+            content: [{ type: "text", text: nextPrompt }],
           },
         ],
         model,
       })
+
+      if (result === "compact") {
+        processor.message.error = new SessionV1.ContextOverflowError({
+          message: replay
+            ? "Conversation history too large to compact - exceeds model context limit"
+            : "Session too large to compact - context exceeds model limit even after stripping media",
+        }).toObject()
+        processor.message.finish = "error"
+        yield* session.updateMessage(processor.message)
+        return "stop"
+      }
+
       if (processor.message.error) return "stop"
-    }
+      if (result === "continue") {
+        yield* complete()
+      }
+      return result
+    })
 
-    if (result === "continue" && input.auto) {
-      const continueMsg = await Session.updateMessage({
-        id: Identifier.ascending("message"),
-        role: "user",
-        sessionID: input.sessionID,
-        time: {
-          created: Date.now(),
-        },
-        agent: userMessage.agent,
-        model: userMessage.model,
-      })
-      await Session.updatePart({
-        id: Identifier.ascending("part"),
-        messageID: continueMsg.id,
-        sessionID: input.sessionID,
-        type: "text",
-        synthetic: true,
-        text: "Continue if you have next steps",
-        time: {
-          start: Date.now(),
-          end: Date.now(),
-        },
-      })
-    }
-    if (msg.error) return "stop"
-    Bus.publish(Event.Compacted, { sessionID: input.sessionID })
-    await ExtensionRunner.emit(
-      runner,
-      { type: "session_compact", sessionID: input.sessionID, fromExtension: input.fromExtension ?? false } as Extension.SessionCompactEvent,
-      compactCtx,
-    )
-    return "continue"
-  }
-
-  export const create = fn(
-    z.object({
-      sessionID: Identifier.schema("session"),
-      agent: z.string(),
-      model: z.object({
-        providerID: z.string(),
-        modelID: z.string(),
-        variant: z.string().optional(),
-      }),
-      auto: z.boolean(),
-      overflow: z.boolean().optional(),
-      fromExtension: z.boolean().optional(),
-    }),
-    async (input) => {
-      const msg = await Session.updateMessage({
-        id: Identifier.ascending("message"),
+    const create = Effect.fn("SessionCompaction.create")(function* (input: {
+      sessionID: SessionID
+      agent: string
+      model: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
+      auto: boolean
+      overflow?: boolean
+    }) {
+      const msg = yield* session.updateMessage({
+        id: MessageID.ascending(),
         role: "user",
         model: input.model,
         sessionID: input.sessionID,
         agent: input.agent,
-        time: {
-          created: Date.now(),
-        },
+        time: { created: Date.now() },
       })
-      await Session.updatePart({
-        id: Identifier.ascending("part"),
+      yield* session.updatePart({
+        id: PartID.ascending(),
         messageID: msg.id,
         sessionID: msg.sessionID,
         type: "compaction",
         auto: input.auto,
         overflow: input.overflow,
-        fromExtension: input.fromExtension ?? false,
       })
-    },
-  )
-}
+    })
+
+    return Service.of({
+      isOverflow,
+      prune,
+      process: processCompaction,
+      create,
+    })
+  }),
+)
+
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [
+    Config.node,
+    Session.node,
+    Agent.node,
+    Plugin.node,
+    SessionProcessor.node,
+    Provider.node,
+    EventV2Bridge.node,
+    RuntimeFlags.node,
+  ],
+})
+
+export * as SessionCompaction from "./compaction"
