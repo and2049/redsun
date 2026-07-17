@@ -81,12 +81,10 @@ type ThemeJson = {
   theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu"> & {
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
+    logoGradientStart?: ColorValue
+    logoGradientEnd?: ColorValue
     thinkingOpacity?: number
   }
-}
-
-type SharedSyntaxTheme = TuiThemeCurrent & {
-  _hasSelectedListItemText: boolean
 }
 
 export const transparent = RGBA.fromValues(0, 0, 0, 0)
@@ -273,7 +271,7 @@ function splashShadow(indexed: RGBA[], base: RGBA, overlay: RGBA, value: number)
   return nearestIndexed(indexed, mixed)
 }
 
-export function resolveTheme(theme: ThemeJson, pick: "dark" | "light"): TuiThemeCurrent {
+export function resolveTheme(theme: ThemeJson, pick: "dark" | "light") {
   const defs = theme.defs ?? {}
 
   const resolveColor = (value: ColorValue, chain: string[] = []): RGBA => {
@@ -321,6 +319,14 @@ export function resolveTheme(theme: ThemeJson, pick: "dark" | "light"): TuiTheme
         : resolveColor(theme.theme.selectedListItemText),
     backgroundMenu:
       theme.theme.backgroundMenu === undefined ? resolved.backgroundElement! : resolveColor(theme.theme.backgroundMenu),
+    logoGradientStart:
+      theme.theme.logoGradientStart === undefined
+        ? RGBA.fromHex("#5476E5")
+        : resolveColor(theme.theme.logoGradientStart),
+    logoGradientEnd:
+      theme.theme.logoGradientEnd === undefined
+        ? RGBA.fromHex("#FF7399")
+        : resolveColor(theme.theme.logoGradientEnd),
     thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,
   }
 }
@@ -674,8 +680,8 @@ export async function resolveRunTheme(renderer: CliRenderer): Promise<RunTheme> 
     const shared = await import("@opencode-ai/tui/context/theme")
     const syntaxTheme = {
       ...scrollbackTheme,
-      logoGradientStart: RGBA.fromHex("#5476E5"),
-      logoGradientEnd: RGBA.fromHex("#FF7399"),
+      logoGradientStart: footerTheme.logoGradientStart,
+      logoGradientEnd: footerTheme.logoGradientEnd,
       _hasSelectedListItemText: true,
     }
     const syntax = shared.generateSyntax(syntaxTheme)
