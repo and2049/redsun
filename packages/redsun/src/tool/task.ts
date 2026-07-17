@@ -90,11 +90,17 @@ export const TaskTool = Tool.define("task", async () => {
           },
         })
       })
+      using _subscription = defer(unsub)
 
       const exploreModel = await resolveTaskModel("explore", async () => undefined)
       const model = agent.model ?? (exploreModel ? { modelID: exploreModel.id, providerID: exploreModel.providerID } : undefined) ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
+      }
+      let variant = agent.model?.variant
+      if (!agent.model && !exploreModel) {
+        const parent = await MessageV2.get({ sessionID: ctx.sessionID, messageID: msg.info.parentID })
+        if (parent.info.role === "user") variant = parent.info.model.variant
       }
 
       function cancel() {
@@ -110,6 +116,7 @@ export const TaskTool = Tool.define("task", async () => {
         model: {
           modelID: model.modelID,
           providerID: model.providerID,
+          variant,
         },
         agent: agent.name,
         tools: {
@@ -121,7 +128,6 @@ export const TaskTool = Tool.define("task", async () => {
         },
         parts: promptParts,
       })
-      unsub()
       const messages = await Session.messages({ sessionID: session.id })
       const summary = messages
         .filter((x) => x.info.role === "assistant")

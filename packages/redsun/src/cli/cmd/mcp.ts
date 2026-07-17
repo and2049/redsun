@@ -36,6 +36,10 @@ function getAuthStatusText(status: MCP.AuthStatus): string {
   }
 }
 
+export function maskAccessToken(token: string) {
+  return token.length > 8 ? `${token.slice(0, 4)}***${token.slice(-4)}` : "***"
+}
+
 export const McpCommand = cmd({
   command: "mcp",
   builder: (yargs) =>
@@ -211,7 +215,11 @@ export const McpAuthCommand = cmd({
         spinner.start("Starting OAuth flow...")
 
         try {
-          const status = await MCP.authenticate(serverName)
+          const status = await MCP.authenticate(serverName, (authorizationUrl) => {
+            spinner.stop("Authorize in your browser:")
+            prompts.log.info(authorizationUrl)
+            spinner.start("Waiting for authorization...")
+          })
 
           if (status.status === "connected") {
             spinner.stop("Authentication successful!")
@@ -527,7 +535,7 @@ export const McpDebugCommand = cmd({
 
         const entry = await McpAuth.get(serverName)
         if (entry?.tokens) {
-          prompts.log.info(`  Access token: ${entry.tokens.accessToken.substring(0, 20)}...`)
+          prompts.log.info(`  Access token: ${maskAccessToken(entry.tokens.accessToken)}`)
           if (entry.tokens.expiresAt) {
             const expiresDate = new Date(entry.tokens.expiresAt * 1000)
             const isExpired = entry.tokens.expiresAt < Date.now() / 1000
@@ -577,7 +585,7 @@ export const McpDebugCommand = cmd({
           }
 
           if (response.status === 401) {
-            prompts.log.warn("Server returned 401 Unauthorized")
+            prompts.log.info("Initial unauthenticated check returned 401, so this server requires OAuth")
 
             // Try to discover OAuth metadata
             const oauthConfig = typeof serverConfig.oauth === "object" ? serverConfig.oauth : undefined

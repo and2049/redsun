@@ -246,7 +246,10 @@ export namespace LLM {
                   })
                 }
                 // @ts-expect-error
-                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, provider.options)
+                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, {
+                  ...provider.options,
+                  ...params.options,
+                })
               }
               return args.params
             },

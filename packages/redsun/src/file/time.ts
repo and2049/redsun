@@ -1,5 +1,6 @@
 import { Instance } from "../project/instance"
 import { Log } from "../util/log"
+import { Filesystem } from "../util/filesystem"
 
 export namespace FileTime {
   const log = Log.create({ service: "file.time" })
@@ -21,6 +22,7 @@ export namespace FileTime {
   })
 
   export function read(sessionID: string, file: string) {
+    file = Filesystem.normalizePath(file)
     log.info("read", { sessionID, file })
     const { read } = state()
     read[sessionID] = read[sessionID] || {}
@@ -28,10 +30,12 @@ export namespace FileTime {
   }
 
   export function get(sessionID: string, file: string) {
+    file = Filesystem.normalizePath(file)
     return state().read[sessionID]?.[file]
   }
 
   export async function withLock<T>(filepath: string, fn: () => Promise<T>): Promise<T> {
+    filepath = Filesystem.normalizePath(filepath)
     const current = state()
     const currentLock = current.locks.get(filepath) ?? Promise.resolve()
     let release: () => void = () => {}
@@ -52,10 +56,11 @@ export namespace FileTime {
   }
 
   export async function assert(sessionID: string, filepath: string) {
+    filepath = Filesystem.normalizePath(filepath)
     const time = get(sessionID, filepath)
     if (!time) throw new Error(`You must read the file ${filepath} before overwriting it. Use the Read tool first`)
     const stats = await Bun.file(filepath).stat()
-    if (stats.mtime.getTime() > time.getTime()) {
+    if (stats.mtime.getTime() > time.getTime() + 50) {
       throw new Error(
         `File ${filepath} has been modified since it was last read.\nLast modification: ${stats.mtime.toISOString()}\nLast read: ${time.toISOString()}\n\nPlease read the file again before modifying it.`,
       )

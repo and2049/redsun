@@ -166,6 +166,49 @@ test("large file handling", async () => {
   })
 })
 
+test("does not snapshot new files over 2MB", async () => {
+  await using tmp = await bootstrap()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const before = await Snapshot.track()
+      await Bun.write(`${tmp.path}/too-large.bin`, Buffer.alloc(2 * 1024 * 1024 + 1, 1))
+      expect((await Snapshot.patch(before!)).files).not.toContain(`${tmp.path}/too-large.bin`)
+    },
+  })
+})
+
+test("continues snapshotting already tracked files over 2MB", async () => {
+  await using tmp = await bootstrap()
+  await Bun.write(`${tmp.path}/tracked-large.bin`, Buffer.alloc(2 * 1024 * 1024 + 1, 1))
+  await $`git add tracked-large.bin`.cwd(tmp.path).quiet()
+  await $`git commit --no-gpg-sign -m "track large file"`.cwd(tmp.path).quiet()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const before = await Snapshot.track()
+      await Bun.write(`${tmp.path}/tracked-large.bin`, Buffer.alloc(2 * 1024 * 1024 + 1, 2))
+      expect((await Snapshot.patch(before!)).files).toContain(`${tmp.path}/tracked-large.bin`)
+    },
+  })
+})
+
+test("removes modified files that become gitignored from snapshot patches", async () => {
+  await using tmp = await bootstrap()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await Bun.write(`${tmp.path}/later-ignored.txt`, "before")
+      const before = await Snapshot.track()
+      await Bun.write(`${tmp.path}/later-ignored.txt`, "after")
+      await Bun.write(`${tmp.path}/.gitignore`, "later-ignored.txt\n")
+      const patch = await Snapshot.patch(before!)
+      expect(patch.files).toContain(`${tmp.path}/.gitignore`)
+      expect(patch.files).not.toContain(`${tmp.path}/later-ignored.txt`)
+    },
+  })
+})
+
 test("nested directory revert", async () => {
   await using tmp = await bootstrap()
   await Instance.provide({
@@ -893,6 +936,19 @@ test("diffFull with no changes", async () => {
   })
 })
 
+test("serializes concurrent snapshot tracking", async () => {
+  await using tmp = await bootstrap()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await Bun.write(`${tmp.path}/concurrent.txt`, "content")
+      const hashes = await Promise.all([Snapshot.track(), Snapshot.track(), Snapshot.track()])
+      expect(hashes.every(Boolean)).toBe(true)
+      expect(new Set(hashes).size).toBe(1)
+    },
+  })
+})
+
 test("diffFull with binary file changes", async () => {
   await using tmp = await bootstrap()
   await Instance.provide({
@@ -912,6 +968,9 @@ test("diffFull with binary file changes", async () => {
       const binaryDiff = diffs[0]
       expect(binaryDiff.file).toBe("binary.bin")
       expect(binaryDiff.before).toBe("")
+      expect(binaryDiff.after).toBe("")
+      expect(binaryDiff.additions).toBe(0)
+      expect(binaryDiff.deletions).toBe(0)
     },
   })
 })

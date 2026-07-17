@@ -29,7 +29,7 @@ import { Config } from "@/config/config"
 import { Todo } from "@/session/todo"
 import { z } from "zod"
 import { LoadAPIKeyError } from "ai"
-import type { OpencodeClient, SessionMessageResponse } from "@redsun/sdk/v2"
+import type { AssistantMessage, OpencodeClient, SessionMessageResponse } from "@redsun/sdk/v2"
 import path from "path"
 import { fileURLToPath } from "bun"
 
@@ -248,7 +248,6 @@ export namespace ACP {
                             sessionUpdate: "tool_call_update",
                             toolCallId: part.callID,
                             status: "completed",
-                            kind,
                             content,
                             title: part.state.title,
                             rawOutput: {
@@ -348,7 +347,7 @@ export namespace ACP {
           "terminal-auth": {
             command: "redsun",
             args: ["auth", "login"],
-            label: "OpenCode Login",
+            label: "Redsun Login",
           },
         }
       }
@@ -368,7 +367,7 @@ export namespace ACP {
         },
         authMethods: [authMethod],
         agentInfo: {
-          name: "OpenCode",
+          name: "Redsun",
           version: Installation.VERSION,
         },
       }
@@ -433,26 +432,6 @@ export namespace ACP {
         })
 
         this.setupEventSubscriptions(state)
-
-        // Replay session history
-        const messages = await this.sdk.session
-          .messages(
-            {
-              sessionID: sessionId,
-              directory,
-            },
-            { throwOnError: true },
-          )
-          .then((x) => x.data)
-          .catch((err) => {
-            log.error("unexpected error when fetching message", { error: err })
-            return undefined
-          })
-
-        for (const msg of messages ?? []) {
-          log.debug("replay message", msg)
-          await this.processMessage(msg)
-        }
 
         return mode
       } catch (e) {
@@ -893,32 +872,38 @@ export namespace ACP {
       }
 
       if (!cmd) {
-        await this.sdk.session.prompt({
-          sessionID,
-          model: {
-            providerID: model.providerID,
-            modelID: model.modelID,
+        const response = await this.sdk.session.prompt(
+          {
+            sessionID,
+            model: {
+              providerID: model.providerID,
+              modelID: model.modelID,
+            },
+            parts,
+            agent,
+            directory,
           },
-          parts,
-          agent,
-          directory,
-        })
-        return done
+          { throwOnError: true },
+        )
+        return promptResponse(response.data.info)
       }
 
       const command = await this.config.sdk.command
         .list({ directory }, { throwOnError: true })
         .then((x) => x.data!.find((c) => c.name === cmd.name))
       if (command) {
-        await this.sdk.session.command({
-          sessionID,
-          command: command.name,
-          arguments: cmd.args,
-          model: model.providerID + "/" + model.modelID,
-          agent,
-          directory,
-        })
-        return done
+        const response = await this.sdk.session.command(
+          {
+            sessionID,
+            command: command.name,
+            arguments: cmd.args,
+            model: model.providerID + "/" + model.modelID,
+            agent,
+            directory,
+          },
+          { throwOnError: true },
+        )
+        return promptResponse(response.data.info)
       }
 
       switch (cmd.name) {
@@ -947,6 +932,27 @@ export namespace ACP {
         },
         { throwOnError: true },
       )
+    }
+  }
+
+  export function promptResponse(info: AssistantMessage | undefined) {
+    if (!info?.error) return { stopReason: "end_turn" as const, _meta: {} }
+    switch (info.error.name) {
+      case "MessageAbortedError":
+        return { stopReason: "cancelled" as const, _meta: {} }
+      case "MessageOutputLengthError":
+        return { stopReason: "max_tokens" as const, _meta: {} }
+      case "ContentFilterError":
+        return { stopReason: "refusal" as const, _meta: {} }
+      case "ProviderAuthError":
+        throw RequestError.authRequired({ providerId: info.error.data.providerID })
+      default:
+        throw RequestError.internalError(
+          { service: "session", errorName: info.error.name },
+          "message" in info.error.data && typeof info.error.data.message === "string"
+            ? info.error.data.message
+            : "Redsun prompt failed",
+        )
     }
   }
 

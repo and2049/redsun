@@ -4,6 +4,7 @@ import { Project } from "./project"
 import { State } from "./state"
 import { iife } from "@/util/iife"
 import { GlobalBus } from "@/bus/global"
+import { Filesystem } from "../util/filesystem"
 
 interface Context {
   directory: string
@@ -45,6 +46,11 @@ export const Instance = {
   },
   get project() {
     return context.use().project
+  },
+  containsPath(filepath: string) {
+    if (Filesystem.contains(Instance.directory, filepath)) return true
+    if (Instance.worktree === "/") return false
+    return Filesystem.contains(Instance.worktree, filepath)
   },
   state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {
     return State.create(() => Instance.directory, init, dispose)

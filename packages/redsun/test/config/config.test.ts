@@ -170,7 +170,7 @@ test("handles environment variable substitution", async () => {
 test("handles file inclusion substitution", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(dir, "included.txt"), "test_theme")
+      await Bun.write(path.join(dir, "included.txt"), "test_$&_theme")
       await Bun.write(
         path.join(dir, "redsun.json"),
         JSON.stringify({
@@ -184,7 +184,7 @@ test("handles file inclusion substitution", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await Config.get()
-      expect(config.theme).toBe("test_theme")
+      expect(config.theme).toBe("test_$&_theme")
     },
   })
 })

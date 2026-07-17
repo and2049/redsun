@@ -81,6 +81,39 @@ describe("tool.grep", () => {
       },
     })
   })
+
+  test("resolves relative paths from the active project", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "nested", "test.txt"), "relative needle")
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const grep = await GrepTool.init()
+        const result = await grep.execute({ pattern: "needle", path: "nested" }, ctx)
+        expect(result.metadata.matches).toBe(1)
+      },
+    })
+  })
+
+  test("denies external paths when configured", async () => {
+    await using outer = await tmpdir({ init: (dir) => Bun.write(path.join(dir, "secret.txt"), "needle") })
+    await using tmp = await tmpdir({
+      init: (dir) =>
+        Bun.write(path.join(dir, "redsun.json"), JSON.stringify({ permission: { external_directory: "deny" } })),
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const grep = await GrepTool.init()
+        await expect(grep.execute({ pattern: "needle", path: outer.path }, ctx)).rejects.toThrow(
+          "not in the current working directory",
+        )
+      },
+    })
+  })
 })
 
 describe("CRLF regex handling", () => {

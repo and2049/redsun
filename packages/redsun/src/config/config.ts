@@ -77,11 +77,6 @@ export namespace Config {
       }
     }
 
-    if (Flag.REDSUN_CONFIG_CONTENT) {
-      mergeSource(JSON.parse(Flag.REDSUN_CONFIG_CONTENT), "user")
-      log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
-    }
-
     for (const [key, value] of Object.entries(auth)) {
       if (value.type === "wellknown") {
         process.env[value.key] = value.token
@@ -168,6 +163,11 @@ export namespace Config {
     }
     await Promise.allSettled(promises)
 
+    if (Flag.REDSUN_CONFIG_CONTENT) {
+      mergeSource(await load(Flag.REDSUN_CONFIG_CONTENT, path.join(Instance.directory, "REDSUN_CONFIG_CONTENT")), "user")
+      log.debug("loaded custom config from REDSUN_CONFIG_CONTENT")
+    }
+
     // Migrate deprecated mode field to agent field
     for (const [name, mode] of Object.entries(result.mode)) {
       result.agent = mergeDeep(result.agent ?? {}, {
@@ -179,10 +179,21 @@ export namespace Config {
     }
 
     if (Flag.REDSUN_PERMISSION) {
-      result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.REDSUN_PERMISSION))
+      try {
+        result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.REDSUN_PERMISSION))
+      } catch (error) {
+        log.warn("REDSUN_PERMISSION contains invalid JSON, skipping", { error })
+      }
     }
 
-    if (!result.username) result.username = os.userInfo().username
+    if (!result.username) {
+      try {
+        result.username = os.userInfo().username || "user"
+      } catch (error) {
+        log.warn("failed to read system username, using fallback", { error })
+        result.username = "user"
+      }
+    }
 
 
 
@@ -382,6 +393,14 @@ export namespace Config {
         .describe("OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted."),
       clientSecret: z.string().optional().describe("OAuth client secret (if required by the authorization server)"),
       scope: z.string().optional().describe("OAuth scopes to request during authorization"),
+      callbackPort: z
+        .number()
+        .int()
+        .min(1)
+        .max(65535)
+        .optional()
+        .describe("Port for the local OAuth callback server. Ignored when redirectUri is set."),
+      redirectUri: z.string().optional().describe("OAuth redirect URI for this MCP server"),
     })
     .strict()
     .meta({
@@ -1007,7 +1026,7 @@ export namespace Config {
             })
         ).trim()
         // escape newlines/quotes, strip outer quotes
-        text = text.replace(match, JSON.stringify(fileContent).slice(1, -1))
+        text = text.replace(match, () => JSON.stringify(fileContent).slice(1, -1))
       }
     }
 
@@ -1039,7 +1058,9 @@ export namespace Config {
     if (parsed.success) {
       if (!parsed.data.$schema) {
         parsed.data.$schema = "https://redsun.sh/config.json"
-        await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2))
+        await Bun.write(configFilepath, JSON.stringify(parsed.data, null, 2)).catch((error) => {
+          log.warn("failed to add schema to config", { path: configFilepath, error })
+        })
       }
       const data = parsed.data
       if (data.extension) {

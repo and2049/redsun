@@ -55,7 +55,7 @@ export const PatchTool = Tool.define("patch", {
       const movePath = hunk.type === "update" && hunk.move_path ? path.resolve(Instance.directory, hunk.move_path) : undefined
 
       for (const candidate of [filePath, movePath]) {
-        if (!candidate || Filesystem.contains(Instance.directory, candidate)) continue
+        if (!candidate || Instance.containsPath(candidate)) continue
         const parentDir = path.dirname(candidate)
         if (agent.permission.external_directory === "ask") {
           await Permission.ask({

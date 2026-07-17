@@ -17,6 +17,21 @@ export interface McpOAuthConfig {
   clientId?: string
   clientSecret?: string
   scope?: string
+  callbackPort?: number
+  redirectUri?: string
+}
+
+export function parseRedirectUri(redirectUri?: string): { port: number; path: string } {
+  if (!redirectUri) return { port: OAUTH_CALLBACK_PORT, path: OAUTH_CALLBACK_PATH }
+  try {
+    const url = new URL(redirectUri)
+    return {
+      port: url.port ? Number.parseInt(url.port, 10) : url.protocol === "https:" ? 443 : 80,
+      path: url.pathname || OAUTH_CALLBACK_PATH,
+    }
+  } catch {
+    return { port: OAUTH_CALLBACK_PORT, path: OAUTH_CALLBACK_PATH }
+  }
 }
 
 export interface McpOAuthCallbacks {
@@ -32,17 +47,19 @@ export class McpOAuthProvider implements OAuthClientProvider {
   ) {}
 
   get redirectUrl(): string {
-    return `http://127.0.0.1:${OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`
+    if (this.config.redirectUri) return this.config.redirectUri
+    return `http://127.0.0.1:${this.config.callbackPort ?? OAUTH_CALLBACK_PORT}${OAUTH_CALLBACK_PATH}`
   }
 
   get clientMetadata(): OAuthClientMetadata {
     return {
       redirect_uris: [this.redirectUrl],
-      client_name: "OpenCode",
+      client_name: "Redsun",
       client_uri: "https://redsun.local",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: this.config.clientSecret ? "client_secret_post" : "none",
+      ...(this.config.scope ? { scope: this.config.scope } : {}),
     }
   }
 

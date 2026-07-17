@@ -591,6 +591,44 @@ describe("ProviderTransform.schema - openai supported schema subset", () => {
   })
 })
 
+describe("ProviderTransform.message - Devstral tool calls", () => {
+  test("normalizes tool call IDs for Devstral on compatible providers", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call_123456789",
+              toolName: "bash",
+              input: { command: "echo hello" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_123456789",
+              toolName: "bash",
+              output: { type: "text", value: "hello" },
+            },
+          ],
+        },
+      ] as any,
+      {
+        providerID: "openrouter",
+        api: { id: "mistralai/DEVSTRAL-small", npm: "@openrouter/ai-sdk-provider" },
+      } as any,
+    ) as any[]
+
+    expect(result[0].content[0].toolCallId).toBe("call12345")
+    expect(result[1].content[0].toolCallId).toBe("call12345")
+  })
+})
+
 describe("ProviderTransform.message - DeepSeek reasoning content", () => {
   test("DeepSeek with tool calls includes reasoning_content in providerOptions", () => {
     const msgs = [
@@ -879,5 +917,159 @@ describe("ProviderTransform.message - cache placement", () => {
 
     expect(disabled[0].providerOptions).toBeUndefined()
     expect((enabled[0].providerOptions?.openaiCompatible as any)?.cache_control?.type).toBe("ephemeral")
+  })
+})
+
+describe("ProviderTransform.message - provider metadata", () => {
+  const model = {
+    id: "github-copilot/gpt-5.5",
+    providerID: "github-copilot",
+    api: { id: "gpt-5.5", npm: "@ai-sdk/github-copilot" },
+    capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+  } as any
+
+  test("remaps stored provider IDs and removes stale stateless item IDs", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call_1",
+              toolName: "bash",
+              input: {},
+              providerOptions: {
+                "github-copilot": { itemId: "fc_123", reasoningEffort: "medium" },
+              },
+            },
+          ],
+        },
+      ] as any[],
+      model,
+      { store: false },
+    ) as any[]
+
+    expect(result[0].content[0].providerOptions).toEqual({ copilot: { reasoningEffort: "medium" } })
+  })
+
+  test("preserves item IDs when response storage is enabled", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              text: "thinking",
+              providerOptions: { copilot: { itemId: "rs_123", reasoningEffort: "high" } },
+            },
+          ],
+        },
+      ] as any[],
+      model,
+      { store: true },
+    ) as any[]
+
+    expect(result[0].content[0].providerOptions.copilot.itemId).toBe("rs_123")
+  })
+})
+
+describe("ProviderTransform.message - request validity", () => {
+  const model = (npm: string, overrides: Record<string, any> = {}) =>
+    ({
+      id: "model",
+      providerID: "provider",
+      api: { id: "model", npm },
+      capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+      ...overrides,
+    }) as any
+
+  test("replaces unpaired UTF-16 surrogates throughout model-visible text", () => {
+    const result = ProviderTransform.message(
+      [
+        { role: "system", content: "bad\uD800system" },
+        { role: "user", content: [{ type: "text", text: "bad\uDC00user" }] },
+        {
+          role: "tool",
+          content: [
+            { type: "tool-result", toolCallId: "call", toolName: "bash", output: { type: "text", value: "bad\uD800tool" } },
+          ],
+        },
+      ] as any[],
+      model("@ai-sdk/openai-compatible"),
+    ) as any[]
+
+    expect(result[0].content).toBe("bad\uFFFDsystem")
+    expect(result[1].content[0].text).toBe("bad\uFFFDuser")
+    expect(result[2].content[0].output.value).toBe("bad\uFFFDtool")
+  })
+
+  test.each([
+    ["@ai-sdk/anthropic", "anthropic"],
+    ["@ai-sdk/amazon-bedrock", "bedrock"],
+  ])("filters empty %s messages but preserves signed reasoning", (npm, key) => {
+    const result = ProviderTransform.message(
+      [
+        { role: "user", content: "" },
+        { role: "assistant", content: [{ type: "text", text: "" }] },
+        {
+          role: "assistant",
+          content: [{ type: "reasoning", text: "", providerOptions: { [key]: { signature: "signed" } } }],
+        },
+      ] as any[],
+      model(npm),
+    ) as any[]
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content[0].providerOptions[key].signature).toBe("signed")
+  })
+
+  test("replays empty DeepSeek reasoning metadata for tool-call turns", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [{ type: "tool-call", toolCallId: "call", toolName: "bash", input: {} }],
+        },
+      ] as any[],
+      model("@ai-sdk/openai-compatible", {
+        api: { id: "deepseek-chat", npm: "@ai-sdk/openai-compatible" },
+        capabilities: {
+          input: { text: true, image: false, audio: false, video: false, pdf: false },
+          interleaved: { field: "reasoning_content" },
+        },
+      }),
+    ) as any[]
+
+    expect(result[0].content).toHaveLength(1)
+    expect(result[0].providerOptions.openaiCompatible.reasoning_content).toBe("")
+  })
+
+  test("uses the catalog interleaved field and leaves OpenRouter messages native", () => {
+    const input = [{ role: "assistant", content: [{ type: "reasoning", text: "details" }] }] as any[]
+    const compatible = ProviderTransform.message(
+      structuredClone(input),
+      model("@ai-sdk/openai-compatible", {
+        capabilities: {
+          input: { text: true, image: false, audio: false, video: false, pdf: false },
+          interleaved: { field: "reasoning_details" },
+        },
+      }),
+    ) as any[]
+    const openrouter = ProviderTransform.message(
+      structuredClone(input),
+      model("@openrouter/ai-sdk-provider", {
+        providerID: "openrouter",
+        capabilities: {
+          input: { text: true, image: false, audio: false, video: false, pdf: false },
+          interleaved: { field: "reasoning_details" },
+        },
+      }),
+    ) as any[]
+
+    expect(compatible[0].providerOptions.openaiCompatible.reasoning_details).toBe("details")
+    expect(compatible[0].content).toEqual([])
+    expect(openrouter[0].content[0].type).toBe("reasoning")
   })
 })

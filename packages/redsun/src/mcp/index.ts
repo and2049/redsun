@@ -12,7 +12,7 @@ import z from "zod/v4"
 import { Instance } from "../project/instance"
 import { Installation } from "../installation"
 import { withTimeout } from "@/util/timeout"
-import { McpOAuthPendingProvider, McpOAuthProvider } from "./oauth-provider"
+import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
 import { BusEvent } from "../bus/bus-event"
@@ -131,8 +131,10 @@ export namespace MCP {
             return
           }
 
-          const result = await create(key, mcp).catch(() => undefined)
-          if (!result) return
+          const result = await create(key, mcp).catch((error) => ({
+            mcpClient: undefined,
+            status: { status: "failed" as const, error: error instanceof Error ? error.message : String(error) },
+          }))
 
           status[key] = result.status
 
@@ -179,6 +181,7 @@ export namespace MCP {
         status: s.status,
       }
     }
+    await s.clients[name]?.close().catch((error) => log.error("Failed to close replaced MCP client", { name, error }))
     s.clients[name] = result.mcpClient
     s.status[name] = result.status
 
@@ -223,6 +226,8 @@ export namespace MCP {
             clientId: oauthConfig?.clientId,
             clientSecret: oauthConfig?.clientSecret,
             scope: oauthConfig?.scope,
+            callbackPort: oauthConfig?.callbackPort,
+            redirectUri: oauthConfig?.redirectUri,
           },
           {
             onRedirect: async (url) => {
@@ -233,17 +238,18 @@ export namespace MCP {
         )
       }
 
+      const serverURL = new URL(mcp.url)
       const transports: Array<{ name: string; transport: TransportWithAuth }> = [
         {
           name: "StreamableHTTP",
-          transport: new StreamableHTTPClientTransport(new URL(mcp.url), {
+          transport: new StreamableHTTPClientTransport(serverURL, {
             authProvider,
             requestInit: mcp.headers ? { headers: mcp.headers } : undefined,
           }),
         },
         {
           name: "SSE",
-          transport: new SSEClientTransport(new URL(mcp.url), {
+          transport: new SSEClientTransport(serverURL, {
             authProvider,
             requestInit: mcp.headers ? { headers: mcp.headers } : undefined,
           }),
@@ -257,7 +263,7 @@ export namespace MCP {
             name: "redsun",
             version: Installation.VERSION,
           })
-          await client.connect(transport)
+          await withTimeout(client.connect(transport), mcp.timeout ?? 5000)
           registerNotificationHandlers(client, key)
           mcpClient = client
           log.info("connected", { key, transport: name })
@@ -298,6 +304,10 @@ export namespace MCP {
             break
           }
 
+          await transport.close().catch((closeError) => {
+            log.debug("failed to close rejected MCP transport", { key, transport: name, error: closeError })
+          })
+
           log.debug("transport connection failed", {
             key,
             transport: name,
@@ -330,13 +340,16 @@ export namespace MCP {
           name: "redsun",
           version: Installation.VERSION,
         })
-        await client.connect(transport)
+        await withTimeout(client.connect(transport), mcp.timeout ?? 5000)
         registerNotificationHandlers(client, key)
         mcpClient = client
         status = {
           status: "connected",
         }
       } catch (error) {
+        await transport.close().catch((closeError) => {
+          log.debug("failed to close rejected local MCP transport", { key, error: closeError })
+        })
         log.error("local mcp startup failed", {
           key,
           command: mcp.command,
@@ -435,6 +448,7 @@ export namespace MCP {
     }
 
     const s = await state()
+    await s.clients[name]?.close().catch((error) => log.error("Failed to close replaced MCP client", { name, error }))
     s.status[name] = result.status
     if (result.mcpClient) {
       s.clients[name] = result.mcpClient
@@ -466,16 +480,20 @@ export namespace MCP {
         continue
       }
 
-      const toolsResult = await paginate<any>(
-        (cursor) => (client as any).listTools(cursor ? { cursor } : undefined),
-        (page) => page.tools,
-      ).catch((e) => {
+      const toolsResult = await withTimeout(
+        paginate<any>(
+          (cursor) => (client as any).listTools(cursor ? { cursor } : undefined),
+          (page) => page.tools,
+        ),
+        config[clientName]?.timeout ?? 5000,
+      ).catch(async (e) => {
         log.error("failed to get tools", { clientName, error: e.message })
         const failedStatus = {
           status: "failed" as const,
           error: e instanceof Error ? e.message : String(e),
         }
         s.status[clientName] = failedStatus
+        await client.close().catch((error) => log.error("Failed to close failed MCP client", { clientName, error }))
         delete s.clients[clientName]
         return undefined
       })
@@ -589,6 +607,7 @@ export namespace MCP {
 
   export async function instructions(): Promise<McpInstructions[]> {
     const s = await state()
+    const cfg = await Config.get()
     const result: McpInstructions[] = []
     for (const [name, client] of Object.entries(s.clients)) {
       if (s.status[name]?.status !== "connected") continue
@@ -596,9 +615,12 @@ export namespace MCP {
       if (!instructionsText) continue
       let tools: string[] = []
       try {
-        const toolsResult = await paginate<any>(
-          (cursor) => (client as any).listTools(cursor ? { cursor } : undefined),
-          (page) => page.tools,
+        const toolsResult = await withTimeout(
+          paginate<any>(
+            (cursor) => (client as any).listTools(cursor ? { cursor } : undefined),
+            (page) => page.tools,
+          ),
+          cfg.mcp?.[name]?.timeout ?? 5000,
         )
         const sanitizedClientName = name.replace(/[^a-zA-Z0-9_-]/g, "_")
         tools = toolsResult.map((t) => `${sanitizedClientName}_${t.name.replace(/[^a-zA-Z0-9_-]/g, "_")}`)
@@ -628,8 +650,15 @@ export namespace MCP {
       throw new Error(`MCP server ${mcpName} has OAuth explicitly disabled`)
     }
 
+    const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
+    const effectiveRedirectUri =
+      oauthConfig?.redirectUri ??
+      (oauthConfig?.callbackPort
+        ? `http://127.0.0.1:${oauthConfig.callbackPort}${OAUTH_CALLBACK_PATH}`
+        : undefined)
+
     // Start the callback server
-    await McpOAuthCallback.ensureRunning()
+    await McpOAuthCallback.ensureRunning(effectiveRedirectUri)
 
     // Generate and store a cryptographically secure state parameter BEFORE creating the provider
     // The SDK will call provider.state() to read this value
@@ -640,7 +669,6 @@ export namespace MCP {
 
     // Create a new auth provider for this flow
     // OAuth config is optional - if not provided, we'll use auto-discovery
-    const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
     let capturedUrl: URL | undefined
     const authProvider = new McpOAuthPendingProvider(
       mcpName,
@@ -649,6 +677,8 @@ export namespace MCP {
         clientId: oauthConfig?.clientId,
         clientSecret: oauthConfig?.clientSecret,
         scope: oauthConfig?.scope,
+        callbackPort: oauthConfig?.callbackPort,
+        redirectUri: effectiveRedirectUri,
       },
       {
         onRedirect: async (url) => {
@@ -669,7 +699,7 @@ export namespace MCP {
         name: "redsun",
         version: Installation.VERSION,
       })
-      await client.connect(transport)
+      await withTimeout(client.connect(transport), mcpConfig.timeout ?? 5000)
       await authProvider.commit()
       // If we get here, we're already authenticated
       return { authorizationUrl: "" }
@@ -679,6 +709,9 @@ export namespace MCP {
         pendingOAuthTransports.set(mcpName, { transport, provider: authProvider })
         return { authorizationUrl: capturedUrl.toString() }
       }
+      await transport.close().catch((closeError) => {
+        log.debug("failed to close rejected OAuth transport", { mcpName, error: closeError })
+      })
       throw error
     }
   }
@@ -687,7 +720,10 @@ export namespace MCP {
    * Complete OAuth authentication after user authorizes in browser.
    * Opens the browser and waits for callback.
    */
-  export async function authenticate(mcpName: string): Promise<Status> {
+  export async function authenticate(
+    mcpName: string,
+    onAuthorization?: (authorizationUrl: string) => void,
+  ): Promise<Status> {
     const { authorizationUrl } = await startAuth(mcpName)
 
     if (!authorizationUrl) {
@@ -705,6 +741,7 @@ export namespace MCP {
     // The SDK has already added the state parameter to the authorization URL
     // We just need to open the browser
     log.info("opening browser for oauth", { mcpName, url: authorizationUrl, state: oauthState })
+    onAuthorization?.(authorizationUrl)
     await open(authorizationUrl)
 
     // Wait for callback using the OAuth state parameter
