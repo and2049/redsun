@@ -1,5 +1,6 @@
 import type { Argv } from "yargs"
 import path from "path"
+import { pathToFileURL } from "url"
 import { UI } from "../ui"
 import { cmd } from "./cmd"
 import { Flag } from "../../flag/flag"
@@ -12,6 +13,39 @@ import { Server } from "../../server/server"
 import { Provider } from "../../provider/provider"
 import { Agent } from "../../agent/agent"
 import { TrustFlag } from "../../tool/registry"
+
+export const ATTACH_FILE_MAX_BYTES = 10 * 1024 * 1024
+
+export async function createRunFilePart(resolvedPath: string, attach: boolean) {
+  const file = Bun.file(resolvedPath)
+  const stat = await file.stat().catch(() => undefined)
+  if (!stat) throw new Error(`File not found: ${resolvedPath}`)
+  if (attach && stat.isDirectory()) {
+    throw new Error(`Cannot attach local directory without a shared filesystem: ${resolvedPath}`)
+  }
+
+  if (!attach) {
+    return {
+      type: "file" as const,
+      url: pathToFileURL(resolvedPath).href,
+      filename: path.basename(resolvedPath),
+      mime: stat.isDirectory() ? "application/x-directory" : "text/plain",
+    }
+  }
+
+  if (!stat.isFile() || stat.size > ATTACH_FILE_MAX_BYTES) {
+    throw new Error(`Cannot attach local file larger than 10 MiB or a special file: ${resolvedPath}`)
+  }
+  const content = Buffer.from(await file.arrayBuffer())
+  const text = content.toString("utf8")
+  const mime = Buffer.from(text, "utf8").equals(content) ? "text/plain" : file.type || "application/octet-stream"
+  return {
+    type: "file" as const,
+    url: `data:${mime};base64,${content.toString("base64")}`,
+    filename: path.basename(resolvedPath),
+    mime,
+  }
+}
 
 const TOOL: Record<string, [string, string]> = {
   todowrite: ["Todo", UI.Style.TEXT_WARNING_BOLD],
@@ -57,6 +91,10 @@ export const RunCommand = cmd({
         alias: ["m"],
         describe: "model to use in the format of provider/model",
       })
+      .option("variant", {
+        type: "string",
+        describe: "model variant (provider-specific reasoning effort, e.g. high, max, minimal)",
+      })
       .option("agent", {
         type: "string",
         describe: "agent to use",
@@ -79,7 +117,7 @@ export const RunCommand = cmd({
       })
       .option("attach", {
         type: "string",
-        describe: "attach to a running opencode server (e.g., http://localhost:4096)",
+        describe: "attach to a running Redsun server (e.g., http://localhost:4096)",
       })
       .option("port", {
         type: "number",
@@ -109,26 +147,11 @@ export const RunCommand = cmd({
 
       for (const filePath of files) {
         const resolvedPath = path.resolve(process.cwd(), filePath)
-        const file = Bun.file(resolvedPath)
-        const stats = await file.stat().catch(() => {})
-        if (!stats) {
-          UI.error(`File not found: ${filePath}`)
+        const part = await createRunFilePart(resolvedPath, !!args.attach).catch((error) => {
+          UI.error(error instanceof Error ? error.message.replace(resolvedPath, filePath) : String(error))
           process.exit(1)
-        }
-        if (!(await file.exists())) {
-          UI.error(`File not found: ${filePath}`)
-          process.exit(1)
-        }
-
-        const stat = await file.stat()
-        const mime = stat.isDirectory() ? "application/x-directory" : "text/plain"
-
-        fileParts.push({
-          type: "file",
-          url: `file://${resolvedPath}`,
-          filename: path.basename(resolvedPath),
-          mime,
         })
+        fileParts.push(part)
       }
     }
 
@@ -270,11 +293,12 @@ export const RunCommand = cmd({
           sessionID,
           agent: resolvedAgent,
           model: args.model,
+          variant: args.variant,
           command: args.command,
           arguments: message,
         })
       } else {
-        const modelParam = args.model ? Provider.parseModel(args.model) : undefined
+        const modelParam = args.model ? { ...Provider.parseModel(args.model), variant: args.variant } : undefined
         await sdk.session.prompt({
           sessionID,
           agent: resolvedAgent,

@@ -11,6 +11,8 @@ import { Filesystem } from "../util/filesystem"
 import { Instance } from "../project/instance"
 import { Ripgrep } from "./ripgrep"
 import fuzzysort from "fuzzysort"
+import { Global } from "../global"
+import { Protected } from "./protected"
 
 export namespace File {
   const log = Log.create({ service: "file" })
@@ -122,10 +124,34 @@ export namespace File {
     type Entry = { files: string[]; dirs: string[] }
     let cache: Entry = { files: [], dirs: [] }
     let fetching = false
+    const isGlobalHome = Instance.directory === Global.Path.home && Instance.project.id === "global"
     const fn = async (result: Entry) => {
       // Disable scanning if in root of file system
       if (Instance.directory === path.parse(Instance.directory).root) return
       fetching = true
+      if (isGlobalHome) {
+        const dirs = new Set<string>()
+        const protectedNames = Protected.names()
+        const ignoredNested = new Set(["node_modules", "dist", "build", "target", "vendor"])
+        const top = await fs.promises
+          .readdir(Instance.directory, { withFileTypes: true })
+          .catch(() => [] as fs.Dirent[])
+        for (const entry of top) {
+          if (!entry.isDirectory() || entry.name.startsWith(".") || protectedNames.has(entry.name)) continue
+          dirs.add(entry.name + "/")
+          const children = await fs.promises
+            .readdir(path.join(Instance.directory, entry.name), { withFileTypes: true })
+            .catch(() => [] as fs.Dirent[])
+          for (const child of children) {
+            if (!child.isDirectory() || child.name.startsWith(".") || ignoredNested.has(child.name)) continue
+            dirs.add(`${entry.name}/${child.name}/`)
+          }
+        }
+        result.dirs = Array.from(dirs).toSorted()
+        cache = result
+        fetching = false
+        return
+      }
       const set = new Set<string>()
       for await (const file of Ripgrep.files({ cwd: Instance.directory })) {
         result.files.push(file)
@@ -239,7 +265,7 @@ export namespace File {
 
     // TODO: Filesystem.contains is lexical only - symlinks inside the project can escape.
     // TODO: On Windows, cross-drive paths bypass this check. Consider realpath canonicalization.
-    if (!Filesystem.contains(Instance.directory, full)) {
+    if (!Instance.containsPath(full)) {
       throw new Error(`Access denied: path escapes project directory`)
     }
 
@@ -299,7 +325,7 @@ export namespace File {
 
     // TODO: Filesystem.contains is lexical only - symlinks inside the project can escape.
     // TODO: On Windows, cross-drive paths bypass this check. Consider realpath canonicalization.
-    if (!Filesystem.contains(Instance.directory, resolved)) {
+    if (!Instance.containsPath(resolved)) {
       throw new Error(`Access denied: path escapes project directory`)
     }
 

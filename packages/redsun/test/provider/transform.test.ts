@@ -99,22 +99,207 @@ describe("ProviderTransform.options - setCacheKey", () => {
     }
     expect(ProviderTransform.options(model, sessionID, {})).toMatchObject({
       promptCacheKey: sessionID,
-      reasoningEffort: "high",
+      reasoningEffort: "xhigh",
       reasoningSummary: "auto",
       include: ["reasoning.encrypted_content"],
+      store: false,
     })
   })
 
-  test("does not apply Muse reasoning defaults to other Meta models", () => {
+  test("applies current Meta reasoning defaults to other Responses models", () => {
     const model = {
       ...mockModel,
       providerID: "meta",
       api: { id: "llama-4", url: "https://api.meta.ai", npm: "@ai-sdk/openai" },
     }
-    expect(ProviderTransform.options(model, sessionID, {})).not.toMatchObject({
-      reasoningEffort: "high",
+    expect(ProviderTransform.options(model, sessionID, {})).toMatchObject({
+      reasoningEffort: "xhigh",
+      reasoningSummary: "auto",
+      store: false,
+    })
+  })
+
+  test("sets store=false for xAI Responses", () => {
+    const model = {
+      ...mockModel,
+      providerID: "custom-xai",
+      api: { id: "grok-4", url: "https://api.x.ai", npm: "@ai-sdk/xai" },
+    }
+    expect(ProviderTransform.options(model, sessionID, {})).toMatchObject({
+      promptCacheKey: sessionID,
+      store: false,
+    })
+    expect(ProviderTransform.smallOptions(model)).toMatchObject({ store: false })
+  })
+
+  test("sets provider-specific cache and reasoning defaults", () => {
+    const zai = {
+      ...mockModel,
+      providerID: "zai",
+      api: { ...mockModel.api, id: "glm-5", npm: "@ai-sdk/openai-compatible" },
+      capabilities: { ...mockModel.capabilities, reasoning: true },
+    }
+    expect(ProviderTransform.options(zai, sessionID, {})).toMatchObject({
+      thinking: { type: "enabled", clear_thinking: false },
+    })
+
+    const azure = {
+      ...mockModel,
+      providerID: "azure",
+      api: { ...mockModel.api, id: "gpt-5.6", npm: "@ai-sdk/azure" },
+      capabilities: { ...mockModel.capabilities, reasoning: true },
+    }
+    expect(ProviderTransform.options(azure, sessionID, {})).toMatchObject({
+      store: false,
+      promptCacheKey: sessionID,
+      reasoningEffort: "medium",
       reasoningSummary: "auto",
     })
+
+    const openrouter = {
+      ...mockModel,
+      providerID: "openrouter",
+      api: { ...mockModel.api, id: "openai/gpt-5.6", npm: "@openrouter/ai-sdk-provider" },
+    }
+    expect(ProviderTransform.options(openrouter, sessionID, {})).toMatchObject({
+      prompt_cache_key: sessionID,
+      usage: { include: true },
+    })
+
+    const gateway = {
+      ...mockModel,
+      providerID: "gateway",
+      api: { ...mockModel.api, id: "openai/gpt-5.6", npm: "@ai-sdk/gateway" },
+    }
+    expect(ProviderTransform.options(gateway, sessionID, {})).toMatchObject({
+      gateway: { caching: "auto" },
+    })
+  })
+
+  test("uses the first model variant for small-model requests", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { ...mockModel.api, id: "gpt-5.6", npm: "@ai-sdk/openai" },
+      variants: {
+        low: { reasoningEffort: "low", reasoningSummary: "auto" },
+        high: { reasoningEffort: "high" },
+      },
+    }
+    expect(ProviderTransform.smallOptions(model)).toEqual({
+      store: false,
+      reasoningEffort: "low",
+      reasoningSummary: "auto",
+    })
+  })
+
+  test("applies GPT-5 reasoning defaults to Codex models", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { ...mockModel.api, id: "gpt-5.3-codex", npm: "@ai-sdk/openai" },
+      capabilities: { ...mockModel.capabilities, reasoning: true },
+    }
+    expect(ProviderTransform.options(model, sessionID, {})).toMatchObject({
+      reasoningEffort: "medium",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+    })
+  })
+})
+
+describe("ProviderTransform reasoning variants", () => {
+  const model = {
+    id: "gpt-5.2",
+    providerID: "openai",
+    api: { id: "gpt-5.2", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+    name: "GPT-5.2",
+    family: "gpt-5",
+    release_date: "2025-12-11",
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: true, video: false, pdf: true },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: { context: 400_000, output: 128_000 },
+    status: "active",
+    options: {},
+    headers: {},
+  } as any
+
+  test("falls back to provider heuristics when catalog metadata is absent", () => {
+    expect(Object.keys(ProviderTransform.variants(model))).toEqual(["none", "low", "medium", "high", "xhigh"])
+  })
+
+  test("catalog effort metadata determines the exposed variants", () => {
+    expect(
+      ProviderTransform.reasoningVariants(
+        { reasoning_options: [{ type: "effort", values: ["low", "high"] }] } as any,
+        model,
+      ),
+    ).toEqual({
+      low: {
+        reasoningEffort: "low",
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      },
+      high: {
+        reasoningEffort: "high",
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      },
+    })
+  })
+
+  test("budget variants stay below the model output limit", () => {
+    const anthropic = {
+      ...model,
+      id: "claude-sonnet",
+      providerID: "anthropic",
+      api: { ...model.api, id: "claude-sonnet", npm: "@ai-sdk/anthropic" },
+      limit: { context: 200_000, output: 1_000 },
+    }
+    expect(
+      ProviderTransform.reasoningVariants(
+        { reasoning_options: [{ type: "budget_tokens", min: 800, max: 5_000 }] } as any,
+        anthropic,
+      ),
+    ).toEqual({
+      high: { thinking: { type: "enabled", budgetTokens: 800 } },
+      max: { thinking: { type: "enabled", budgetTokens: 999 } },
+    })
+  })
+
+  test("gateway metadata routing uses the upstream API id", () => {
+    const gateway = {
+      ...model,
+      id: "friendly-name",
+      providerID: "gateway",
+      api: { ...model.api, id: "anthropic/claude-sonnet-5", npm: "@ai-sdk/gateway" },
+    }
+    expect(
+      ProviderTransform.reasoningVariants(
+        { reasoning_options: [{ type: "effort", values: ["high"] }] } as any,
+        gateway,
+      ),
+    ).toEqual({
+      high: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
+    })
+  })
+
+  test("falls back to provider-specific variants for OpenAI-compatible models", () => {
+    const compatible = {
+      ...model,
+      id: "deepseek-v4",
+      providerID: "deepseek",
+      api: { ...model.api, id: "deepseek-v4", npm: "@ai-sdk/openai-compatible" },
+    }
+    expect(Object.keys(ProviderTransform.variants(compatible))).toEqual(["low", "medium", "high", "max"])
   })
 })
 
@@ -406,6 +591,44 @@ describe("ProviderTransform.schema - openai supported schema subset", () => {
   })
 })
 
+describe("ProviderTransform.message - Devstral tool calls", () => {
+  test("normalizes tool call IDs for Devstral on compatible providers", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call_123456789",
+              toolName: "bash",
+              input: { command: "echo hello" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_123456789",
+              toolName: "bash",
+              output: { type: "text", value: "hello" },
+            },
+          ],
+        },
+      ] as any,
+      {
+        providerID: "openrouter",
+        api: { id: "mistralai/DEVSTRAL-small", npm: "@openrouter/ai-sdk-provider" },
+      } as any,
+    ) as any[]
+
+    expect(result[0].content[0].toolCallId).toBe("call12345")
+    expect(result[1].content[0].toolCallId).toBe("call12345")
+  })
+})
+
 describe("ProviderTransform.message - DeepSeek reasoning content", () => {
   test("DeepSeek with tool calls includes reasoning_content in providerOptions", () => {
     const msgs = [
@@ -694,5 +917,159 @@ describe("ProviderTransform.message - cache placement", () => {
 
     expect(disabled[0].providerOptions).toBeUndefined()
     expect((enabled[0].providerOptions?.openaiCompatible as any)?.cache_control?.type).toBe("ephemeral")
+  })
+})
+
+describe("ProviderTransform.message - provider metadata", () => {
+  const model = {
+    id: "github-copilot/gpt-5.5",
+    providerID: "github-copilot",
+    api: { id: "gpt-5.5", npm: "@ai-sdk/github-copilot" },
+    capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+  } as any
+
+  test("remaps stored provider IDs and removes stale stateless item IDs", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call_1",
+              toolName: "bash",
+              input: {},
+              providerOptions: {
+                "github-copilot": { itemId: "fc_123", reasoningEffort: "medium" },
+              },
+            },
+          ],
+        },
+      ] as any[],
+      model,
+      { store: false },
+    ) as any[]
+
+    expect(result[0].content[0].providerOptions).toEqual({ copilot: { reasoningEffort: "medium" } })
+  })
+
+  test("preserves item IDs when response storage is enabled", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              text: "thinking",
+              providerOptions: { copilot: { itemId: "rs_123", reasoningEffort: "high" } },
+            },
+          ],
+        },
+      ] as any[],
+      model,
+      { store: true },
+    ) as any[]
+
+    expect(result[0].content[0].providerOptions.copilot.itemId).toBe("rs_123")
+  })
+})
+
+describe("ProviderTransform.message - request validity", () => {
+  const model = (npm: string, overrides: Record<string, any> = {}) =>
+    ({
+      id: "model",
+      providerID: "provider",
+      api: { id: "model", npm },
+      capabilities: { input: { text: true, image: false, audio: false, video: false, pdf: false }, interleaved: false },
+      ...overrides,
+    }) as any
+
+  test("replaces unpaired UTF-16 surrogates throughout model-visible text", () => {
+    const result = ProviderTransform.message(
+      [
+        { role: "system", content: "bad\uD800system" },
+        { role: "user", content: [{ type: "text", text: "bad\uDC00user" }] },
+        {
+          role: "tool",
+          content: [
+            { type: "tool-result", toolCallId: "call", toolName: "bash", output: { type: "text", value: "bad\uD800tool" } },
+          ],
+        },
+      ] as any[],
+      model("@ai-sdk/openai-compatible"),
+    ) as any[]
+
+    expect(result[0].content).toBe("bad\uFFFDsystem")
+    expect(result[1].content[0].text).toBe("bad\uFFFDuser")
+    expect(result[2].content[0].output.value).toBe("bad\uFFFDtool")
+  })
+
+  test.each([
+    ["@ai-sdk/anthropic", "anthropic"],
+    ["@ai-sdk/amazon-bedrock", "bedrock"],
+  ])("filters empty %s messages but preserves signed reasoning", (npm, key) => {
+    const result = ProviderTransform.message(
+      [
+        { role: "user", content: "" },
+        { role: "assistant", content: [{ type: "text", text: "" }] },
+        {
+          role: "assistant",
+          content: [{ type: "reasoning", text: "", providerOptions: { [key]: { signature: "signed" } } }],
+        },
+      ] as any[],
+      model(npm),
+    ) as any[]
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content[0].providerOptions[key].signature).toBe("signed")
+  })
+
+  test("replays empty DeepSeek reasoning metadata for tool-call turns", () => {
+    const result = ProviderTransform.message(
+      [
+        {
+          role: "assistant",
+          content: [{ type: "tool-call", toolCallId: "call", toolName: "bash", input: {} }],
+        },
+      ] as any[],
+      model("@ai-sdk/openai-compatible", {
+        api: { id: "deepseek-chat", npm: "@ai-sdk/openai-compatible" },
+        capabilities: {
+          input: { text: true, image: false, audio: false, video: false, pdf: false },
+          interleaved: { field: "reasoning_content" },
+        },
+      }),
+    ) as any[]
+
+    expect(result[0].content).toHaveLength(1)
+    expect(result[0].providerOptions.openaiCompatible.reasoning_content).toBe("")
+  })
+
+  test("uses the catalog interleaved field and leaves OpenRouter messages native", () => {
+    const input = [{ role: "assistant", content: [{ type: "reasoning", text: "details" }] }] as any[]
+    const compatible = ProviderTransform.message(
+      structuredClone(input),
+      model("@ai-sdk/openai-compatible", {
+        capabilities: {
+          input: { text: true, image: false, audio: false, video: false, pdf: false },
+          interleaved: { field: "reasoning_details" },
+        },
+      }),
+    ) as any[]
+    const openrouter = ProviderTransform.message(
+      structuredClone(input),
+      model("@openrouter/ai-sdk-provider", {
+        providerID: "openrouter",
+        capabilities: {
+          input: { text: true, image: false, audio: false, video: false, pdf: false },
+          interleaved: { field: "reasoning_details" },
+        },
+      }),
+    ) as any[]
+
+    expect(compatible[0].providerOptions.openaiCompatible.reasoning_details).toBe("details")
+    expect(compatible[0].content).toEqual([])
+    expect(openrouter[0].content[0].type).toBe("reasoning")
   })
 })

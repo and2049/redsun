@@ -34,6 +34,7 @@ import { Command } from "../command"
 import { Goal } from "./goal"
 import { $, fileURLToPath } from "bun"
 import { ConfigMarkdown } from "../config/markdown"
+import { Config } from "../config/config"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@redsun/util/error"
 import { fn } from "@/util/fn"
@@ -68,7 +69,7 @@ export namespace SessionPrompt {
           abort: AbortController
           callbacks: {
             resolve(input: MessageV2.WithParts): void
-            reject(): void
+            reject(error?: unknown): void
           }[]
           steering: string[]
         }
@@ -111,6 +112,7 @@ export namespace SessionPrompt {
       .object({
         providerID: z.string(),
         modelID: z.string(),
+        variant: z.string().optional(),
       })
       .optional(),
     agent: z.string().optional(),
@@ -135,6 +137,7 @@ export namespace SessionPrompt {
         })
           .partial({
             id: true,
+            mime: true,
           })
           .meta({
             ref: "FilePartInput",
@@ -276,6 +279,26 @@ export namespace SessionPrompt {
     return parts
   }
 
+  export function inferFilePartMime(input: { url: string; mime?: string }) {
+    if (input.mime) return input.mime
+    const dataMime = input.url.match(/^data:([^;,]+)[;,]/i)?.[1]
+    if (dataMime) return dataMime
+    const url = new URL(input.url)
+    const target = url.protocol === "file:" ? fileURLToPath(url) : url.pathname
+    if (target.endsWith("/") || target.endsWith("\\")) return "application/x-directory"
+    return Bun.file(target).type || "application/octet-stream"
+  }
+
+  export function decodeDataUrlText(url: string) {
+    const comma = url.indexOf(",")
+    if (!url.startsWith("data:") || comma === -1) throw new Error("Invalid data URL")
+    const metadata = url.slice(5, comma)
+    const data = url.slice(comma + 1)
+    return metadata.split(";").includes("base64")
+      ? Buffer.from(data, "base64").toString("utf8")
+      : decodeURIComponent(data)
+  }
+
   function start(sessionID: string) {
     const s = state()
     if (s[sessionID]) return
@@ -294,14 +317,82 @@ export namespace SessionPrompt {
     const match = s[sessionID]
     if (!match) return
     match.abort.abort()
-    for (const item of match.callbacks) {
-      item.reject()
-    }
     match.steering = []
+  }
+
+  function cleanup(sessionID: string) {
+    const s = state()
+    const match = s[sessionID]
+    if (!match) return
+    for (const item of match.callbacks) {
+      item.reject(new Error("Session operation ended before producing an assistant message"))
+    }
     const previousStatus = SessionStatus.get(sessionID)
     delete s[sessionID]
     SessionStatus.set(sessionID, { type: "idle", contextUsage: previousStatus.contextUsage })
-    return
+  }
+
+  async function finalizeAbortedAssistant(sessionID: string) {
+    let user: MessageV2.User | undefined
+    let assistant: MessageV2.WithParts | undefined
+    for await (const message of MessageV2.stream(sessionID)) {
+      if (!assistant && message.info.role === "assistant") assistant = message
+      if (message.info.role === "user") {
+        user = message.info
+        break
+      }
+    }
+    if (!user) return
+
+    const error = MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
+      providerID: user.model.providerID,
+    })
+    if (assistant?.info.role === "assistant" && assistant.info.parentID === user.id) {
+      if (assistant.info.time.completed) return assistant
+      assistant.info.error ??= error
+      assistant.info.time.completed = Date.now()
+      await Session.updateMessage(assistant.info)
+      return assistant
+    }
+
+    const info = (await Session.updateMessage({
+      id: Identifier.ascending("message"),
+      parentID: user.id,
+      role: "assistant",
+      mode: user.agent,
+      agent: user.agent,
+      path: {
+        cwd: Instance.directory,
+        root: Instance.worktree,
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+      modelID: user.model.modelID,
+      providerID: user.model.providerID,
+      time: {
+        created: Date.now(),
+        completed: Date.now(),
+      },
+      sessionID,
+      error,
+    })) as MessageV2.Assistant
+    return { info, parts: [] } satisfies MessageV2.WithParts
+  }
+
+  export function hasActionableToolCall(message?: MessageV2.WithParts) {
+    return (
+      message?.parts.some(
+        (part) =>
+          part.type === "tool" &&
+          !part.metadata?.providerExecuted &&
+          !(part.state.status === "error" && part.state.metadata?.interrupted === true),
+      ) ?? false
+    )
   }
 
   export const loop = fn(Identifier.schema("session"), async (sessionID) => {
@@ -313,7 +404,7 @@ export namespace SessionPrompt {
       })
     }
 
-    using _ = defer(() => cancel(sessionID))
+    using _ = defer(() => cleanup(sessionID))
 
     let step = 0
     while (true) {
@@ -341,13 +432,24 @@ export namespace SessionPrompt {
       }
 
       if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+      if (drainSteering(sessionID).length > 0) {
+        log.info("steering promoted, reloading transcript", { sessionID })
+        step = 0
+        continue
+      }
+      const lastAssistantMessage = msgs.findLast(
+        (message) => message.info.role === "assistant" && message.info.id === lastAssistant?.id,
+      )
       if (
         lastAssistant?.finish &&
         !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
+        !hasActionableToolCall(lastAssistantMessage) &&
         lastUser.id < lastAssistant.id
       ) {
         if (drainSteering(sessionID).length > 0) {
           log.info("steering injected, continuing loop", { sessionID })
+          step = 0
+          continue
         } else {
           const activeGoal = await Goal.get(sessionID)
           if (activeGoal) {
@@ -357,6 +459,11 @@ export namespace SessionPrompt {
             ])
             const goalStop = await handleGoalStop({ sessionID, agent, model })
             if (goalStop.action === "continue") continue
+          }
+          if (drainSteering(sessionID).length > 0) {
+            log.info("steering injected while evaluating exit, continuing loop", { sessionID })
+            step = 0
+            continue
           }
           log.info("exiting loop", { sessionID })
           break
@@ -375,6 +482,7 @@ export namespace SessionPrompt {
       await using _turnCleanup = defer(async () => {
         await ExtensionRunner.emit(loopRunner, { type: "turn_end", turnIndex: step }, turnCtx)
       })
+      if (abort.aborted) break
       if (step === 1)
         ensureTitle({
           session: await Session.get(sessionID),
@@ -463,14 +571,14 @@ export namespace SessionPrompt {
             abort,
             callID: part.callID,
             async metadata(input) {
-              await Session.updatePart({
+              part = (await Session.updatePart({
                 ...part,
                 type: "tool",
                 state: {
                   ...part.state,
                   ...input,
                 },
-              } satisfies MessageV2.ToolPart)
+              } satisfies MessageV2.ToolPart)) as MessageV2.ToolPart
             },
           })
           .catch((error) => {
@@ -508,7 +616,10 @@ export namespace SessionPrompt {
                 start: part.state.status === "running" ? part.state.time.start : Date.now(),
                 end: Date.now(),
               },
-              metadata: part.metadata,
+              metadata:
+                part.state.status === "running"
+                  ? { ...(part.metadata ?? {}), ...(part.state.metadata ?? {}) }
+                  : part.metadata,
               input: part.state.input,
             },
           } satisfies MessageV2.ToolPart)
@@ -640,7 +751,7 @@ export namespace SessionPrompt {
         ...(mcpInstructions ? [mcpInstructions] : []),
       ]
       const modelMessages = [
-        ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff)),
+        ...(await MessageV2.toModelMessageWithCustom(sessionID, sessionMessages, compactionCutoff, model)),
         ...(isLastStep
           ? [
               {
@@ -683,7 +794,8 @@ export namespace SessionPrompt {
         model,
       })
       if (result === "stop") {
-        if (shouldRetryContextOverflow(processor.message.error, msgs)) {
+        const autoCompact = (await Config.get()).compaction?.auto !== false
+        if (shouldRetryContextOverflow(processor.message.error, msgs, autoCompact)) {
           await SessionCompaction.create({
             sessionID,
             agent: lastUser.agent,
@@ -693,14 +805,21 @@ export namespace SessionPrompt {
           })
           continue
         }
+        if (drainSteering(sessionID).length > 0) {
+          log.info("steering injected after stop, continuing loop", { sessionID })
+          step = 0
+          continue
+        }
         const goalStop = await handleGoalStop({
           sessionID,
           agent,
           model,
+          variant: lastUser.model.variant,
         })
         if (goalStop.action === "continue") continue
         if (drainSteering(sessionID).length > 0) {
-          log.info("steering injected after stop, continuing loop", { sessionID })
+          log.info("steering injected while evaluating stop, continuing loop", { sessionID })
+          step = 0
           continue
         }
         break
@@ -711,6 +830,7 @@ export namespace SessionPrompt {
       }
       continue
     }
+    if (abort.aborted) await finalizeAbortedAssistant(sessionID)
     SessionCompaction.prune({ sessionID })
     for await (const item of MessageV2.stream(sessionID)) {
       if (item.info.role === "user") continue
@@ -734,6 +854,7 @@ export namespace SessionPrompt {
     sessionID: string
     agent: Agent.Info
     model: Provider.Model
+    variant?: string
     evaluate?: typeof Goal.evaluate
   }): Promise<{ action: "stop" } | { action: "continue" }> {
     const activeGoal = await Goal.get(input.sessionID)
@@ -799,7 +920,7 @@ export namespace SessionPrompt {
         role: "user",
         time: { created: Date.now() },
         agent: input.agent.name,
-        model: { providerID: input.model.providerID, modelID: input.model.id },
+        model: { providerID: input.model.providerID, modelID: input.model.id, variant: input.variant },
       })
       await Session.updatePart({
         id: Identifier.ascending("part"),
@@ -826,7 +947,9 @@ export namespace SessionPrompt {
   export function shouldRetryContextOverflow(
     error: MessageV2.Assistant["error"],
     messages: MessageV2.WithParts[],
+    auto = true,
   ) {
+    if (!auto) return false
     if (!MessageV2.ContextOverflowError.isInstance(error)) return false
     return !messages.some((message) =>
       message.parts.some((part) => part.type === "compaction" && part.overflow === true),
@@ -886,7 +1009,7 @@ export namespace SessionPrompt {
             metadata: async (val) => {
               const match = input.processor.partFromToolCall(options.toolCallId)
               if (match && match.state.status === "running") {
-                await Session.updatePart({
+                const updated = (await Session.updatePart({
                   ...match,
                   state: {
                     title: val.title,
@@ -897,7 +1020,8 @@ export namespace SessionPrompt {
                       start: Date.now(),
                     },
                   },
-                })
+                })) as MessageV2.ToolPart
+                input.processor.updateToolCall(options.toolCallId, updated)
               }
             },
           })
@@ -1242,7 +1366,9 @@ export namespace SessionPrompt {
   }
 
   async function createUserMessage(input: PromptInput) {
-    const agent = await Agent.get(input.agent ?? (await Agent.defaultAgent()))
+    const agentName = input.agent ?? (await Agent.defaultAgent())
+    const agent = await Agent.get(agentName)
+    if (!agent) throw new Error(`Unknown agent: ${agentName}`)
     const model =
       input.model ??
       ToolRegistry.consumeModelOverride(input.sessionID) ??
@@ -1262,8 +1388,9 @@ export namespace SessionPrompt {
     }
 
     const parts = await Promise.all(
-      input.parts.map(async (part): Promise<MessageV2.Part[]> => {
-        if (part.type === "file") {
+      input.parts.map(async (inputPart): Promise<MessageV2.Part[]> => {
+        if (inputPart.type === "file") {
+          const part = { ...inputPart, mime: inferFilePartMime(inputPart) }
           const url = new URL(part.url)
           switch (url.protocol) {
             case "data:":
@@ -1283,7 +1410,7 @@ export namespace SessionPrompt {
                     sessionID: input.sessionID,
                     type: "text",
                     synthetic: true,
-                    text: Buffer.from(part.url, "base64url").toString(),
+                    text: decodeDataUrlText(part.url),
                   },
                   {
                     ...part,
@@ -1476,11 +1603,11 @@ export namespace SessionPrompt {
           }
         }
 
-        if (part.type === "agent") {
+        if (inputPart.type === "agent") {
           return [
             {
               id: Identifier.ascending("part"),
-              ...part,
+              ...inputPart,
               messageID: info.id,
               sessionID: input.sessionID,
             },
@@ -1492,7 +1619,7 @@ export namespace SessionPrompt {
               synthetic: true,
               text:
                 "Use the above message and context to generate a prompt and call the task tool with subagent: " +
-                part.name,
+                inputPart.name,
             },
           ]
         }
@@ -1500,7 +1627,9 @@ export namespace SessionPrompt {
         return [
           {
             id: Identifier.ascending("part"),
-            ...part,
+            ...(inputPart.type === "file"
+              ? { ...inputPart, mime: inferFilePartMime(inputPart) }
+              : inputPart),
             messageID: info.id,
             sessionID: input.sessionID,
           },
@@ -1554,6 +1683,7 @@ export namespace SessionPrompt {
       .object({
         providerID: z.string(),
         modelID: z.string(),
+        variant: z.string().optional(),
       })
       .optional(),
     command: z.string(),
@@ -1564,7 +1694,7 @@ export namespace SessionPrompt {
     if (!abort) {
       throw new Session.BusyError(input.sessionID)
     }
-    using _ = defer(() => cancel(input.sessionID))
+    using _ = defer(() => cleanup(input.sessionID))
 
     const runner = await ToolRegistry.getRunner()
     const extCtx = ExtensionContext.forSession({
@@ -1583,7 +1713,7 @@ export namespace SessionPrompt {
 
     const session = await Session.get(input.sessionID)
     if (session.revert) {
-      SessionRevert.cleanup(session)
+      await SessionRevert.cleanup(session)
     }
     const agent = await Agent.get(input.agent)
     const model =
@@ -1602,6 +1732,7 @@ export namespace SessionPrompt {
       model: {
         providerID: model.providerID,
         modelID: model.modelID,
+        variant: "variant" in model && typeof model.variant === "string" ? model.variant : undefined,
       },
     }
     await Session.updateMessage(userMsg)
@@ -1802,6 +1933,7 @@ export namespace SessionPrompt {
     sessionID: Identifier.schema("session"),
     agent: z.string().optional(),
     model: z.string().optional(),
+    variant: z.string().optional(),
     arguments: z.string(),
     command: z.string(),
   })
@@ -1999,7 +2131,7 @@ export namespace SessionPrompt {
     const result = (await prompt({
       sessionID: input.sessionID,
       messageID: input.messageID,
-      model,
+      model: { ...model, variant: command.variant ?? input.variant ?? model.variant },
       agent: agentName,
       parts,
     })) as MessageV2.WithParts

@@ -22,8 +22,12 @@ export abstract class NamedError extends Error {
         public readonly data: z.input<Data>,
         options?: ErrorOptions,
       ) {
-        super(name, options)
+        super(undefined, options)
         this.name = name
+      }
+
+      override get message(): string {
+        return name
       }
 
       static isInstance(input: any): input is InstanceType<typeof result> {

@@ -24,6 +24,21 @@ function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
 }
 
+function detectLineEnding(text: string): "\n" | "\r\n" {
+  return text.includes("\r\n") ? "\r\n" : "\n"
+}
+
+function convertToLineEnding(text: string, ending: "\n" | "\r\n") {
+  const normalized = normalizeLineEndings(text)
+  return ending === "\n" ? normalized : normalized.replaceAll("\n", "\r\n")
+}
+
+const BOM = "\uFEFF"
+
+function splitBom(text: string) {
+  return text.startsWith(BOM) ? { bom: true, text: text.slice(1) } : { bom: false, text }
+}
+
 export const EditTool = Tool.define("edit", {
   description: DESCRIPTION,
   parameters: z.object({
@@ -44,7 +59,7 @@ export const EditTool = Tool.define("edit", {
     const agent = await Agent.get(ctx.agent)
 
     const filePath = path.isAbsolute(params.filePath) ? params.filePath : path.join(Instance.directory, params.filePath)
-    if (!Filesystem.contains(Instance.directory, filePath)) {
+    if (!Instance.containsPath(filePath)) {
       const parentDir = path.dirname(filePath)
       if (agent.permission.external_directory === "ask") {
         await Permission.ask({
@@ -78,6 +93,11 @@ export const EditTool = Tool.define("edit", {
     let contentNew = ""
     await FileTime.withLock(filePath, async () => {
       if (params.oldString === "") {
+        if (await Bun.file(filePath).exists()) {
+          throw new Error(
+            "oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement.",
+          )
+        }
         contentNew = params.newString
         diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
         if (agent.permission.edit === "ask") {
@@ -106,8 +126,12 @@ export const EditTool = Tool.define("edit", {
       if (!stats) throw new Error(`File ${filePath} not found`)
       if (stats.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
       await FileTime.assert(ctx.sessionID, filePath)
-      contentOld = await file.text()
-      contentNew = replace(contentOld, params.oldString, params.newString, params.replaceAll)
+      const source = splitBom(Buffer.from(await file.bytes()).toString("utf8"))
+      contentOld = source.text
+      const ending = detectLineEnding(contentOld)
+      const oldString = convertToLineEnding(params.oldString, ending)
+      const newString = convertToLineEnding(params.newString, ending)
+      contentNew = replace(contentOld, oldString, newString, params.replaceAll)
 
       diff = trimDiff(
         createTwoFilesPatch(filePath, filePath, normalizeLineEndings(contentOld), normalizeLineEndings(contentNew)),
@@ -126,11 +150,11 @@ export const EditTool = Tool.define("edit", {
         })
       }
 
-      await file.write(contentNew)
+      await file.write((source.bom ? BOM : "") + contentNew)
       await Bus.publish(File.Event.Edited, {
         file: filePath,
       })
-      contentNew = await file.text()
+      contentNew = splitBom(Buffer.from(await file.bytes()).toString("utf8")).text
       diff = trimDiff(
         createTwoFilesPatch(filePath, filePath, normalizeLineEndings(contentOld), normalizeLineEndings(contentNew)),
       )
@@ -177,8 +201,8 @@ export const EditTool = Tool.define("edit", {
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
 
 // Similarity thresholds for block anchor fallback matching
-const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.0
-const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.3
+const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.65
+const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.65
 
 /**
  * Levenshtein distance algorithm implementation
@@ -260,6 +284,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const firstLineSearch = searchLines[0].trim()
   const lastLineSearch = searchLines[searchLines.length - 1].trim()
   const searchBlockSize = searchLines.length
+  const maxLineDelta = Math.max(1, Math.floor(searchBlockSize * 0.25))
 
   // Collect all candidate positions where both anchors match
   const candidates: Array<{ startLine: number; endLine: number }> = []
@@ -271,7 +296,10 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     // Look for the matching last line after this first line
     for (let j = i + 2; j < originalLines.length; j++) {
       if (originalLines[j].trim() === lastLineSearch) {
-        candidates.push({ startLine: i, endLine: j })
+        const actualBlockSize = j - i + 1
+        if (Math.abs(actualBlockSize - searchBlockSize) <= maxLineDelta) {
+          candidates.push({ startLine: i, endLine: j })
+        }
         break // Only match the first occurrence of the last line
       }
     }
@@ -288,7 +316,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     const actualBlockSize = endLine - startLine + 1
 
     let similarity = 0
-    let linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
+    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
 
     if (linesToCheck > 0) {
       for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
@@ -337,7 +365,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     const actualBlockSize = endLine - startLine + 1
 
     let similarity = 0
-    let linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
+    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2) // Middle lines only
 
     if (linesToCheck > 0) {
       for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
@@ -639,6 +667,11 @@ export function replace(content: string, oldString: string, newString: string, r
   if (oldString === newString) {
     throw new Error("oldString and newString must be different")
   }
+  if (oldString === "") {
+    throw new Error(
+      "oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement.",
+    )
+  }
 
   let notFound = true
 
@@ -657,6 +690,11 @@ export function replace(content: string, oldString: string, newString: string, r
       const index = content.indexOf(search)
       if (index === -1) continue
       notFound = false
+      if (isDisproportionateMatch(search, oldString)) {
+        throw new Error(
+          "Refusing replacement because the matched span is much larger than oldString. Re-read the file and provide the full exact oldString for the intended replacement.",
+        )
+      }
       if (replaceAll) {
         return content.replaceAll(search, newString)
       }
@@ -672,4 +710,12 @@ export function replace(content: string, oldString: string, newString: string, r
   throw new Error(
     "Found multiple matches for oldString. Provide more surrounding lines in oldString to identify the correct match.",
   )
+}
+
+function isDisproportionateMatch(search: string, oldString: string) {
+  const oldLines = oldString.split("\n").length
+  const searchLines = search.split("\n").length
+  if (searchLines >= Math.max(oldLines + 3, oldLines * 2)) return true
+  if (oldLines === 1) return false
+  return search.trim().length > Math.max(oldString.trim().length + 500, oldString.trim().length * 4)
 }

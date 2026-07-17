@@ -1,6 +1,7 @@
 import z from "zod"
 import * as fs from "fs"
 import * as path from "path"
+import { createInterface } from "readline"
 import { Tool } from "./tool"
 import { LSP } from "../lsp"
 import { FileTime } from "../file/time"
@@ -14,6 +15,11 @@ import { iife } from "@/util/iife"
 
 const DEFAULT_READ_LIMIT = 400
 const MAX_LINE_LENGTH = 2000
+const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`
+const MAX_BYTES = 50 * 1024
+const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`
+const SAMPLE_BYTES = 4096
+const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 
 export const ReadTool = Tool.define("read", {
   description: DESCRIPTION,
@@ -25,12 +31,12 @@ export const ReadTool = Tool.define("read", {
   async execute(params, ctx) {
     let filepath = params.filePath
     if (!path.isAbsolute(filepath)) {
-      filepath = path.join(process.cwd(), filepath)
+      filepath = path.join(Instance.directory, filepath)
     }
     const title = path.relative(Instance.worktree, filepath)
     const agent = await Agent.get(ctx.agent)
 
-    if (!ctx.extra?.["bypassCwdCheck"] && !Filesystem.contains(Instance.directory, filepath)) {
+    if (!ctx.extra?.["bypassCwdCheck"] && !Instance.containsPath(filepath)) {
       const parentDir = path.dirname(filepath)
       if (agent.permission.external_directory === "ask") {
         await Permission.ask({
@@ -79,7 +85,7 @@ export const ReadTool = Tool.define("read", {
       const dir = path.dirname(filepath)
       const base = path.basename(filepath)
 
-      const dirEntries = fs.readdirSync(dir)
+      const dirEntries = await fs.promises.readdir(dir).catch(() => [])
       const suggestions = dirEntries
         .filter(
           (entry) =>
@@ -95,10 +101,12 @@ export const ReadTool = Tool.define("read", {
       throw new Error(`File not found: ${filepath}`)
     }
 
-    const isImage = file.type.startsWith("image/") && file.type !== "image/svg+xml"
-    const isPdf = file.type === "application/pdf"
+    const stat = await file.stat()
+    const sample = await readSample(filepath, stat.size)
+    const mime = sniffAttachmentMime(sample, file.type)
+    const isImage = SUPPORTED_IMAGE_MIMES.has(mime)
+    const isPdf = mime === "application/pdf"
     if (isImage || isPdf) {
-      const mime = file.type
       const msg = `${isImage ? "Image" : "PDF"} read successfully`
       return {
         title,
@@ -119,15 +127,44 @@ export const ReadTool = Tool.define("read", {
       }
     }
 
-    const isBinary = await isBinaryFile(filepath, file)
+    const isBinary = isBinaryFile(filepath, sample)
     if (isBinary) throw new Error(`Cannot read binary file: ${filepath}`)
 
     const limit = params.limit ?? DEFAULT_READ_LIMIT
     const offset = params.offset || 0
-    const lines = await file.text().then((text) => text.split("\n"))
-    const raw = lines.slice(offset, offset + limit).map((line) => {
-      return line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + "..." : line
-    })
+    const stream = fs.createReadStream(filepath, { encoding: "utf8" })
+    const lines = createInterface({ input: stream, crlfDelay: Infinity })
+    const raw: string[] = []
+    let totalLines = 0
+    let bytes = 0
+    let hasMoreLines = false
+    let truncatedByBytes = false
+    try {
+      for await (const text of lines) {
+        totalLines++
+        if (totalLines <= offset) continue
+        if (raw.length >= limit) {
+          hasMoreLines = true
+          break
+        }
+
+        const line = text.length > MAX_LINE_LENGTH ? text.substring(0, MAX_LINE_LENGTH) + MAX_LINE_SUFFIX : text
+        const size = Buffer.byteLength(line, "utf8") + (raw.length > 0 ? 1 : 0)
+        if (bytes + size > MAX_BYTES) {
+          truncatedByBytes = true
+          hasMoreLines = true
+          break
+        }
+        raw.push(line)
+        bytes += size
+      }
+    } finally {
+      lines.close()
+      stream.destroy()
+    }
+    if (totalLines <= offset && !(totalLines === 0 && offset === 0)) {
+      throw new Error(`Offset ${offset} is out of range for this file (${totalLines} lines)`)
+    }
     const content = raw.map((line, index) => {
       return `${(index + offset + 1).toString().padStart(5, "0")}| ${line}`
     })
@@ -136,11 +173,11 @@ export const ReadTool = Tool.define("read", {
     let output = "<file>\n"
     output += content.join("\n")
 
-    const totalLines = lines.length
     const lastReadLine = offset + content.length
-    const hasMoreLines = totalLines > lastReadLine
 
-    if (hasMoreLines) {
+    if (truncatedByBytes) {
+      output += `\n\n(Output capped at ${MAX_BYTES_LABEL}. Use offset=${lastReadLine} to continue.)`
+    } else if (hasMoreLines) {
       output += `\n\n(File has more lines. Use 'offset' parameter to read beyond line ${lastReadLine})`
     } else {
       output += `\n\n(End of file - total ${totalLines} lines)`
@@ -148,7 +185,7 @@ export const ReadTool = Tool.define("read", {
     output += "\n</file>"
 
     // just warms the lsp client
-    LSP.touchFile(filepath, false)
+    void LSP.touchFile(filepath, false).catch(() => {})
     FileTime.read(ctx.sessionID, filepath)
 
     return {
@@ -161,7 +198,38 @@ export const ReadTool = Tool.define("read", {
   },
 })
 
-async function isBinaryFile(filepath: string, file: Bun.BunFile): Promise<boolean> {
+async function readSample(filepath: string, fileSize: number) {
+  if (fileSize === 0) return new Uint8Array()
+  const handle = await fs.promises.open(filepath, "r")
+  try {
+    const bytes = Buffer.alloc(Math.min(SAMPLE_BYTES, fileSize))
+    const result = await handle.read(bytes, 0, bytes.length, 0)
+    return bytes.subarray(0, result.bytesRead)
+  } finally {
+    await handle.close()
+  }
+}
+
+function startsWith(bytes: Uint8Array, prefix: number[]) {
+  return prefix.every((value, index) => bytes[index] === value)
+}
+
+function sniffAttachmentMime(bytes: Uint8Array, fallback: string) {
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png"
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return "image/jpeg"
+  if (startsWith(bytes, [0x47, 0x49, 0x46, 0x38])) return "image/gif"
+  if (startsWith(bytes, [0x42, 0x4d])) return "image/bmp"
+  if (startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])) return "application/pdf"
+  if (
+    startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) &&
+    startsWith(bytes.subarray(8), [0x57, 0x45, 0x42, 0x50])
+  ) {
+    return "image/webp"
+  }
+  return fallback
+}
+
+function isBinaryFile(filepath: string, bytes: Uint8Array): boolean {
   const ext = path.extname(filepath).toLowerCase()
   // binary check for common non-text extensions
   switch (ext) {
@@ -198,14 +266,7 @@ async function isBinaryFile(filepath: string, file: Bun.BunFile): Promise<boolea
       break
   }
 
-  const stat = await file.stat()
-  const fileSize = stat.size
-  if (fileSize === 0) return false
-
-  const bufferSize = Math.min(4096, fileSize)
-  const buffer = await file.arrayBuffer()
-  if (buffer.byteLength === 0) return false
-  const bytes = new Uint8Array(buffer.slice(0, bufferSize))
+  if (bytes.length === 0) return false
 
   let nonPrintableCount = 0
   for (let i = 0; i < bytes.length; i++) {

@@ -11,8 +11,8 @@ export function DialogStatus() {
 
   const enabledFormatters = createMemo(() => sync.data.formatter.filter((f) => f.enabled))
 
-  const plugins = createMemo(() => {
-    const list = sync.data.config.plugin ?? []
+  const extensions = createMemo(() => {
+    const list = sync.data.config.extension ?? []
     const result = list.map((value) => {
       if (value.startsWith("file://")) {
         const path = value.substring("file://".length)
@@ -74,7 +74,7 @@ export function DialogStatus() {
                       <Match when={item.status === "failed" && item}>{(val) => val().error}</Match>
                       <Match when={item.status === "disabled"}>Disabled in configuration</Match>
                       <Match when={(item.status as string) === "needs_auth"}>
-                        Needs authentication (run: opencode mcp auth {key})
+                        Needs authentication (run: redsun mcp auth {key})
                       </Match>
                       <Match when={(item.status as string) === "needs_client_registration" && item}>
                         {(val) => (val() as { error: string }).error}
@@ -134,10 +134,10 @@ export function DialogStatus() {
           </For>
         </box>
       </Show>
-      <Show when={plugins().length > 0} fallback={<text fg={theme.text}>No Plugins</text>}>
+      <Show when={extensions().length > 0} fallback={<text fg={theme.text}>No Extensions</text>}>
         <box>
-          <text fg={theme.text}>{plugins().length} Plugins</text>
-          <For each={plugins()}>
+          <text fg={theme.text}>{extensions().length} Extensions</text>
+          <For each={extensions()}>
             {(item) => (
               <box flexDirection="row" gap={1}>
                 <text

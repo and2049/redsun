@@ -24,7 +24,7 @@ export const WriteTool = Tool.define("write", {
     const agent = await Agent.get(ctx.agent)
 
     const filepath = path.isAbsolute(params.filePath) ? params.filePath : path.join(Instance.directory, params.filePath)
-    if (!Filesystem.contains(Instance.directory, filepath)) {
+    if (!Instance.containsPath(filepath)) {
       const parentDir = path.dirname(filepath)
       if (agent.permission.external_directory === "ask") {
         await Permission.ask({
@@ -56,6 +56,11 @@ export const WriteTool = Tool.define("write", {
     const file = Bun.file(filepath)
     const exists = await file.exists()
     if (exists) await FileTime.assert(ctx.sessionID, filepath)
+    let content = params.content
+    if (exists && !content.startsWith("\uFEFF")) {
+      const current = Buffer.from(await file.bytes())
+      if (current.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) content = "\uFEFF" + content
+    }
 
     if (agent.permission.edit === "ask")
       await Permission.ask({
@@ -71,7 +76,7 @@ export const WriteTool = Tool.define("write", {
         },
       })
 
-    await Bun.write(filepath, params.content)
+    await Bun.write(filepath, content)
     await Bus.publish(File.Event.Edited, {
       file: filepath,
     })

@@ -51,6 +51,25 @@ export namespace LLM {
     )
   }
 
+  export function resolveRequestOptions(input: {
+    model: Provider.Model
+    agent: Pick<Agent.Info, "options">
+    sessionID: string
+    providerOptions?: Record<string, any>
+    variant?: string
+    small?: boolean
+  }) {
+    const variant = !input.small && input.variant ? input.model.variants?.[input.variant] : undefined
+    return pipe(
+      {},
+      mergeDeep(ProviderTransform.options(input.model, input.sessionID, input.providerOptions)),
+      input.small ? mergeDeep(ProviderTransform.smallOptions(input.model)) : mergeDeep({}),
+      mergeDeep(input.model.options),
+      mergeDeep(input.agent.options),
+      mergeDeep(variant ?? {}),
+    )
+  }
+
   export async function stream(input: StreamInput) {
     const l = log
       .clone()
@@ -107,20 +126,20 @@ export namespace LLM {
     ]
     const provider = await Provider.getProvider(input.model.providerID)
     const openaiAuth = input.model.providerID === "openai" ? await Auth.get("openai") : undefined
-
     const params = {
       temperature: input.model.capabilities.temperature
         ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
         : undefined,
       topP: input.agent.topP ?? ProviderTransform.topP(input.model),
       topK: ProviderTransform.topK(input.model),
-      options: pipe(
-        {},
-        mergeDeep(ProviderTransform.options(input.model, input.sessionID, provider.options)),
-        input.small ? mergeDeep(ProviderTransform.smallOptions(input.model)) : mergeDeep({}),
-        mergeDeep(input.model.options),
-        mergeDeep(input.agent.options),
-      ),
+      options: resolveRequestOptions({
+        model: input.model,
+        agent: input.agent,
+        sessionID: input.sessionID,
+        providerOptions: provider.options,
+        variant: input.user.model.variant,
+        small: input.small,
+      }),
     }
 
     l.info("params", {
@@ -227,7 +246,10 @@ export namespace LLM {
                   })
                 }
                 // @ts-expect-error
-                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, provider.options)
+                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, {
+                  ...provider.options,
+                  ...params.options,
+                })
               }
               return args.params
             },
