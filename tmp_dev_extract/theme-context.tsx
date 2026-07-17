@@ -1,81 +1,90 @@
 import { SyntaxStyle, RGBA, type TerminalColors } from "@opentui/core"
-import cursor from "./assets/cursor.json" with { type: "json" }
-import everforest from "./assets/everforest.json" with { type: "json" }
-import gruvbox from "./assets/gruvbox.json" with { type: "json" }
-import kanagawa from "./assets/kanagawa.json" with { type: "json" }
-import rosepine from "./assets/rosepine.json" with { type: "json" }
+import path from "path"
+import { createEffect, createMemo, onMount } from "solid-js"
+import { useSync } from "@tui/context/sync"
+import { createSimpleContext } from "./helper"
+import cursor from "./theme/cursor.json" with { type: "json" }
+import everforest from "./theme/everforest.json" with { type: "json" }
+import gruvbox from "./theme/gruvbox.json" with { type: "json" }
+import kanagawa from "./theme/kanagawa.json" with { type: "json" }
+import rosepine from "./theme/rosepine.json" with { type: "json" }
+import { useKV } from "./kv"
+import { useRenderer } from "@opentui/solid"
+import { createStore, produce } from "solid-js/store"
+import { Global } from "@/global"
+import { Filesystem } from "@/util/filesystem"
 
-export type Theme = {
-  readonly logoGradientStart: RGBA
-  readonly logoGradientEnd: RGBA
-  readonly primary: RGBA
-  readonly secondary: RGBA
-  readonly accent: RGBA
-  readonly error: RGBA
-  readonly warning: RGBA
-  readonly success: RGBA
-  readonly info: RGBA
-  readonly text: RGBA
-  readonly textMuted: RGBA
-  readonly selectedListItemText: RGBA
-  readonly background: RGBA
-  readonly backgroundPanel: RGBA
-  readonly backgroundElement: RGBA
-  readonly backgroundMenu: RGBA
-  readonly border: RGBA
-  readonly borderActive: RGBA
-  readonly borderSubtle: RGBA
-  readonly diffAdded: RGBA
-  readonly diffRemoved: RGBA
-  readonly diffContext: RGBA
-  readonly diffHunkHeader: RGBA
-  readonly diffHighlightAdded: RGBA
-  readonly diffHighlightRemoved: RGBA
-  readonly diffAddedBg: RGBA
-  readonly diffRemovedBg: RGBA
-  readonly diffContextBg: RGBA
-  readonly diffLineNumber: RGBA
-  readonly diffAddedLineNumberBg: RGBA
-  readonly diffRemovedLineNumberBg: RGBA
-  readonly markdownText: RGBA
-  readonly markdownHeading: RGBA
-  readonly markdownLink: RGBA
-  readonly markdownLinkText: RGBA
-  readonly markdownCode: RGBA
-  readonly markdownBlockQuote: RGBA
-  readonly markdownEmph: RGBA
-  readonly markdownStrong: RGBA
-  readonly markdownHorizontalRule: RGBA
-  readonly markdownListItem: RGBA
-  readonly markdownListEnumeration: RGBA
-  readonly markdownImage: RGBA
-  readonly markdownImageText: RGBA
-  readonly markdownCodeBlock: RGBA
-  readonly syntaxComment: RGBA
-  readonly syntaxKeyword: RGBA
-  readonly syntaxFunction: RGBA
-  readonly syntaxVariable: RGBA
-  readonly syntaxString: RGBA
-  readonly syntaxNumber: RGBA
-  readonly syntaxType: RGBA
-  readonly syntaxOperator: RGBA
-  readonly syntaxPunctuation: RGBA
-  readonly thinkingOpacity: number
-  _hasSelectedListItemText: boolean
+type ThemeColors = {
+  primary: RGBA
+  secondary: RGBA
+  accent: RGBA
+  error: RGBA
+  warning: RGBA
+  success: RGBA
+  info: RGBA
+  text: RGBA
+  textMuted: RGBA
+  selectedListItemText: RGBA
+  background: RGBA
+  backgroundPanel: RGBA
+  backgroundElement: RGBA
+  backgroundMenu: RGBA
+  border: RGBA
+  borderActive: RGBA
+  borderSubtle: RGBA
+  logoGradientStart: RGBA
+  logoGradientEnd: RGBA
+  diffAdded: RGBA
+  diffRemoved: RGBA
+  diffContext: RGBA
+  diffHunkHeader: RGBA
+  diffHighlightAdded: RGBA
+  diffHighlightRemoved: RGBA
+  diffAddedBg: RGBA
+  diffRemovedBg: RGBA
+  diffContextBg: RGBA
+  diffLineNumber: RGBA
+  diffAddedLineNumberBg: RGBA
+  diffRemovedLineNumberBg: RGBA
+  markdownText: RGBA
+  markdownHeading: RGBA
+  markdownLink: RGBA
+  markdownLinkText: RGBA
+  markdownCode: RGBA
+  markdownBlockQuote: RGBA
+  markdownEmph: RGBA
+  markdownStrong: RGBA
+  markdownHorizontalRule: RGBA
+  markdownListItem: RGBA
+  markdownListEnumeration: RGBA
+  markdownImage: RGBA
+  markdownImageText: RGBA
+  markdownCodeBlock: RGBA
+  syntaxComment: RGBA
+  syntaxKeyword: RGBA
+  syntaxFunction: RGBA
+  syntaxVariable: RGBA
+  syntaxString: RGBA
+  syntaxNumber: RGBA
+  syntaxType: RGBA
+  syntaxOperator: RGBA
+  syntaxPunctuation: RGBA
 }
-type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
-export type SyntaxStyleOverrides = Record<string, { italic?: boolean }>
 
-export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
+type Theme = ThemeColors & {
+  _hasSelectedListItemText: boolean
+  thinkingOpacity: number
+}
+
+export function selectedForeground(theme: Theme): RGBA {
   // If theme explicitly defines selectedListItemText, use it
   if (theme._hasSelectedListItemText) {
     return theme.selectedListItemText
   }
 
-  // For transparent backgrounds, calculate contrast based on the actual bg (or fallback to primary)
+  // For transparent backgrounds, calculate contrast based on primary color
   if (theme.background.a === 0) {
-    const targetColor = bg ?? theme.primary
-    const { r, g, b } = targetColor
+    const { r, g, b } = theme.primary
     const luminance = 0.299 * r + 0.587 * g + 0.114 * b
     return luminance > 0.5 ? RGBA.fromInts(0, 0, 0) : RGBA.fromInts(255, 255, 255)
   }
@@ -91,15 +100,10 @@ type Variant = {
   light: HexColor | RefName
 }
 type ColorValue = HexColor | RefName | Variant | RGBA
-export type ThemeJson = {
+type ThemeJson = {
   $schema?: string
   defs?: Record<string, HexColor | RefName>
-  theme: Omit<
-    Record<ThemeColor, ColorValue>,
-    "logoGradientStart" | "logoGradientEnd" | "selectedListItemText" | "backgroundMenu"
-  > & {
-    logoGradientStart?: ColorValue
-    logoGradientEnd?: ColorValue
+  theme: Omit<Record<keyof ThemeColors, ColorValue>, "selectedListItemText" | "backgroundMenu"> & {
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
     thinkingOpacity?: number
@@ -111,107 +115,30 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   everforest,
   gruvbox,
   kanagawa,
-  rosepine,
+  rosepine
 }
 
-const pluginThemes: Record<string, ThemeJson> = {}
-let customThemes: Record<string, ThemeJson> = {}
-let systemTheme: ThemeJson | undefined
-const listeners = new Set<(themes: Record<string, ThemeJson>) => void>()
-
-function listThemes() {
-  // Priority: defaults < plugin installs < custom files < generated system.
-  const themes = {
-    ...DEFAULT_THEMES,
-    ...pluginThemes,
-    ...customThemes,
-  }
-  if (!systemTheme) return themes
-  return {
-    ...themes,
-    system: systemTheme,
-  }
-}
-
-function syncThemes() {
-  const themes = listThemes()
-  for (const listener of listeners) listener(themes)
-}
-
-export function allThemes() {
-  return listThemes()
-}
-
-export function isTheme(theme: unknown): theme is ThemeJson {
-  if (typeof theme !== "object" || theme === null || Array.isArray(theme)) return false
-  const value = Reflect.get(theme, "theme")
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-export function subscribeThemes(listener: (themes: Record<string, ThemeJson>) => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-export function setCustomThemes(themes: Record<string, ThemeJson>) {
-  customThemes = themes
-  syncThemes()
-}
-
-export function setSystemTheme(theme: ThemeJson | undefined) {
-  systemTheme = theme
-  syncThemes()
-}
-
-export function hasTheme(name: string) {
-  if (!name) return false
-  return allThemes()[name] !== undefined
-}
-
-export function addTheme(name: string, theme: unknown) {
-  if (!name) return false
-  if (!isTheme(theme)) return false
-  if (hasTheme(name)) return false
-  pluginThemes[name] = theme
-  syncThemes()
-  return true
-}
-
-export function upsertTheme(name: string, theme: unknown) {
-  if (!name) return false
-  if (!isTheme(theme)) return false
-  if (customThemes[name] !== undefined) {
-    customThemes[name] = theme
-  } else {
-    pluginThemes[name] = theme
-  }
-  syncThemes()
-  return true
-}
-
-export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
+function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   const defs = theme.defs ?? {}
-  function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
+  function resolveColor(c: ColorValue): RGBA {
     if (c instanceof RGBA) return c
     if (typeof c === "string") {
       if (c === "transparent" || c === "none") return RGBA.fromInts(0, 0, 0, 0)
 
       if (c.startsWith("#")) return RGBA.fromHex(c)
 
-      if (chain.includes(c)) {
-        throw new Error(`Circular color reference: ${[...chain, c].join(" -> ")}`)
-      }
-
-      const next = defs[c] ?? theme.theme[c as ThemeColor]
-      if (next === undefined) {
+      if (defs[c] != null) {
+        return resolveColor(defs[c])
+      } else if (theme.theme[c as keyof ThemeColors] !== undefined) {
+        return resolveColor(theme.theme[c as keyof ThemeColors]!)
+      } else {
         throw new Error(`Color reference "${c}" not found in defs or theme`)
       }
-      return resolveColor(next, [...chain, c])
     }
     if (typeof c === "number") {
       return ansiToRgba(c)
     }
-    return resolveColor(c[mode], chain)
+    return resolveColor(c[mode])
   }
 
   const resolved = Object.fromEntries(
@@ -220,10 +147,7 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
       .map(([key, value]) => {
         return [key, resolveColor(value as ColorValue)]
       }),
-  ) as Partial<Record<ThemeColor, RGBA>>
-
-  resolved.logoGradientStart = resolveColor(theme.theme.logoGradientStart ?? "#5476E5")
-  resolved.logoGradientEnd = resolveColor(theme.theme.logoGradientEnd ?? "#FF7399")
+  ) as Partial<ThemeColors>
 
   // Handle selectedListItemText separately since it's optional
   const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
@@ -297,31 +221,141 @@ function ansiToRgba(code: number): RGBA {
   return RGBA.fromInts(0, 0, 0)
 }
 
-export function tint(base: RGBA, overlay: RGBA, alpha: number): RGBA {
-  const r = base.r + (overlay.r - base.r) * alpha
-  const g = base.g + (overlay.g - base.g) * alpha
-  const b = base.b + (overlay.b - base.b) * alpha
-  return RGBA.fromInts(Math.round(r * 255), Math.round(g * 255), Math.round(b * 255))
+export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
+  name: "Theme",
+  init: (props: { mode: "dark" | "light" }) => {
+    const sync = useSync()
+    const kv = useKV()
+    const [store, setStore] = createStore({
+      themes: DEFAULT_THEMES,
+      mode: kv.get("theme_mode", props.mode),
+      active: (sync.data.config.theme ?? kv.get("theme", "cursor")) as string,
+      terminalDefaultBackground: null as RGBA | null,
+      ready: false,
+    })
+
+    createEffect(() => {
+      getCustomThemes()
+        .then((custom) => {
+          setStore(
+            produce((draft) => {
+              Object.assign(draft.themes, custom)
+            }),
+          )
+        })
+        .catch(() => {
+          setStore("active", "cursor")
+        })
+        .finally(() => {
+          if (store.active !== "system") {
+            setStore("ready", true)
+          }
+        })
+    })
+
+    const renderer = useRenderer()
+    renderer
+      .getPalette({
+        size: 16,
+      })
+      .then((colors) => {
+        if (!colors.palette[0]) {
+          if (store.active === "system") {
+            setStore(
+              produce((draft) => {
+                draft.active = "cursor"
+                draft.ready = true
+              }),
+            )
+          }
+          return
+        }
+        setStore(
+          produce((draft) => {
+            draft.themes.system = generateSystem(colors, store.mode)
+            draft.terminalDefaultBackground = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!)
+            if (store.active === "system") {
+              draft.ready = true
+            }
+          }),
+        )
+      })
+
+    const values = createMemo(() => {
+      return resolveTheme(store.themes[store.active] ?? store.themes.cursor, store.mode)
+    })
+
+    const syntax = createMemo(() => generateSyntax(values()))
+    const subtleSyntax = createMemo(() => generateSubtleSyntax(values()))
+
+    return {
+      theme: new Proxy(values(), {
+        get(_target, prop) {
+          // @ts-expect-error
+          return values()[prop]
+        },
+      }),
+      get selected() {
+        return store.active
+      },
+      all() {
+        return store.themes
+      },
+      syntax,
+      subtleSyntax,
+      mode() {
+        return store.mode
+      },
+      setMode(mode: "dark" | "light") {
+        setStore("mode", mode)
+        kv.set("theme_mode", mode)
+      },
+      set(theme: string) {
+        setStore("active", theme)
+        kv.set("theme", theme)
+      },
+      get terminalDefaultBackground() {
+        return store.terminalDefaultBackground
+      },
+      get ready() {
+        return store.ready
+      },
+    }
+  },
+})
+
+const CUSTOM_THEME_GLOB = new Bun.Glob("themes/*.json")
+async function getCustomThemes() {
+  const directories = [
+    Global.Path.config,
+    ...(await Array.fromAsync(
+      Filesystem.up({
+        targets: [".redsun"],
+        start: process.cwd(),
+      }),
+    )),
+  ]
+
+  const result: Record<string, ThemeJson> = {}
+  for (const dir of directories) {
+    for await (const item of CUSTOM_THEME_GLOB.scan({
+      absolute: true,
+      followSymlinks: true,
+      dot: true,
+      cwd: dir,
+    })) {
+      const name = path.basename(item, ".json")
+      result[name] = await Bun.file(item).json()
+    }
+  }
+  return result
 }
 
-export function terminalMode(colors: TerminalColors): "dark" | "light" | undefined {
-  const bg = colors.defaultBackground
-  if (!bg) return
-  const { r, g, b } = RGBA.fromHex(bg)
-  return 0.299 * r + 0.587 * g + 0.114 * b > 0.5 ? "light" : "dark"
-}
-
-export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJson {
+function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJson {
   const bg = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!)
   const fg = RGBA.fromHex(colors.defaultForeground ?? colors.palette[7]!)
-  const transparent = RGBA.fromValues(bg.r, bg.g, bg.b, 0)
+  const palette = colors.palette.filter((x) => x !== null).map((x) => RGBA.fromHex(x))
   const isDark = mode == "dark"
-
-  const col = (i: number) => {
-    const value = colors.palette[i]
-    if (value) return RGBA.fromHex(value)
-    return ansiToRgba(i)
-  }
 
   // Generate gray scale based on terminal background
   const grays = generateGrayScale(bg, isDark)
@@ -329,28 +363,21 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
 
   // ANSI color references
   const ansiColors = {
-    black: col(0),
-    red: col(1),
-    green: col(2),
-    yellow: col(3),
-    blue: col(4),
-    magenta: col(5),
-    cyan: col(6),
-    white: col(7),
-    redBright: col(9),
-    greenBright: col(10),
+    black: palette[0],
+    red: palette[1],
+    green: palette[2],
+    yellow: palette[3],
+    blue: palette[4],
+    magenta: palette[5],
+    cyan: palette[6],
+    white: palette[7],
   }
-
-  const diffAlpha = isDark ? 0.22 : 0.14
-  const diffAddedBg = tint(bg, ansiColors.green, diffAlpha)
-  const diffRemovedBg = tint(bg, ansiColors.red, diffAlpha)
-  const diffContextBg = grays[2]
-  const diffAddedLineNumberBg = tint(diffContextBg, ansiColors.green, diffAlpha)
-  const diffRemovedLineNumberBg = tint(diffContextBg, ansiColors.red, diffAlpha)
-  const diffLineNumber = textMuted
 
   return {
     theme: {
+      logoGradientStart: RGBA.fromHex("#5476E5"),
+      logoGradientEnd: RGBA.fromHex("#FF7399"),
+
       // Primary colors using ANSI
       primary: ansiColors.cyan,
       secondary: ansiColors.magenta,
@@ -367,8 +394,8 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       textMuted,
       selectedListItemText: bg,
 
-      // Background colors - use transparent to respect terminal transparency
-      background: transparent,
+      // Background colors
+      background: bg,
       backgroundPanel: grays[2],
       backgroundElement: grays[3],
       backgroundMenu: grays[3],
@@ -383,14 +410,14 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       diffRemoved: ansiColors.red,
       diffContext: grays[7],
       diffHunkHeader: grays[7],
-      diffHighlightAdded: ansiColors.greenBright,
-      diffHighlightRemoved: ansiColors.redBright,
-      diffAddedBg,
-      diffRemovedBg,
-      diffContextBg,
-      diffLineNumber,
-      diffAddedLineNumberBg,
-      diffRemovedLineNumberBg,
+      diffHighlightAdded: ansiColors.green,
+      diffHighlightRemoved: ansiColors.red,
+      diffAddedBg: grays[2],
+      diffRemovedBg: grays[2],
+      diffContextBg: grays[1],
+      diffLineNumber: grays[6],
+      diffAddedLineNumberBg: grays[3],
+      diffRemovedLineNumberBg: grays[3],
 
       // Markdown colors
       markdownText: fg,
@@ -507,22 +534,20 @@ function generateMutedTextColor(bg: RGBA, isDark: boolean): RGBA {
   return RGBA.fromInts(grayValue, grayValue, grayValue)
 }
 
-export function generateSyntax(theme: Theme) {
+function generateSyntax(theme: Theme) {
   return SyntaxStyle.fromTheme(getSyntaxRules(theme))
 }
 
-export function generateSubtleSyntax(theme: Theme, overrides?: SyntaxStyleOverrides) {
+function generateSubtleSyntax(theme: Theme) {
   const rules = getSyntaxRules(theme)
   return SyntaxStyle.fromTheme(
     rules.map((rule) => {
-      const override = rule.scope.reduce((acc, scope) => ({ ...acc, ...overrides?.[scope] }), {})
       if (rule.style.foreground) {
         const fg = rule.style.foreground
         return {
           ...rule,
           style: {
             ...rule.style,
-            ...override,
             foreground: RGBA.fromInts(
               Math.round(fg.r * 255),
               Math.round(fg.g * 255),
@@ -568,7 +593,7 @@ function getSyntaxRules(theme: Theme) {
     {
       scope: ["extmark.paste"],
       style: {
-        foreground: selectedForeground(theme, theme.warning),
+        foreground: theme.background,
         background: theme.warning,
         bold: true,
       },
@@ -757,7 +782,6 @@ function getSyntaxRules(theme: Theme) {
       style: {
         foreground: theme.markdownHeading,
         bold: true,
-        underline: true,
       },
     },
     {

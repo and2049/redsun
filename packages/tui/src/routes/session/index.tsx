@@ -25,7 +25,7 @@ import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
+import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, type KeyEvent } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
   AssistantMessage,
@@ -40,9 +40,10 @@ import type {
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
 import { webSearchProviderLabel } from "../../util/tool-display"
-import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
+import { useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "../../context/sdk"
 import { useEditorContext } from "../../context/editor"
+import { useVim } from "../../context/vim"
 import { openEditor } from "../../editor"
 import { useDialog } from "../../ui/dialog"
 import { DialogAlert } from "../../ui/dialog-alert"
@@ -346,6 +347,30 @@ export function Session() {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
+  const vim = useVim()
+
+  useKeyboard((event: KeyEvent) => {
+    if (vim.mode !== "normal") return
+    if (event.ctrl || event.meta) return
+    if (dialog.stack.length > 0) return
+    if (!scroll || scroll.isDestroyed) return
+    const name = event.name
+    if (name === "j") {
+      event.preventDefault()
+      scroll.scrollBy(1)
+      return
+    }
+    if (name === "k") {
+      event.preventDefault()
+      scroll.scrollBy(-1)
+      return
+    }
+    if (name === "g") {
+      event.preventDefault()
+      scroll.scrollTo(event.shift ? scroll.scrollHeight : 0)
+      return
+    }
+  })
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return

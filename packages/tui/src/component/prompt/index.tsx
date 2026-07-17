@@ -641,7 +641,7 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || dialog.stack.length > 0) {
+    if (props.visible === false || dialog.stack.length > 0 || vim.mode !== "insert") {
       if (input.focused) input.blur()
       return
     }
@@ -1293,7 +1293,7 @@ export function Prompt(props: PromptProps) {
   }
 
   const highlight = createMemo(() => {
-    if (leader()) return theme.border
+    if (leader() || vim.mode !== "insert") return theme.border
     if (store.mode === "shell") return theme.primary
     const agent = local.agent.current()
     if (!agent) return theme.border

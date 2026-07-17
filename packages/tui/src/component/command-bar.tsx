@@ -1,10 +1,10 @@
 import { InputRenderable, TextAttributes, type KeyEvent } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import fuzzysort from "fuzzysort"
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { useVim } from "../context/vim"
 import { selectedForeground, useTheme } from "../context/theme"
-import { useOpencodeKeymap, useKeymapSelector } from "../keymap"
+import { useOpencodeKeymap, useOpencodeModeStack, useKeymapSelector } from "../keymap"
 import { commandAliases, resolveCommand } from "../vim"
 import { SplitBorder } from "../ui/border"
 
@@ -14,6 +14,7 @@ export function CommandBar() {
   const vim = useVim()
   const { theme } = useTheme()
   const keymap = useOpencodeKeymap()
+  const modeStack = useOpencodeModeStack()
   const dimensions = useTerminalDimensions()
   const entries = useKeymapSelector((value) =>
     value.getCommandEntries({
@@ -65,6 +66,7 @@ export function CommandBar() {
     if (mode === "command") {
       inputRef.focus()
       setSelected(-1)
+      onCleanup(modeStack.push("command"))
       return
     }
     inputRef.blur()

@@ -69,6 +69,9 @@ export function Home() {
 
   return (
     <HomeSessionDestinationProvider>
+      <box width="100%" flexShrink={0}>
+        <pluginRuntime.Slot name="home_top" mode="single_winner" />
+      </box>
       <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
@@ -86,9 +89,6 @@ export function Home() {
         <pluginRuntime.Slot name="home_bottom" />
         <box flexGrow={1} minHeight={0} />
         <Toast />
-      </box>
-      <box width="100%" flexShrink={0}>
-        <pluginRuntime.Slot name="home_footer" mode="single_winner" />
       </box>
     </HomeSessionDestinationProvider>
   )
