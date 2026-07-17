@@ -1396,10 +1396,10 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
-                const next = transition(vim.mode, e)
+const next = transition(vim.mode, e)
                 if (next) {
                   e.preventDefault()
-                  vim.setMode(next)
+                  vim.requestMode(next)
                   return
                 }
                 if (vim.mode !== "insert") e.preventDefault()
@@ -1471,7 +1471,7 @@ export function Prompt(props: PromptProps) {
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
                           <text
                             flexShrink={0}
-                            fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
+                            fg={fadeColor(leader() || vim.mode !== "insert" ? theme.textMuted : theme.text, modelMetaAlpha())}
                           >
                             {local.model.parsed().model}
                           </text>

@@ -355,19 +355,28 @@ export function Session() {
     if (dialog.stack.length > 0) return
     if (!scroll || scroll.isDestroyed) return
     const name = event.name
+    const isTemp = vim.tempRemaining() != null
+    const endTemp = () => {
+      if (!isTemp) return
+      vim.clearTemp()
+      vim.setMode("insert")
+    }
     if (name === "j") {
       event.preventDefault()
       scroll.scrollBy(1)
+      endTemp()
       return
     }
     if (name === "k") {
       event.preventDefault()
       scroll.scrollBy(-1)
+      endTemp()
       return
     }
     if (name === "g") {
       event.preventDefault()
       scroll.scrollTo(event.shift ? scroll.scrollHeight : 0)
+      endTemp()
       return
     }
   })
