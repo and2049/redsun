@@ -241,7 +241,7 @@ function credential(methodID: Integration.MethodID, tokens: TokenResponse) {
     methodID,
     refresh: tokens.refresh_token,
     access: tokens.access_token,
-    expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+    expires: Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - 60) * 1000,
     metadata: accountID ? { accountID } : undefined,
   })
 }
