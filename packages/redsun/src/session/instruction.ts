@@ -170,7 +170,7 @@ const layer: Layer.Layer<
       return [
         ...Array.from(paths).flatMap((item, i) =>
           files[i]
-            ? [`Instructions from: ${item}\n${files[i].length > 64_000 ? `${files[i].slice(0, 64_000)}\n[truncated by Redsun]` : files[i]}`]
+            ? [`Instructions from: ${item}\n${files[i].length > 64_000 ? `${files[i].slice(0, 64_000)}\n[truncated by redsun]` : files[i]}`]
             : [],
         ),
         ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),

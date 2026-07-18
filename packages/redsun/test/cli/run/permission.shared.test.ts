@@ -136,7 +136,7 @@ describe("run permission shared", () => {
     ])
 
     expect(permissionAlwaysLines(req({ always: ["src/**/*.ts", "src/**/*.tsx"] }))).toEqual([
-      "This will allow the following patterns until Redsun is restarted.",
+      "This will allow the following patterns until redsun is restarted.",
       "- src/**/*.ts",
       "- src/**/*.tsx",
     ])
