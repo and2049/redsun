@@ -531,7 +531,7 @@ export const PublicApi = OpenCodeHttpApi.annotateMerge(
   OpenApi.annotations({
     title: "redsun",
     version: "1.0.0",
-    description: "Redsun API",
+    description: "redsun API",
     transform: matchLegacyOpenApi,
   }),
 )

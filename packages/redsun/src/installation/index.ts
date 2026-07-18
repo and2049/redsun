@@ -153,7 +153,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
         if (m !== "curl" && m !== "unknown")
-          return yield* new UpgradeFailedError({ stderr: `Unsupported Redsun installation method: ${m}` })
+          return yield* new UpgradeFailedError({ stderr: `Unsupported redsun installation method: ${m}` })
         const upgradeResult = yield* upgradeCurl(target)
         if (!upgradeResult || upgradeResult.code !== 0) {
           return yield* new UpgradeFailedError({ stderr: upgradeFailure(m, upgradeResult) })

@@ -99,7 +99,7 @@ export const node = makeLocationNode({
 function render(files: ReadonlyArray<File>) {
   return files
     .map((file) =>
-      `Instructions from: ${file.path}\n${file.content.length > 64_000 ? `${file.content.slice(0, 64_000)}\n[truncated by Redsun]` : file.content}`,
+      `Instructions from: ${file.path}\n${file.content.length > 64_000 ? `${file.content.slice(0, 64_000)}\n[truncated by redsun]` : file.content}`,
     )
     .join("\n\n")
 }

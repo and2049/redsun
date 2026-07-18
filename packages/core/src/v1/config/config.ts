@@ -55,7 +55,7 @@ export const Info = Schema.Struct({
   }),
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPluginV1.Spec))),
   extension: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
-    description: "Pi-style Redsun extension modules",
+    description: "Pi-style redsun extension modules",
   }),
   defaultProjectTrust: Schema.optional(Schema.Literals(["ask", "always", "never"])).annotate({
     description: "Default policy for project-local executable configuration",

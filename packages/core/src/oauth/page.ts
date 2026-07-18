@@ -22,7 +22,7 @@ export function success(options?: CallbackPageOptions) {
     body: renderCard({
       status: "success",
       headline: "Authorization successful",
-      message: provider ? `Redsun is now connected to ${escapeHtml(provider)}.` : "Redsun is now authorized.",
+      message: provider ? `redsun is now connected to ${escapeHtml(provider)}.` : "redsun is now authorized.",
       footnote: "You can close this window.",
     }),
     script: options?.autoClose === false ? undefined : AUTO_CLOSE_SCRIPT,
@@ -37,10 +37,10 @@ export function error(detail: string, options?: CallbackPageOptions) {
       status: "error",
       headline: "Authorization failed",
       message: provider
-        ? `Redsun couldn't finish connecting to ${escapeHtml(provider)}.`
-        : "Redsun couldn't complete authorization.",
+        ? `redsun couldn't finish connecting to ${escapeHtml(provider)}.`
+        : "redsun couldn't complete authorization.",
       detail,
-      footnote: "Close this window and try again from Redsun.",
+      footnote: "Close this window and try again from redsun.",
     }),
   })
 }
@@ -97,7 +97,7 @@ function renderDocument(input: { title: string; body: string; script?: string })
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
-    <title>${escapeHtml(input.title)} · Redsun</title>
+    <title>${escapeHtml(input.title)} · redsun</title>
     <style>${STYLES}</style>
   </head>
   <body>
@@ -113,8 +113,8 @@ function bootstrapScript(options: BootstrapOptions) {
 var TOKEN_URL=new URL(${scriptString(options.tokenPath)},window.location.origin).href;
 (function(){
   var card=document.getElementById("oc-card"),headline=document.getElementById("oc-headline"),message=document.getElementById("oc-message"),detail=document.getElementById("oc-detail"),footnote=document.getElementById("oc-footnote");
-  function fail(text){card.dataset.status="error";headline.textContent="Authorization failed";message.textContent=PROVIDER?("Redsun couldn't finish connecting to "+PROVIDER+"."):"Redsun couldn't complete authorization.";if(text){detail.textContent=text;detail.hidden=false}footnote.textContent="Close this window and try again from Redsun."}
-  function ok(){card.dataset.status="success";headline.textContent="Authorization successful";message.textContent=PROVIDER?("Redsun is now connected to "+PROVIDER+"."):"Redsun is now authorized.";detail.hidden=true;footnote.textContent="You can close this window.";setTimeout(function(){try{window.close()}catch(e){}},2500)}
+  function fail(text){card.dataset.status="error";headline.textContent="Authorization failed";message.textContent=PROVIDER?("redsun couldn't finish connecting to "+PROVIDER+"."):"redsun couldn't complete authorization.";if(text){detail.textContent=text;detail.hidden=false}footnote.textContent="Close this window and try again from redsun."}
+  function ok(){card.dataset.status="success";headline.textContent="Authorization successful";message.textContent=PROVIDER?("redsun is now connected to "+PROVIDER+"."):"redsun is now authorized.";detail.hidden=true;footnote.textContent="You can close this window.";setTimeout(function(){try{window.close()}catch(e){}},2500)}
   try{
     var hash=new URLSearchParams((window.location.hash||"").slice(1));
     var search=new URLSearchParams(window.location.search||"");
@@ -246,7 +246,7 @@ const STYLES = `
   @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 `
 
-const WORDMARK = `<span class="wordmark" aria-label="Redsun">REDSUN</span>`
+const WORDMARK = `<span class="wordmark" aria-label="redsun">redsun</span>`
 
 const ICON_CHECK = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.4 2.4 4.6-5.4" /></svg>`
 

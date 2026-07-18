@@ -174,7 +174,7 @@ const layer = Layer.effect(
               }),
             catch: errorMessage,
           }).pipe(
-            Effect.tapError((error) => Effect.logError("failed to load Redsun extensions", { error })),
+            Effect.tapError((error) => Effect.logError("failed to load redsun extensions", { error })),
             Effect.option,
           )
           if (Option.isSome(extension)) hooks.push(extension.value.hooks)

@@ -158,7 +158,7 @@ async function emit<E extends Extension.Event>(state: State, event: E, ctx = con
       const next = await handler(event, ctx)
       if (next !== undefined) result = merge(result, next, event.type)
     } catch (error) {
-      console.error(`Redsun extension ${event.type} handler failed`, error)
+      console.error(`redsun extension ${event.type} handler failed`, error)
     }
   }
   state.current = previous
@@ -365,7 +365,7 @@ async function loadFile(state: State, filepath: string, scope: Extension.SourceI
     if (typeof factory !== "function") return
     await factory(api(state, { path: resolved, scope }))
   } catch (error) {
-    console.error(`Failed to load Redsun extension ${filepath}`, error)
+    console.error(`Failed to load redsun extension ${filepath}`, error)
   }
 }
 
