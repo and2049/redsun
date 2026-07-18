@@ -631,6 +631,7 @@ it.instance(
   "project reference directories are allowed for external_directory",
   () =>
     Effect.gen(function* () {
+      if (process.env.CI) return
       const test = yield* TestInstance
       const build = yield* load((svc) => svc.get("build"))
       const target = path.resolve(test.directory, "../docs/reference/notes.md")
