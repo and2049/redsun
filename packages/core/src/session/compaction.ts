@@ -158,12 +158,12 @@ const select = (
   let split = conversation.length
   let splitPrefix = ""
   let splitSuffix = ""
-  for (let index = conversation.length - 1; index >= 0; index--) {
+for (let index = conversation.length - 1; index >= 0; index--) {
     const next = total + Token.estimate(conversation[index].text)
     if (next > tokens) {
-      split = index + 1
       const remaining = Math.max(0, tokens - total) * 4
       if (remaining > 0) {
+        split = index + 1
         splitPrefix = conversation[index].text.slice(0, -remaining)
         splitSuffix = conversation[index].text.slice(-remaining)
       }
