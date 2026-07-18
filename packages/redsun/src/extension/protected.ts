@@ -13,7 +13,7 @@ export function isProtectedPath(filePath: string): Guard {
   }
 
   const basename = path.basename(normalized).toLowerCase()
-  if (basename === ".env" || basename.startsWith(".env.")) {
+  if (basename === ".env" || basename.startsWith(".env.") || basename === ".envrc" || basename.startsWith(".envrc.")) {
     return { blocked: true, reason: `Cannot write to protected file: ${filePath}`, type: "system" }
   }
 
