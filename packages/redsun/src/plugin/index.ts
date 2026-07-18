@@ -180,7 +180,7 @@ const layer = Layer.effect(
           if (Option.isSome(extension)) hooks.push(extension.value.hooks)
         }
 
-        const cfg = yield* config.getExecutable()
+        const cfg = yield* config.get()
 
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
           const init = yield* Effect.tryPromise({
