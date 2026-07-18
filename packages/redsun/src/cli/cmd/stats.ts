@@ -1,11 +1,11 @@
-import type { Argv } from "yargs"
-import { cmd } from "./cmd"
-import { Session } from "../../session"
-import { bootstrap } from "../bootstrap"
-import { Storage } from "../../storage/storage"
-import { Project } from "../../project/project"
-import { Instance } from "../../project/instance"
-import { ContextOptimizer } from "../../session/context-optimizer"
+import { Effect } from "effect"
+import { effectCmd } from "../effect-cmd"
+import { Session } from "@/session/session"
+import { NotFoundError } from "@/storage/storage"
+import { Database } from "@opencode-ai/core/database/database"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { Project } from "@/project/project"
+import { InstanceRef } from "@/effect/instance-ref"
 
 interface SessionStats {
   totalSessions: number
@@ -21,6 +21,21 @@ interface SessionStats {
     }
   }
   toolUsage: Record<string, number>
+  modelUsage: Record<
+    string,
+    {
+      messages: number
+      tokens: {
+        input: number
+        output: number
+        cache: {
+          read: number
+          write: number
+        }
+      }
+      cost: number
+    }
+  >
   dateRange: {
     earliest: number
     latest: number
@@ -29,14 +44,13 @@ interface SessionStats {
   costPerDay: number
   tokensPerSession: number
   medianTokensPerSession: number
-  contextBreakdown: ContextOptimizer.Breakdown
 }
 
-export const StatsCommand = cmd({
+export const StatsCommand = effectCmd({
   command: "stats",
   describe: "show token usage and cost statistics",
-  builder: (yargs: Argv) => {
-    return yargs
+  builder: (yargs) =>
+    yargs
       .option("days", {
         describe: "show stats for the last N days (default: all time)",
         type: "number",
@@ -45,51 +59,39 @@ export const StatsCommand = cmd({
         describe: "number of tools to show (default: all)",
         type: "number",
       })
+      .option("models", {
+        describe: "show model statistics (default: hidden). Pass a number to show top N, otherwise shows all",
+      })
       .option("project", {
         describe: "filter by project (default: all projects, empty string: current project)",
         type: "string",
-      })
-      .option("context", {
-        describe: "show stored context category totals",
-        type: "boolean",
-      })
-  },
-  handler: async (args) => {
-    await bootstrap(process.cwd(), async () => {
-      const stats = await aggregateSessionStats(args.days, args.project)
-      displayStats(stats, args.tools, args.context)
-    })
-  },
+      }),
+  handler: Effect.fn("Cli.stats")(function* (args) {
+    const ctx = yield* InstanceRef
+    if (!ctx) return
+    const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project)
+    let modelLimit: number | undefined
+    if (args.models === true) {
+      modelLimit = Infinity
+    } else if (typeof args.models === "number") {
+      modelLimit = args.models
+    }
+    displayStats(stats, args.tools, modelLimit)
+  }),
 })
 
-async function getCurrentProject(): Promise<Project.Info> {
-  return Instance.project
-}
+const getAllSessions = Effect.fnUntraced(function* () {
+  const { db } = yield* Database.Service
+  return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).map((row) => Session.fromRow(row))
+})
 
-async function getAllSessions(): Promise<Session.Info[]> {
-  const sessions: Session.Info[] = []
-
-  const projectKeys = await Storage.list(["project"])
-  const projects = await Promise.all(projectKeys.map((key) => Storage.read<Project.Info>(key)))
-
-  for (const project of projects) {
-    if (!project) continue
-
-    const sessionKeys = await Storage.list(["session", project.id])
-    const projectSessions = await Promise.all(sessionKeys.map((key) => Storage.read<Session.Info>(key)))
-
-    for (const session of projectSessions) {
-      if (session) {
-        sessions.push(session)
-      }
-    }
-  }
-
-  return sessions
-}
-
-export async function aggregateSessionStats(days?: number, projectFilter?: string): Promise<SessionStats> {
-  const sessions = await getAllSessions()
+const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
+  days?: number,
+  projectFilter?: string,
+  currentProject?: Project.Info,
+) {
+  const svc = yield* Session.Service
+  const sessions = yield* getAllSessions()
   const MS_IN_DAY = 24 * 60 * 60 * 1000
 
   const cutoffTime = (() => {
@@ -102,11 +104,17 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
     return Date.now() - days * MS_IN_DAY
   })()
 
+  const windowDays = (() => {
+    if (days === undefined) return
+    if (days === 0) return 1
+    return days
+  })()
+
   let filteredSessions = cutoffTime > 0 ? sessions.filter((session) => session.time.updated >= cutoffTime) : sessions
 
   if (projectFilter !== undefined) {
     if (projectFilter === "") {
-      const currentProject = await getCurrentProject()
+      if (!currentProject) throw new Error("currentProject required when projectFilter is empty string")
       filteredSessions = filteredSessions.filter((session) => session.projectID === currentProject.id)
     } else {
       filteredSessions = filteredSessions.filter((session) => session.projectID === projectFilter)
@@ -127,6 +135,7 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
       },
     },
     toolUsage: {},
+    modelUsage: {},
     dateRange: {
       earliest: Date.now(),
       latest: Date.now(),
@@ -135,15 +144,6 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
     costPerDay: 0,
     tokensPerSession: 0,
     medianTokensPerSession: 0,
-    contextBreakdown: {
-      system: 0,
-      tools: 0,
-      messages: 0,
-      toolResults: 0,
-      customMessages: 0,
-      attachments: 0,
-      total: 0,
-    },
   }
 
   if (filteredSessions.length > 1000) {
@@ -151,6 +151,7 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
   }
 
   if (filteredSessions.length === 0) {
+    stats.days = windowDays ?? 0
     return stats
   }
 
@@ -159,97 +160,122 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
 
   const sessionTotalTokens: number[] = []
 
-  const BATCH_SIZE = 20
-  for (let i = 0; i < filteredSessions.length; i += BATCH_SIZE) {
-    const batch = filteredSessions.slice(i, i + BATCH_SIZE)
+  const results = yield* Effect.forEach(
+    filteredSessions,
+    (session) =>
+      Effect.gen(function* () {
+        const messages = yield* svc
+          .messages({ sessionID: session.id })
+          .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed([])))
 
-    const batchPromises = batch.map(async (session) => {
-      const messages = await Session.messages({ sessionID: session.id })
-      const breakdowns = await ContextOptimizer.readBreakdowns(session.id)
+        const sessionCost = session.cost ?? 0
+        const sessionTokens = session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        let sessionToolUsage: Record<string, number> = {}
+        let sessionModelUsage: Record<
+          string,
+          {
+            messages: number
+            tokens: { input: number; output: number; cache: { read: number; write: number } }
+            cost: number
+          }
+        > = {}
 
-      let sessionCost = 0
-      let sessionTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
-      let sessionToolUsage: Record<string, number> = {}
-      const contextBreakdown = {
-        system: 0,
-        tools: 0,
-        messages: 0,
-        toolResults: 0,
-        customMessages: 0,
-        attachments: 0,
-        total: 0,
-      }
+        for (const message of messages) {
+          if (message.info.role === "assistant") {
+            const modelKey = `${message.info.providerID}/${message.info.modelID}`
+            if (!sessionModelUsage[modelKey]) {
+              sessionModelUsage[modelKey] = {
+                messages: 0,
+                tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+                cost: 0,
+              }
+            }
+            sessionModelUsage[modelKey].messages++
+            sessionModelUsage[modelKey].cost += message.info.cost || 0
 
-      for (const item of breakdowns) {
-        for (const key of Object.keys(contextBreakdown) as (keyof typeof contextBreakdown)[]) {
-          contextBreakdown[key] += item.breakdown[key] ?? 0
-        }
-      }
+            if (message.info.tokens) {
+              sessionModelUsage[modelKey].tokens.input += message.info.tokens.input || 0
+              sessionModelUsage[modelKey].tokens.output +=
+                (message.info.tokens.output || 0) + (message.info.tokens.reasoning || 0)
+              sessionModelUsage[modelKey].tokens.cache.read += message.info.tokens.cache?.read || 0
+              sessionModelUsage[modelKey].tokens.cache.write += message.info.tokens.cache?.write || 0
+            }
+          }
 
-      for (const message of messages) {
-        if (message.info.role === "assistant") {
-          sessionCost += message.info.cost || 0
-
-          if (message.info.tokens) {
-            sessionTokens.input += message.info.tokens.input || 0
-            sessionTokens.output += message.info.tokens.output || 0
-            sessionTokens.reasoning += message.info.tokens.reasoning || 0
-            sessionTokens.cache.read += message.info.tokens.cache?.read || 0
-            sessionTokens.cache.write += message.info.tokens.cache?.write || 0
+          for (const part of message.parts) {
+            if (part.type === "tool" && part.tool) {
+              sessionToolUsage[part.tool] = (sessionToolUsage[part.tool] || 0) + 1
+            }
           }
         }
 
-        for (const part of message.parts) {
-          if (part.type === "tool" && part.tool) {
-            sessionToolUsage[part.tool] = (sessionToolUsage[part.tool] || 0) + 1
-          }
+        return {
+          messageCount: messages.length,
+          sessionCost,
+          sessionTokens,
+          sessionTotalTokens:
+            sessionTokens.input +
+            sessionTokens.output +
+            sessionTokens.reasoning +
+            sessionTokens.cache.read +
+            sessionTokens.cache.write,
+          sessionToolUsage,
+          sessionModelUsage,
+          earliestTime: cutoffTime > 0 ? session.time.updated : session.time.created,
+          latestTime: session.time.updated,
+        }
+      }),
+    { concurrency: 20 },
+  )
+
+  for (const result of results) {
+    earliestTime = Math.min(earliestTime, result.earliestTime)
+    latestTime = Math.max(latestTime, result.latestTime)
+    sessionTotalTokens.push(result.sessionTotalTokens)
+
+    stats.totalMessages += result.messageCount
+    stats.totalCost += result.sessionCost
+    stats.totalTokens.input += result.sessionTokens.input
+    stats.totalTokens.output += result.sessionTokens.output
+    stats.totalTokens.reasoning += result.sessionTokens.reasoning
+    stats.totalTokens.cache.read += result.sessionTokens.cache.read
+    stats.totalTokens.cache.write += result.sessionTokens.cache.write
+
+    for (const [tool, count] of Object.entries(result.sessionToolUsage)) {
+      stats.toolUsage[tool] = (stats.toolUsage[tool] || 0) + count
+    }
+
+    for (const [model, usage] of Object.entries(result.sessionModelUsage)) {
+      if (!stats.modelUsage[model]) {
+        stats.modelUsage[model] = {
+          messages: 0,
+          tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+          cost: 0,
         }
       }
-
-      return {
-        messageCount: messages.length,
-        sessionCost,
-        sessionTokens,
-        sessionTotalTokens: sessionTokens.input + sessionTokens.output + sessionTokens.reasoning,
-        sessionToolUsage,
-        contextBreakdown,
-        earliestTime: session.time.created,
-        latestTime: session.time.updated,
-      }
-    })
-
-    const batchResults = await Promise.all(batchPromises)
-
-    for (const result of batchResults) {
-      earliestTime = Math.min(earliestTime, result.earliestTime)
-      latestTime = Math.max(latestTime, result.latestTime)
-      sessionTotalTokens.push(result.sessionTotalTokens)
-
-      stats.totalMessages += result.messageCount
-      stats.totalCost += result.sessionCost
-      stats.totalTokens.input += result.sessionTokens.input
-      stats.totalTokens.output += result.sessionTokens.output
-      stats.totalTokens.reasoning += result.sessionTokens.reasoning
-      stats.totalTokens.cache.read += result.sessionTokens.cache.read
-      stats.totalTokens.cache.write += result.sessionTokens.cache.write
-      for (const key of Object.keys(stats.contextBreakdown) as (keyof SessionStats["contextBreakdown"])[]) {
-        stats.contextBreakdown[key] += result.contextBreakdown[key] ?? 0
-      }
-
-      for (const [tool, count] of Object.entries(result.sessionToolUsage)) {
-        stats.toolUsage[tool] = (stats.toolUsage[tool] || 0) + count
-      }
+      stats.modelUsage[model].messages += usage.messages
+      stats.modelUsage[model].tokens.input += usage.tokens.input
+      stats.modelUsage[model].tokens.output += usage.tokens.output
+      stats.modelUsage[model].tokens.cache.read += usage.tokens.cache.read
+      stats.modelUsage[model].tokens.cache.write += usage.tokens.cache.write
+      stats.modelUsage[model].cost += usage.cost
     }
   }
 
-  const actualDays = Math.max(1, Math.ceil((latestTime - earliestTime) / MS_IN_DAY))
+  const rangeDays = Math.max(1, Math.ceil((latestTime - earliestTime) / MS_IN_DAY))
+  const effectiveDays = windowDays ?? rangeDays
   stats.dateRange = {
     earliest: earliestTime,
     latest: latestTime,
   }
-  stats.days = actualDays
-  stats.costPerDay = stats.totalCost / actualDays
-  const totalTokens = stats.totalTokens.input + stats.totalTokens.output + stats.totalTokens.reasoning
+  stats.days = effectiveDays
+  stats.costPerDay = stats.totalCost / effectiveDays
+  const totalTokens =
+    stats.totalTokens.input +
+    stats.totalTokens.output +
+    stats.totalTokens.reasoning +
+    stats.totalTokens.cache.read +
+    stats.totalTokens.cache.write
   stats.tokensPerSession = filteredSessions.length > 0 ? totalTokens / filteredSessions.length : 0
   sessionTotalTokens.sort((a, b) => a - b)
   const mid = Math.floor(sessionTotalTokens.length / 2)
@@ -261,9 +287,9 @@ export async function aggregateSessionStats(days?: number, projectFilter?: strin
         : sessionTotalTokens[mid]
 
   return stats
-}
+})
 
-export function displayStats(stats: SessionStats, toolLimit?: number, showContext = false) {
+export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit?: number) {
   const width = 56
 
   function renderRow(label: string, value: string): string {
@@ -299,28 +325,33 @@ export function displayStats(stats: SessionStats, toolLimit?: number, showContex
   console.log(renderRow("Output", formatNumber(stats.totalTokens.output)))
   console.log(renderRow("Cache Read", formatNumber(stats.totalTokens.cache.read)))
   console.log(renderRow("Cache Write", formatNumber(stats.totalTokens.cache.write)))
-  const billableInput = stats.totalTokens.input + stats.totalTokens.cache.write
-  const cacheDenominator = billableInput + stats.totalTokens.cache.read
-  const cacheRate = cacheDenominator > 0 ? Math.round((stats.totalTokens.cache.read / cacheDenominator) * 100) : 0
-  console.log(renderRow("Billable Input", formatNumber(billableInput)))
-  console.log(renderRow("Cache Hit Rate", `${cacheRate}%`))
   console.log("└────────────────────────────────────────────────────────┘")
   console.log()
 
-  if (showContext) {
+  // Model Usage section
+  if (modelLimit !== undefined && Object.keys(stats.modelUsage).length > 0) {
+    const sortedModels = Object.entries(stats.modelUsage).sort(([, a], [, b]) => b.messages - a.messages)
+    const modelsToDisplay = modelLimit === Infinity ? sortedModels : sortedModels.slice(0, modelLimit)
+
     console.log("┌────────────────────────────────────────────────────────┐")
-    console.log("│                    CONTEXT BREAKDOWN                   │")
+    console.log("│                      MODEL USAGE                       │")
     console.log("├────────────────────────────────────────────────────────┤")
-    console.log(renderRow("System", formatNumber(stats.contextBreakdown.system)))
-    console.log(renderRow("Tool Schemas", formatNumber(stats.contextBreakdown.tools)))
-    console.log(renderRow("Messages", formatNumber(stats.contextBreakdown.messages)))
-    console.log(renderRow("Tool Results", formatNumber(stats.contextBreakdown.toolResults)))
-    console.log(renderRow("Custom Messages", formatNumber(stats.contextBreakdown.customMessages)))
-    console.log(renderRow("Attachments", formatNumber(stats.contextBreakdown.attachments)))
-    console.log(renderRow("Total", formatNumber(stats.contextBreakdown.total)))
+
+    for (const [model, usage] of modelsToDisplay) {
+      console.log(`│ ${model.padEnd(54)} │`)
+      console.log(renderRow("  Messages", usage.messages.toLocaleString()))
+      console.log(renderRow("  Input Tokens", formatNumber(usage.tokens.input)))
+      console.log(renderRow("  Output Tokens", formatNumber(usage.tokens.output)))
+      console.log(renderRow("  Cache Read", formatNumber(usage.tokens.cache.read)))
+      console.log(renderRow("  Cache Write", formatNumber(usage.tokens.cache.write)))
+      console.log(renderRow("  Cost", `$${usage.cost.toFixed(4)}`))
+      console.log("├────────────────────────────────────────────────────────┤")
+    }
+    // Remove last separator and add bottom border
+    process.stdout.write("\x1B[1A") // Move up one line
     console.log("└────────────────────────────────────────────────────────┘")
-    console.log()
   }
+  console.log()
 
   // Tool Usage section
   if (Object.keys(stats.toolUsage).length > 0) {

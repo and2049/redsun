@@ -1,99 +1,70 @@
 import path from "path"
-import z from "zod"
-import { Tool } from "./tool"
+import { Effect, Schema } from "effect"
+import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Skill } from "../skill"
-import { Agent } from "../agent/agent"
-import { Permission } from "../permission"
-import { Wildcard } from "../util/wildcard"
-import { ConfigMarkdown } from "../config/markdown"
+import * as Tool from "./tool"
+import DESCRIPTION from "./skill.txt"
 
-const parameters = z.object({
-  name: z.string().describe("The skill identifier from available_skills (e.g., 'code-review')"),
+export const Parameters = Schema.Struct({
+  name: Schema.String.annotate({ description: "The name of the skill from available_skills" }),
 })
 
-export const SkillTool: Tool.Info<typeof parameters> = {
-  id: "skill",
-  async init(ctx) {
-    const skills = await Skill.all()
-
-    // Filter skills by agent permissions if agent provided
-    let accessibleSkills = skills
-    if (ctx?.agent) {
-      const permissions = ctx.agent.permission.skill
-      accessibleSkills = skills.filter((skill) => {
-        const action = Wildcard.all(skill.name, permissions)
-        return action !== "deny"
-      })
-    }
-
-    const visibleSkills = accessibleSkills.filter((s) => !s.disableModelInvocation)
-    const description =
-      visibleSkills.length === 0
-        ? "Load a skill to get detailed instructions for a specific task. No skills are currently available."
-        : [
-            "Load a skill to get detailed instructions for a specific task.",
-            "Skills provide specialized knowledge and step-by-step guidance.",
-            "Use this when a task matches an available skill's description from the system prompt.",
-            `The following ${visibleSkills.length} skill(s) are available: ${visibleSkills.map((s) => s.name).join(", ")}.`,
-          ].join(" ")
+export const SkillTool = Tool.define(
+  "skill",
+  Effect.gen(function* () {
+    const skill = yield* Skill.Service
+    const ripgrep = yield* Ripgrep.Service
 
     return {
-      description,
-      parameters,
-      async execute(params, ctx) {
-        const agent = await Agent.get(ctx.agent)
+      description: DESCRIPTION,
+      parameters: Parameters,
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+        Effect.gen(function* () {
+          const info = yield* skill
+            .require(params.name)
+            .pipe(Effect.catchTag("Skill.NotFoundError", (error) => Effect.die(new Error(error.message))))
 
-        const skill = await Skill.get(params.name)
-
-        if (!skill) {
-          const available = await Skill.all().then((x) => x.map((s) => s.name).join(", "))
-          throw new Error(`Skill "${params.name}" not found. Available skills: ${available || "none"}`)
-        }
-
-        // Check permission using Wildcard.all on the skill name
-        const permissions = agent.permission.skill
-        const action = Wildcard.all(params.name, permissions)
-
-        if (action === "deny") {
-          throw new Permission.RejectedError(
-            ctx.sessionID,
-            "skill",
-            ctx.callID,
-            { skill: params.name },
-            `Access to skill "${params.name}" is denied for agent "${agent.name}".`,
-          )
-        }
-
-        if (action === "ask") {
-          await Permission.ask({
-            type: "skill",
-            pattern: params.name,
-            sessionID: ctx.sessionID,
-            messageID: ctx.messageID,
-            callID: ctx.callID,
-            title: `Load skill: ${skill.name}`,
-            metadata: { name: skill.name, description: skill.description },
+          yield* ctx.ask({
+            permission: "skill",
+            patterns: [params.name],
+            always: [params.name],
+            metadata: {},
           })
-        }
 
-        // Load and parse skill content
-        const parsed = await ConfigMarkdown.parse(skill.location)
-        const dir = path.dirname(skill.location)
+          const dir = path.dirname(info.location)
+          const base = dir
+          const files = yield* ripgrep.find({
+            cwd: dir,
+            pattern: "!**/SKILL.md",
+            hidden: true,
+            follow: false,
+            signal: ctx.abort,
+            limit: 10,
+          })
 
-        // Format output similar to plugin pattern
-        const output = [`## Skill: ${skill.name}`, "", `**Base directory**: ${dir}`, "", parsed.content.trim()].join(
-          "\n",
-        )
-
-        return {
-          title: `Loaded skill: ${skill.name}`,
-          output,
-          metadata: {
-            name: skill.name,
-            dir,
-          },
-        }
-      },
+          return {
+            title: `Loaded skill: ${info.name}`,
+            output: [
+              `<skill_content name="${info.name}">`,
+              `# Skill: ${info.name}`,
+              "",
+              info.content.trim(),
+              "",
+              `Base directory for this skill: ${base}`,
+              "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
+              "Note: file list is sampled.",
+              "",
+              "<skill_files>",
+              files.map((file) => `<file>${path.resolve(dir, file.path)}</file>`).join("\n"),
+              "</skill_files>",
+              "</skill_content>",
+            ].join("\n"),
+            metadata: {
+              name: info.name,
+              dir,
+            },
+          }
+        }).pipe(Effect.orDie),
     }
-  },
-}
+  }),
+)
