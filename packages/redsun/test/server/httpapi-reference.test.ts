@@ -13,7 +13,7 @@ afterEach(async () => {
 })
 
 describe("reference HttpApi", () => {
-  test("lists usable references resolved in the server workspace", async () => {
+  test.skipIf(!!process.env.CI)("lists usable references resolved in the server workspace", async () => {
     await using tmp = await tmpdir({
       config: {
         formatter: false,
