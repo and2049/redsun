@@ -144,7 +144,7 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("LSP.state")(function* (ctx) {
-        const cfg = yield* config.getExecutable()
+        const cfg = yield* config.get()
 
         const servers: Record<string, LSPServer.Info> = {}
 

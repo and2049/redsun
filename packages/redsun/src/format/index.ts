@@ -115,7 +115,7 @@ const layer = Layer.effect(
           })
         }
 
-        const cfg = yield* config.getExecutable()
+        const cfg = yield* config.get()
 
         if (!cfg.formatter) {
           yield* Effect.logInfo("all formatters are disabled")
