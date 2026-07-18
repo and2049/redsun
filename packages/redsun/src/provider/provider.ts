@@ -1409,7 +1409,7 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make<State>((ctx) =>
       Effect.gen(function* () {
         const bridge = yield* EffectBridge.make()
-        const cfg = yield* config.getExecutable()
+        const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
         const database = mapValues(catalog, toPublicInfo)
