@@ -1,200 +1,152 @@
-import { Ripgrep } from "../file/ripgrep"
-import { Global } from "../global"
-import { Filesystem } from "../util/filesystem"
-import { Config } from "../config/config"
-import { Skill } from "../skill"
-import { MCP } from "../mcp"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Context, Effect, Layer } from "effect"
 
-import { Instance } from "../project/instance"
-import path from "path"
-import os from "os"
-import { fileURLToPath } from "bun"
+import { InstanceState } from "@/effect/instance-state"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
-import PROMPT_ANTHROPIC_WITHOUT_TODO from "./prompt/qwen.txt"
+import PROMPT_DEFAULT from "./prompt/default.txt"
 import PROMPT_BEAST from "./prompt/beast.txt"
 import PROMPT_GEMINI from "./prompt/gemini.txt"
+import PROMPT_GPT from "./prompt/gpt.txt"
+import PROMPT_KIMI from "./prompt/kimi.txt"
 import PROMPT_META from "./prompt/meta.txt"
-import PROMPT_ANTHROPIC_SPOOF from "./prompt/anthropic_spoof.txt"
 
 import PROMPT_CODEX from "./prompt/codex.txt"
+import PROMPT_TRINITY from "./prompt/trinity.txt"
 import type { Provider } from "@/provider/provider"
-import { ContextOptimizer } from "./context-optimizer"
+import type { Agent } from "@/agent/agent"
+import { Permission } from "@/permission"
+import { Skill } from "@/skill"
+import { AbsolutePath } from "@opencode-ai/core/schema"
+import { Location } from "@opencode-ai/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { Reference } from "@opencode-ai/core/reference"
+import { MCP } from "@/mcp"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 
-export namespace SystemPrompt {
-  export function header(providerID: string) {
-    if (providerID.includes("anthropic")) return [PROMPT_ANTHROPIC_SPOOF.trim()]
-    return []
-  }
-
-  export function provider(model: Provider.Model) {
-    if (model.api.id.includes("muse-spark")) return [PROMPT_META]
-    if (model.api.id.includes("gpt-5")) return [PROMPT_CODEX]
-    if (model.api.id.includes("gpt-") || model.api.id.includes("o1") || model.api.id.includes("o3"))
-      return [PROMPT_BEAST]
-    if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
-    if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
-    return [PROMPT_ANTHROPIC_WITHOUT_TODO]
-  }
-
-  export async function environmentStable() {
-    const project = Instance.project
-    return [
-      [
-        `Here is some useful information about the environment you are running in:`,
-        `<env>`,
-        `  Working directory: ${Instance.directory}`,
-        `  Is directory a git repo: ${project.vcs === "git" ? "yes" : "no"}`,
-        `  Platform: ${process.platform}`,
-        `</env>`,
-      ].join("\n"),
-    ]
-  }
-
-  export async function environmentVolatile() {
-    const project = Instance.project
-    const tree =
-      project.vcs === "git"
-        ? ContextOptimizer.boundVolatile(
-            "volatile file tree",
-            await Ripgrep.tree({
-              cwd: Instance.directory,
-              limit: 200,
-            }),
-          )
-        : ""
-    return [
-      ContextOptimizer.boundVolatile("volatile environment", [
-        `<env_dynamic>`,
-        `  Today's date: ${new Date().toDateString()}`,
-        `</env_dynamic>`,
-        `<files>`,
-        `  ${tree}`,
-        `</files>`,
-      ].join("\n")),
-    ]
-  }
-
-  const LOCAL_RULE_FILES = [
-    "AGENTS.md",
-    "CLAUDE.md",
-    "CONTEXT.md", // deprecated
-  ]
-  const GLOBAL_RULE_FILES = [
-    path.join(Global.Path.config, "AGENTS.md"),
-    path.join(os.homedir(), ".claude", "CLAUDE.md"),
-  ]
-
-  export async function skills() {
-    return ContextOptimizer.boundText("skills prompt", await Skill.formatForPrompt())
-  }
-
-  export async function mcp() {
-    const instructions = await MCP.instructions()
-    if (instructions.length === 0) return undefined
-    return ContextOptimizer.boundText("mcp instructions", [
-      "<mcp_instructions>",
-      ...instructions.flatMap((item) => [
-        `  <server name="${item.name}">`,
-        ...item.instructions.split("\n").map((line) => `    ${line}`),
-        "  </server>",
-      ]),
-      "</mcp_instructions>",
-    ].join("\n"))
-  }
-
-  const _docsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../docs")
-
-  export function selfModification() {
-    return [
-      [
-        `<self_modification>`,
-        `You can extend redsun by creating extensions, skills, or prompt templates.`,
-        `Documentation files are available at:`,
-        `- Extensions: ${path.join(_docsDir, "extensions.md")}`,
-        `- Skills: ${path.join(_docsDir, "skills.md")}`,
-        `- Prompt templates: ${path.join(_docsDir, "prompt-templates.md")}`,
-        `Read the appropriate documentation when you need to:`,
-        `- Create a new extension (custom tool, command, or event handler)`,
-        `- Create a new skill (specialized knowledge/workflow for the agent)`,
-        `- Create a new prompt template (reusable prompt with argument substitution)`,
-        `After writing extension files to disk, use the reload tool to pick up the changes.`,
-        `Extension files must use inline { id, init } tool definitions — you cannot import redsun internals from extensions.`,
-        `</self_modification>`,
-      ].join("\n"),
-    ]
-  }
-
-  export function projectMemory() {
-    return [
-      [
-        `<project_memory>`,
-        `Maintain long-term project context by reading and writing to the memory file located at \`.redsun/memory.md\`.`,
-        `When starting a task, read this file to understand the project's current state and rules.`,
-        `When finishing a significant milestone or learning something new about the project, update this file so future sessions have the context.`,
-        `</project_memory>`,
-      ].join("\n"),
-    ]
-  }
-
-  export function goalFeature() {
-    return [
-      [
-        `<goal_feature>`,
-        `You can use the \`/goal <condition>\` command to set a persistent stop-condition for your session.`,
-        `When a goal is active, you will not be allowed to exit the session until an independent judge model evaluates the transcript and confirms the condition is met.`,
-        `This is extremely useful for complex tasks to prevent you from stopping prematurely.`,
-        `</goal_feature>`,
-      ].join("\n"),
-    ]
-  }
-
-  export async function custom() {
-    const config = await Config.get()
-    const paths = new Set<string>()
-
-    for (const localRuleFile of LOCAL_RULE_FILES) {
-      const matches = await Filesystem.findUp(localRuleFile, Instance.directory, Instance.worktree)
-      if (matches.length > 0) {
-        matches.forEach((path) => paths.add(path))
-        break
-      }
+export function provider(model: Provider.Model) {
+  if (model.api.id.includes("muse-spark")) return [PROMPT_META]
+  if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
+    return [PROMPT_BEAST]
+  if (model.api.id.includes("gpt")) {
+    if (model.api.id.includes("codex")) {
+      return [PROMPT_CODEX]
     }
-
-    for (const globalRuleFile of GLOBAL_RULE_FILES) {
-      if (await Bun.file(globalRuleFile).exists()) {
-        paths.add(globalRuleFile)
-        break
-      }
-    }
-
-    if (config.instructions) {
-      for (let instruction of config.instructions) {
-        if (instruction.startsWith("~/")) {
-          instruction = path.join(os.homedir(), instruction.slice(2))
-        }
-        let matches: string[] = []
-        if (path.isAbsolute(instruction)) {
-          matches = await Array.fromAsync(
-            new Bun.Glob(path.basename(instruction)).scan({
-              cwd: path.dirname(instruction),
-              absolute: true,
-              onlyFiles: true,
-            }),
-          ).catch(() => [])
-        } else {
-          matches = await Filesystem.globUp(instruction, Instance.directory, Instance.worktree).catch(() => [])
-        }
-        matches.forEach((path) => paths.add(path))
-      }
-    }
-
-    const found = Array.from(paths).map((p) =>
-      Bun.file(p)
-        .text()
-        .catch(() => "")
-        .then((x) => ContextOptimizer.boundText(`instructions file ${p}`, "Instructions from: " + p + "\n" + x)),
-    )
-    return Promise.all(found).then((result) => result.filter(Boolean))
+    return [PROMPT_GPT]
   }
+  if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
+  if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
+  if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
+  if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
+  return [PROMPT_DEFAULT]
 }
+
+export interface Interface {
+  readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
+  readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
+  readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
+
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const skill = yield* Skill.Service
+    const mcp = yield* MCP.Service
+    const locations = yield* LocationServiceMap.Service
+
+    return Service.of({
+      environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
+        const ctx = yield* InstanceState.context
+        const references = yield* Effect.gen(function* () {
+          return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
+        }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
+        return [
+          [
+            `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
+            `Here is some useful information about the environment you are running in:`,
+            `<env>`,
+            `  Working directory: ${ctx.directory}`,
+            `  Workspace root folder: ${ctx.worktree}`,
+            `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
+            `  Platform: ${process.platform}`,
+            `  Today's date: ${new Date().toDateString()}`,
+            `</env>`,
+          ].join("\n"),
+          [
+            "<goal_feature>",
+            "The /goal <condition> command sets a persistent stop condition for this session.",
+            "When active, an independent judge checks the transcript before the session may stop.",
+            "Use /goal with no condition to clear it.",
+            "</goal_feature>",
+          ].join("\n"),
+          references.length === 0
+            ? undefined
+            : [
+                "Project references provide additional directories that can be accessed when relevant.",
+                "<available_references>",
+                ...references
+                  .toSorted((a, b) => a.name.localeCompare(b.name))
+                  .flatMap((reference) => [
+                    "  <reference>",
+                    `    <name>${reference.name}</name>`,
+                    `    <path>${reference.path}</path>`,
+                    ...(reference.description === undefined
+                      ? []
+                      : [`    <description>${reference.description}</description>`]),
+                    "  </reference>",
+                  ]),
+                "</available_references>",
+              ].join("\n"),
+        ].filter((part): part is string => part !== undefined)
+      }),
+
+      skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
+        if (Permission.disabled(["skill"], agent.permission).has("skill")) return
+
+        const list = yield* skill.available(agent)
+
+        return [
+          "Skills provide specialized instructions and workflows for specific tasks.",
+          "Use the skill tool to load a skill when a task matches its description.",
+          // the agents seem to ingest the information about skills a bit better if we present a more verbose
+          // version of them here and a less verbose version in tool description, rather than vice versa.
+          Skill.fmt(list, { verbose: true }),
+        ].join("\n")
+      }),
+
+      mcp: Effect.fn("SystemPrompt.mcp")(function* (agent: Agent.Info, permission?: PermissionV1.Ruleset) {
+        const ruleset = Permission.merge(agent.permission, permission ?? [])
+        const instructions = (yield* mcp.instructions()).filter(
+          (item) => item.tools.length === 0 || Permission.disabled(item.tools, ruleset).size < item.tools.length,
+        )
+        if (instructions.length === 0) return
+
+        return [
+          "<mcp_instructions>",
+          ...instructions.flatMap((item) => [
+            `  <server name="${item.name}">`,
+            ...item.instructions.split("\n").map((line) => `    ${line}`),
+            "  </server>",
+          ]),
+          "</mcp_instructions>",
+        ].join("\n")
+      }),
+    })
+  }),
+)
+
+const locationServiceMapNode = LayerNode.make({
+  service: LocationServiceMap.Service,
+  layer: locationServiceMapLayer,
+  deps: [],
+})
+
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Skill.node, MCP.node, locationServiceMapNode],
+})
+
+export * as SystemPrompt from "./system"

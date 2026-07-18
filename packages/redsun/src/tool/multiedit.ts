@@ -1,46 +1,38 @@
-import z from "zod"
-import { Tool } from "./tool"
+import { Effect, Schema } from "effect"
+import * as Tool from "./tool"
 import { EditTool } from "./edit"
-import DESCRIPTION from "./multiedit.txt"
-import path from "path"
-import { Instance } from "../project/instance"
 
-export const MultiEditTool = Tool.define("multiedit", {
-  description: DESCRIPTION,
-  parameters: z.object({
-    filePath: z.string().describe("The absolute path to the file to modify"),
-    edits: z
-      .array(
-        z.object({
-          oldString: z.string().describe("The text to replace"),
-          newString: z.string().describe("The text to replace it with (must be different from oldString)"),
-          replaceAll: z.boolean().optional().describe("Replace all occurrences of oldString (default false)"),
-        }),
-      )
-      .min(1)
-      .describe("Array of edit operations to perform sequentially on the file"),
+export const MultiEditTool = Tool.define(
+  "multiedit",
+  Effect.gen(function* () {
+    const info = yield* EditTool
+    return () =>
+      Effect.gen(function* () {
+        const edit = yield* info.init()
+        return {
+          description: "Apply multiple ordered find-and-replace edits to one file.",
+          parameters: Schema.Struct({
+            filePath: Schema.String,
+            edits: Schema.Array(Schema.Struct({
+              oldString: Schema.String,
+              newString: Schema.String,
+              replaceAll: Schema.optional(Schema.Boolean),
+            })),
+          }),
+          execute: (
+            input: { filePath: string; edits: Array<{ oldString: string; newString: string; replaceAll?: boolean }> },
+            ctx,
+          ) =>
+            Effect.gen(function* () {
+              const results = yield* Effect.forEach(
+                input.edits,
+                (item) => edit.execute({ filePath: input.filePath, ...item }, ctx),
+                { concurrency: 1 },
+              )
+              const last = results.at(-1)!
+              return { ...last, metadata: { results: results.map((item) => item.metadata) } }
+            }),
+        }
+      })
   }),
-  async execute(params, ctx) {
-    const tool = await EditTool.init()
-    const results = []
-    for (const edit of params.edits) {
-      const result = await tool.execute(
-        {
-          filePath: params.filePath,
-          oldString: edit.oldString,
-          newString: edit.newString,
-          replaceAll: edit.replaceAll,
-        },
-        ctx,
-      )
-      results.push(result)
-    }
-    return {
-      title: path.relative(Instance.worktree, params.filePath),
-      metadata: {
-        results: results.map((r) => r.metadata),
-      },
-      output: results.at(-1)?.output ?? "",
-    }
-  },
-})
+)
