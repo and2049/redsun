@@ -369,7 +369,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                         type: "oauth",
                         refresh: tokens.refresh_token,
                         access: tokens.access_token,
-                        expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+                        expires: Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - 60) * 1000,
                         ...(accountId && { accountId }),
                       },
                     })
@@ -450,7 +450,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                   type: "success" as const,
                   refresh: tokens.refresh_token,
                   access: tokens.access_token,
-                  expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+                  expires: Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - 60) * 1000,
                   accountId,
                 }
               },
@@ -525,7 +525,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                       type: "success" as const,
                       refresh: tokens.refresh_token,
                       access: tokens.access_token,
-                      expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+                      expires: Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - 60) * 1000,
                       accountId: extractAccountId(tokens),
                     }
                   }
