@@ -282,9 +282,27 @@ export function Prompt(props: PromptProps) {
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session?.cost ?? 0
+
+    let cumulativeInput = 0
+    let cumulativeCacheRead = 0
+    let cumulativeCacheWrite = 0
+    for (const item of msg) {
+      if (item.role !== "assistant" || item.tokens.output === 0) continue
+      cumulativeInput += item.tokens.input
+      cumulativeCacheRead += item.tokens.cache.read
+      cumulativeCacheWrite += item.tokens.cache.write
+    }
+    const cacheDenominator = cumulativeInput + cumulativeCacheRead + cumulativeCacheWrite
+    const cacheHitRatio =
+      cumulativeCacheRead + cumulativeCacheWrite > 0 && cacheDenominator > 0
+        ? Math.round((cumulativeCacheRead / cacheDenominator) * 100)
+        : undefined
+
     return {
       context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
+      pct,
       cost: cost > 0 ? money.format(cost) : undefined,
+      cacheHitRatio,
     }
   })
 
@@ -1677,11 +1695,18 @@ const next = transition(vim.mode, e)
                 <Match when={store.mode === "normal"}>
                   <Switch>
                     <Match when={usage()}>
-                      {(item) => (
-                        <text fg={theme.textMuted} wrapMode="none">
-                          {[item().context, item().cost].filter(Boolean).join(" · ")}
-                        </text>
-                      )}
+                      {(item) => {
+                        const parts = [
+                          item().context,
+                          item().cacheHitRatio !== undefined ? `cache ${item().cacheHitRatio}%` : undefined,
+                          item().cost,
+                        ].filter(Boolean)
+                        return (
+                          <text fg={theme.textMuted} wrapMode="none">
+                            {parts.join(" · ")}
+                          </text>
+                        )
+                      }}
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
