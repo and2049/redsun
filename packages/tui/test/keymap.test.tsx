@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { createBindingLookup } from "@opentui/keymap/extras"
+import { createMockKeys } from "@opentui/core/testing"
 import { testRender, useRenderer } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { onCleanup } from "solid-js"
@@ -135,6 +136,67 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
         "model.list": 0,
       },
     })
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("ctrl+backslash interrupt is active only in base mode", async () => {
+  let interrupts = 0
+  let keymap!: ReturnType<typeof createDefaultOpenTuiKeymap>
+
+  function Harness() {
+    const renderer = useRenderer()
+    keymap = createDefaultOpenTuiKeymap(renderer)
+    const config = createResolvedKeymapConfig()
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const offLayer = keymap.registerLayer({
+      mode: OPENCODE_BASE_MODE,
+      commands: [
+        {
+          name: "session.interrupt",
+          run: () => {
+            interrupts++
+          },
+        },
+      ],
+      bindings: config.keybinds.get("session.interrupt"),
+    })
+    onCleanup(() => {
+      offLayer()
+      offKeymap()
+    })
+
+    return (
+      <OpencodeKeymapProvider keymap={keymap}>
+        <box />
+      </OpencodeKeymapProvider>
+    )
+  }
+
+  const app = await testRender(() => <Harness />)
+  try {
+    const binding = keymap
+      .getCommandBindings({ visibility: "active", commands: ["session.interrupt"] })
+      .get("session.interrupt")?.[0]
+    expect(binding?.sequence).toMatchObject([{ stroke: { name: "\\", ctrl: true } }])
+
+    const keys = createMockKeys(app.renderer)
+    keys.pressKey("\\", { ctrl: true })
+    expect(interrupts).toBe(1)
+
+    const pop = getOpencodeModeStack(keymap).push("command")
+    expect(
+      keymap
+        .getCommandBindings({ visibility: "active", commands: ["session.interrupt"] })
+        .get("session.interrupt"),
+    ).toHaveLength(0)
+    keys.pressKey("\\", { ctrl: true })
+    expect(interrupts).toBe(1)
+    pop()
+
+    keys.pressKey("\\", { ctrl: true })
+    expect(interrupts).toBe(2)
   } finally {
     app.renderer.destroy()
   }
