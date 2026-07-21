@@ -108,6 +108,7 @@ const appGlobalBindingCommands = [
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
+  "worker.model",
   "model.cycle_recent",
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
@@ -642,6 +643,38 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashAliases: ["mo"],
         run: () => {
           dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "worker.model",
+        title: "Select worker model",
+        category: "Agent",
+        slashName: "worker-model",
+        slashAliases: ["wm"],
+        run: () => {
+          const current = sync.data.config.task_router?.worker
+          const [providerID, ...rest] = current?.split("/") ?? []
+          dialog.replace(() => (
+            <DialogModel
+              title="Select worker model (project)"
+              current={providerID && rest.length ? { providerID, modelID: rest.join("/") } : undefined}
+              onSelect={async (model) => {
+                const config = {
+                  ...sync.data.config,
+                  task_router: {
+                    ...sync.data.config.task_router,
+                    worker: `${model.providerID}/${model.modelID}`,
+                  },
+                }
+                await sdk.client.config.update(
+                  { workspace: project.workspace.current(), config },
+                  { throwOnError: true },
+                )
+                sync.set("config", config)
+              }}
+              onError={(error) => toast.error(error)}
+            />
+          ))
         },
       },
       {
