@@ -367,18 +367,18 @@ it.instance(
   { config: { shell: "bash" } },
 )
 
-it.instance("updates config and preserves empty shell sentinel", () =>
+it.instance("updates the reloadable project config and preserves empty shell sentinel", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(
       test.directory,
       { $schema: "https://opencode.ai/config.json", shell: "bash" },
-      "config.json",
+      "redsun.json",
     )
 
     yield* Config.Service.use((svc) => svc.update(ConfigParse.schema(ConfigV1.Info, { shell: "" }, "test:config")))
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "redsun.json"))
     expect(writtenConfig).toMatchObject({ shell: "" })
   }),
 )
@@ -902,15 +902,49 @@ Nested command template`,
   }),
 )
 
-it.instance("updates config and writes to file", () =>
+it.instance("updates config in a reloadable project file", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* Config.Service.use((svc) =>
       svc.update(ConfigParse.schema(ConfigV1.Info, { model: "updated/model" }, "test:config")),
     )
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "redsun.json"))
     expect(writtenConfig).toMatchObject({ model: "updated/model" })
+  }),
+)
+
+it.instance("updates JSONC project config without losing existing settings", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const file = path.join(test.directory, "redsun.jsonc")
+    yield* FSUtil.use.writeWithDirs(file, '{\n  // Keep this comment\n  "model": "planner/model"\n}\n')
+
+    yield* Config.Service.use((svc) =>
+      svc.update(ConfigParse.schema(ConfigV1.Info, { task_router: { worker: "worker/model" } }, "test:config")),
+    )
+
+    const content = yield* FSUtil.use.readFileString(file)
+    const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(content, file), file)
+    expect(content).toContain("// Keep this comment")
+    expect(parsed.model).toBe("planner/model")
+    expect(parsed.task_router?.worker).toBe("worker/model")
+  }),
+)
+
+it.instance("updates an existing .redsun project config", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const file = path.join(test.directory, ".redsun", "redsun.jsonc")
+    yield* FSUtil.use.writeWithDirs(file, '{\n  "model": "planner/model"\n}\n')
+
+    yield* Config.Service.use((svc) =>
+      svc.update(ConfigParse.schema(ConfigV1.Info, { task_router: { worker: "worker/model" } }, "test:config")),
+    )
+
+    const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(yield* FSUtil.use.readFileString(file), file), file)
+    expect(parsed.model).toBe("planner/model")
+    expect(parsed.task_router?.worker).toBe("worker/model")
   }),
 )
 

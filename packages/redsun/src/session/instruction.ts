@@ -118,14 +118,15 @@ const layer: Layer.Layer<
           paths.add(path.resolve(file))
           break
         }
+      }
+
+      if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
         for (const file of redsunFiles) {
           const matches = yield* fs.findUp(file, ctx.directory, ctx.worktree).pipe(Effect.catch(() => Effect.succeed([])))
           matches.forEach((item) => paths.add(path.resolve(item)))
         }
-      }
 
-      // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
-      if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+        // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
         for (const file of instructionFiles) {
           const matches = yield* fs
             .findUp(file, ctx.directory, ctx.worktree)

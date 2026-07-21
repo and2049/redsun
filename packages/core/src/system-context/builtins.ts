@@ -8,6 +8,7 @@ import { InstructionContext } from "../instruction-context"
 import { SystemContextRegistry } from "./registry"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
+import { PROJECT_MEMORY_POLICY } from "../project-memory"
 
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -36,6 +37,13 @@ const builtIns = Layer.effectDiscard(
         load: DateTime.nowAsDate.pipe(Effect.map((date) => date.toDateString())),
         baseline: (date) => `Today's date: ${date}`,
         update: (_previous, date) => `Today's date is now: ${date}`,
+      }),
+      SystemContext.make({
+        key: SystemContext.Key.make("core/project-memory-policy"),
+        codec: Schema.toCodecJson(Schema.String),
+        load: Effect.succeed(PROJECT_MEMORY_POLICY),
+        baseline: (policy) => policy,
+        update: (_previous, policy) => policy,
       }),
     ])
 

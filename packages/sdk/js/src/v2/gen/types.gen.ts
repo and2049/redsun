@@ -1953,6 +1953,8 @@ export type Config = {
     summary?: string
     title?: string
     explore?: string
+    general?: string
+    worker?: string
   }
   default_agent?: string
   subagent_depth?: number

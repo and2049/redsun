@@ -108,6 +108,7 @@ const appGlobalBindingCommands = [
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
+  "worker.model",
   "model.cycle_recent",
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
@@ -472,12 +473,12 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`redsun | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`redsun | ${route.data.id}`)
     }
   })
 
@@ -642,6 +643,37 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashAliases: ["mo"],
         run: () => {
           dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "worker.model",
+        title: "Select worker model",
+        category: "Agent",
+        slashName: "worker-model",
+        slashAliases: ["wm"],
+        run: () => {
+          const fallback = sync.data.agent.find((agent) => agent.name === "worker")?.model
+          const current =
+            sync.data.config.task_router?.worker ?? (fallback ? `${fallback.providerID}/${fallback.modelID}` : undefined)
+          const [providerID, ...rest] = current?.split("/") ?? []
+          dialog.replace(() => (
+            <DialogModel
+              title="Select worker model (project)"
+              current={providerID && rest.length ? { providerID, modelID: rest.join("/") } : undefined}
+              onSelect={async (model) => {
+                const worker = `${model.providerID}/${model.modelID}`
+                await sdk.client.config.update(
+                  { workspace: project.workspace.current(), config: { task_router: { worker } } },
+                  { throwOnError: true },
+                )
+                sync.set("config", {
+                  ...sync.data.config,
+                  task_router: { ...sync.data.config.task_router, worker },
+                })
+              }}
+              onError={(error) => toast.error(error)}
+            />
+          ))
         },
       },
       {
