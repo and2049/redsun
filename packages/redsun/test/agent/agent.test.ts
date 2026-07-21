@@ -50,8 +50,10 @@ it.instance("returns default native agents when no config", () =>
     const names = agents.map((a) => a.name)
     expect(names).toContain("build")
     expect(names).toContain("plan")
+    expect(names).toContain("compose")
     expect(names).toContain("general")
     expect(names).toContain("explore")
+    expect(names).toContain("worker")
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
@@ -77,6 +79,30 @@ it.instance("plan agent denies edits except .redsun/plans/*", () =>
     expect(evalPerm(plan, "edit")).toBe("deny")
     // But specific path is allowed
     expect(Permission.evaluate("edit", ".redsun/plans/foo.md", plan!.permission).action).toBe("allow")
+  }),
+)
+
+it.instance("compose delegates without direct workspace mutation", () =>
+  Effect.gen(function* () {
+    const compose = yield* load((svc) => svc.get("compose"))
+    expect(compose?.mode).toBe("primary")
+    expect(evalPerm(compose, "read")).toBe("allow")
+    expect(evalPerm(compose, "task")).toBe("deny")
+    expect(Permission.evaluate("task", "worker", compose!.permission).action).toBe("allow")
+    expect(Permission.evaluate("task", "explore", compose!.permission).action).toBe("allow")
+    expect(evalPerm(compose, "edit")).toBe("deny")
+    expect(evalPerm(compose, "bash")).toBe("deny")
+  }),
+)
+
+it.instance("worker can execute but cannot delegate", () =>
+  Effect.gen(function* () {
+    const worker = yield* load((svc) => svc.get("worker"))
+    expect(worker?.mode).toBe("subagent")
+    expect(evalPerm(worker, "edit")).toBe("allow")
+    expect(evalPerm(worker, "bash")).toBe("allow")
+    expect(evalPerm(worker, "task")).toBe("deny")
+    expect(evalPerm(worker, "question")).toBe("deny")
   }),
 )
 
@@ -750,6 +776,7 @@ it.instance(
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        compose: { disable: true },
       },
     },
   },

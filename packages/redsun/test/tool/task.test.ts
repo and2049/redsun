@@ -24,6 +24,8 @@ import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { Provider } from "@/provider/provider"
+import { ProviderTest } from "../fake/provider"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -51,12 +53,39 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       Database.node,
       RuntimeFlags.node,
       Ripgrep.node,
+      Provider.node,
     ]),
     [[RuntimeFlags.node, RuntimeFlags.layer(flags)]],
   )
 
 const it = testEffect(layer())
 const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
+const routedProvider = ProviderTest.fake({ model: ProviderTest.model({ id: ref.modelID, providerID: ref.providerID }) })
+const routed = testEffect(
+  LayerNode.compile(
+    LayerNode.group([
+      Agent.node,
+      BackgroundJob.node,
+      EventV2Bridge.node,
+      Config.node,
+      CrossSpawnSpawner.node,
+      Session.node,
+      SessionProjector.node,
+      SessionRunState.node,
+      SessionStatus.node,
+      Truncate.node,
+      ToolRegistry.node,
+      Database.node,
+      RuntimeFlags.node,
+      Ripgrep.node,
+      Provider.node,
+    ]),
+    [
+      [RuntimeFlags.node, RuntimeFlags.layer({})],
+      [Provider.node, routedProvider.layer],
+    ],
+  ),
+)
 
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -255,6 +284,235 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("worker requires an explicitly configured model", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const exit = yield* def
+        .execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("task_router.worker")
+    }),
+  )
+
+  it.instance(
+    "worker uses its configured fallback model and variant",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
+        expect(seen?.variant).toBe("low")
+      }),
+    {
+      config: {
+        agent: {
+          worker: { model: "test/test-model", variant: "low" },
+        },
+      },
+    },
+  )
+
+  routed.instance(
+    "task router takes precedence for a new worker and drops the parent variant",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "compose",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
+        expect(seen?.variant).toBeUndefined()
+      }),
+    {
+      config: {
+        task_router: { worker: "test/test-model" },
+        agent: { worker: { model: "other/ignored-model", variant: "high" } },
+      },
+    },
+  )
+
+  routed.instance(
+    "task router applies to general and explore subagents",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const seen: SessionPrompt.PromptInput[] = []
+        const context = {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "compose",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => seen.push(input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        }
+
+        yield* def.execute({ description: "research", prompt: "inspect", subagent_type: "explore" }, context)
+        yield* def.execute({ description: "implement", prompt: "change", subagent_type: "general" }, context)
+
+        expect(seen).toHaveLength(2)
+        expect(seen.every((input) => input.model?.providerID === ref.providerID && input.model.modelID === ref.modelID)).toBe(
+          true,
+        )
+        expect(seen.every((input) => input.variant === undefined)).toBe(true)
+      }),
+    { config: { task_router: { explore: "test/test-model", general: "test/test-model" } } },
+  )
+
+  routed.instance(
+    "a resumed worker keeps its historical model and variant after route changes",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const child = yield* sessions.create({
+          parentID: chat.id,
+          agent: "worker",
+          model: { id: ref.modelID, providerID: ref.providerID, variant: "low" },
+        })
+        yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: child.id,
+          agent: "worker",
+          model: { ...ref, variant: "low" },
+          time: { created: Date.now() },
+        })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "continue fix", prompt: "verify the change", subagent_type: "worker", task_id: child.id },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "compose",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
+        expect(seen?.variant).toBe("low")
+      }),
+    { config: { task_router: { worker: "other/new-worker-model" } } },
+  )
+
+  routed.instance(
+    "an unavailable explicit route fails without creating a worker session",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const exit = yield* def
+          .execute(
+            { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+            {
+              sessionID: chat.id,
+              messageID: assistant.id,
+              agent: "compose",
+              abort: new AbortController().signal,
+              extra: { promptOps: stubOps() },
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+          .pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("task_router.worker model is unavailable")
+        expect(yield* sessions.children(chat.id)).toHaveLength(0)
+      }),
+    { config: { task_router: { worker: "other/missing" } } },
+  )
+
+  it.instance("rejects a task_id owned by another parent session", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const other = yield* sessions.create({ title: "Other" })
+      const child = yield* sessions.create({ parentID: other.id, title: "Other child", agent: "general" })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const exit = yield* def
+        .execute(
+          { description: "inspect", prompt: "inspect", subagent_type: "general", task_id: child.id },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("does not belong")
+    }),
+  )
+
   it.instance("execute asks by default and skips checks when bypassed", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
@@ -351,40 +609,37 @@ describe("tool.task", () => {
     }),
   )
 
-  it.instance("execute creates a child when task_id does not exist", () =>
+  it.instance("rejects a missing task_id instead of replacing the worker session", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
       const def = yield* tool.init()
-      let seen: SessionPrompt.PromptInput | undefined
-      const promptOps = stubOps({ text: "created", onPrompt: (input) => (seen = input) })
 
-      const result = yield* def.execute(
-        {
-          description: "inspect bug",
-          prompt: "look into the cache key path",
-          subagent_type: "general",
-          task_id: "ses_missing",
-        },
-        {
-          sessionID: chat.id,
-          messageID: assistant.id,
-          agent: "build",
-          abort: new AbortController().signal,
-          extra: { promptOps },
-          messages: [],
-          metadata: () => Effect.void,
-          ask: () => Effect.void,
-        },
-      )
+      const exit = yield* def
+        .execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+            task_id: "ses_missing",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
 
-      const kids = yield* sessions.children(chat.id)
-      expect(kids).toHaveLength(1)
-      expect(kids[0]?.id).toBe(result.metadata.sessionId)
-      expect(result.metadata.sessionId).not.toBe("ses_missing")
-      expect(result.output).toContain(`<task id="${result.metadata.sessionId}" state="completed">`)
-      expect(seen?.sessionID).toBe(result.metadata.sessionId)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("Session not found")
+      expect(yield* sessions.children(chat.id)).toHaveLength(0)
     }),
   )
 

@@ -210,22 +210,52 @@ describe("Instruction.resolve", () => {
 })
 
 describe("Instruction.system", () => {
-  it.live("loads both project and global AGENTS.md when both exist", () =>
+  it.live("loads project memory even when a global instruction exists", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })
-      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": "# Project Instructions" })
+      const projectTmp = yield* tmpWithFiles({
+        "AGENTS.md": "# Project Instructions",
+        ".redsun/memory.md": "# Project Memory",
+      })
 
       yield* Effect.gen(function* () {
         const svc = yield* Instruction.Service
         const paths = yield* svc.systemPaths()
         expect(paths.has(path.join(projectTmp, "AGENTS.md"))).toBe(true)
+        expect(paths.has(path.join(projectTmp, ".redsun", "memory.md"))).toBe(true)
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
 
         const rules = yield* svc.system()
-        expect(rules).toHaveLength(2)
+        expect(rules).toHaveLength(3)
         expect(rules[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
-        expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
+        expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, ".redsun", "memory.md")}\n# Project Memory`)
+        expect(rules[2]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("does not load project memory when project instructions are disabled", () =>
+    Effect.gen(function* () {
+      const previous = process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+      process.env.OPENCODE_DISABLE_PROJECT_CONFIG = "1"
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })
+      const projectTmp = yield* tmpWithFiles({ ".redsun/memory.md": "# Project Memory" })
+
+      return yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
+        expect(paths.has(path.join(projectTmp, ".redsun", "memory.md"))).toBe(false)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (previous === undefined) delete process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+            else process.env.OPENCODE_DISABLE_PROJECT_CONFIG = previous
+          }),
+        ),
+      )
     }),
   )
 

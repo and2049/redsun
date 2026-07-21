@@ -89,6 +89,8 @@ export const Info = Schema.Struct({
       summary: Schema.optional(Schema.String),
       title: Schema.optional(Schema.String),
       explore: Schema.optional(Schema.String),
+      general: Schema.optional(Schema.String),
+      worker: Schema.optional(Schema.String),
     }),
   ).annotate({ description: "Optional provider/model overrides for lightweight internal tasks" }),
   default_agent: Schema.optional(Schema.String).annotate({

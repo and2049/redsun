@@ -41,6 +41,8 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     summary: Schema.String.pipe(Schema.optional),
     title: Schema.String.pipe(Schema.optional),
     explore: Schema.String.pipe(Schema.optional),
+    general: Schema.String.pipe(Schema.optional),
+    worker: Schema.String.pipe(Schema.optional),
   }).pipe(Schema.optional),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
     description: "Default primary agent to use when no session agent is selected",

@@ -181,12 +181,55 @@ const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          compose: {
+            name: "compose",
+            description: "Plans and delegates scoped implementation work to worker subagents.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                list: "allow",
+                codesearch: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                skill: "allow",
+                question: "allow",
+                task: {
+                  worker: "allow",
+                  explore: "allow",
+                },
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
           general: {
             name: "general",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
+                todowrite: "deny",
+              }),
+              user,
+            ),
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          worker: {
+            name: "worker",
+            description: "Implementation-focused agent for scoped code changes and verification.",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                question: "deny",
+                task: "deny",
                 todowrite: "deny",
               }),
               user,

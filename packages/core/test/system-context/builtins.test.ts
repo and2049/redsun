@@ -10,6 +10,7 @@ import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SystemContext } from "@opencode-ai/core/system-context"
 import { SystemContextBuiltIns } from "@opencode-ai/core/system-context/builtins"
 import { SystemContextRegistry } from "@opencode-ai/core/system-context/registry"
+import { PROJECT_MEMORY_POLICY } from "@opencode-ai/core/project-memory"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 
@@ -72,6 +73,8 @@ describe("SystemContextBuiltIns", () => {
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,
+          "",
+          PROJECT_MEMORY_POLICY,
         ].join("\n"),
       )
     }),
@@ -120,6 +123,8 @@ describe("SystemContextBuiltIns", () => {
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,
+          "",
+          PROJECT_MEMORY_POLICY,
           "",
           `Instructions from: ${instructionFile}\nBe precise.`,
         ].join("\n"),

@@ -23,6 +23,7 @@ import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/l
 import { Reference } from "@opencode-ai/core/reference"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { PROJECT_MEMORY_POLICY } from "@opencode-ai/core/project-memory"
 
 export function provider(model: Provider.Model) {
   if (model.api.id.includes("muse-spark")) return [PROMPT_META]
@@ -81,6 +82,7 @@ const layer = Layer.effect(
             "Use /goal with no condition to clear it.",
             "</goal_feature>",
           ].join("\n"),
+          PROJECT_MEMORY_POLICY,
           references.length === 0
             ? undefined
             : [

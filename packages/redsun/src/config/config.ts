@@ -159,6 +159,16 @@ function globalConfigFile() {
   return candidates[0]
 }
 
+function projectConfigFile(directory: string) {
+  const candidates = [
+    path.join(directory, "redsun.jsonc"),
+    path.join(directory, "redsun.json"),
+    path.join(directory, ".redsun", "redsun.jsonc"),
+    path.join(directory, ".redsun", "redsun.json"),
+  ]
+  return candidates.find(existsSync) ?? candidates[1]
+}
+
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
   if (!isRecord(patch)) {
     const edits = modify(input, path, patch, {
@@ -697,11 +707,15 @@ const layer = Layer.effect(
 
     const update = Effect.fn("Config.update")(function* (config: Info) {
       const dir = yield* InstanceState.directory
-      const file = path.join(dir, "config.json")
+      const file = projectConfigFile(dir)
       const existing = yield* loadFile(file)
-      yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
-        .pipe(Effect.orDie)
+      const patch = writable(config)
+      if (file.endsWith(".jsonc")) {
+        const before = (yield* readConfigFile(file)) ?? "{}"
+        yield* fs.writeFileString(file, patchJsonc(before, patch)).pipe(Effect.orDie)
+        return
+      }
+      yield* fs.writeFileString(file, JSON.stringify(mergeDeep(writable(existing), patch), null, 2)).pipe(Effect.orDie)
     })
 
     const invalidate = Effect.fn("Config.invalidate")(function* () {

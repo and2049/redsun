@@ -10,7 +10,9 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
+import { Provider } from "@/provider/provider"
 import { Effect, Exit, Schema, Scope } from "effect"
+import * as Option from "effect/Option"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
@@ -84,6 +86,7 @@ export const TaskTool = Tool.define(
     const agent = yield* Agent.Service
     const background = yield* BackgroundJob.Service
     const config = yield* Config.Service
+    const provider = yield* Provider.Service
     const sessions = yield* Session.Service
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
@@ -133,9 +136,11 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
-      const session = params.task_id
-        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
+      const session = params.task_id ? yield* sessions.get(SessionID.make(params.task_id)) : undefined
+      if (session && session.parentID !== ctx.sessionID)
+        return yield* Effect.fail(new Error("Task session does not belong to this parent session"))
+      if (session?.agent && session.agent !== next.name)
+        return yield* Effect.fail(new Error(`Task session belongs to @${session.agent}, not @${next.name}`))
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
@@ -153,6 +158,46 @@ export const TaskTool = Tool.define(
           action: "deny" as const,
         })) ?? []),
       ]
+      const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
+        Effect.provideService(Database.Service, database),
+        Effect.orDie,
+      )
+      if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
+      const parentVariant = msg.info.variant
+      const parentModel = {
+        modelID: msg.info.modelID,
+        providerID: msg.info.providerID,
+      }
+      const pinned = session
+        ? yield* sessions.findMessage(session.id, (item) => item.info.role === "user" && !!item.info.model)
+        : Option.none()
+      const route = cfg.task_router?.[next.name as keyof NonNullable<typeof cfg.task_router>]
+      const routed = route ? Provider.parseModel(route) : undefined
+      const model = Option.isSome(pinned) && pinned.value.info.role === "user" && pinned.value.info.model
+        ? pinned.value.info.model
+        : routed
+          ? yield* provider
+              .getModel(routed.providerID, routed.modelID)
+              .pipe(
+                Effect.as(routed),
+                Effect.catchCause(() =>
+                  Effect.fail(new Error(`Configured task_router.${next.name} model is unavailable: ${route}`)),
+                ),
+              )
+          : next.model ??
+            (next.name === "worker"
+              ? yield* Effect.fail(
+                  new Error('Configure task_router.worker or agent.worker.model before using the worker subagent'),
+                )
+              : parentModel)
+      const variant =
+        Option.isSome(pinned) && pinned.value.info.role === "user"
+          ? session?.model?.variant
+          : route || next.model
+            ? next.model && !route
+              ? next.variant
+              : undefined
+            : parentVariant
       const nextSession =
         session ??
         (yield* sessions.create({
@@ -170,18 +215,6 @@ export const TaskTool = Tool.define(
             ),
           ],
         }))
-
-      const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
-        Effect.provideService(Database.Service, database),
-        Effect.orDie,
-      )
-      if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
-      const variant = msg.info.variant
-
-      const model = next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
@@ -206,7 +239,7 @@ export const TaskTool = Tool.define(
             modelID: model.modelID,
             providerID: model.providerID,
           },
-          variant: next.model ? undefined : variant,
+          variant,
           agent: next.name,
           parts,
         })
@@ -222,7 +255,7 @@ export const TaskTool = Tool.define(
           .prompt({
             sessionID: ctx.sessionID,
             agent: currentParent.agent ?? ctx.agent,
-            variant,
+            variant: parentVariant,
             parts: [
               {
                 type: "text",

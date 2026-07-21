@@ -160,6 +160,11 @@ export function Prompt(props: PromptProps) {
   const route = useRoute()
   const project = useProject()
   const sync = useSync()
+  const workerRoute = createMemo(() => {
+    if (sync.data.config.task_router?.worker) return sync.data.config.task_router.worker
+    const model = sync.data.agent.find((agent) => agent.name === "worker")?.model
+    return model ? `${model.providerID}/${model.modelID}` : undefined
+  })
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
   const toast = useToast()
@@ -1483,6 +1488,12 @@ const next = transition(vim.mode, e)
                             {local.model.parsed().model}
                           </text>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+                          <Show when={agent().name === "compose" && dimensions().width >= 90}>
+                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>worker:</text>
+                            <text fg={fadeColor(workerRoute() ? theme.textMuted : theme.warning, modelMetaAlpha())}>
+                              {workerRoute() ?? "not configured"}
+                            </text>
+                          </Show>
                           <Show when={showVariant()}>
                             <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
                             <text>

@@ -87,6 +87,16 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("preserves v1 task router configuration", () =>
+    Effect.sync(() => {
+      expect(
+        ConfigMigrateV1.migrate({
+          task_router: { worker: "openai/gpt-5-mini", general: "openai/gpt-5" },
+        }).task_router,
+      ).toEqual({ worker: "openai/gpt-5-mini", general: "openai/gpt-5" })
+    }),
+  )
+
   it.effect("migrates v1 provider setup options into AISDK settings", () =>
     Effect.sync(() => {
       const migrated = ConfigMigrateV1.migrate({
