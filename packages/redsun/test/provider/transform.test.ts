@@ -7,6 +7,128 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { jsonSchema } from "ai"
 
+describe("ProviderTransform.slimSchema", () => {
+  test("caps descriptions and removes documentation-only keys recursively", () => {
+    const result = ProviderTransform.slimSchema({
+      type: "object",
+      description: "x".repeat(900),
+      examples: [{ value: "unused" }],
+      properties: {
+        value: {
+          type: "string",
+          markdownDescription: "unused",
+          $comment: "unused",
+          description: "kept",
+        },
+      },
+    } as any)
+
+    expect(result.description?.length).toBe(ProviderTransform.SCHEMA_DESCRIPTION_MAX_CHARS)
+    expect(result.description).toContain("schema description truncated")
+    expect(result.examples).toBeUndefined()
+    expect(result.properties?.value).toEqual({ type: "string", description: "kept" })
+  })
+})
+
+describe("LLMRequestPrep system cache stability", () => {
+  test("keeps volatile context outside the two cache-marked system fragments", async () => {
+    const model = {
+      id: "claude-test",
+      providerID: "anthropic",
+      api: { id: "claude-test", npm: "@ai-sdk/anthropic", url: "https://example.test" },
+      capabilities: { temperature: true, reasoning: false },
+      options: {},
+      variants: {},
+      limit: { context: 100_000, output: 8_000 },
+    } as any
+    const prepared = await Effect.runPromise(
+      LLMRequestPrep.prepare({
+        user: {
+          id: "msg_user-test",
+          sessionID: "ses_test",
+          role: "user",
+          time: { created: Date.now() },
+          agent: "build",
+          model: { providerID: "anthropic", modelID: "claude-test" },
+        } as any,
+        sessionID: "ses_test",
+        model,
+        agent: { name: "build", mode: "primary", prompt: "provider system", options: {}, permission: [] } as any,
+        system: ["stable project context"],
+        volatileSystem: ["volatile date context"],
+        messages: [{ role: "user", content: "hello" }],
+        tools: {},
+        provider: { id: "anthropic", options: {} } as any,
+        auth: undefined,
+        plugin: {
+          trigger: (_name: string, _input: unknown, output: unknown) => Effect.succeed(output),
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        } as any,
+        flags: { outputTokenMax: 32_000, client: "test" } as any,
+        isWorkflow: false,
+      }),
+    )
+    const transformed = ProviderTransform.message(prepared.messages, model, prepared.messageTransformOptions)
+
+    expect(transformed.slice(0, 2).map((message) => message.content)).toEqual([
+      "provider system\nstable project context",
+      "volatile date context",
+    ])
+    expect(transformed[0].providerOptions).toBeDefined()
+    expect(transformed[1].providerOptions).toBeUndefined()
+  })
+
+  test("prepares internal OpenAI OAuth requests without firing extension turn hooks", async () => {
+    let triggers = 0
+    const model = {
+      id: "gpt-test",
+      providerID: "openai",
+      api: { id: "gpt-test", npm: "@ai-sdk/openai", url: "https://api.openai.com/v1" },
+      capabilities: { temperature: true, reasoning: false },
+      options: {},
+      variants: {},
+      limit: { context: 100_000, output: 8_000 },
+    } as any
+    const prepared = await Effect.runPromise(
+      LLMRequestPrep.prepare({
+        user: {
+          id: "msg_user-test",
+          sessionID: "ses_test",
+          role: "user",
+          time: { created: Date.now() },
+          agent: "build",
+          model: { providerID: "openai", modelID: "gpt-test" },
+        } as any,
+        sessionID: "ses_test",
+        model,
+        agent: { name: "build", mode: "primary", prompt: "judge instructions", options: {}, permission: [] } as any,
+        system: [],
+        messages: [{ role: "user", content: "judge this" }],
+        tools: {},
+        provider: { id: "openai", options: {} } as any,
+        auth: { type: "oauth", access: "token", refresh: "refresh", expires: Date.now() + 60_000 },
+        plugin: {
+          trigger: (_name: string, _input: unknown, output: unknown) => {
+            triggers++
+            return Effect.succeed(output)
+          },
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        } as any,
+        flags: { outputTokenMax: 32_000, client: "test" } as any,
+        isWorkflow: false,
+        internal: true,
+      }),
+    )
+
+    expect(triggers).toBe(0)
+    expect(prepared.messages).toEqual([{ role: "user", content: "judge this" }])
+    expect(prepared.params.options.store).toBe(false)
+    expect(prepared.params.options.instructions).toBe("judge instructions")
+  })
+})
+
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
 

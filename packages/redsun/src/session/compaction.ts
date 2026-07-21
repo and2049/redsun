@@ -329,12 +329,18 @@ const layer = Layer.effect(
 
       const cfg = yield* config.get()
       const agent = yield* agents.get("compaction")
-      const route = cfg.task_router?.compact?.split("/")
+      const route = cfg.task_router?.compact
       const fallbackModel = agent.model ?? userMessage.model
-      const model = route?.[0] && route.length > 1
-        ? yield* provider
-            .getModel(ProviderV2.ID.make(route[0]), ModelV2.ID.make(route.slice(1).join("/")))
-            .pipe(Effect.catch(() => provider.getModel(fallbackModel.providerID, fallbackModel.modelID)), Effect.orDie)
+      const routed = route ? Provider.parseModel(route) : undefined
+      if (route && (!routed?.providerID || !routed.modelID)) {
+        return yield* Effect.die(new Error(`Configured task_router.compact model is invalid: ${route}`))
+      }
+      const model = routed
+        ? yield* provider.getModel(routed.providerID, routed.modelID).pipe(
+            Effect.catchCause(() =>
+              Effect.die(new Error(`Configured task_router.compact model is unavailable: ${route}`)),
+            ),
+          )
         : yield* provider.getModel(fallbackModel.providerID, fallbackModel.modelID).pipe(Effect.orDie)
       const strategy = cfg.compaction?.strategy ?? "hybrid"
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
@@ -356,6 +362,9 @@ const layer = Layer.effect(
       const inventory = CompactionExtractor.serialize(
         CompactionExtractor.extract(selected.head, cfg.compaction?.maxToolResults),
       )
+      const algorithmic = [previousSummary ? `## Previous Summary\n\n${previousSummary}` : "", inventory]
+        .filter(Boolean)
+        .join("\n\n")
       const source = strategy === "hybrid"
         ? CompactionExtractor.recent(selected.head, cfg.compaction?.keepRecent ?? 4)
         : selected.head
@@ -469,13 +478,13 @@ const layer = Layer.effect(
       })
 
       if (strategy === "algorithmic") {
-        if (!inventory.trim()) return "stop"
+        if (!algorithmic.trim()) return "stop"
         yield* session.updatePart({
           id: PartID.ascending(),
           messageID: msg.id,
           sessionID: input.sessionID,
           type: "text",
-          text: inventory,
+          text: algorithmic,
           time: { start: Date.now(), end: Date.now() },
         })
         msg.finish = "stop"

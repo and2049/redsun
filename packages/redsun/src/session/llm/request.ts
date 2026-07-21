@@ -25,6 +25,7 @@ type PrepareInput = {
   readonly agent: Agent.Info
   readonly permission?: PermissionV1.Ruleset
   readonly system: string[]
+  readonly volatileSystem?: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
   readonly tools: Record<string, Tool>
@@ -33,6 +34,7 @@ type PrepareInput = {
   readonly plugin: Plugin.Interface
   readonly flags: RuntimeFlags.Info
   readonly isWorkflow: boolean
+  readonly internal?: boolean
 }
 
 export type Prepared = {
@@ -55,26 +57,19 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
-  const system = [
-    [
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-      ...input.system,
-      ...(input.user.system ? [input.user.system] : []),
-    ]
-      .filter((x) => x)
-      .join("\n"),
-  ]
+  const stableSystem = [
+    ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+    ...input.system,
+    ...(input.user.system ? [input.user.system] : []),
+  ].filter((value) => value.length > 0)
+  const system = [stableSystem.join("\n"), ...(input.volatileSystem ?? [])].filter((value) => value.length > 0)
 
-  const header = system[0]
-  yield* input.plugin.trigger(
-    "experimental.chat.system.transform",
-    { sessionID: input.sessionID, model: input.model },
-    { system },
-  )
-  if (system.length > 2 && system[0] === header) {
-    const rest = system.slice(1)
-    system.length = 0
-    system.push(header, rest.join("\n"))
+  if (!input.internal) {
+    yield* input.plugin.trigger(
+      "experimental.chat.system.transform",
+      { sessionID: input.sessionID, model: input.model },
+      { system },
+    )
   }
 
   const variant =
@@ -111,39 +106,44 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
           ...input.messages,
         ]
 
-  const params = yield* input.plugin.trigger(
-    "chat.params",
-    {
-      sessionID: input.sessionID,
-      agent: input.agent.name,
-      model: input.model,
-      provider: input.provider,
-      message: input.user,
-    },
-    {
-      temperature: input.model.capabilities.temperature
-        ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
-        : undefined,
-      topP: input.agent.topP ?? ProviderTransform.topP(input.model),
-      topK: ProviderTransform.topK(input.model),
-      maxOutputTokens: ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax),
-      options,
-    },
-  )
+  const defaultParams = {
+    temperature: input.model.capabilities.temperature
+      ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
+      : undefined,
+    topP: input.agent.topP ?? ProviderTransform.topP(input.model),
+    topK: ProviderTransform.topK(input.model),
+    maxOutputTokens: ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax),
+    options,
+  }
+  const params = input.internal
+    ? defaultParams
+    : yield* input.plugin.trigger(
+        "chat.params",
+        {
+          sessionID: input.sessionID,
+          agent: input.agent.name,
+          model: input.model,
+          provider: input.provider,
+          message: input.user,
+        },
+        defaultParams,
+      )
 
-  const { headers } = yield* input.plugin.trigger(
-    "chat.headers",
-    {
-      sessionID: input.sessionID,
-      agent: input.agent.name,
-      model: input.model,
-      provider: input.provider,
-      message: input.user,
-    },
-    {
-      headers: {},
-    },
-  )
+  const { headers } = input.internal
+    ? { headers: {} }
+    : yield* input.plugin.trigger(
+        "chat.headers",
+        {
+          sessionID: input.sessionID,
+          agent: input.agent.name,
+          model: input.model,
+          provider: input.provider,
+          message: input.user,
+        },
+        {
+          headers: {},
+        },
+      )
 
   const tools = resolveTools(input)
   // Codex parity: OpenAI Responses-family providers hardcode `strict: false`

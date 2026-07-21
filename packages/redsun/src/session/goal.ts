@@ -1,14 +1,17 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { generateObject, type ModelMessage } from "ai"
+import type { ModelMessage } from "ai"
 import { Context, Effect, Layer, Option, Schema } from "effect"
+import * as Stream from "effect/Stream"
+import type { Agent } from "@/agent/agent"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { Provider } from "@/provider/provider"
+import type { Provider } from "@/provider/provider"
 import { Storage } from "@/storage/storage"
 import { MessageV2 } from "./message-v2"
 import { SessionID } from "./schema"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { customMessages } from "@/extension/runtime"
+import { LLM } from "./llm"
 
 export const Info = Schema.Struct({
   condition: Schema.String,
@@ -47,7 +50,8 @@ export interface Interface {
     condition: string
     messages: SessionV1.WithParts[]
     model: Provider.Model
-  }) => Effect.Effect<Verdict, Provider.ModelNotFoundError>
+    agent: Agent.Info
+  }) => Effect.Effect<Verdict, unknown>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redsun/SessionGoal") {}
@@ -56,8 +60,8 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const storage = yield* Storage.Service
-    const provider = yield* Provider.Service
     const events = yield* EventV2Bridge.Service
+    const llm = yield* LLM.Service
 
     const get: Interface["get"] = Effect.fn("SessionGoal.get")(function* (sessionID) {
       return Option.getOrUndefined(yield* storage.read<Info>(key(sessionID)).pipe(Effect.option))
@@ -89,28 +93,42 @@ const layer = Layer.effect(
     })
 
     const evaluate: Interface["evaluate"] = Effect.fn("SessionGoal.evaluate")(function* (input) {
-      const language = yield* provider.getLanguage(input.model)
       const conversation = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
       const custom = yield* Effect.promise(() => customMessages(input.sessionID))
-      const result = yield* Effect.promise(() =>
-        generateObject({
-          model: language,
-          temperature: 0,
-          messages: [
-            { role: "system", content: JUDGE_SYSTEM } as ModelMessage,
-            ...conversation,
-            ...(custom.length
-              ? [{ role: "user", content: `<extension-context>\n${custom.join("\n\n")}\n</extension-context>` } as ModelMessage]
-              : []),
-            {
-              role: "user",
-              content: `Has this stopping condition been satisfied?\n\nCondition: ${input.condition}`,
-            } as ModelMessage,
-          ],
-          schema: Object.assign(Schema.toStandardSchemaV1(Verdict), Schema.toStandardJSONSchemaV1(Verdict)),
-        }).then((result) => Schema.decodeUnknownSync(Verdict)(result.object)),
-      )
-      return result
+      const user = input.messages.findLast((message) => message.info.role === "user")?.info
+      if (!user || user.role !== "user") return yield* Effect.fail(new Error("Goal judge requires a user message"))
+
+      const messages: ModelMessage[] = [
+        ...conversation,
+        ...(custom.length
+          ? [{ role: "user", content: `<extension-context>\n${custom.join("\n\n")}\n</extension-context>` } as ModelMessage]
+          : []),
+        {
+          role: "user",
+          content: `Has this stopping condition been satisfied?\n\nCondition: ${input.condition}`,
+        },
+      ]
+      let text = ""
+      yield* llm
+        .stream({
+          user: { ...user, system: undefined },
+          sessionID: input.sessionID,
+          model: input.model,
+          agent: { ...input.agent, prompt: JUDGE_SYSTEM, temperature: 0 },
+          system: [],
+          messages,
+          tools: {},
+          toolChoice: "none",
+          internal: true,
+        })
+        .pipe(
+          Stream.runForEach((event) =>
+            Effect.sync(() => {
+              if (event.type === "text-delta") text += event.text
+            }),
+          ),
+        )
+      return parseVerdict(text)
     })
 
     return Service.of({ set, get, clear, bumpReact, publishVerdict, evaluate })
@@ -120,7 +138,15 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [Storage.node, Provider.node, EventV2Bridge.node],
+  deps: [Storage.node, EventV2Bridge.node, LLM.node],
 })
+
+export function parseVerdict(input: string): Verdict {
+  const fenced = input.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
+  const start = input.indexOf("{")
+  const end = input.lastIndexOf("}")
+  const value = fenced ?? (start >= 0 && end > start ? input.slice(start, end + 1) : input)
+  return Schema.decodeUnknownSync(Verdict)(JSON.parse(value.trim()))
+}
 
 export * as Goal from "./goal"

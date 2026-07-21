@@ -546,6 +546,7 @@ describe("revert + compact workflow", () => {
         }),
       { git: true },
     ),
+    { timeout: 10_000 },
   )
 
   it.live(

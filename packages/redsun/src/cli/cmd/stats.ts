@@ -1,11 +1,12 @@
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { Session } from "@/session/session"
-import { NotFoundError } from "@/storage/storage"
+import { NotFoundError, Storage } from "@/storage/storage"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { Project } from "@/project/project"
 import { InstanceRef } from "@/effect/instance-ref"
+import type { ContextOptimizer } from "@/session/context-optimizer"
 
 interface SessionStats {
   totalSessions: number
@@ -44,6 +45,7 @@ interface SessionStats {
   costPerDay: number
   tokensPerSession: number
   medianTokensPerSession: number
+  context?: ContextOptimizer.Breakdown & { requests: number }
 }
 
 export const StatsCommand = effectCmd({
@@ -65,11 +67,16 @@ export const StatsCommand = effectCmd({
       .option("project", {
         describe: "filter by project (default: all projects, empty string: current project)",
         type: "string",
+      })
+      .option("context", {
+        describe: "show measured request context categories and cache hit rate",
+        type: "boolean",
+        default: false,
       }),
   handler: Effect.fn("Cli.stats")(function* (args) {
     const ctx = yield* InstanceRef
     if (!ctx) return
-    const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project)
+    const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project, args.context)
     let modelLimit: number | undefined
     if (args.models === true) {
       modelLimit = Infinity
@@ -89,8 +96,10 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
   days?: number,
   projectFilter?: string,
   currentProject?: Project.Info,
+  includeContext = false,
 ) {
   const svc = yield* Session.Service
+  const storage = yield* Storage.Service
   const sessions = yield* getAllSessions()
   const MS_IN_DAY = 24 * 60 * 60 * 1000
 
@@ -209,6 +218,20 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
           }
         }
 
+        const context = includeContext
+          ? yield* storage
+              .list(["context_breakdown", session.id])
+              .pipe(
+                Effect.flatMap((keys) =>
+                  Effect.forEach(keys, (key) => storage.read<{ breakdown: ContextOptimizer.Breakdown }>(key), {
+                    concurrency: 20,
+                  }),
+                ),
+                Effect.map((items) => items.map((item) => item.breakdown)),
+                Effect.catch(() => Effect.succeed([])),
+              )
+          : []
+
         return {
           messageCount: messages.length,
           sessionCost,
@@ -223,6 +246,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
           sessionModelUsage,
           earliestTime: cutoffTime > 0 ? session.time.updated : session.time.created,
           latestTime: session.time.updated,
+          context,
         }
       }),
     { concurrency: 20 },
@@ -259,6 +283,24 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
       stats.modelUsage[model].tokens.cache.read += usage.tokens.cache.read
       stats.modelUsage[model].tokens.cache.write += usage.tokens.cache.write
       stats.modelUsage[model].cost += usage.cost
+    }
+    if (includeContext) {
+      stats.context ??= {
+        system: 0,
+        tools: 0,
+        messages: 0,
+        toolResults: 0,
+        customMessages: 0,
+        attachments: 0,
+        total: 0,
+        requests: 0,
+      }
+      for (const item of result.context) {
+        stats.context.requests++
+        for (const key of ["system", "tools", "messages", "toolResults", "customMessages", "attachments", "total"] as const) {
+          stats.context[key] += item[key]
+        }
+      }
     }
   }
 
@@ -327,6 +369,28 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
   console.log(renderRow("Cache Write", formatNumber(stats.totalTokens.cache.write)))
   console.log("└────────────────────────────────────────────────────────┘")
   console.log()
+
+  if (stats.context) {
+    const billable = stats.totalTokens.input + stats.totalTokens.cache.write
+    const cached = stats.totalTokens.cache.read
+    const hitRate = billable + cached > 0 ? (cached / (billable + cached)) * 100 : 0
+    console.log("┌────────────────────────────────────────────────────────┐")
+    console.log("│                    REQUEST CONTEXT                     │")
+    console.log("├────────────────────────────────────────────────────────┤")
+    console.log(renderRow("Measured Requests", formatNumber(stats.context.requests)))
+    console.log(renderRow("System", formatNumber(stats.context.system)))
+    console.log(renderRow("Tool Schemas", formatNumber(stats.context.tools)))
+    console.log(renderRow("Messages", formatNumber(stats.context.messages)))
+    console.log(renderRow("Tool Results", formatNumber(stats.context.toolResults)))
+    console.log(renderRow("Custom Messages", formatNumber(stats.context.customMessages)))
+    console.log(renderRow("Attachments", formatNumber(stats.context.attachments)))
+    console.log(renderRow("Total Context", formatNumber(stats.context.total)))
+    console.log(renderRow("Billable Input", formatNumber(billable)))
+    console.log(renderRow("Cached Input", formatNumber(cached)))
+    console.log(renderRow("Cache Hit Rate", `${hitRate.toFixed(1)}%`))
+    console.log("└────────────────────────────────────────────────────────┘")
+    console.log()
+  }
 
   // Model Usage section
   if (modelLimit !== undefined && Object.keys(stats.modelUsage).length > 0) {
