@@ -166,7 +166,7 @@ function projectConfigFile(directory: string) {
     path.join(directory, ".redsun", "redsun.jsonc"),
     path.join(directory, ".redsun", "redsun.json"),
   ]
-  return candidates.find(existsSync) ?? candidates[1]
+  return candidates.find(existsSync) ?? candidates[3]
 }
 
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
@@ -710,6 +710,7 @@ const layer = Layer.effect(
       const file = projectConfigFile(dir)
       const existing = yield* loadFile(file)
       const patch = writable(config)
+      yield* fs.ensureDir(path.dirname(file)).pipe(Effect.orDie)
       if (file.endsWith(".jsonc")) {
         const before = (yield* readConfigFile(file)) ?? "{}"
         yield* fs.writeFileString(file, patchJsonc(before, patch)).pipe(Effect.orDie)

@@ -902,14 +902,14 @@ Nested command template`,
   }),
 )
 
-it.instance("updates config in a reloadable project file", () =>
+it.instance("updates config in the generated project config file", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* Config.Service.use((svc) =>
       svc.update(ConfigParse.schema(ConfigV1.Info, { model: "updated/model" }, "test:config")),
     )
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "redsun.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, ".redsun", "redsun.json"))
     expect(writtenConfig).toMatchObject({ model: "updated/model" })
   }),
 )
