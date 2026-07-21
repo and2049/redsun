@@ -217,9 +217,12 @@ function processorLayer(result: "continue" | "compact") {
   )
 }
 
-function cfg(compaction?: ConfigV1.Info["compaction"]) {
+function cfg(compaction?: ConfigV1.Info["compaction"], task_router?: ConfigV1.Info["task_router"]) {
   const base = Schema.decodeUnknownSync(ConfigV1.Info)({}) as ConfigV1.Info
-  return Layer.succeed(Config.Service, TestConfig.make({ get: () => Effect.succeed({ ...base, compaction }) }))
+  return Layer.succeed(
+    Config.Service,
+    TestConfig.make({ get: () => Effect.succeed({ ...base, compaction, task_router }) }),
+  )
 }
 
 const defaultProvider = wide()
@@ -798,6 +801,46 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  itCompaction.instance(
+    "fails closed when the configured compaction route is malformed",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "hello")
+      yield* createCompactionMarker(session.id)
+      const messages = yield* ssn.messages({ sessionID: session.id })
+      const parentID = messages.at(-1)?.info.id
+      expect(parentID).toBeTruthy()
+
+      const exit = yield* SessionCompaction.use
+        .process({ parentID: parentID!, messages, sessionID: session.id, auto: false })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("task_router.compact model is invalid")
+    }).pipe(withCompaction({ config: cfg(undefined, { compact: "invalid" }) })),
+  )
+
+  itCompaction.instance(
+    "fails closed when the configured compaction route is unavailable",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "hello")
+      yield* createCompactionMarker(session.id)
+      const messages = yield* ssn.messages({ sessionID: session.id })
+      const parentID = messages.at(-1)?.info.id
+      expect(parentID).toBeTruthy()
+
+      const exit = yield* SessionCompaction.use
+        .process({ parentID: parentID!, messages, sessionID: session.id, auto: false })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("task_router.compact model is unavailable")
+    }).pipe(withCompaction({ config: cfg(undefined, { compact: "missing/model" }) })),
+  )
+
   it.instance(
     "throws when parent is not a user message",
     Effect.gen(function* () {
@@ -1459,6 +1502,39 @@ describe("session.compaction.process", () => {
       }).pipe(withCompaction({ llm: stub.llmLayer }))
     },
     { git: true },
+  )
+
+  itCompaction.instance(
+    "preserves the previous summary across repeated algorithmic compactions",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const test = yield* TestInstance
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "older context")
+      yield* createCompactionMarker(session.id)
+      const firstParent = (yield* ssn.messages({ sessionID: session.id })).at(-1)?.info.id
+      expect(firstParent).toBeTruthy()
+      yield* createSummaryAssistantMessage(session.id, firstParent!, test.directory, "summary one")
+
+      yield* createUserMessage(session.id, "latest turn")
+      yield* createCompactionMarker(session.id)
+      const messages = MessageV2.filterCompacted(yield* MessageV2.stream(session.id))
+      const parentID = messages.at(-1)?.info.id
+      expect(parentID).toBeTruthy()
+
+      const result = yield* SessionCompaction.use.process({
+        parentID: parentID!,
+        messages,
+        sessionID: session.id,
+        auto: false,
+      })
+      const latest = (yield* ssn.messages({ sessionID: session.id })).findLast(
+        (message) => message.info.role === "assistant" && message.info.summary,
+      )
+
+      expect(result).toBe("continue")
+      expect(latest?.parts.some((part) => part.type === "text" && part.text.includes("summary one"))).toBe(true)
+    }).pipe(withCompaction({ config: cfg({ strategy: "algorithmic" }) })),
   )
 
   itCompaction.instance("keeps recent pre-compaction turns across repeated compactions", () => {

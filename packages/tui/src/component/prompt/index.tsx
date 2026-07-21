@@ -50,6 +50,7 @@ import { useKV } from "../../context/kv"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
+import { needsWorkerModel, useWorkerModelDialog } from "../dialog-worker-model"
 import { useArgs } from "../../context/args"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../config"
@@ -165,6 +166,7 @@ export function Prompt(props: PromptProps) {
     const model = sync.data.agent.find((agent) => agent.name === "worker")?.model
     return model ? `${model.providerID}/${model.modelID}` : undefined
   })
+  const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
   const toast = useToast()
@@ -987,6 +989,10 @@ export function Prompt(props: PromptProps) {
     const selectedModel = local.model.current()
     if (!selectedModel) {
       void promptModelWarning()
+      return false
+    }
+    if (needsWorkerModel(agent.name, workerRoute())) {
+      openWorkerModelDialog()
       return false
     }
 

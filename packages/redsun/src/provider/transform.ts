@@ -321,7 +321,7 @@ function normalizeMessages(
 }
 
 function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-  const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
+  const system = msgs.filter((msg) => msg.role === "system").slice(0, 1)
   const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
 
   const providerOptions = {
@@ -1438,7 +1438,32 @@ function sanitizeOpenAISchema(value: unknown): unknown {
   return result
 }
 
+export const SCHEMA_DESCRIPTION_MAX_CHARS = 600
+
+export function slimSchema(input: JSONSchema7): JSONSchema7 {
+  const visit = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(visit)
+    if (!value || typeof value !== "object") return value
+    const result: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value)) {
+      if (key === "examples" || key === "markdownDescription" || key === "$comment") continue
+      if (key === "description" && typeof item === "string") {
+        const marker = " [redsun: schema description truncated]"
+        result[key] =
+          item.length <= SCHEMA_DESCRIPTION_MAX_CHARS
+            ? item
+            : `${item.slice(0, SCHEMA_DESCRIPTION_MAX_CHARS - marker.length)}${marker}`
+        continue
+      }
+      result[key] = visit(item)
+    }
+    return result
+  }
+  return visit(input) as JSONSchema7
+}
+
 export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 {
+  schema = slimSchema(schema)
   /*
   if (["openai", "azure"].includes(providerID)) {
     if (schema.type === "object" && schema.properties) {

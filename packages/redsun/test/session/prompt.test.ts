@@ -55,6 +55,7 @@ import { TestInstance } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Storage } from "@/storage/storage"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
@@ -207,6 +208,7 @@ const promptRoot = LayerNode.group([
   SystemPrompt.node,
   CrossSpawnSpawner.node,
   RuntimeFlags.node,
+  Storage.node,
 ])
 
 function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
@@ -578,11 +580,81 @@ it.instance("loop calls LLM and returns assistant message", () =>
     yield* llm.text("world")
 
     const result = yield* prompt.loop({ sessionID: chat.id })
+    const stored = yield* Storage.Service.use((storage) =>
+      storage.read<{ breakdown: { total: number } }>(["context_breakdown", chat.id, result.info.id]),
+    )
     expect(result.info.role).toBe("assistant")
     const parts = result.parts.filter((p) => p.type === "text")
     expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
     expect(yield* llm.hits).toHaveLength(1)
+    expect(stored.breakdown.total).toBeGreaterThan(0)
   }),
+)
+
+it.instance(
+  "compacts an oversized assembled request before sampling",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => {
+        const base = providerCfg(url)
+        const main = base.provider.test.models["test-model"]
+        return {
+          ...base,
+          task_router: { compact: "test/compact-model" },
+          compaction: { strategy: "llm" },
+          provider: {
+            ...base.provider,
+            test: {
+              ...base.provider.test,
+              models: {
+                ...base.provider.test.models,
+                "test-model": { ...main, limit: { context: 20_000, output: 2_000 } },
+                "compact-model": {
+                  ...main,
+                  id: "compact-model",
+                  name: "Compact Model",
+                  limit: { context: 100_000, output: 10_000 },
+                },
+              },
+            },
+          },
+        }
+      })
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const prior = yield* seed(chat.id, { finish: "stop" })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: prior.user.id,
+        sessionID: chat.id,
+        type: "text",
+        text: "x".repeat(80_000),
+      })
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "finish this exact request" }],
+      })
+      yield* llm.text("summary")
+      yield* llm.text("world")
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const hits = yield* llm.hits
+
+      expect(hits).toHaveLength(2)
+      expect(hits[0]?.body.model).toBe("compact-model")
+      expect(hits[1]?.body.model).toBe("test-model")
+      expect(JSON.stringify(hits[1]?.body.messages)).toContain("finish this exact request")
+      expect(messages.some((message) => message.parts.some((part) => part.type === "compaction"))).toBe(true)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "world")).toBe(true)
+    }),
+  20_000,
 )
 
 withMcpInstructions.instance(

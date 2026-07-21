@@ -29,6 +29,8 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { ContextOptimizer } from "./context-optimizer"
+import { Storage } from "@/storage/storage"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -40,11 +42,14 @@ export type StreamInput = {
   agent: Agent.Info
   permission?: PermissionV1.Ruleset
   system: string[]
+  volatileSystem?: string[]
   messages: ModelMessage[]
   small?: boolean
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
+  assistantMessageID?: string
+  internal?: boolean
 }
 
 export type StreamRequest = StreamInput & {
@@ -70,6 +75,7 @@ const live: Layer.Layer<
   | EventV2Bridge.Service
   | LLMClientService
   | RuntimeFlags.Service
+  | Storage.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -81,6 +87,7 @@ const live: Layer.Layer<
     const events = yield* EventV2Bridge.Service
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
+    const storage = yield* Storage.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       yield* Effect.logInfo("stream", {
@@ -111,6 +118,14 @@ const live: Layer.Layer<
         flags,
         isWorkflow,
       })
+      const messages = ContextOptimizer.optimizeModelMessages(prepared.messages)
+      if (input.assistantMessageID) {
+        yield* ContextOptimizer.writeBreakdown(storage, {
+          sessionID: input.sessionID,
+          messageID: input.assistantMessageID,
+          breakdown: ContextOptimizer.breakdown({ system: prepared.system, messages, tools: prepared.tools }),
+        }).pipe(Effect.orDie)
+      }
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
@@ -229,7 +244,7 @@ const live: Layer.Layer<
           provider: item,
           auth: info,
           llmClient,
-          messages: prepared.messages,
+          messages,
           tools: prepared.tools,
           toolChoice: input.toolChoice,
           temperature: prepared.params.temperature,
@@ -321,7 +336,7 @@ const live: Layer.Layer<
           abortSignal: input.abort,
           headers: prepared.headers,
           maxRetries: input.retries ?? 0,
-          messages: prepared.messages,
+          messages,
           model: wrapLanguageModel({
             model: language,
             middleware: [
@@ -398,6 +413,7 @@ export const node = LayerNode.make({
     EventV2Bridge.node,
     llmClient,
     RuntimeFlags.node,
+    Storage.node,
   ],
 })
 

@@ -417,12 +417,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               },
             }),
           )
-          yield* plugin.trigger(
-            "tool.execute.after",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
-            result,
-          )
-
           const textParts: string[] = []
           const attachments: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[] = []
           for (const contentItem of result.content) {
@@ -472,6 +466,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             title: "",
             metadata,
             output: truncated.content,
+            isError: result.isError === true,
             attachments: attachments.map((attachment) => ({
               ...attachment,
               id: PartID.ascending(),
@@ -480,6 +475,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             })),
             content: result.content,
           }
+          yield* plugin.trigger(
+            "tool.execute.after",
+            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+            output,
+          )
           if (opts.abortSignal?.aborted) {
             yield* input.processor.completeToolCall(opts.toolCallId, output)
           }

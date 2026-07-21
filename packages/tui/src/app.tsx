@@ -40,6 +40,7 @@ import { LocationProvider } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
+import { useWorkerModelDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -386,6 +387,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const { theme, mode, setMode, locked, lock, unlock } = themeState
   const sync = useSync()
   const project = useProject()
+  const openWorkerModelDialog = useWorkerModelDialog()
   const exit = useExit()
   const promptRef = usePromptRef()
   const pluginRuntime = usePluginRuntime()
@@ -651,30 +653,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         category: "Agent",
         slashName: "worker-model",
         slashAliases: ["wm"],
-        run: () => {
-          const fallback = sync.data.agent.find((agent) => agent.name === "worker")?.model
-          const current =
-            sync.data.config.task_router?.worker ?? (fallback ? `${fallback.providerID}/${fallback.modelID}` : undefined)
-          const [providerID, ...rest] = current?.split("/") ?? []
-          dialog.replace(() => (
-            <DialogModel
-              title="Select worker model (project)"
-              current={providerID && rest.length ? { providerID, modelID: rest.join("/") } : undefined}
-              onSelect={async (model) => {
-                const worker = `${model.providerID}/${model.modelID}`
-                await sdk.client.config.update(
-                  { workspace: project.workspace.current(), config: { task_router: { worker } } },
-                  { throwOnError: true },
-                )
-                sync.set("config", {
-                  ...sync.data.config,
-                  task_router: { ...sync.data.config.task_router, worker },
-                })
-              }}
-              onError={(error) => toast.error(error)}
-            />
-          ))
-        },
+        run: openWorkerModelDialog,
       },
       {
         name: "model.cycle_recent",

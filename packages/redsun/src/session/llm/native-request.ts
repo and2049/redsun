@@ -1,5 +1,5 @@
 import type { JsonSchema, LLMRequest, ProviderMetadata } from "@opencode-ai/llm"
-import { LLM, Message, SystemPart, ToolCallPart, ToolDefinition, ToolResultPart } from "@opencode-ai/llm"
+import { CacheHint, LLM, Message, SystemPart, ToolCallPart, ToolDefinition, ToolResultPart } from "@opencode-ai/llm"
 import {
   AmazonBedrock,
   Anthropic,
@@ -32,6 +32,16 @@ export type RequestInput = {
   readonly maxOutputTokens?: number
   readonly providerOptions?: LLMRequest["providerOptions"]
   readonly headers?: Record<string, string>
+}
+
+const cacheHint = (message: ModelMessage) => {
+  if (!isRecord(message.providerOptions)) return undefined
+  const marked = Object.values(message.providerOptions).some(
+    (value) =>
+      isRecord(value) &&
+      (isRecord(value.cacheControl) || isRecord(value.cache_control) || isRecord(value.cachePoint)),
+  )
+  return marked ? new CacheHint({ type: "ephemeral" }) : undefined
 }
 
 const providerMetadata = (value: unknown): ProviderMetadata | undefined => {
@@ -103,7 +113,11 @@ const content = (value: ModelMessage["content"]) =>
   typeof value === "string" ? [{ type: "text" as const, text: value }] : value.map(contentPart)
 
 const messages = (input: readonly ModelMessage[]) => {
-  const system = input.flatMap((message) => (message.role === "system" ? [SystemPart.make(message.content)] : []))
+  const system = input.flatMap((message) => {
+    if (message.role !== "system") return []
+    const cache = cacheHint(message)
+    return [{ ...SystemPart.make(message.content), ...(cache ? { cache } : {}) }]
+  })
   const messages = input.flatMap((message) => {
     if (message.role === "system") return []
     return [
@@ -190,6 +204,7 @@ export const request = (input: RequestInput) => {
     toolChoice: input.toolChoice,
     generation: generation(input),
     providerOptions: input.providerOptions,
+    cache: { tools: true, system: false, messages: "latest-user-message" },
   })
 }
 

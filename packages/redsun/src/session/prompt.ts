@@ -57,6 +57,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Goal } from "./goal"
+import { ContextOptimizer } from "./context-optimizer"
 import { ExtensionRuntime } from "@/extension/runtime"
 import { ProjectTrust } from "@/trust"
 
@@ -686,7 +687,13 @@ const layer = Layer.effect(
       )
       const messageID = latest.findLast((message) => message.info.role === "assistant")?.info.id
       const verdict = yield* goal
-        .evaluate({ sessionID: input.sessionID, condition: active.condition, messages: latest, model: input.model })
+        .evaluate({
+          sessionID: input.sessionID,
+          condition: active.condition,
+          messages: latest,
+          model: input.model,
+          agent: input.agent,
+        })
         .pipe(Effect.exit)
 
       if (Exit.isFailure(verdict)) {
@@ -1383,14 +1390,51 @@ const layer = Layer.effect(
               sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
+            const [volatileEnvironment, ...stableEnvironment] = env
             const system = [
-              ...env,
-              ...instructions,
-              ...(mcpInstructions ? [mcpInstructions] : []),
-              ...(skills ? [skills] : []),
+              ...stableEnvironment.map((value, index) =>
+                ContextOptimizer.boundText(`environment context ${index + 1}`, value),
+              ),
+              ...instructions.map((value, index) => ContextOptimizer.boundText(`instruction ${index + 1}`, value)),
+              ...(mcpInstructions ? [ContextOptimizer.boundText("MCP instructions", mcpInstructions)] : []),
+              ...(skills ? [ContextOptimizer.boundText("skill summary", skills)] : []),
             ]
+            const volatileSystem = volatileEnvironment
+              ? [ContextOptimizer.boundVolatile("volatile environment context", volatileEnvironment)]
+              : []
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            const optimizedModelMsgs = ContextOptimizer.optimizeModelMessages(modelMsgs)
+            const preflight = ContextOptimizer.breakdown({
+              system: [...(agent.prompt ? [agent.prompt] : SystemPrompt.provider(model)), ...system, ...volatileSystem],
+              messages: optimizedModelMsgs,
+              tools,
+            })
+            const justCompacted = lastUserMsg?.parts.some(
+              (part) => part.type === "text" && part.synthetic && part.metadata?.compaction_continue === true,
+            ) ?? false
+            if (
+              !justCompacted &&
+              (yield* compaction.isOverflow({
+                tokens: {
+                  input: preflight.total,
+                  output: 0,
+                  reasoning: 0,
+                  cache: { read: 0, write: 0 },
+                },
+                model,
+              }))
+            ) {
+              yield* sessions.removeMessage({ sessionID, messageID: msg.id })
+              yield* compaction.create({
+                sessionID,
+                agent: lastUser.agent,
+                model: lastUser.model,
+                auto: true,
+                overflow: true,
+              })
+              return "continue"
+            }
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1398,8 +1442,9 @@ const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
+              volatileSystem,
               messages: [
-                ...modelMsgs,
+                ...optimizedModelMsgs,
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
               ],
               tools,

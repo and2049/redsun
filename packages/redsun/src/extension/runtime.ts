@@ -56,17 +56,31 @@ export async function toolError(
     context(state, { sessionID: input.sessionID }),
   )
 }
-export async function customMessages(sessionID: string, maxChars = 32_000) {
-  const entries = (await readEntries(sessionID)).filter((entry) => entry.customMessage && entry.content !== undefined)
+export async function customMessages(sessionID: string, maxChars = 24_000) {
+  const stored = await readEntries(sessionID)
+  const boundary = stored.findLastIndex((entry) => entry.customType === "extension.compaction-boundary")
+  const entries = stored.slice(boundary + 1).filter((entry) => entry.customMessage && entry.content !== undefined)
   const result: string[] = []
   let total = 0
+  let omitted = 0
   for (const entry of entries.reverse()) {
     const content = entry.content!
     const value = typeof content === "string" ? content : content.map((part) => part.text).join("\n")
-    if (total + value.length > maxChars) break
+    if (total >= maxChars) {
+      omitted++
+      continue
+    }
+    if (total + value.length > maxChars) {
+      const marker = "[redsun: custom message truncated]"
+      const remaining = Math.max(0, maxChars - total - marker.length - 1)
+      result.unshift(`${remaining > 0 ? value.slice(-remaining) : ""}\n${marker}`)
+      total = maxChars
+      continue
+    }
     result.unshift(value)
     total += value.length
   }
+  if (omitted > 0) result.unshift(`[redsun: ${omitted} older custom message${omitted === 1 ? "" : "s"} omitted]`)
   return result
 }
 export async function runCommand(directory: string, name: string, args: string, sessionID: string, agent: string) {
@@ -471,7 +485,7 @@ export async function create(input: {
           input: input.args,
           output: output.output,
           metadata: output.metadata ?? {},
-          isError: false,
+          isError: (output as typeof output & { isError?: boolean }).isError === true,
         },
         context(state, { sessionID: input.sessionID }),
       )) as { output?: string; metadata?: Record<string, unknown> } | undefined
@@ -560,6 +574,7 @@ export async function create(input: {
       }
       if (event.type === "session.compacted") {
         const properties = event.properties as { sessionID: string }
+        await appendEntry(properties.sessionID, { customType: "extension.compaction-boundary" })
         await emit(
           state,
           {
