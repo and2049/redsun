@@ -32,6 +32,7 @@ import { batch, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { usePermission } from "./permission"
+import { nextGoalState, type SessionGoalState } from "./session-goal"
 
 const emptyConsoleState: ConsoleState = {
   consoleManagedProviders: [],
@@ -84,6 +85,9 @@ export const {
       session_status: {
         [sessionID: string]: SessionStatus
       }
+      session_goal: {
+        [sessionID: string]: SessionGoalState
+      }
       session_diff: {
         [sessionID: string]: SnapshotFileDiff[]
       }
@@ -126,6 +130,7 @@ export const {
       provider_default: {},
       session: [],
       session_status: {},
+      session_goal: {},
       session_diff: {},
       todo: {},
       message: {},
@@ -170,6 +175,7 @@ export const {
     event.subscribe((event, { directory, workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
+          setStore("session_goal", {})
           void bootstrap()
           break
         case "permission.replied": {
@@ -265,6 +271,12 @@ export const {
           break
 
         case "session.deleted": {
+          setStore(
+            "session_goal",
+            produce((draft) => {
+              delete draft[event.properties.info.id]
+            }),
+          )
           const result = search(store.session, event.properties.info.id, (s) => s.id)
           if (result.found) {
             setStore(
@@ -274,6 +286,20 @@ export const {
               }),
             )
           }
+          break
+        }
+        case "session.goal": {
+          const next = nextGoalState(store.session_goal[event.properties.sessionID], event)
+          if (next) {
+            setStore("session_goal", event.properties.sessionID, reconcile(next))
+            break
+          }
+          setStore(
+            "session_goal",
+            produce((draft) => {
+              delete draft[event.properties.sessionID]
+            }),
+          )
           break
         }
         case "session.updated": {

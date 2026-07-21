@@ -73,6 +73,7 @@ type State = {
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
+  fromPlugin: (id: string, def: ToolDefinition) => Tool.Def
 }
 
 export interface Interface {
@@ -204,13 +205,6 @@ const layer = Layer.effect(
           }
         }
 
-        const plugins = yield* plugin.list()
-        for (const p of plugins) {
-          for (const [id, def] of Object.entries(p.tool ?? {})) {
-            custom.push(fromPlugin(id, def))
-          }
-        }
-
         const cfg = yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
 
@@ -262,49 +256,54 @@ const layer = Layer.effect(
             tool.project,
             tool.reload,
             ...(cfg.experimental?.batch_tool
-              ? [{
-                  id: "batch",
-                  description: "Execute up to 10 independent tool calls concurrently.",
-                  parameters: Schema.Struct({
-                    tool_calls: Schema.Array(Schema.Struct({
-                      tool: Schema.String,
-                      parameters: Schema.Record(Schema.String, Schema.Unknown),
-                    })),
-                  }),
-                  execute: (
-                    input: { tool_calls: Array<{ tool: string; parameters: Record<string, unknown> }> },
-                    ctx: Tool.Context,
-                  ) =>
-                    Effect.gen(function* () {
-                      const available = new Map(
-                        Object.values(tool).flatMap((item) =>
-                          item && typeof item === "object" && "id" in item
-                            ? [[item.id, item as Tool.Def] as const]
-                            : [],
-                        ),
-                      )
-                      const results = yield* Effect.forEach(
-                        input.tool_calls.slice(0, 10),
-                        (call) => {
-                          const selected = call.tool === "batch" ? undefined : available.get(call.tool)
-                          if (!selected)
-                            return Effect.succeed({ tool: call.tool, error: `Unknown or disallowed tool: ${call.tool}` })
-                          return selected.execute(call.parameters, ctx).pipe(
-                            Effect.map((result) => ({ tool: call.tool, output: result.output })),
-                            Effect.catch((error) =>
-                              Effect.succeed({ tool: call.tool, error: String(error) }),
-                            ),
-                          )
-                        },
-                        { concurrency: "unbounded" },
-                      )
-                      return {
-                        title: "Batch complete",
-                        output: JSON.stringify(results, null, 2),
-                        metadata: { results },
-                      }
+              ? [
+                  {
+                    id: "batch",
+                    description: "Execute up to 10 independent tool calls concurrently.",
+                    parameters: Schema.Struct({
+                      tool_calls: Schema.Array(
+                        Schema.Struct({
+                          tool: Schema.String,
+                          parameters: Schema.Record(Schema.String, Schema.Unknown),
+                        }),
+                      ),
                     }),
-                } satisfies Tool.Def]
+                    execute: (
+                      input: { tool_calls: Array<{ tool: string; parameters: Record<string, unknown> }> },
+                      ctx: Tool.Context,
+                    ) =>
+                      Effect.gen(function* () {
+                        const available = new Map(
+                          Object.values(tool).flatMap((item) =>
+                            item && typeof item === "object" && "id" in item
+                              ? [[item.id, item as Tool.Def] as const]
+                              : [],
+                          ),
+                        )
+                        const results = yield* Effect.forEach(
+                          input.tool_calls.slice(0, 10),
+                          (call) => {
+                            const selected = call.tool === "batch" ? undefined : available.get(call.tool)
+                            if (!selected)
+                              return Effect.succeed({
+                                tool: call.tool,
+                                error: `Unknown or disallowed tool: ${call.tool}`,
+                              })
+                            return selected.execute(call.parameters, ctx).pipe(
+                              Effect.map((result) => ({ tool: call.tool, output: result.output })),
+                              Effect.catch((error) => Effect.succeed({ tool: call.tool, error: String(error) })),
+                            )
+                          },
+                          { concurrency: "unbounded" },
+                        )
+                        return {
+                          title: "Batch complete",
+                          output: JSON.stringify(results, null, 2),
+                          metadata: { results },
+                        }
+                      }),
+                  } satisfies Tool.Def,
+                ]
               : []),
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
@@ -312,13 +311,18 @@ const layer = Layer.effect(
           ],
           task: tool.task,
           read: tool.read,
+          fromPlugin,
         }
       }),
     )
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
-      return [...s.builtin, ...s.custom] as Tool.Def[]
+      const result = new Map([...s.builtin, ...s.custom].map((tool) => [tool.id, tool]))
+      for (const hooks of yield* plugin.list()) {
+        for (const [id, def] of Object.entries(hooks.tool ?? {})) result.set(id, s.fromPlugin(id, def))
+      }
+      return [...result.values()]
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {

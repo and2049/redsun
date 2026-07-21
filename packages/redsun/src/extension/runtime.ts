@@ -13,6 +13,7 @@ export type State = {
   invalidated: boolean
   handlers: Map<string, Extension.Handler[]>
   tools: Map<string, RegisteredTool>
+  toolDefinitions: Record<string, ToolDefinition>
   commands: Map<string, Extension.RegisteredCommand>
   activeTools: Set<string>
   modelOverrides: Map<string, string>
@@ -27,15 +28,35 @@ export type State = {
   extensionCompactions: Set<string>
   contextWindows: Map<string, number>
   contextUsage: Map<string, Extension.ContextUsage>
+  shutdownReason: "quit" | "reload"
 }
 
 const states = new Map<string, State>()
+const startReasons = new Map<string, "reload">()
 export const stateFor = (directory: string) => states.get(path.resolve(directory))
 export const activeToolIDs = (directory: string) => stateFor(directory)?.activeTools
 export const commandFor = (directory: string, name: string) => stateFor(directory)?.commands.get(name)
 export const commandsFor = (directory: string) => Array.from(stateFor(directory)?.commands.values() ?? [])
 export const providersFor = (directory: string) => new Map(stateFor(directory)?.providers ?? [])
 export const resourcesFor = (directory: string) => stateFor(directory)?.resources
+export function prepareReload(directory: string) {
+  const resolved = path.resolve(directory)
+  const state = states.get(resolved)
+  if (state) state.shutdownReason = "reload"
+  startReasons.set(resolved, "reload")
+}
+export function reload(directory: string) {
+  const resolved = path.resolve(directory)
+  prepareReload(resolved)
+  void import("@/project/instance-runtime")
+    .then(({ InstanceRuntime }) => InstanceRuntime.reloadInstance({ directory: resolved }))
+    .catch((error) => {
+      startReasons.delete(resolved)
+      const state = states.get(resolved)
+      if (state) state.shutdownReason = "quit"
+      console.error(`Failed to reload ${resolved}`, error)
+    })
+}
 export async function toolError(
   directory: string,
   input: { sessionID: string; callID?: string; tool: string; args: Record<string, unknown>; error: unknown },
@@ -94,11 +115,13 @@ export async function runCommand(directory: string, name: string, args: string, 
     await command.handler(args, {
       ...base,
       reload: async () => {
-        const { InstanceRuntime } = await import("@/project/instance-runtime")
-        setTimeout(() => void InstanceRuntime.reloadInstance({ directory: state.plugin.directory }), 250)
+        prepareReload(state.plugin.directory)
+        setTimeout(() => reload(state.plugin.directory), 250)
       },
       newSession: async (options) => {
-        const result = await state.plugin.client.session.create({ body: { parentID: options?.parentSession ?? sessionID } })
+        const result = await state.plugin.client.session.create({
+          body: { parentID: options?.parentSession ?? sessionID },
+        })
         const created = result.data?.id
         if (!created) throw new Error("Failed to create session")
         return { sessionID: created }
@@ -116,7 +139,10 @@ export async function runCommand(directory: string, name: string, args: string, 
   return true
 }
 
-function context(state: State, input: { sessionID?: string; agent?: string; signal?: AbortSignal } = {}): Extension.Context {
+function context(
+  state: State,
+  input: { sessionID?: string; agent?: string; signal?: AbortSignal } = {},
+): Extension.Context {
   const sessionID = input.sessionID ?? ""
   return {
     mode: "rpc",
@@ -234,8 +260,12 @@ type StoredEntry<T = unknown> = {
 }
 async function readEntries<T>(sessionID: string, customType?: string) {
   if (!sessionID) return []
-  const entries = await readFile(entryFile(sessionID), "utf8").then(JSON.parse).catch(() => [])
-  return (Array.isArray(entries) ? entries : []).filter((entry) => !customType || entry.customType === customType) as StoredEntry<T>[]
+  const entries = await readFile(entryFile(sessionID), "utf8")
+    .then(JSON.parse)
+    .catch(() => [])
+  return (Array.isArray(entries) ? entries : []).filter(
+    (entry) => !customType || entry.customType === customType,
+  ) as StoredEntry<T>[]
 }
 async function appendEntry(sessionID: string, entry: Record<string, unknown>) {
   const entries = await readEntries(sessionID)
@@ -271,10 +301,12 @@ function api(state: State, source: Extension.SourceInfo): Extension.API {
           execute: (args, ctx) => Promise.resolve(resolved.execute(args, ctx)),
         },
       })
+      state.toolDefinitions[tool.id] = state.tools.get(tool.id)!.definition
     },
     unregisterTool(id) {
       assertActive()
       state.tools.delete(id)
+      delete state.toolDefinitions[id]
     },
     setActiveTools(ids) {
       assertActive()
@@ -364,7 +396,11 @@ function api(state: State, source: Extension.SourceInfo): Extension.API {
         const list = state.eventBus.get(channel) ?? []
         list.push(handler)
         state.eventBus.set(channel, list)
-        return () => state.eventBus.set(channel, (state.eventBus.get(channel) ?? []).filter((item) => item !== handler))
+        return () =>
+          state.eventBus.set(
+            channel,
+            (state.eventBus.get(channel) ?? []).filter((item) => item !== handler),
+          )
       },
     },
   }
@@ -384,7 +420,13 @@ async function loadFile(state: State, filepath: string, scope: Extension.SourceI
 }
 
 async function discover(state: State, directory: string, scope: Extension.SourceInfo["scope"]) {
-  if (!(await stat(directory).then((item) => item.isDirectory(), () => false))) return
+  if (
+    !(await stat(directory).then(
+      (item) => item.isDirectory(),
+      () => false,
+    ))
+  )
+    return
   const glob = new Bun.Glob("*.{ts,js}")
   const files: string[] = []
   for await (const file of glob.scan({ cwd: directory, absolute: true, onlyFiles: true })) files.push(file)
@@ -408,6 +450,8 @@ export async function create(input: {
   defaultTrust?: "ask" | "always" | "never"
 }) {
   const directory = path.resolve(input.plugin.directory)
+  const startReason = startReasons.get(directory) ?? "startup"
+  startReasons.delete(directory)
   const previous = states.get(directory)
   if (previous) previous.invalidated = true
   const state: State = {
@@ -416,6 +460,7 @@ export async function create(input: {
     invalidated: false,
     handlers: new Map(),
     tools: new Map(),
+    toolDefinitions: {},
     commands: new Map(),
     activeTools: new Set(),
     modelOverrides: new Map(),
@@ -429,6 +474,7 @@ export async function create(input: {
     extensionCompactions: new Set(),
     contextWindows: new Map(),
     contextUsage: new Map(),
+    shutdownReason: "quit",
   }
   states.set(directory, state)
 
@@ -449,8 +495,8 @@ export async function create(input: {
     await discover(state, path.join(directory, ".redsun", "extensions"), "project")
   }
   for (const result of [
-    await emit(state, { type: "resources_discover", cwd: directory, reason: "startup" }),
-    await emit(state, { type: "agents_register", cwd: directory, reason: "startup" }),
+    await emit(state, { type: "resources_discover", cwd: directory, reason: startReason }),
+    await emit(state, { type: "agents_register", cwd: directory, reason: startReason }),
   ]) {
     if (!result || typeof result !== "object") continue
     for (const key of ["skillPaths", "promptPaths", "themePaths", "agentPaths"] as const) {
@@ -462,10 +508,10 @@ export async function create(input: {
       }
     }
   }
-  await emit(state, { type: "session_start", reason: "startup" })
+  await emit(state, { type: "session_start", reason: startReason })
 
   const hooks: Hooks = {
-    tool: Object.fromEntries(Array.from(state.tools, ([id, item]) => [id, item.definition])),
+    tool: state.toolDefinitions,
     async "tool.execute.before"(input, output) {
       const result = (await emit(
         state,
@@ -488,18 +534,23 @@ export async function create(input: {
           isError: (output as typeof output & { isError?: boolean }).isError === true,
         },
         context(state, { sessionID: input.sessionID }),
-      )) as { output?: string; metadata?: Record<string, unknown> } | undefined
+      )) as { output?: string; metadata?: Record<string, unknown>; isError?: boolean } | undefined
       if (result?.output !== undefined) output.output = result.output
       if (result?.metadata !== undefined) output.metadata = result.metadata
+      if (result?.isError !== undefined) (output as typeof output & { isError?: boolean }).isError = result.isError
     },
     async "chat.message"(input, output) {
       const ctx = context(state, { sessionID: input.sessionID, agent: input.agent })
-      const text = output.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n")
+      const text = output.parts
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n")
       const result = (await emit(state, { type: "input", text }, ctx)) as { action?: string; text?: string } | undefined
       if (result?.action === "transform" && result.text !== undefined) {
         const part = output.parts.find((item) => item.type === "text")
         if (part?.type === "text") part.text = result.text
       }
+      if (result?.action === "handled") output.handled = true
       const model = state.modelOverrides.get(input.sessionID)
       if (model) {
         const [providerID, ...rest] = model.split("/")
@@ -542,9 +593,10 @@ export async function create(input: {
         state,
         { type: "session_before_compact", sessionID: input.sessionID, signal: new AbortController().signal },
         context(state, { sessionID: input.sessionID }),
-      )) as { context?: string[]; prompt?: string } | undefined
+      )) as { context?: string[]; prompt?: string; cancel?: boolean } | undefined
       if (result?.context) output.context.push(...result.context)
       if (result?.prompt) output.prompt = result.prompt
+      if (result?.cancel) output.cancel = true
     },
     async event({ event }) {
       if (event.type === "message.updated") {
@@ -587,7 +639,7 @@ export async function create(input: {
       }
     },
     async dispose() {
-      await emit(state, { type: "session_shutdown", reason: "quit" })
+      await emit(state, { type: "session_shutdown", reason: state.shutdownReason })
       state.invalidated = true
       if (states.get(directory) === state) states.delete(directory)
     },

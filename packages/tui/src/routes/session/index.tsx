@@ -25,7 +25,14 @@ import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, type KeyEvent } from "@opentui/core"
+import {
+  BoxRenderable,
+  ScrollBoxRenderable,
+  addDefaultParsers,
+  TextAttributes,
+  RGBA,
+  type KeyEvent,
+} from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
   AssistantMessage,
@@ -195,6 +202,7 @@ export function Session() {
   const { theme } = useTheme()
   const promptRef = usePromptRef()
   const session = createMemo(() => sync.session.get(route.sessionID))
+  const goal = createMemo(() => sync.data.session_goal[route.sessionID])
   const location = createMemo(() => {
     const current = session()
     return current ? { directory: current.directory, workspaceID: current.workspaceID } : undefined
@@ -1329,6 +1337,15 @@ export function Session() {
                 <Show when={session()?.parentID}>
                   <SubagentFooter />
                 </Show>
+                <Show when={goal()?.condition}>
+                  {(condition) => (
+                    <box paddingLeft={1} paddingRight={1} paddingBottom={1} flexShrink={0}>
+                      <text fg={theme.warning} wrapMode="word">
+                        Goal: {condition()}
+                      </text>
+                    </box>
+                  )}
+                </Show>
                 <Show when={visible()}>
                   <pluginRuntime.Slot
                     name="session_prompt"
@@ -1493,6 +1510,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
+  const goalVerdict = createMemo(() => sync.data.session_goal[props.message.sessionID]?.verdicts[props.message.id])
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
@@ -1564,6 +1582,31 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         >
           <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
         </box>
+      </Show>
+      <Show when={goalVerdict()}>
+        {(verdict) => (
+          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1}>
+            <text
+              fg={
+                verdict().ok
+                  ? theme.success
+                  : verdict().impossible || verdict().error
+                    ? theme.error
+                    : theme.warning
+              }
+              wrapMode="word"
+            >
+              {verdict().ok
+                ? "Goal satisfied"
+                : verdict().impossible
+                  ? "Goal impossible"
+                  : verdict().error
+                    ? "Goal judge error"
+                    : "Goal pending"}
+              : {verdict().reason}
+            </text>
+          </box>
+        )}
       </Show>
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
