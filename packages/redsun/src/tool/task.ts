@@ -136,9 +136,7 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
-      const session = params.task_id
-        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
+      const session = params.task_id ? yield* sessions.get(SessionID.make(params.task_id)) : undefined
       if (session && session.parentID !== ctx.sessionID)
         return yield* Effect.fail(new Error("Task session does not belong to this parent session"))
       if (session?.agent && session.agent !== next.name)
@@ -174,14 +172,17 @@ export const TaskTool = Tool.define(
         ? yield* sessions.findMessage(session.id, (item) => item.info.role === "user" && !!item.info.model)
         : Option.none()
       const route = cfg.task_router?.[next.name as keyof NonNullable<typeof cfg.task_router>]
+      const routed = route ? Provider.parseModel(route) : undefined
       const model = Option.isSome(pinned) && pinned.value.info.role === "user" && pinned.value.info.model
         ? pinned.value.info.model
-        : route
+        : routed
           ? yield* provider
-              .getModel(Provider.parseModel(route).providerID, Provider.parseModel(route).modelID)
+              .getModel(routed.providerID, routed.modelID)
               .pipe(
-                Effect.as(Provider.parseModel(route)),
-                Effect.mapError(() => new Error(`Configured task_router.${next.name} model is unavailable: ${route}`)),
+                Effect.as(routed),
+                Effect.catchCause(() =>
+                  Effect.fail(new Error(`Configured task_router.${next.name} model is unavailable: ${route}`)),
+                ),
               )
           : next.model ??
             (next.name === "worker"
