@@ -169,6 +169,7 @@ export function Prompt(props: PromptProps) {
   const keymap = useOpencodeKeymap()
   const agentShortcut = useCommandShortcut("agent.cycle")
   const paletteShortcut = useCommandShortcut("command.palette.show")
+  const interruptShortcut = useCommandShortcut("session.interrupt")
   const renderer = useRenderer()
   const exit = useExit()
   const dimensions = useTerminalDimensions()
@@ -310,7 +311,6 @@ export function Prompt(props: PromptProps) {
     prompt: PromptInfo
     mode: "normal" | "shell"
     extmarkToPartIndex: Map<number, number>
-    interrupt: number
     placeholder: number
   }>({
     placeholder: randomIndex(list().length),
@@ -320,7 +320,6 @@ export function Prompt(props: PromptProps) {
     },
     mode: "normal",
     extmarkToPartIndex: new Map(),
-    interrupt: 0,
   })
 
   createEffect(
@@ -421,27 +420,17 @@ export function Prompt(props: PromptProps) {
         hidden: true,
         enabled: status().type !== "idle",
         run: () => {
-          if (auto()?.visible) return
-          if (!input.focused) return
           // TODO: this should be its own command
           if (store.mode === "shell") {
             setStore("mode", "normal")
             return
           }
           if (!props.sessionID) return
+          if (status().type === "idle") return
 
-          setStore("interrupt", store.interrupt + 1)
-
-          setTimeout(() => {
-            setStore("interrupt", 0)
-          }, 5000)
-
-          if (store.interrupt >= 2) {
-            void sdk.client.session.abort({
-              sessionID: props.sessionID,
-            })
-            setStore("interrupt", 0)
-          }
+          void sdk.client.session.abort({
+            sessionID: props.sessionID,
+          })
           dialog.clear()
         },
       },
@@ -1616,11 +1605,9 @@ const next = transition(vim.mode, e)
                     })()}
                   </box>
                 </box>
-                <text fg={store.interrupt > 0 ? theme.primary : theme.text}>
-                  esc{" "}
-                  <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
-                    {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
-                  </span>
+                <text fg={theme.text}>
+                  {interruptShortcut()}{" "}
+                  <span style={{ fg: theme.textMuted }}>interrupt</span>
                 </text>
               </box>
             </Match>
