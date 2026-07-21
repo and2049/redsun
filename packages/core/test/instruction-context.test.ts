@@ -248,7 +248,7 @@ describe("InstructionContext", () => {
       )
 
       expect(observed).toEqual({
-        targets: ["AGENTS.md"],
+        targets: ["AGENTS.md", ".redsun/memory.md", "SYSTEM.md", "APPEND_SYSTEM.md"],
         start: FSUtil.resolve("/repo"),
         stop: FSUtil.resolve("/repo"),
       })
