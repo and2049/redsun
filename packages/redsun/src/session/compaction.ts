@@ -336,11 +336,13 @@ const layer = Layer.effect(
         return yield* Effect.die(new Error(`Configured task_router.compact model is invalid: ${route}`))
       }
       const model = routed
-        ? yield* provider.getModel(routed.providerID, routed.modelID).pipe(
-            Effect.catchCause(() =>
-              Effect.die(new Error(`Configured task_router.compact model is unavailable: ${route}`)),
-            ),
-          )
+        ? yield* provider
+            .getModel(routed.providerID, routed.modelID)
+            .pipe(
+              Effect.catchCause(() =>
+                Effect.die(new Error(`Configured task_router.compact model is unavailable: ${route}`)),
+              ),
+            )
         : yield* provider.getModel(fallbackModel.providerID, fallbackModel.modelID).pipe(Effect.orDie)
       const strategy = cfg.compaction?.strategy ?? "hybrid"
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
@@ -356,8 +358,9 @@ const layer = Layer.effect(
       const compacting = yield* plugin.trigger(
         "experimental.session.compacting",
         { sessionID: input.sessionID },
-        { context: [], prompt: undefined },
+        { context: [], prompt: undefined, cancel: false },
       )
+      if (compacting.cancel) return "stop"
       const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
       const inventory = CompactionExtractor.serialize(
         CompactionExtractor.extract(selected.head, cfg.compaction?.maxToolResults),
@@ -365,9 +368,10 @@ const layer = Layer.effect(
       const algorithmic = [previousSummary ? `## Previous Summary\n\n${previousSummary}` : "", inventory]
         .filter(Boolean)
         .join("\n\n")
-      const source = strategy === "hybrid"
-        ? CompactionExtractor.recent(selected.head, cfg.compaction?.keepRecent ?? 4)
-        : selected.head
+      const source =
+        strategy === "hybrid"
+          ? CompactionExtractor.recent(selected.head, cfg.compaction?.keepRecent ?? 4)
+          : selected.head
       const msgs = structuredClone(source)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
@@ -441,7 +445,9 @@ const layer = Layer.effect(
             {
               sessionID: input.sessionID,
               agent: userMessage.agent,
-              model: yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie),
+              model: yield* provider
+                .getModel(userMessage.model.providerID, userMessage.model.modelID)
+                .pipe(Effect.orDie),
               provider: { source: info.source, info, options: info.options },
               message: userMessage,
               overflow: input.overflow === true,
@@ -507,7 +513,12 @@ const layer = Layer.effect(
         system: [],
         messages: [
           ...(strategy === "hybrid" && inventory
-            ? [{ role: "user" as const, content: [{ type: "text" as const, text: `## Structured Inventory\n\n${inventory}` }] }]
+            ? [
+                {
+                  role: "user" as const,
+                  content: [{ type: "text" as const, text: `## Structured Inventory\n\n${inventory}` }],
+                },
+              ]
             : []),
           ...modelMessages,
           {

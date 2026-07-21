@@ -239,7 +239,7 @@ export interface Hooks {
       messageID?: string
       variant?: string
     },
-    output: { message: UserMessage; parts: Part[] },
+    output: { message: UserMessage; parts: Part[]; handled?: boolean },
   ) => Promise<void>
   /**
    * Modify parameters sent to LLM
@@ -277,6 +277,7 @@ export interface Hooks {
       title: string
       output: string
       metadata: any
+      isError?: boolean
     },
   ) => Promise<void>
   "experimental.chat.messages.transform"?: (
@@ -304,7 +305,7 @@ export interface Hooks {
    */
   "experimental.session.compacting"?: (
     input: { sessionID: string },
-    output: { context: string[]; prompt?: string },
+    output: { context: string[]; prompt?: string; cancel?: boolean },
   ) => Promise<void>
   /**
    * Called after compaction succeeds and before a synthetic user

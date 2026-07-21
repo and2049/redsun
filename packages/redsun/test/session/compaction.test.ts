@@ -368,6 +368,20 @@ function autocontinue(enabled: boolean) {
   })
 }
 
+function cancelCompaction() {
+  return Layer.mock(Plugin.Service)({
+    trigger: <Name extends string, Input, Output>(name: Name, _input: Input, output: Output) => {
+      if (name !== "experimental.session.compacting") return Effect.succeed(output)
+      return Effect.sync(() => {
+        ;(output as { cancel?: boolean }).cancel = true
+        return output
+      })
+    },
+    list: () => Effect.succeed([]),
+    init: () => Effect.void,
+  })
+}
+
 describe("session.compaction.isOverflow", () => {
   it.live(
     "returns true when token count exceeds usable context",
@@ -1129,6 +1143,28 @@ describe("session.compaction.process", () => {
       }).pipe(withCompaction({ llm: stub.llmLayer, config: cfg({ tail_turns: 1, preserve_recent_tokens: 100 }) }))
     },
     { git: true },
+  )
+
+  itCompaction.instance(
+    "allows plugins to cancel compaction before creating a summary",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const msg = yield* createUserMessage(session.id, "hello")
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+
+      expect(
+        yield* SessionCompaction.use.process({
+          parentID: msg.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: true,
+        }),
+      ).toBe("stop")
+      expect((yield* ssn.messages({ sessionID: session.id })).some((item) => item.info.role === "assistant")).toBe(
+        false,
+      )
+    }).pipe(withCompaction({ plugin: cancelCompaction() })),
   )
 
   itCompaction.instance(

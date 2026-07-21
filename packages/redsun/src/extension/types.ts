@@ -56,8 +56,8 @@ export namespace Extension {
     | { type: "project_trust"; cwd: string }
     | { type: "resources_discover"; cwd: string; reason: "startup" | "reload" }
     | { type: "agents_register"; cwd: string; reason: "startup" | "reload" }
-    | { type: "session_start"; reason: "startup" | "reload" | "new" | "resume" | "fork" }
-    | { type: "session_shutdown"; reason: "quit" | "reload" | "new" | "resume" | "fork" }
+    | { type: "session_start"; reason: "startup" | "reload" }
+    | { type: "session_shutdown"; reason: "quit" | "reload" }
     | { type: "session_before_compact"; sessionID: string; signal: AbortSignal }
     | { type: "session_compact"; sessionID: string; fromExtension: boolean }
     | { type: "context"; messages: unknown[] }

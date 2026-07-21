@@ -301,6 +301,27 @@ function goalHarness() {
 
 const goalGate = goalHarness()
 
+const handledInput = testEffect(
+  LayerNode.compile(LayerNode.group([promptRoot, testLLMServerNode]), [
+    [SessionSummary.node, summary],
+    [LSP.node, lsp],
+    [MCP.node, makeMcp()],
+    [RuntimeFlags.node, runtimeFlags],
+    [
+      Plugin.node,
+      Layer.mock(Plugin.Service)({
+        trigger: <Name extends string, Input, Output>(name: Name, _input: Input, output: Output) =>
+          Effect.sync(() => {
+            if (name === "chat.message") (output as { handled?: boolean }).handled = true
+            return output
+          }),
+        list: () => Effect.succeed([]),
+        init: () => Effect.void,
+      }),
+    ],
+  ]),
+)
+
 // Config that registers a custom "test" provider with a "test-model" model
 // so provider model lookup succeeds inside the loop.
 const cfg = {
@@ -558,6 +579,27 @@ it.instance("loop exits without an LLM request for interrupted orphan tool calls
 
     const result = yield* prompt.loop({ sessionID: chat.id })
     expect(result.info.id).toBe(seeded.assistant.id)
+    expect(yield* llm.hits).toHaveLength(0)
+  }),
+)
+
+handledInput.instance("returns handled extension input without sampling", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Handled" })
+
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      parts: [{ type: "text", text: "handled by extension" }],
+    })
+
+    expect(result.info.role).toBe("user")
+    expect(
+      (yield* sessions.messages({ sessionID: chat.id })).filter((message) => message.info.role === "assistant"),
+    ).toEqual([])
     expect(yield* llm.hits).toHaveLength(0)
   }),
 )

@@ -225,14 +225,17 @@ const layer = Layer.effect(
       const fallback = ag.model
         ? provider.getModel(ag.model.providerID, ag.model.modelID)
         : Effect.gen(function* () {
-            return (yield* provider.getSmallModel(input.providerID)) ??
+            return (
+              (yield* provider.getSmallModel(input.providerID)) ??
               (yield* provider.getModel(input.providerID, input.modelID))
+            )
           })
-      const mdl = route?.[0] && route.length > 1
-        ? yield* provider
-            .getModel(ProviderV2.ID.make(route[0]), ModelV2.ID.make(route.slice(1).join("/")))
-            .pipe(Effect.catch(() => fallback))
-        : yield* fallback
+      const mdl =
+        route?.[0] && route.length > 1
+          ? yield* provider
+              .getModel(ProviderV2.ID.make(route[0]), ModelV2.ID.make(route.slice(1).join("/")))
+              .pipe(Effect.catch(() => fallback))
+          : yield* fallback
       const msgs = onlySubtasks
         ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
         : yield* MessageV2.toModelMessagesEffect(context, mdl)
@@ -1111,7 +1114,7 @@ const layer = Layer.effect(
         Effect.map((x) => x.flat().map(assign)),
       )
 
-      yield* plugin.trigger(
+      const hook = yield* plugin.trigger(
         "chat.message",
         {
           sessionID: input.sessionID,
@@ -1120,7 +1123,7 @@ const layer = Layer.effect(
           messageID: input.messageID,
           variant: input.variant,
         },
-        { message: info, parts: resolvedParts },
+        { message: info, parts: resolvedParts, handled: false },
       )
 
       const parts = yield* Effect.forEach(resolvedParts, (part) =>
@@ -1161,7 +1164,7 @@ const layer = Layer.effect(
       yield* sessions.updateMessage(info)
       for (const part of parts) yield* sessions.updatePart(part)
 
-      return { info, parts }
+      return { message: { info, parts }, handled: hook.handled === true }
     }, Effect.scoped)
 
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
@@ -1169,7 +1172,8 @@ const layer = Layer.effect(
     )(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
-      const message = yield* createUserMessage(input)
+      const created = yield* createUserMessage(input)
+      const message = created.message
       yield* sessions.touch(input.sessionID)
 
       const permissions: PermissionV1.Rule[] = []
@@ -1181,7 +1185,7 @@ const layer = Layer.effect(
         yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
       }
 
-      if (input.noReply === true) return message
+      if (input.noReply === true || created.handled) return message
       return yield* loop({ sessionID: input.sessionID })
     })
 
@@ -1410,9 +1414,10 @@ const layer = Layer.effect(
               messages: optimizedModelMsgs,
               tools,
             })
-            const justCompacted = lastUserMsg?.parts.some(
-              (part) => part.type === "text" && part.synthetic && part.metadata?.compaction_continue === true,
-            ) ?? false
+            const justCompacted =
+              lastUserMsg?.parts.some(
+                (part) => part.type === "text" && part.synthetic && part.metadata?.compaction_continue === true,
+              ) ?? false
             if (
               !justCompacted &&
               (yield* compaction.isOverflow({
@@ -1556,17 +1561,16 @@ const layer = Layer.effect(
           const { InstanceRuntime } = yield* Effect.promise(() => import("@/project/instance-runtime"))
           setTimeout(() => void InstanceRuntime.reloadInstance({ directory: instance.directory }), 250)
         }
-        const current = answer === "yes" || answer === "no"
-          ? answer === "yes"
-          : ProjectTrust.get(instance.directory)
+        const current = answer === "yes" || answer === "no" ? answer === "yes" : ProjectTrust.get(instance.directory)
         const model = yield* currentModel(input.sessionID)
         return yield* addSyntheticUserMessage({
           sessionID: input.sessionID,
           agent: input.agent ?? (yield* agents.defaultInfo()).name,
           model,
-          text: current === null
-            ? "Project trust is undecided. Use /trust yes or /trust no."
-            : `Project trust ${current ? "granted" : "denied"}.`,
+          text:
+            current === null
+              ? "Project trust is undecided. Use /trust yes or /trust no."
+              : `Project trust ${current ? "granted" : "denied"}.`,
         })
       }
 

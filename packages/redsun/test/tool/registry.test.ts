@@ -21,6 +21,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
 import type { Tool as MCPToolDef } from "@modelcontextprotocol/sdk/types.js"
+import type { ToolDefinition } from "@opencode-ai/plugin"
 
 const configLayer = TestConfig.layer({
   directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".redsun")])),
@@ -48,6 +49,17 @@ const brokenPluginLayer = Layer.succeed(
           },
         },
       ]),
+  }),
+)
+
+const dynamicPluginTools: Record<string, ToolDefinition> = {}
+const dynamicPluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () => Effect.succeed([{ tool: dynamicPluginTools }]),
   }),
 )
 
@@ -95,6 +107,7 @@ const withEmptyCodeMode = testEffect(
   ]),
 )
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withDynamicPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, dynamicPluginLayer]]))
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -271,6 +284,29 @@ describe("tool.registry", () => {
       expect(ids).toContain("read")
       expect(ids).toContain("broken_plugin_tool")
     }),
+  )
+
+  withDynamicPlugin.instance("reflects plugin tools registered and removed after registry initialization", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).not.toContain("dynamic_plugin_tool")
+
+      dynamicPluginTools.dynamic_plugin_tool = {
+        description: "registered at runtime",
+        args: {},
+        execute: async () => "ok",
+      }
+      expect(yield* registry.ids()).toContain("dynamic_plugin_tool")
+
+      delete dynamicPluginTools.dynamic_plugin_tool
+      expect(yield* registry.ids()).not.toContain("dynamic_plugin_tool")
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          delete dynamicPluginTools.dynamic_plugin_tool
+        }),
+      ),
+    ),
   )
 
   it.instance("loads tools from .redsun/tools (plural)", () =>
