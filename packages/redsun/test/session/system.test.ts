@@ -9,6 +9,7 @@ import type { Provider } from "../../src/provider/provider"
 import { SystemPrompt } from "../../src/session/system"
 import { MCP } from "../../src/mcp"
 import { testEffect } from "../lib/effect"
+import { PROJECT_MEMORY_POLICY } from "@opencode-ai/core/project-memory"
 
 const skills: Skill.Info[] = [
   {
@@ -87,6 +88,14 @@ describe("session.system", () => {
   test("selects the Meta prompt for Muse Spark model IDs", () => {
     expect(SystemPrompt.provider({ api: { id: "meta/muse-spark-preview" } } as Provider.Model)[0]).toContain(
       "Meta Muse Spark",
+    )
+  })
+
+  test("uses the shared project-memory policy and removes Beast's obsolete memory path", () => {
+    expect(PROJECT_MEMORY_POLICY).toContain("`.redsun/memory.md` is durable project memory")
+    expect(PROJECT_MEMORY_POLICY).toContain("Do not create it speculatively")
+    expect(SystemPrompt.provider({ api: { id: "gpt-4.1" } } as Provider.Model)[0]).not.toContain(
+      ".github/instructions/memory.instruction.md",
     )
   })
 
