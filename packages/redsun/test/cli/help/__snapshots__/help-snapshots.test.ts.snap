@@ -275,7 +275,9 @@ Options:
       --tools       number of tools to show (default: all)                                  [number]
       --models      show model statistics (default: hidden). Pass a number to show top N, otherwise
                     shows all
-      --project     filter by project (default: all projects, empty string: current project)[string]"
+      --project     filter by project (default: all projects, empty string: current project)[string]
+      --context     show measured request context categories and cache hit rate
+                                                                          [boolean] [default: false]"
 `;
 
 exports[`redsun CLI help-text snapshots every documented command emits stable help text: redsun export --help 1`] = `
