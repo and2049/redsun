@@ -419,6 +419,35 @@ describe("ProviderTransform.options - minimax m3 thinking", () => {
   })
 })
 
+describe("ProviderTransform.options - Kimi adaptive thinking", () => {
+  const createModel = (overrides: Record<string, any> = {}) =>
+    ({
+      id: "moonshotai/kimi-k2-thinking",
+      providerID: "moonshotai",
+      api: {
+        id: "kimi-k2-thinking",
+        url: "https://api.moonshot.ai/anthropic",
+        npm: "@ai-sdk/anthropic",
+      },
+      capabilities: { reasoning: true },
+      limit: { output: 262_144 },
+      ...overrides,
+    }) as any
+
+  test("uses summarized adaptive thinking and effort instead of token budgets", () => {
+    const result = ProviderTransform.options({ model: createModel(), sessionID: "s1", providerOptions: {} })
+    expect(result.thinking).toEqual({ type: "adaptive", display: "summarized" })
+    expect(result.effort).toBe("high")
+    expect(JSON.stringify(result)).not.toContain("budgetTokens")
+  })
+
+  test("does not set adaptive thinking for Kimi on an OpenAI-compatible transport", () => {
+    const model = createModel({ api: { id: "kimi-k2-thinking", url: "https://api.moonshot.ai/v1", npm: "@ai-sdk/openai-compatible" } })
+    const result = ProviderTransform.options({ model, sessionID: "s1", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+  })
+})
+
 describe("ProviderTransform.options - google thinkingConfig gating", () => {
   const sessionID = "test-session-123"
 
@@ -3151,7 +3180,7 @@ describe("ProviderTransform.temperature - Cohere North", () => {
 describe("ProviderTransform.reasoningVariants", () => {
   const model = (reasoning_options: ModelsDev.Model["reasoning_options"]) => ({ reasoning_options }) as ModelsDev.Model
   const target = (npm: string, id = "test-model") =>
-    ({ id, api: { id, npm, url: "" }, capabilities: { reasoning: true }, limit: { output: 64_000 } }) as any
+    ({ id, providerID: "test", api: { id, npm, url: "" }, capabilities: { reasoning: true }, limit: { output: 64_000 } }) as any
 
   test("respects explicitly empty reasoning options", () => {
     expect(ProviderTransform.reasoningVariants(model([]), target("@ai-sdk/openai"))).toEqual({})
@@ -3225,13 +3254,20 @@ describe("ProviderTransform.reasoningVariants", () => {
     ).toEqual({ high: { effort: "high" } })
   })
 
-  test("leaves legacy Anthropic effort options to budget fallback", () => {
+  test("uses explicit effort metadata for Anthropic-compatible models", () => {
     expect(
       ProviderTransform.reasoningVariants(
         model([{ type: "effort", values: ["high"] }]),
         target("@ai-sdk/anthropic", "claude-sonnet-4"),
       ),
-    ).toBeUndefined()
+    ).toEqual({ high: { effort: "high" } })
+
+    expect(
+      ProviderTransform.reasoningVariants(
+        model([{ type: "effort", values: ["max"] }]),
+        target("@ai-sdk/anthropic", "kimi-k3"),
+      ),
+    ).toEqual({ max: { thinking: { type: "adaptive", display: "summarized" }, effort: "max" } })
   })
 
   test("uses adaptive reasoning config for Anthropic models on Bedrock", () => {
@@ -3251,13 +3287,13 @@ describe("ProviderTransform.reasoningVariants", () => {
     })
   })
 
-  test("leaves legacy Anthropic Bedrock effort options to budget fallback", () => {
+  test("does not replace unsupported Anthropic Bedrock effort options with token budgets", () => {
     expect(
       ProviderTransform.reasoningVariants(
         model([{ type: "effort", values: ["high"] }]),
         target("@ai-sdk/amazon-bedrock", "anthropic.claude-sonnet-4-v1:0"),
       ),
-    ).toBeUndefined()
+    ).toEqual({})
   })
 
   test.each([
@@ -3378,10 +3414,10 @@ describe("ProviderTransform.reasoningVariants", () => {
     })
   })
 
-  test("leaves unsupported options for heuristic fallback", () => {
+  test("does not replace unsupported effort options with heuristic variants", () => {
     expect(
       ProviderTransform.reasoningVariants(model([{ type: "effort", values: ["high"] }]), target("@ai-sdk/perplexity")),
-    ).toBeUndefined()
+    ).toEqual({})
     expect(ProviderTransform.reasoningVariants(model([{ type: "toggle" }]), target("@ai-sdk/openai"))).toBeUndefined()
   })
 
@@ -3397,15 +3433,13 @@ describe("ProviderTransform.reasoningVariants", () => {
     })
     expect(
       ProviderTransform.reasoningVariants(effort, target("@ai-sdk/github-copilot", "gemini-3-pro")),
-    ).toBeUndefined()
+    ).toEqual({})
   })
 
   test.each(["@ai-sdk/cohere", "@ai-sdk/perplexity", "@ai-sdk/vercel", "@ai-sdk/alibaba", "gitlab-ai-provider"])(
     "does not invent effort controls for %s",
     (npm) => {
-      expect(
-        ProviderTransform.reasoningVariants(model([{ type: "effort", values: ["high"] }]), target(npm)),
-      ).toBeUndefined()
+      expect(ProviderTransform.reasoningVariants(model([{ type: "effort", values: ["high"] }]), target(npm))).toEqual({})
     },
   )
 })
