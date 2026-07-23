@@ -81,18 +81,17 @@ const NORMAL_LETTER_COMMANDS: Record<string, string> = {
   s: "opencode.status",
   m: "model.list",
   n: "session.new",
-  w: "worker.model",
   a: "agent.list",
   t: "theme.switch",
   b: "session.sidebar.toggle",
   c: "session.compact",
   u: "session.undo",
+  w: "worker.model",
   r: "session.redo",
   y: "messages.copy",
   e: "prompt.editor",
   x: "session.export",
   h: "session.toggle.conceal",
-  q: "app.exit",
 }
 
 // VimKeyHandler mounts below DialogProvider so it can gate letter dispatch on
