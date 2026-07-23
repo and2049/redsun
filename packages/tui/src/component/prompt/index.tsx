@@ -1495,13 +1495,23 @@ const next = transition(vim.mode, e)
                           </text>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
                           <Show when={agent().name === "compose" && dimensions().width >= 90}>
-                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>worker:</text>
-                            <text fg={fadeColor(workerRoute() ? theme.textMuted : theme.warning, modelMetaAlpha())}>
-                              {workerDisplay()?.model ?? "not configured"}
-                            </text>
-                            <Show when={workerDisplay()}>
+                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                            <Show
+                              when={workerDisplay()}
+                              fallback={
+                                <text fg={fadeColor(theme.warning, modelMetaAlpha())}>worker model not configured</text>
+                              }
+                            >
                               {(worker) => (
-                                <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{worker().provider}</text>
+                                <>
+                                  <text
+                                    flexShrink={0}
+                                    fg={fadeColor(vim.mode !== "insert" ? theme.textMuted : theme.text, modelMetaAlpha())}
+                                  >
+                                    {worker().model}
+                                  </text>
+                                  <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{worker().provider}</text>
+                                </>
                               )}
                             </Show>
                           </Show>
