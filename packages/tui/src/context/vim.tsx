@@ -103,10 +103,7 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
 
-  // ctrl+x is the configured leader, so the keymap's leader token matcher would
-  // consume it (stopPropagation) before any appended useKeyboard listener runs.
-  // Register a key intercept hook so we see ctrl+x before dispatchLayers arms
-  // the leader, and route it to temp-normal instead.
+  // ctrl+x enters temporary normal mode directly; no leader system remains.
   onMount(() => {
     const offIntercept = keymap.intercept(
       "key",

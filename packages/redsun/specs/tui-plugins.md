@@ -20,11 +20,10 @@ Example:
 {
   "$schema": "https://opencode.ai/tui.json",
   "theme": "smoke-theme",
-  "leader_timeout": 2000,
   "keybinds": {
     "leader": "ctrl+x",
     "command_list": "ctrl+p",
-    "session_new": "<leader>n"
+    "session_new": "ctrl+n"
   },
   "plugin": ["@acme/opencode-plugin@1.2.3", ["./plugins/demo.tsx", { "label": "demo" }]],
   "plugin_enabled": {
@@ -60,9 +59,7 @@ Example:
 - `attention.volume` sets the default built-in sound volume from `0` to `1`.
 - `attention.sound_pack` selects the initial semantic sound pack. Persisted runtime selection in KV can override it.
 - `attention.sounds` overrides individual semantic sound slots such as `error`, `done`, or `subagent_done`.
-- `leader_timeout` is a top-level TUI setting.
 - `keybinds` is a flat object keyed by command id; values are key binding values (`false`, `"none"`, a key string/object, a binding object, or an array of key strings/objects/binding objects).
-- `keybinds.leader` sets the key used by `<leader>` shortcuts.
 
 ## Author package shape
 

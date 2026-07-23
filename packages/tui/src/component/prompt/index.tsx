@@ -52,7 +52,7 @@ import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { needsWorkerModel, useWorkerModelDialog } from "../dialog-worker-model"
 import { useArgs } from "../../context/args"
-import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
+import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../config"
 import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
@@ -149,7 +149,6 @@ export function Prompt(props: PromptProps) {
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable | undefined>()
   const vim = useVim()
 
-  const leader = useLeaderActive()
   const local = useLocal()
   const args = useArgs()
   const paths = useTuiPaths()
@@ -1311,7 +1310,7 @@ export function Prompt(props: PromptProps) {
   }
 
   const highlight = createMemo(() => {
-    if (leader() || vim.mode !== "insert") return theme.border
+    if (vim.mode !== "insert") return theme.border
     if (store.mode === "shell") return theme.primary
     const agent = local.agent.current()
     if (!agent) return theme.border
@@ -1397,8 +1396,8 @@ export function Prompt(props: PromptProps) {
               width="100%"
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
-              textColor={leader() || vim.mode !== "insert" ? theme.textMuted : theme.text}
-              focusedTextColor={leader() || vim.mode !== "insert" ? theme.textMuted : theme.text}
+              textColor={vim.mode !== "insert" ? theme.textMuted : theme.text}
+              focusedTextColor={vim.mode !== "insert" ? theme.textMuted : theme.text}
               minHeight={1}
               maxHeight={maxHeight()}
               onContentChange={() => {
@@ -1489,7 +1488,7 @@ const next = transition(vim.mode, e)
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
                           <text
                             flexShrink={0}
-                            fg={fadeColor(leader() || vim.mode !== "insert" ? theme.textMuted : theme.text, modelMetaAlpha())}
+                            fg={fadeColor(vim.mode !== "insert" ? theme.textMuted : theme.text, modelMetaAlpha())}
                           >
                             {local.model.parsed().model}
                           </text>

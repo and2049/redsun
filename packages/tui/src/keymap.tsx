@@ -5,9 +5,8 @@ import {
   registerCommaBindings,
   registerEscapeClearsPendingSequence,
   registerManagedTextareaLayer,
-  registerTimedLeader,
 } from "@opentui/keymap/addons/opentui"
-import { stringifyKeyStroke, type Binding } from "@opentui/keymap"
+import { type Binding } from "@opentui/keymap"
 import {
   formatCommandBindings as formatCommandBindingsExtra,
   formatKeySequence as formatKeySequenceExtra,
@@ -15,9 +14,6 @@ import {
 import { KeymapProvider, useKeymap, useKeymapSelector, useBindings } from "@opentui/keymap/solid"
 import { createMemo, type Accessor } from "solid-js"
 import { useTuiConfig } from "./config"
-import { TuiKeybind } from "./config/keybind"
-
-export const LEADER_TOKEN = "leader"
 export const OPENCODE_BASE_MODE = "base"
 export const COMMAND_PALETTE_COMMAND = "command.palette.show"
 
@@ -42,7 +38,7 @@ type BindingLookup = {
   gather(name: string, commands: readonly string[]): readonly Binding<Renderable, KeyEvent>[]
 }
 type FormatConfig = { keybinds: BindingLookup }
-type ResolvedKeymapConfig = FormatConfig & { leader_timeout: number }
+type ResolvedKeymapConfig = FormatConfig
 
 const modeStacks = new WeakMap<OpenTuiKeymap, OpencodeModeStack>()
 
@@ -177,21 +173,8 @@ function hasManagedTextareaFocus(renderer: CliRenderer) {
   return editor instanceof TextareaRenderable && !(editor instanceof InputRenderable)
 }
 
-function leaderDisplay(config: FormatConfig) {
-  const key = config.keybinds.get(LEADER_TOKEN)?.[0]?.key
-  if (!key) return TuiKeybind.LeaderDefault
-  return typeof key === "string" ? key : stringifyKeyStroke(key)
-}
-
-function leaderKey(config: FormatConfig) {
-  return config.keybinds.get(LEADER_TOKEN)?.[0]?.key
-}
-
 function formatOptions(config: FormatConfig) {
   return {
-    tokenDisplay: {
-      [LEADER_TOKEN]: leaderDisplay(config),
-    },
     keyNameAliases: {
       pageup: "pgup",
       pagedown: "pgdn",
@@ -216,14 +199,6 @@ export function registerOpencodeKeymap(keymap: OpenTuiKeymap, renderer: CliRende
   const offCommaBindings = registerCommaBindings(keymap)
   const offAliasExpander = registerKeyAliases(keymap)
   const offBaseLayout = registerBaseLayoutFallback(keymap)
-  const leader = leaderKey(config)
-  const offLeader = leader
-    ? registerTimedLeader(keymap, {
-        trigger: leader,
-        name: LEADER_TOKEN,
-        timeoutMs: config.leader_timeout,
-      })
-    : () => {}
   const offEscape = registerEscapeClearsPendingSequence(keymap)
   const offBackspace = registerBackspacePopsPendingSequence(keymap)
   const offInputBindings = registerManagedTextareaLayer(keymap, renderer, {
@@ -235,16 +210,11 @@ export function registerOpencodeKeymap(keymap: OpenTuiKeymap, renderer: CliRende
     offInputBindings()
     offBackspace()
     offEscape()
-    offLeader()
     offAliasExpander()
     offBaseLayout()
     offCommaBindings()
     modeStack.dispose()
   }
-}
-
-export function useLeaderActive(): Accessor<boolean> {
-  return useKeymapSelector((keymap: OpenTuiKeymap) => keymap.getPendingSequence()[0]?.tokenName === LEADER_TOKEN)
 }
 
 export function useCommandShortcut(command: string): Accessor<string> {

@@ -5,7 +5,6 @@ import { Schema } from "effect"
 import {
   AttentionSoundName,
   Info,
-  LeaderTimeoutDefault,
   PluginSpec,
   resolve,
   TuiConfigProvider,
@@ -26,15 +25,13 @@ test("defines package-owned plugin specs and attention sound names", () => {
 test("validates config constraints", () => {
   expect(
     decodeInfo({
-      leader_timeout: 250,
       attention: { volume: 1, sounds: { done: "done.wav" } },
       prompt: { max_height: 10, max_width: "auto" },
       scroll_speed: 0.001,
       diff_style: "stacked",
       plugin: ["example-plugin"],
     }),
-  ).toMatchObject({ leader_timeout: 250, attention: { volume: 1 }, diff_style: "stacked" })
-  expect(() => decodeInfo({ leader_timeout: 0 })).toThrow()
+  ).toMatchObject({ attention: { volume: 1 }, diff_style: "stacked" })
   expect(() => decodeInfo({ attention: { volume: 1.1 } })).toThrow()
   expect(() => decodeInfo({ prompt: { max_width: 0 } })).toThrow()
   expect(() => decodeInfo({ scroll_speed: 0 })).toThrow()
@@ -52,17 +49,15 @@ test("resolves host-neutral defaults", () => {
     sound_pack: "opencode.default",
     sounds: {},
   })
-  expect(config.leader_timeout).toBe(LeaderTimeoutDefault)
   expect(config.mouse).toBe(true)
   expect(config.keybinds.has("terminal.suspend")).toBe(true)
-  expect(config.keybinds.has("session.list")).toBe(true)
+  expect(config.keybinds.has("session.new")).toBe(true)
 })
 
 test("resolves overrides without mutating input", () => {
   const input: TuiConfigInfo = {
     theme: "custom",
     mouse: false,
-    leader_timeout: 750,
     attention: {
       enabled: true,
       notifications: false,
@@ -75,7 +70,7 @@ test("resolves overrides without mutating input", () => {
   }
   const config = resolve(input, { terminalSuspend: true })
 
-  expect(config).toMatchObject({ theme: "custom", mouse: false, leader_timeout: 750, attention: input.attention })
+  expect(config).toMatchObject({ theme: "custom", mouse: false, attention: input.attention })
   expect(config.keybinds.get("session.list")).toHaveLength(1)
   expect(input.keybinds).toEqual({ session_list: "ctrl+l" })
 })
@@ -106,7 +101,7 @@ test("provides resolved config through Solid context", async () => {
 
   function Consumer() {
     const value = useTuiConfig()
-    return <text>{`${value.theme} ${value.mouse} ${value.leader_timeout}`}</text>
+    return <text>{`${value.theme} ${value.mouse}`}</text>
   }
 
   const app = await testRender(() => (
@@ -116,7 +111,7 @@ test("provides resolved config through Solid context", async () => {
   ))
   try {
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain(`custom true ${LeaderTimeoutDefault}`)
+    expect(app.captureCharFrame()).toContain("custom true")
   } finally {
     app.renderer.destroy()
   }
