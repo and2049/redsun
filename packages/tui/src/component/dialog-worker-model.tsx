@@ -4,9 +4,21 @@ import { useSDK } from "../context/sdk"
 import { useSync } from "../context/sync"
 import { useToast } from "../ui/toast"
 import { DialogModel } from "./dialog-model"
+import type { Provider } from "@opencode-ai/sdk/v2"
+import * as Model from "../util/model"
 
 export function needsWorkerModel(agent: string, route: string | undefined) {
   return agent === "compose" && !route
+}
+
+export function workerModelDisplay(route: string | undefined, providers: Provider[]) {
+  if (!route) return
+  const { providerID, modelID } = Model.parse(route)
+  const provider = providers.find((item) => item.id === providerID)
+  return {
+    model: provider?.models[modelID]?.name ?? modelID,
+    provider: provider?.name ?? providerID,
+  }
 }
 
 export function useWorkerModelDialog() {

@@ -50,7 +50,7 @@ import { useKV } from "../../context/kv"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
-import { needsWorkerModel, useWorkerModelDialog } from "../dialog-worker-model"
+import { needsWorkerModel, useWorkerModelDialog, workerModelDisplay } from "../dialog-worker-model"
 import { useArgs } from "../../context/args"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../config"
@@ -165,6 +165,7 @@ export function Prompt(props: PromptProps) {
     const model = sync.data.agent.find((agent) => agent.name === "worker")?.model
     return model ? `${model.providerID}/${model.modelID}` : undefined
   })
+  const workerDisplay = createMemo(() => workerModelDisplay(workerRoute(), sync.data.provider))
   const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
@@ -1496,8 +1497,13 @@ const next = transition(vim.mode, e)
                           <Show when={agent().name === "compose" && dimensions().width >= 90}>
                             <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>worker:</text>
                             <text fg={fadeColor(workerRoute() ? theme.textMuted : theme.warning, modelMetaAlpha())}>
-                              {workerRoute() ?? "not configured"}
+                              {workerDisplay()?.model ?? "not configured"}
                             </text>
+                            <Show when={workerDisplay()}>
+                              {(worker) => (
+                                <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{worker().provider}</text>
+                              )}
+                            </Show>
                           </Show>
                           <Show when={showVariant()}>
                             <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
