@@ -796,6 +796,28 @@ it.instance("getSmallModel skips inferred models for Azure", () =>
   }),
 )
 
+it.instance("Azure Cognitive Services uses /v1 endpoints by default", () =>
+  Effect.gen(function* () {
+    yield* set("AZURE_COGNITIVE_SERVICES_RESOURCE_NAME", "test-resource")
+    yield* set("AZURE_COGNITIVE_SERVICES_API_KEY", "test-key")
+    const provider = yield* Provider.Service
+    const azure = yield* provider.getProvider(ProviderV2.ID.make("azure-cognitive-services"))
+    expect(azure.options.baseURL).toBe("https://test-resource.cognitiveservices.azure.com/openai/v1")
+  }),
+)
+
+it.instance(
+  "Azure Cognitive Services preserves deployment-based endpoints when configured",
+  Effect.gen(function* () {
+    yield* set("AZURE_COGNITIVE_SERVICES_RESOURCE_NAME", "test-resource")
+    yield* set("AZURE_COGNITIVE_SERVICES_API_KEY", "test-key")
+    const provider = yield* Provider.Service
+    const azure = yield* provider.getProvider(ProviderV2.ID.make("azure-cognitive-services"))
+    expect(azure.options.baseURL).toBe("https://test-resource.cognitiveservices.azure.com/openai")
+  }),
+  { config: { provider: { "azure-cognitive-services": { options: { useDeploymentBasedUrls: true } } } } },
+)
+
 it.instance("getSmallModel skips inferred models for Azure Cognitive Services", () =>
   Effect.gen(function* () {
     yield* set("AZURE_COGNITIVE_SERVICES_RESOURCE_NAME", "test-resource")
@@ -1477,7 +1499,7 @@ test("models.dev normalization fills required response fields", () => {
   expect(model.release_date).toBe("")
 })
 
-test("models.dev reasoning options replace generated variants and unsupported options fall back", () => {
+test("models.dev reasoning options replace generated variants and unsupported toggles fall back", () => {
   const provider = {
     id: "reasoning",
     name: "Reasoning",
@@ -1514,6 +1536,14 @@ test("models.dev reasoning options replace generated variants and unsupported op
         limit: { context: 128_000, output: 64_000 },
         experimental: { modes: { fast: {} } },
       },
+      anthropicCompatible: {
+        id: "k3",
+        name: "Anthropic Compatible",
+        reasoning: true,
+        reasoning_options: [{ type: "effort", values: ["max"] }],
+        provider: { npm: "@ai-sdk/anthropic" },
+        limit: { context: 1_048_576, output: 131_072 },
+      },
     },
   } as unknown as ModelsDev.Provider
 
@@ -1530,6 +1560,7 @@ test("models.dev reasoning options replace generated variants and unsupported op
   expect(models.override.variants).toEqual({
     high: { thinkingConfig: { includeThoughts: true, thinkingLevel: "high" } },
   })
+  expect(models.anthropicCompatible.variants).toEqual({ max: { effort: "max" } })
   expect(models["gemini-3-pro-fast"].variants).toEqual(models.override.variants)
 })
 
