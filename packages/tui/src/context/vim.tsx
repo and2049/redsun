@@ -80,6 +80,7 @@ const NORMAL_LETTER_COMMANDS: Record<string, string> = {
   l: "session.list",
   s: "opencode.status",
   m: "model.list",
+  n: "session.new",
   w: "worker.model",
   a: "agent.list",
   t: "theme.switch",

@@ -86,7 +86,7 @@ export const Definitions = {
   session_export: keybind("<leader>x", "Export session to editor"),
   session_copy: keybind("none", "Copy session transcript"),
   session_move: keybind("none", "Move session"),
-  session_new: keybind("<leader>n", "Create a new session"),
+  session_new: keybind("<leader>n,ctrl+n", "Create a new session"),
   session_list: keybind("<leader>l", "List all sessions"),
   session_timeline: keybind("<leader>g", "Show session timeline"),
   session_fork: keybind("none", "Fork session from message"),
