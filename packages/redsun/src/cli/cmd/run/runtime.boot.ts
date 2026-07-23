@@ -80,7 +80,6 @@ function runTuiConfig(config: Config | undefined): RunTuiConfig {
 
   return {
     keybinds: config.keybinds,
-    leader_timeout: config.leader_timeout,
     diff_style: config.diff_style ?? "auto",
   }
 }

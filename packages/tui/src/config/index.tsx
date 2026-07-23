@@ -18,11 +18,6 @@ export type AttentionSoundName = Schema.Schema.Type<typeof AttentionSoundName>
 export const PluginOptions = Schema.Record(Schema.String, Schema.Unknown)
 export const PluginSpec = Schema.Union([Schema.String, Schema.mutable(Schema.Tuple([Schema.String, PluginOptions]))])
 
-export const LeaderTimeoutDefault = 2000
-export const LeaderTimeout = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
-  description: "Leader key timeout in milliseconds",
-})
-
 export const ScrollSpeed = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0.001))
 export const ScrollAcceleration = Schema.Struct({
   enabled: Schema.Boolean.annotate({ description: "Enable scroll acceleration" }),
@@ -56,7 +51,6 @@ export const Info = Schema.Struct({
   keybinds: Schema.optional(TuiKeybind.KeybindOverrides),
   plugin: Schema.optional(Schema.Array(PluginSpec)),
   plugin_enabled: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
-  leader_timeout: Schema.optional(LeaderTimeout),
   attention: Schema.optional(Attention),
   prompt: Schema.optional(Prompt),
   scroll_speed: Schema.optional(ScrollSpeed).annotate({ description: "TUI scroll speed" }),
@@ -66,7 +60,7 @@ export const Info = Schema.Struct({
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
-export type Resolved = Omit<Info, "attention" | "keybinds" | "leader_timeout" | "mouse"> & {
+export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse"> & {
   attention: {
     enabled: boolean
     notifications: boolean
@@ -76,7 +70,6 @@ export type Resolved = Omit<Info, "attention" | "keybinds" | "leader_timeout" | 
     sounds: AttentionSoundPaths
   }
   keybinds: TuiKeybind.BindingLookupView
-  leader_timeout: number
   mouse: boolean
 }
 
@@ -111,7 +104,6 @@ export function resolve(input: Info, options: ResolveOptions): Resolved {
       commandMap: TuiKeybind.CommandMap,
       bindingDefaults: TuiKeybind.bindingDefaults(),
     }),
-    leader_timeout: input.leader_timeout ?? LeaderTimeoutDefault,
     mouse: input.mouse ?? true,
   }
 }

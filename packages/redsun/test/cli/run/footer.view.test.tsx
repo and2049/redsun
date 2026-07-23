@@ -740,10 +740,10 @@ test.skip("direct footer recreates the frame across command panel transitions", 
   }
 })
 
-test.skip("direct footer dispatches leader variant binding only when leader is registered", async () => {
+test("direct footer dispatches variant cycle binding", async () => {
   const calls: string[] = []
   const app = await renderFooter({
-    tuiConfig: createTuiResolvedConfig({ keybinds: { leader: "ctrl+x", variant_cycle: "<leader>t" } }),
+    tuiConfig: createTuiResolvedConfig({ keybinds: { variant_cycle: "ctrl+t" } }),
     onCycle: () => calls.push("cycle"),
   })
 
@@ -752,28 +752,8 @@ test.skip("direct footer dispatches leader variant binding only when leader is r
     app.mockInput.pressKey("t")
     expect(calls).toEqual([])
 
-    app.mockInput.pressKey("x", { ctrl: true })
-    app.mockInput.pressKey("t")
+    app.mockInput.pressKey("t", { ctrl: true })
     expect(calls).toEqual(["cycle"])
-  } finally {
-    app.cleanup()
-  }
-})
-
-test("direct footer keeps leader variant binding inactive when leader is disabled", async () => {
-  const calls: string[] = []
-  const app = await renderFooter({
-    tuiConfig: createTuiResolvedConfig({ keybinds: { leader: "none", variant_cycle: "<leader>t" } }),
-    onCycle: () => calls.push("cycle"),
-  })
-
-  try {
-    await app.renderOnce()
-    app.mockInput.pressKey("t")
-    app.mockInput.pressKey("x", { ctrl: true })
-    app.mockInput.pressKey("t")
-
-    expect(calls).toEqual([])
   } finally {
     app.cleanup()
   }
@@ -1040,7 +1020,7 @@ test("direct footer shows editable prompts and additional queued work while runn
     expect(frame).toContain("a-model-name-long-enough-to-force-responsive-truncation")
     expect(frame).toContain("3 queued")
     expect(frame).toContain("ctrl+b background")
-    expect(frame).toContain("ctrl+x q 3 queued")
+    expect(frame).toContain("ctrl+shift+q 3 queued")
     expect(frame).toContain("down subagents")
     expect(frame).toContain("ctrl+p cmd")
     expect(frame).toContain("a-model-name-long-enough-to-force-responsive-truncation")

@@ -19,7 +19,6 @@ type Shortcuts = {
   inputNewline: TipShortcut
   inputPaste: TipShortcut
   inputUndo: TipShortcut
-  leader: TipShortcut
   messagesCopy: TipShortcut
   messagesFirst: TipShortcut
   messagesLast: TipShortcut
@@ -109,7 +108,6 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
     inputNewline: useCommandShortcut("input.newline"),
     inputPaste: useCommandShortcut("prompt.paste"),
     inputUndo: useCommandShortcut("input.undo"),
-    leader: configShortcut(props.api, "leader"),
     messagesCopy: configShortcut(props.api, "messages.copy"),
     messagesFirst: configShortcut(props.api, "session.first"),
     messagesLast: configShortcut(props.api, "session.last"),
@@ -186,7 +184,6 @@ const TIPS: Tip[] = [
   (shortcuts) => press(shortcuts.messagesCopy(), "to copy the assistant's last message to clipboard"),
   (shortcuts) => press(shortcuts.commandList(), "to see all available actions and commands"),
   "Run {highlight}/connect{/highlight} to add API keys for 75+ supported LLM providers",
-  (shortcuts) => `The leader key is ${shortcutText(shortcuts.leader())}; combine with other keys for quick actions`,
   (shortcuts) => press(shortcuts.modelCycleRecent(), "to quickly switch between recently used models"),
   (shortcuts) => press(shortcuts.sessionSidebarToggle(), "in a session to show or hide the sidebar panel"),
   (shortcuts) =>

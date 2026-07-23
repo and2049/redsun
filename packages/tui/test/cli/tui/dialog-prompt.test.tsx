@@ -51,7 +51,6 @@ async function mountPrompt(input: {
     const keymap = createDefaultOpenTuiKeymap(renderer)
     const resolvedConfig = createTuiResolvedConfig({
       keybinds: input.keybinds,
-      leader_timeout: 1000,
     })
     const off = registerOpencodeKeymap(keymap, renderer, resolvedConfig)
     onCleanup(off)

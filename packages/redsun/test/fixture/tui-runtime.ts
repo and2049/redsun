@@ -11,10 +11,9 @@ type PluginOrigin = {
   source: string
 }
 type HostResolved = Resolved & { plugin_origins?: PluginOrigin[] }
-type ResolvedInput = Omit<Info, "attention" | "keybinds" | "leader_timeout"> & {
+type ResolvedInput = Omit<Info, "attention" | "keybinds"> & {
   attention?: Partial<Resolved["attention"]>
   keybinds?: Partial<TuiKeybind.Keybinds>
-  leader_timeout?: number
   plugin_origins?: PluginOrigin[]
 }
 
