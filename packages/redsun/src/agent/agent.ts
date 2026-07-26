@@ -183,21 +183,13 @@ const layer = Layer.effect(
           },
           compose: {
             name: "compose",
-            description: "Plans and delegates scoped implementation work to worker subagents.",
+            description: "Plans and delegates scoped implementation work to worker subagents, or performs trivial edits directly when token-efficient.",
             options: {},
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
-                "*": "deny",
-                read: "allow",
-                glob: "allow",
-                grep: "allow",
-                list: "allow",
-                codesearch: "allow",
-                webfetch: "allow",
-                websearch: "allow",
-                skill: "allow",
                 question: "allow",
+                plan_enter: "allow",
                 task: {
                   worker: "allow",
                   explore: "allow",
