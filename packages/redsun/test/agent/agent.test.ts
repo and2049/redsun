@@ -82,16 +82,16 @@ it.instance("plan agent denies edits except .redsun/plans/*", () =>
   }),
 )
 
-it.instance("compose delegates without direct workspace mutation", () =>
+it.instance("compose can perform direct workspace mutation and delegate", () =>
   Effect.gen(function* () {
     const compose = yield* load((svc) => svc.get("compose"))
     expect(compose?.mode).toBe("primary")
     expect(evalPerm(compose, "read")).toBe("allow")
-    expect(evalPerm(compose, "task")).toBe("deny")
+    expect(evalPerm(compose, "task")).toBe("allow")
     expect(Permission.evaluate("task", "worker", compose!.permission).action).toBe("allow")
     expect(Permission.evaluate("task", "explore", compose!.permission).action).toBe("allow")
-    expect(evalPerm(compose, "edit")).toBe("deny")
-    expect(evalPerm(compose, "bash")).toBe("deny")
+    expect(evalPerm(compose, "edit")).toBe("allow")
+    expect(evalPerm(compose, "bash")).toBe("allow")
   }),
 )
 
