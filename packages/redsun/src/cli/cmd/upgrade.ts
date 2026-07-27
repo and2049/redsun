@@ -17,7 +17,7 @@ export const UpgradeCommand = {
         alias: "m",
         describe: "installation method to use",
         type: "string",
-        choices: ["curl"],
+        choices: ["curl", "powershell"],
       })
   },
   handler: async (args: { target?: string; method?: string }) => {
@@ -26,7 +26,8 @@ export const UpgradeCommand = {
     UI.empty()
     prompts.intro("Upgrade")
     const detectedMethod = await Installation.method()
-    const method = (args.method as Installation.Method) ?? (detectedMethod === "unknown" ? "curl" : detectedMethod)
+    const fallback: Installation.Method = process.platform === "win32" ? "powershell" : "curl"
+    const method = (args.method as Installation.Method) ?? (detectedMethod === "unknown" ? fallback : detectedMethod)
     prompts.log.info("Using method: " + method)
     const target = args.target ? args.target.replace(/^v/, "") : await Installation.latest()
 

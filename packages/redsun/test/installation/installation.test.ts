@@ -9,6 +9,9 @@ import { Installation } from "../../src/installation"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 
 const encoder = new TextEncoder()
 
@@ -234,6 +237,74 @@ describe("installation", () => {
     ).effect.skip("falls back to sh when bash is unavailable during curl upgrade", () =>
       Effect.gen(function* () {
         yield* Installation.use.upgrade("curl", "9.9.9")
+      }),
+    )
+
+    const psScriptBody = "Write-Output 'install.ps1 with token=secret'"
+    testEffect(
+      testLayer(
+        () => new Response(psScriptBody, { status: 200 }),
+        (cmd, args) => {
+          if (cmd === "pwsh" && args[0] === "--version") return "pwsh 7.4.0"
+          if (cmd === "pwsh") {
+            const fileIdx = args.indexOf("-File")
+            const versionIdx = args.indexOf("-Version")
+            expect(fileIdx).toBeGreaterThan(-1)
+            expect(versionIdx).toBeGreaterThan(-1)
+            const scriptPath = args[fileIdx + 1]
+            const versionArg = args[versionIdx + 1]
+            expect(versionArg).toBe("9.9.9")
+            expect(args).toContain("-NoProfile")
+            expect(args).toContain("-ExecutionPolicy")
+            expect(args).toContain("Bypass")
+            expect(fs.existsSync(scriptPath)).toBe(true)
+            expect(fs.readFileSync(scriptPath, "utf8")).toBe(psScriptBody)
+            return "ok"
+          }
+          return ""
+        },
+      ),
+    ).effect("writes the install.ps1 body to a temp file and invokes pwsh with the requested version", () =>
+      Effect.gen(function* () {
+        yield* Installation.use.upgrade("powershell", "9.9.9")
+      }),
+    )
+
+    testEffect(
+      testLayer(
+        () => new Response(psScriptBody, { status: 200 }),
+        (cmd, args) => {
+          if (cmd === "pwsh" && args[0] === "--version") return ""
+          if (cmd === "powershell") {
+            if (args[0] === "--version") return ""
+            return "ok"
+          }
+          return ""
+        },
+      ),
+    ).effect.skip("falls back to powershell when pwsh is unavailable during powershell upgrade", () =>
+      Effect.gen(function* () {
+        yield* Installation.use.upgrade("powershell", "9.9.9")
+      }),
+    )
+
+    testEffect(
+      testLayer(
+        () => new Response(psScriptBody, { status: 200 }),
+        (cmd, args) => {
+          if (cmd === "pwsh" && args[0] === "--version") return "pwsh 7.4.0"
+          if (cmd === "pwsh") return { code: 1, stderr: "script output with token=secret" }
+          return ""
+        },
+      ),
+    ).effect("returns sanitized typed errors when install.ps1 fails", () =>
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(Installation.use.upgrade("powershell", "9.9.9"))
+        expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
+        expect(error.stderr).toBe("Upgrade failed for powershell (exit code 1).")
+        expect(error.message).toBe(error.stderr)
+        expect(error.stderr).not.toContain("secret")
+        expect(error.stderr).not.toContain("script output")
       }),
     )
   })
