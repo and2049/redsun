@@ -143,8 +143,55 @@ if (-not (Test-Path $extractedBinary)) {
     exit 1
 }
 
+# Windows does not allow overwriting a running executable. If a previous
+# redsun.exe is locked (e.g. running `redsun upgrade`), rename it aside and
+# drop the new binary into place. A detached cleanup process deletes the
+# leftover once the running redsun exits.
+$oldBinary = "$destBinary.old"
+if (Test-Path $oldBinary) {
+    try {
+        Remove-Item -Path $oldBinary -Force -ErrorAction Stop
+    } catch {
+        Write-Warn "Could not remove stale $oldBinary; it will be left in place."
+    }
+}
+if (Test-Path $destBinary) {
+    try {
+        Move-Item -Path $destBinary -Destination $oldBinary -Force -ErrorAction Stop
+    } catch {
+        Write-Error "Failed to relocate existing $destBinary for replacement: $($_.Exception.Message)"
+        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+}
+
 Move-Item -Path $extractedBinary -Destination $destBinary -Force
 Remove-Item -Path $tmpDir -Recurse -Force
+
+# Best-effort: schedule deletion of $oldBinary after the running redsun exits.
+if (Test-Path $oldBinary) {
+    $cleanupScript = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+for (`$i = 0; `$i -lt 60; `$i++) {
+    try {
+        `$fs = [System.IO.File]::Open('$oldBinary', 'Open', 'ReadWrite', 'None')
+        `$fs.Close()
+        Remove-Item -LiteralPath '$oldBinary' -Force
+        break
+    } catch {
+        Start-Sleep -Seconds 1
+    }
+}
+"@
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($cleanupScript))
+    try {
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile","-EncodedCommand",$encoded `
+            -WindowStyle Hidden -PassThru | Out-Null
+    } catch {
+        Write-Warn "Could not schedule cleanup of $oldBinary; it will be removed on a future install."
+    }
+}
 
 # --- Add to PATH ---
 

@@ -9,12 +9,14 @@ import { errorMessage } from "@/util/error"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "@opencode-ai/core/process"
 import path from "path"
+import os from "node:os"
+import fs from "node:fs"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { InstallationEvent } from "@opencode-ai/schema/installation-event"
 
-export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
+export type Method = "curl" | "powershell" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
 export type ReleaseType = "patch" | "minor" | "major"
 
@@ -130,6 +132,49 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
       Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("curl") })),
     )
 
+    const upgradeScriptShellWindows = Effect.fnUntraced(function* () {
+      const pwshVersion = yield* text(["pwsh", "--version"])
+      if (pwshVersion) return "pwsh"
+      return "powershell"
+    })
+
+    const upgradePowerShell = Effect.fnUntraced(
+      function* (target: string) {
+        const response = yield* httpOk.execute(
+          HttpClientRequest.get("https://github.com/and2049/redsun/releases/latest/download/install.ps1"),
+        )
+        const body = yield* response.text
+        const shell = yield* upgradeScriptShellWindows()
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "redsun-upgrade-"))
+        const scriptPath = path.join(tmpDir, "install.ps1")
+        fs.writeFileSync(scriptPath, body, { encoding: "utf8" })
+        const result = yield* appProcess.run(
+          ChildProcess.make(shell, [
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            scriptPath,
+            "-Version",
+            target,
+            "-NoModifyPath",
+          ], {
+            extendEnv: true,
+          }),
+        )
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true })
+        } catch {}
+        return {
+          code: result.exitCode,
+          stdout: result.stdout.toString("utf8"),
+          stderr: result.stderr.toString("utf8"),
+        }
+      },
+      Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("powershell") })),
+    )
+
     const result: Interface = {
       info: Effect.fn("Installation.info")(function* () {
         return {
@@ -138,8 +183,13 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
-        if (process.execPath.includes(path.join(".redsun", "bin"))) return "curl" as Method
-        if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
+        const binFromRelease =
+          process.execPath.includes(path.join(".redsun", "bin")) ||
+          process.execPath.includes(path.join(".local", "bin"))
+        if (binFromRelease) {
+          if (process.platform === "win32") return "powershell" as Method
+          return "curl" as Method
+        }
         return "unknown" as Method
       }),
       latest: Effect.fn("Installation.latest")(function* () {
@@ -152,19 +202,49 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         return data.tag_name.replace(/^v/, "")
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
-        if (m !== "curl" && m !== "unknown")
-          return yield* new UpgradeFailedError({ stderr: `Unsupported redsun installation method: ${m}` })
-        const upgradeResult = yield* upgradeCurl(target)
-        if (!upgradeResult || upgradeResult.code !== 0) {
-          return yield* new UpgradeFailedError({ stderr: upgradeFailure(m, upgradeResult) })
+        if (m === "curl" || m === "unknown") {
+          if (process.platform === "win32") {
+            const psResult = yield* upgradePowerShell(target)
+            if (!psResult || psResult.code !== 0) {
+              return yield* new UpgradeFailedError({ stderr: upgradeFailure(m, psResult) })
+            }
+            yield* Effect.logInfo("upgraded", {
+              method: "powershell",
+              target,
+              stdout: psResult.stdout,
+              stderr: psResult.stderr,
+            })
+            yield* text([process.execPath, "--version"])
+            return
+          }
+          const curlResult = yield* upgradeCurl(target)
+          if (!curlResult || curlResult.code !== 0) {
+            return yield* new UpgradeFailedError({ stderr: upgradeFailure(m, curlResult) })
+          }
+          yield* Effect.logInfo("upgraded", {
+            method: "curl",
+            target,
+            stdout: curlResult.stdout,
+            stderr: curlResult.stderr,
+          })
+          yield* text([process.execPath, "--version"])
+          return
         }
-        yield* Effect.logInfo("upgraded", {
-          method: m,
-          target,
-          stdout: upgradeResult.stdout,
-          stderr: upgradeResult.stderr,
-        })
-        yield* text([process.execPath, "--version"])
+        if (m === "powershell") {
+          const psResult = yield* upgradePowerShell(target)
+          if (!psResult || psResult.code !== 0) {
+            return yield* new UpgradeFailedError({ stderr: upgradeFailure(m, psResult) })
+          }
+          yield* Effect.logInfo("upgraded", {
+            method: "powershell",
+            target,
+            stdout: psResult.stdout,
+            stderr: psResult.stderr,
+          })
+          yield* text([process.execPath, "--version"])
+          return
+        }
+        return yield* new UpgradeFailedError({ stderr: `Unsupported redsun installation method: ${m}` })
       }),
     }
 
