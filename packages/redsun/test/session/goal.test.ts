@@ -7,8 +7,9 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { Database } from "@opencode-ai/core/database/database"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import * as Stream from "effect/Stream"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { Agent } from "../../src/agent/agent"
 import type { Provider } from "../../src/provider/provider"
 import { Goal, parseVerdict } from "../../src/session/goal"
@@ -122,6 +123,44 @@ describe("session goal judge", () => {
       expect(captured?.tools).toEqual({})
       expect(captured?.internal).toBe(true)
       expect(captured?.agent.prompt).toContain("evaluating a stop condition")
+    }),
+  )
+
+  it.instance("publishVerdict emits the schema-declared lastVerdict shape, not flat verdict/attempt", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const events = yield* EventV2Bridge.Service
+      const fiber = yield* events
+        .subscribe(SessionV1.Event.GoalUpdated)
+        .pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped)
+      yield* Effect.yieldNow
+      yield* Goal.Service.use((goal) =>
+        goal.publishVerdict({
+          sessionID: session.id,
+          goal: { condition: "finish" },
+          verdict: { ok: false, impossible: true, reason: "blocked" },
+          attempt: 3,
+          messageID: "msg-1",
+          error: true,
+        }),
+      )
+      const received = Array.from(yield* Fiber.join(fiber))
+      const data = (received[0] as { data: unknown }).data
+      expect(data).toEqual({
+        sessionID: session.id,
+        goal: { condition: "finish" },
+        lastVerdict: {
+          ok: false,
+          impossible: true,
+          reason: "blocked",
+          attempt: 3,
+          messageID: "msg-1",
+          error: true,
+        },
+      })
+      expect(data).not.toHaveProperty("verdict")
+      expect(data).not.toHaveProperty("attempt")
     }),
   )
 })

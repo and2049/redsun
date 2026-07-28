@@ -1541,15 +1541,25 @@ const layer = Layer.effect(
       })
       if (input.command === Command.Default.GOAL) {
         const condition = input.arguments.trim()
-        if (condition) yield* goal.set(input.sessionID, condition)
-        else yield* goal.clear(input.sessionID)
+        if (condition) {
+          yield* goal.set(input.sessionID, condition)
+          const parts = yield* resolvePromptParts(condition)
+          return yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            model: input.model ? Provider.parseModel(input.model) : yield* currentModel(input.sessionID),
+            agent: input.agent ?? (yield* agents.defaultInfo()).name,
+            parts,
+            variant: input.variant,
+          })
+        }
+        yield* goal.clear(input.sessionID)
         const model = yield* currentModel(input.sessionID)
-        const agent = input.agent ?? (yield* agents.defaultInfo()).name
         return yield* addSyntheticUserMessage({
           sessionID: input.sessionID,
-          agent,
+          agent: input.agent ?? (yield* agents.defaultInfo()).name,
           model,
-          text: condition ? `Goal set: ${condition}` : "Goal cleared.",
+          text: "Goal cleared.",
         })
       }
 

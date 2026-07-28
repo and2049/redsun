@@ -242,6 +242,20 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
   return makePrompt(input)
 }
 
+function makeGoalRealHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
+  const root = LayerNode.group([promptRoot, testLLMServerNode, Goal.node])
+  const replacements = [
+    [SessionSummary.node, summary],
+    [LSP.node, lsp],
+    [MCP.node, makeMcp(input?.mcpInstructions)],
+    [RuntimeFlags.node, runtimeFlags],
+  ] as const
+  if (input?.processor === "blocking") {
+    return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
+  }
+  return LayerNode.compile(root, replacements)
+}
+
 function makeGoalHttp(goal: Layer.Layer<Goal.Service>) {
   return LayerNode.compile(LayerNode.group([promptRoot, testLLMServerNode]), [
     [SessionSummary.node, summary],
@@ -253,6 +267,7 @@ function makeGoalHttp(goal: Layer.Layer<Goal.Service>) {
 }
 
 const it = testEffect(makeHttp())
+const goalCmd = testEffect(makeGoalRealHttp())
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const withMcpInstructions = testEffect(
@@ -269,13 +284,19 @@ const withMcpInstructions = testEffect(
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
 
-function goalHarness() {
-  let active: Goal.Info | undefined = { condition: "finish the work", react: 0 }
+function goalHarness(opts: {
+  verdicts?: Goal.Verdict[]
+  evaluateFailOn?: number
+  initialReact?: number
+} = {}) {
+  let active: Goal.Info | undefined = { condition: "finish the work", react: opts.initialReact ?? 0 }
   const evaluations: SessionV1.WithParts[][] = []
-  const verdicts: Goal.Verdict[] = [
-    { ok: false, reason: "more work remains" },
-    { ok: true, reason: "done" },
-  ]
+  const verdicts: Goal.Verdict[] =
+    opts.verdicts ?? [
+      { ok: false, reason: "more work remains" },
+      { ok: true, reason: "done" },
+    ]
+  let evaluateCalls = 0
   const layer = Layer.succeed(
     Goal.Service,
     Goal.Service.of({
@@ -291,15 +312,23 @@ function goalHarness() {
       publishVerdict: () => Effect.void,
       evaluate: (input) =>
         Effect.sync(() => {
+          evaluateCalls++
+          if (opts.evaluateFailOn && evaluateCalls === opts.evaluateFailOn)
+            throw new Error("judge crashed")
           evaluations.push(input.messages)
           return verdicts.shift() ?? { ok: true, reason: "done" }
         }),
     }),
   )
-  return { it: testEffect(makeGoalHttp(layer)), evaluations, active: () => active }
+  return { it: testEffect(makeGoalHttp(layer)), evaluations, active: () => active, attempts: () => evaluateCalls }
 }
 
 const goalGate = goalHarness()
+const goalGateError = goalHarness({ evaluateFailOn: 1 })
+const goalGateCap = goalHarness({
+  verdicts: [{ ok: false, reason: "still going" }],
+  initialReact: 12,
+})
 
 const handledInput = testEffect(
   LayerNode.compile(LayerNode.group([promptRoot, testLLMServerNode]), [
@@ -551,6 +580,110 @@ goalGate.it.instance("goal gate judges completed turns and continues until satis
     ).toBe(true)
     expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(2)
     expect(goalGate.active()).toBeUndefined()
+  }),
+)
+
+goalGateError.it.instance(
+  "goal gate judge error stops the turn but leaves the goal armed",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      const seeded = yield* seed(chat.id, { finish: "stop" })
+      yield* llm.text("finished on the next turn")
+
+      yield* prompt.loop({ sessionID: chat.id })
+
+      expect(goalGateError.attempts()).toBe(1)
+      expect(goalGateError.evaluations).toHaveLength(0)
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      expect(
+        messages.some(
+          (message) =>
+            message.info.role === "user" &&
+            message.parts.some((part) => part.type === "text" && part.synthetic === true),
+        ),
+      ).toBe(false)
+      expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(1)
+      expect(goalGateError.active()).toBeDefined()
+      expect(goalGateError.active()?.condition).toBe("finish the work")
+    }),
+)
+
+goalGateCap.it.instance("goal gate attempt cap clears the goal and stops with a plain ok:false", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const seeded = yield* seed(chat.id, { finish: "stop" })
+    yield* llm.text("still going")
+
+    yield* prompt.loop({ sessionID: chat.id })
+
+    expect(goalGateCap.evaluations).toHaveLength(1)
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    expect(
+      messages.some(
+        (message) =>
+          message.info.role === "user" &&
+          message.parts.some((part) => part.type === "text" && part.synthetic === true),
+      ),
+    ).toBe(false)
+    expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(1)
+    expect(goalGateCap.active()).toBeUndefined()
+  }),
+)
+
+goalCmd.instance(
+  "/goal <condition> sets the goal and sends the condition to the model as a real prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const goal = yield* Goal.Service
+      const chat = yield* sessions.create({ title: "Goal cmd" })
+      yield* seed(chat.id, { finish: "stop" })
+      yield* llm.text("working on the goal")
+
+      const result = yield* prompt.command({
+        sessionID: chat.id,
+        command: Command.Default.GOAL,
+        arguments: "finish the task",
+      })
+
+      expect(result.info.role).toBe("assistant")
+      const inputs = yield* llm.inputs
+      expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("finish the task")
+      const active = yield* goal.get(chat.id)
+      expect(active?.condition).toBe("finish the task")
+    }),
+)
+
+goalCmd.instance("/goal with no arguments clears the goal and adds a synthetic user message", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const goal = yield* Goal.Service
+    const chat = yield* sessions.create({ title: "Goal clear" })
+    yield* seed(chat.id, { finish: "stop" })
+    yield* goal.set(chat.id, "prior condition")
+
+    const result = yield* prompt.command({
+      sessionID: chat.id,
+      command: Command.Default.GOAL,
+      arguments: "",
+    })
+
+    expect(result.info.role).toBe("user")
+    const inputs = yield* llm.inputs
+    expect(inputs.length).toBe(0)
+    const active = yield* goal.get(chat.id)
+    expect(active).toBeUndefined()
   }),
 )
 
