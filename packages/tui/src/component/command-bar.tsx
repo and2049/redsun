@@ -7,6 +7,9 @@ import { selectedForeground, useTheme } from "../context/theme"
 import { useOpencodeKeymap, useOpencodeModeStack, useKeymapSelector } from "../keymap"
 import { commandAliases, resolveCommand } from "../vim"
 import { SplitBorder } from "../ui/border"
+import { useRoute } from "../context/route"
+import { useSync } from "../context/sync"
+import { fitSessionUsage, sessionUsage } from "../util/session-usage"
 
 const MAX_SUGGESTIONS = 10
 
@@ -16,6 +19,8 @@ export function CommandBar() {
   const keymap = useOpencodeKeymap()
   const modeStack = useOpencodeModeStack()
   const dimensions = useTerminalDimensions()
+  const route = useRoute()
+  const sync = useSync()
   const entries = useKeymapSelector((value) =>
     value.getCommandEntries({
       visibility: "reachable",
@@ -26,6 +31,23 @@ export function CommandBar() {
   const [input, setInput] = createSignal("")
   const [selected, setSelected] = createSignal(-1)
   let inputRef: InputRenderable
+
+  const modeLabel = createMemo(() => (vim.tempRemaining() != null ? `normal (${vim.tempRemaining()}s)` : vim.mode))
+  const usage = createMemo(() => {
+    const current = route.data
+    if (current.type !== "session") return undefined
+    return sessionUsage({
+      messages: sync.data.message[current.sessionID] ?? [],
+      providers: sync.data.provider,
+      cost: sync.session.get(current.sessionID)?.cost ?? 0,
+    })
+  })
+  const usageLabel = createMemo(() => {
+    if (vim.mode === "command") return undefined
+    const current = usage()
+    if (!current) return undefined
+    return fitSessionUsage(current, Math.max(0, dimensions().width - modeLabel().length - 4))
+  })
 
   const commands = createMemo(() => {
     const result = new Map<string, { target: string; description: string }>()
@@ -164,9 +186,18 @@ export function CommandBar() {
           </Show>
         </Match>
         <Match when={true}>
-          <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
-            {vim.tempRemaining() != null ? `normal (${vim.tempRemaining()}s)` : vim.mode}
-          </text>
+          <box flexDirection="row" flexGrow={1} justifyContent="space-between">
+            <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
+              {modeLabel()}
+            </text>
+            <Show when={usageLabel()}>
+              {(value) => (
+                <text fg={theme.textMuted} wrapMode="none">
+                  {value()}
+                </text>
+              )}
+            </Show>
+          </box>
         </Match>
       </Switch>
     </box>
