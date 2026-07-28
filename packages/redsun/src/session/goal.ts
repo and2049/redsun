@@ -67,8 +67,20 @@ const layer = Layer.effect(
       return Option.getOrUndefined(yield* storage.read<Info>(key(sessionID)).pipe(Effect.option))
     })
 
-    const publish = (input: Parameters<Interface["publishVerdict"]>[0] | { sessionID: SessionID; goal?: { condition: string } }) =>
-      events.publish(SessionV1.Event.GoalUpdated, input)
+    type GoalData = {
+      sessionID: SessionID
+      goal?: { condition: string }
+      lastVerdict?: {
+        ok: boolean
+        impossible?: boolean
+        reason: string
+        attempt: number
+        messageID?: string
+        error?: boolean
+      }
+    }
+
+    const publish = (input: GoalData) => events.publish(SessionV1.Event.GoalUpdated, input)
 
     const set: Interface["set"] = Effect.fn("SessionGoal.set")(function* (sessionID, condition) {
       yield* storage.write(key(sessionID), { condition, react: 0 } satisfies Info).pipe(Effect.orDie)
@@ -89,7 +101,16 @@ const layer = Layer.effect(
     })
 
     const publishVerdict: Interface["publishVerdict"] = Effect.fn("SessionGoal.publishVerdict")(function* (input) {
-      yield* publish(input)
+      const { sessionID, goal, verdict, attempt, messageID, error } = input
+      const lastVerdict: GoalData["lastVerdict"] = {
+        ok: verdict.ok,
+        reason: verdict.reason,
+        attempt,
+        ...(verdict.impossible !== undefined ? { impossible: verdict.impossible } : {}),
+        ...(messageID !== undefined ? { messageID } : {}),
+        ...(error !== undefined ? { error } : {}),
+      }
+      yield* publish({ sessionID, ...(goal !== undefined ? { goal } : {}), lastVerdict })
     })
 
     const evaluate: Interface["evaluate"] = Effect.fn("SessionGoal.evaluate")(function* (input) {
