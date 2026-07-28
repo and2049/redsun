@@ -1,5 +1,5 @@
 import * as Tool from "./tool"
-import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { type CallToolResult } from "@modelcontextprotocol/client"
 import { Cause, Effect, Schema } from "effect"
 import { CodeMode, Tool as SandboxTool, toolError } from "@opencode-ai/codemode"
 import { MCP } from "@/mcp"
@@ -115,6 +115,13 @@ function projectMcpResult(result: CallToolResult, collect: (attachment: Attachme
   return null
 }
 
+type ProjectedMcpResult = {
+  output: unknown
+  metadata: Record<string, unknown>
+  isError: boolean
+  attachments: Attachment[]
+}
+
 type Run = (input: unknown) => Effect.Effect<unknown, unknown>
 
 function toolTree(catalog: readonly CatalogEntry[], run: (entry: CatalogEntry) => Run) {
@@ -145,28 +152,7 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   )
   const result: CallToolResult = yield* Effect.gen(function* () {
     yield* input.ctx.ask({ permission: input.entry.key, metadata: {}, patterns: ["*"], always: ["*"] })
-    // Deliberately mirrors McpCatalog.convertTool's transport call so the MCP service stays free of tool-loop concerns.
-    return yield* Effect.promise(async () => {
-      const raw = await input.entry.tool.client.callTool(
-        { name: input.entry.tool.def.name, arguments: input.args },
-        CallToolResultSchema,
-        {
-          resetTimeoutOnProgress: true,
-          signal: input.ctx.abort,
-          timeout: input.entry.tool.timeout,
-          // The MCP SDK only sends a progress token when this hook is present, enabling timeout resets.
-          onprogress: () => {},
-        },
-      )
-      if (raw.isError)
-        throw new Error(
-          raw.content
-            .flatMap((item) => (item.type === "text" ? [item.text] : []))
-            .filter((text) => text.trim())
-            .join("\n\n") || "MCP tool returned an error",
-        )
-      return raw
-    })
+    return yield* Effect.promise(() => McpCatalog.callTool(input.entry.tool, input.args, input.ctx.abort))
   }).pipe(
     Effect.withSpan("Tool.execute", {
       attributes: {
@@ -177,12 +163,19 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
       },
     }),
   )
+  const childAttachments: Attachment[] = []
+  const projected: ProjectedMcpResult = {
+    output: projectMcpResult(result, (attachment) => childAttachments.push(attachment)),
+    metadata: result._meta ?? {},
+    isError: result.isError === true,
+    attachments: childAttachments,
+  }
   yield* input.plugin.trigger(
     "tool.execute.after",
     { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID, args: input.args },
-    result,
+    projected,
   )
-  return result
+  return projected
 })
 
 export const CodeModeTool = Tool.define(
@@ -227,7 +220,9 @@ export const CodeModeTool = Tool.define(
               callID: `${ctx.callID ?? entry.key}/${childCalls}`,
               ctx,
             })
-            return projectMcpResult(result, (attachment: Attachment) => void attachments.push(attachment))
+            attachments.push(...result.attachments)
+            if (result.isError) throw new Error(String(result.output))
+            return result.output
           }).pipe(
             Effect.catchCause((cause) => {
               if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt

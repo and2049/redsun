@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { CODE_MODE_TOOL, CodeModeTool, Parameters, describeCatalog } from "@/tool/code-mode"
-import type { Tool as MCPToolDef } from "@modelcontextprotocol/sdk/types.js"
+import type { Tool as MCPToolDef } from "@modelcontextprotocol/client"
 import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
@@ -423,7 +423,47 @@ describe("code mode execute", () => {
     expect(before!.input.sessionID).toBe(ctx.sessionID)
     expect(before!.output).toEqual({ args: { x: 1 } })
     expect(after!.input.args).toEqual({ x: 1 })
-    expect(after!.output).toEqual({ content: [{ type: "text", text: "one" }] })
+    expect(after!.output).toEqual({ output: "one", metadata: {}, isError: false, attachments: [] })
+  })
+
+  test("projects MCP output before the after hook and serializes hook replacements", async () => {
+    const trigger = ((_name: unknown, _input: unknown, output: Record<string, unknown>) => {
+      output.output = "replaced"
+      return Effect.succeed(output)
+    }) as Plugin.Interface["trigger"]
+    const tool = await build(
+      { a_tool: mcpTool("a", () => ({ content: [{ type: "text", text: "original" }] })) },
+      undefined,
+      undefined,
+      trigger,
+    )
+
+    const out = await Effect.runPromise(tool.execute({ code: "return await tools.a.tool({})" }, ctx))
+
+    expect(out.output).toBe("replaced")
+  })
+
+  test("preserves hook-set and hook-cleared isError on the normalized child result", async () => {
+    const seen: boolean[] = []
+    let call = 0
+    const trigger = ((name: unknown, _input: unknown, output: Record<string, unknown>) => {
+      if (name === "tool.execute.after") {
+        if (call++ === 0) output.isError = true
+        seen.push(output.isError === true)
+        if (call === 2) output.isError = undefined
+      }
+      return Effect.succeed(output)
+    }) as Plugin.Interface["trigger"]
+    const tool = await build(
+      { a_tool: mcpTool("a", () => ({ content: [{ type: "text", text: "ok" }] })) },
+      undefined,
+      undefined,
+      trigger,
+    )
+
+    await Effect.runPromise(tool.execute({ code: "try { await tools.a.tool({}) } catch {} return await tools.a.tool({})" }, ctx))
+
+    expect(seen).toEqual([true, false])
   })
 
   test("a failing before hook fails only that child call as a catchable in-program error", async () => {
