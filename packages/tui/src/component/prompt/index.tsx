@@ -37,7 +37,7 @@ import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v2"
+import type { FilePart, UserMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { formatDuration } from "../../util/format"
@@ -57,7 +57,6 @@ import { useTuiConfig } from "../../config"
 import { usePromptWorkspace } from "./workspace"
 import { usePromptMove } from "./move"
 import { readLocalAttachment } from "./local-attachment"
-import { useLocation } from "../../context/location"
 import { useVim } from "../../context/vim"
 import { transition } from "../../vim"
 
@@ -98,11 +97,6 @@ export type PromptRef = {
   focus(): void
   submit(): void
 }
-
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
 
 const DRAFT_RETENTION_MIN_CHARS = 20
 
@@ -152,7 +146,6 @@ export function Prompt(props: PromptProps) {
   const local = useLocal()
   const args = useArgs()
   const paths = useTuiPaths()
-  const location = useLocation()
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
   const sdk = useSDK()
@@ -222,7 +215,7 @@ export function Prompt(props: PromptProps) {
   const move = usePromptMove({ projectID: project.project, sessionID: () => props.sessionID })
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
-  const hasRightContent = createMemo(() => Boolean(props.right))
+  const hasRightContent = createMemo(() => Boolean(props.right) || editorContextLabelState() !== "none")
 
   function promptModelWarning() {
     toast.show({
@@ -274,44 +267,6 @@ export function Prompt(props: PromptProps) {
     const messages = sync.data.message[props.sessionID]
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
-  })
-
-  const usage = createMemo(() => {
-    if (!props.sessionID) return
-    const session = sync.session.get(props.sessionID)
-    const msg = sync.data.message[props.sessionID] ?? []
-    const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
-    if (!last) return
-
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    if (tokens <= 0) return
-
-    const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
-    const cost = session?.cost ?? 0
-
-    let cumulativeInput = 0
-    let cumulativeCacheRead = 0
-    let cumulativeCacheWrite = 0
-    for (const item of msg) {
-      if (item.role !== "assistant" || item.tokens.output === 0) continue
-      cumulativeInput += item.tokens.input
-      cumulativeCacheRead += item.tokens.cache.read
-      cumulativeCacheWrite += item.tokens.cache.write
-    }
-    const cacheDenominator = cumulativeInput + cumulativeCacheRead + cumulativeCacheWrite
-    const cacheHitRatio =
-      cumulativeCacheRead + cumulativeCacheWrite > 0 && cacheDenominator > 0
-        ? Math.round((cumulativeCacheRead / cacheDenominator) * 100)
-        : undefined
-
-    return {
-      context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
-      pct,
-      cost: cost > 0 ? money.format(cost) : undefined,
-      cacheHitRatio,
-    }
   })
 
   const [store, setStore] = createStore<{
@@ -1370,7 +1325,16 @@ export function Prompt(props: PromptProps) {
     }
   })
   const maxHeight = createMemo(() => tuiConfig.prompt?.max_height ?? Math.max(6, Math.floor(dimensions().height / 3)))
-  const moveLabelWidth = createMemo(() => Math.max(12, Math.min(44, dimensions().width - 48)))
+  const footerVisible = createMemo(
+    () =>
+      !props.sessionID ||
+      status().type !== "idle" ||
+      Boolean(workspace.notice()) ||
+      Boolean(workspace.label()) ||
+      Boolean(move.progress()) ||
+      move.pendingNew() ||
+      Boolean(props.hint),
+  )
 
   return (
     <>
@@ -1531,6 +1495,13 @@ const next = transition(vim.mode, e)
               </box>
               <Show when={hasRightContent()}>
                 <box flexDirection="row" gap={1} alignItems="center">
+                  <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
+                    {(file) => (
+                      <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>
+                        {file()}
+                      </text>
+                    )}
+                  </Show>
                   {props.right}
                 </box>
               </Show>
@@ -1563,8 +1534,9 @@ const next = transition(vim.mode, e)
             }
           />
         </box>
-        <box width="100%" flexDirection="row" justifyContent="space-between">
-          <Switch>
+        <Show when={footerVisible()}>
+          <box width="100%" flexDirection="row" justifyContent="space-between">
+            <Switch>
             <Match when={status().type !== "idle"}>
               <box
                 flexDirection="row"
@@ -1694,58 +1666,30 @@ const next = transition(vim.mode, e)
               </box>
             </Match>
             <Match when={true}>
-              {props.hint ?? (
-                <Show when={props.sessionID}>
-                  <box marginLeft={1}>
-                    <text fg={theme.textMuted}>{location()?.directory ?? paths.cwd}</text>
-                  </box>
-                </Show>
-              )}
+              {props.hint}
             </Match>
-          </Switch>
-          <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                {(file) => (
-                  <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
-                )}
-              </Show>
-              <Switch>
-                <Match when={store.mode === "normal"}>
-                  <Switch>
-                    <Match when={usage()}>
-                      {(item) => {
-                        const parts = [
-                          item().context,
-                          item().cacheHitRatio !== undefined ? `cache ${item().cacheHitRatio}%` : undefined,
-                          item().cost,
-                        ].filter(Boolean)
-                        return (
-                          <text fg={theme.textMuted} wrapMode="none">
-                            {parts.join(" · ")}
-                          </text>
-                        )
-                      }}
-                    </Match>
-                    <Match when={true}>
-                      <text fg={theme.text}>
-                        {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
-                      </text>
-                    </Match>
-                  </Switch>
-                  <text fg={theme.text}>
-                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
-                </Match>
-                <Match when={store.mode === "shell"}>
-                  <text fg={theme.text}>
-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
-                  </text>
-                </Match>
-              </Switch>
-            </box>
-          </Show>
-        </box>
+            </Switch>
+            <Show when={!props.sessionID}>
+              <box gap={2} flexDirection="row">
+                <Switch>
+                  <Match when={store.mode === "normal"}>
+                    <text fg={theme.text}>
+                      {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
+                    </text>
+                    <text fg={theme.text}>
+                      {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
+                    </text>
+                  </Match>
+                  <Match when={store.mode === "shell"}>
+                    <text fg={theme.text}>
+                      esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+                    </text>
+                  </Match>
+                </Switch>
+              </box>
+            </Show>
+          </box>
+        </Show>
       </box>
       <Autocomplete
         sessionID={props.sessionID}
