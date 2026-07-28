@@ -10,7 +10,7 @@ let currentPort = OAUTH_CALLBACK_PORT
 let currentPath = OAUTH_CALLBACK_PATH
 
 interface PendingAuth {
-  resolve: (code: string) => void
+  resolve: (result: { code: string; iss?: string }) => void
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
 }
@@ -95,7 +95,7 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
   clearTimeout(pending.timeout)
   pendingAuths.delete(state)
   cleanupStateIndex(state)
-  pending.resolve(code)
+  pending.resolve({ code, iss: url.searchParams.get("iss") ?? undefined })
 
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
   res.end(OauthCallbackPage.success({ provider: "MCP" }))
@@ -130,7 +130,7 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
   })
 }
 
-export function waitForCallback(oauthState: string, mcpName?: string): Promise<string> {
+export function waitForCallback(oauthState: string, mcpName?: string): Promise<{ code: string; iss?: string }> {
   if (mcpName) mcpNameToState.set(mcpName, oauthState)
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
