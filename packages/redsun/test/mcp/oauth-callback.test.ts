@@ -71,10 +71,10 @@ describe("McpOAuthCallback.ensureRunning", () => {
     await McpOAuthCallback.ensureRunning(redirectUri)
     const callback = McpOAuthCallback.waitForCallback("success")
 
-    const response = await fetch(`${redirectUri}?code=code&state=success`)
+    const response = await fetch(`${redirectUri}?code=code&state=success&iss=${encodeURIComponent("https://issuer.test")}`)
 
     expect(response.status).toBe(200)
-    expect(await callback).toBe("code")
+    expect(await callback).toEqual({ code: "code", iss: "https://issuer.test" })
     expect(McpOAuthCallback.isRunning()).toBe(false)
   })
 

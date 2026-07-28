@@ -2,13 +2,10 @@ import { cmd } from "./cmd"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { effectCmd } from "../effect-cmd"
 import { Cause } from "effect"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
-import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport, UnauthorizedError, LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/client"
 import * as prompts from "@clack/prompts"
 import { UI } from "../ui"
-import { MCP } from "../../mcp"
+import { MCP, CLIENT_OPTIONS } from "../../mcp"
 import { McpAuth } from "../../mcp/auth"
 import { McpOAuthProvider } from "../../mcp/oauth-provider"
 import { Config } from "@/config/config"
@@ -772,6 +769,7 @@ export const McpDebugCommand = effectCmd({
               clientId: oauthConfig?.clientId,
               clientSecret: oauthConfig?.clientSecret,
               scope: oauthConfig?.scope,
+              callbackPort: oauthConfig?.callbackPort,
               redirectUri: oauthConfig?.redirectUri,
             },
             {
@@ -792,7 +790,7 @@ export const McpDebugCommand = effectCmd({
             const client = new Client({
               name: "redsun-debug",
               version: InstallationVersion,
-            })
+            }, CLIENT_OPTIONS)
             await client.connect(transport)
             prompts.log.success("Connection successful (already authenticated)")
             await client.close()
