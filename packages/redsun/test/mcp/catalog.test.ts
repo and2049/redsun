@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import { Server } from "@modelcontextprotocol/sdk/server/index.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client"
+import { Server } from "@modelcontextprotocol/server"
 import { McpCatalog } from "@/mcp/catalog"
 import { Effect } from "effect"
 
@@ -12,6 +10,10 @@ function clientReturning(result: unknown) {
   return {
     callTool: async () => result,
   } as unknown as Client
+}
+
+function entry(result: unknown) {
+  return { def: mcpTool(), client: clientReturning(result) }
 }
 
 function mcpTool() {
@@ -30,7 +32,7 @@ describe("McpCatalog.convertTool", () => {
   test("preserves content when structuredContent is also present", async () => {
     const content = [{ type: "image" as const, mimeType: "image/png", data: "AAAA" }]
     const structuredContent = { image: { mimeType: "image/png", data: "AAAA" } }
-    const converted = McpCatalog.convertTool(mcpTool(), clientReturning({ content, structuredContent }))
+    const converted = McpCatalog.convertTool(entry({ content, structuredContent }))
 
     const output = await converted.execute?.({}, options)
 
@@ -39,7 +41,7 @@ describe("McpCatalog.convertTool", () => {
 
   test("falls back to structuredContent only when content is absent", async () => {
     const structuredContent = { results: [{ title: "one" }] }
-    const converted = McpCatalog.convertTool(mcpTool(), clientReturning({ content: [], structuredContent }))
+    const converted = McpCatalog.convertTool(entry({ content: [], structuredContent }))
 
     const output = await converted.execute?.({}, options)
 
@@ -52,7 +54,7 @@ describe("McpCatalog.convertTool", () => {
 
 test("preserves output schema validation across paginated tool discovery", async () => {
   const server = new Server({ name: "pagination", version: "1.0.0" }, { capabilities: { tools: {} } })
-  server.setRequestHandler(ListToolsRequestSchema, ({ params }) =>
+  server.setRequestHandler("tools/list", ({ params }) =>
     Promise.resolve(
       params?.cursor === "page-2"
         ? {
@@ -84,7 +86,7 @@ test("preserves output schema validation across paginated tool discovery", async
           },
     ),
   )
-  server.setRequestHandler(CallToolRequestSchema, ({ params }) =>
+  server.setRequestHandler("tools/call", ({ params }) =>
     Promise.resolve({
       content: [],
       structuredContent: { value: params.name === "first" ? 42 : 1 },

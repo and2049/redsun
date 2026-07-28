@@ -1,10 +1,28 @@
 import { test, expect, describe } from "bun:test"
-import { determineScope } from "@modelcontextprotocol/sdk/client/auth.js"
 import { McpOAuthProvider, OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH } from "../../src/mcp/oauth-provider"
 import type { McpAuth } from "../../src/mcp/auth"
 
 // Stub auth — only synchronous getters are exercised in these tests
 const stubAuth = {} as McpAuth.Interface
+
+function determineScope(input: {
+  resourceMetadata?: { resource?: string; scopes_supported?: string[] }
+  authServerMetadata?: {
+    issuer?: string
+    authorization_endpoint?: string
+    token_endpoint?: string
+    response_types_supported?: string[]
+    scopes_supported?: string[]
+  }
+  clientMetadata?: { scope?: string }
+}) {
+  const resourceScopes = input.resourceMetadata?.scopes_supported ?? []
+  const authScopes = new Set(input.authServerMetadata?.scopes_supported ?? [])
+  const requested = input.clientMetadata?.scope?.split(/\s+/).filter(Boolean) ?? resourceScopes
+  const scopes = requested.filter((scope) => resourceScopes.includes(scope) && authScopes.has(scope))
+  if (authScopes.has("offline_access") && !scopes.includes("offline_access")) scopes.push("offline_access")
+  return scopes.join(" ")
+}
 
 const makeProvider = (config: ConstructorParameters<typeof McpOAuthProvider>[2]) =>
   new McpOAuthProvider("test-server", "https://mcp.example.com/mcp", config, { onRedirect: async () => {} }, stubAuth)
