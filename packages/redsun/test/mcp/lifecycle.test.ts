@@ -493,7 +493,7 @@ it.instance("local stdio timeout terminates the real server process", () =>
       type: "local",
       command: [process.execPath, stdioFixture, "--hang"],
       environment: { MCP_LIFECYCLE_PID_FILE: pidFile },
-      timeout: process.platform === "win32" ? 1_000 : 100,
+      timeout: 1_000,
     })
 
     expect(statusName(result.status, "hanging-stdio")).toBe("failed")

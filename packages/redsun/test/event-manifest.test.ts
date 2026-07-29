@@ -9,7 +9,12 @@ describe("public event manifest", () => {
     expect(EventManifest.Definitions).toBe(SchemaEventManifest.Definitions)
     expect(EventManifest.Latest).toBe(SchemaEventManifest.Latest)
     expect(EventManifest.Durable).toBe(SchemaEventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(89)
+    expect(EventManifest.Latest.size).toBe(90)
+    expect(new Set(EventManifest.Definitions.map((definition) => definition.type)).size).toBe(EventManifest.Latest.size)
+    expect(EventManifest.Definitions.filter((definition) => definition.type === "session.next.settled")).toEqual([
+      SessionEvent.Settled,
+    ])
+    expect(EventManifest.Durable.get("session.next.settled.1")).toBe(SessionEvent.Settled)
     expect(EventManifest.Latest.get("session.next.step.ended")).toBe(SessionEvent.Step.Ended)
     expect(EventManifest.Latest.get("todo.updated")).toBe(Todo.Event.Updated)
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
