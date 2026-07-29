@@ -374,6 +374,7 @@ const layer = Layer.effectDiscard(
         })
       }),
     )
+    yield* events.project(SessionEvent.Settled, () => Effect.void)
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
     yield* events.project(SessionEvent.Synthetic, (event) => run(db, event))
     yield* events.project(SessionEvent.Shell.Started, (event) => run(db, event))
