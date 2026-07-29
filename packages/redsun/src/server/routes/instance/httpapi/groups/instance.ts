@@ -4,8 +4,10 @@ import { Format } from "@/format"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -22,6 +24,19 @@ const PathInfo = Schema.Struct({
   worktree: Schema.String,
   directory: Schema.String,
 }).annotate({ identifier: "Path" })
+
+export const ToolIDs = Schema.Array(Schema.String).annotate({ identifier: "ToolIDs" })
+export const ToolListItem = Schema.Struct({
+  id: Schema.String,
+  description: Schema.String,
+  parameters: Schema.Unknown,
+}).annotate({ identifier: "ToolListItem" })
+export const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
+export const ToolListQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  provider: ProviderV2.ID,
+  model: ModelV2.ID,
+})
 
 export const VcsDiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -51,6 +66,8 @@ export const InstancePaths = {
   command: "/command",
   agent: "/agent",
   skill: "/skill",
+  tool: "/tool",
+  toolIDs: "/tool/ids",
   lsp: "/lsp",
   formatter: "/formatter",
 } as const
@@ -164,6 +181,30 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "app.skills",
             summary: "List skills",
             description: "Get a list of all available skills in the OpenCode system.",
+          }),
+        ),
+        HttpApiEndpoint.get("tool", InstancePaths.tool, {
+          query: ToolListQuery,
+          success: described(ToolList, "Tools"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "tool.list",
+            summary: "List tools",
+            description:
+              "Get a list of available tools with their JSON schema parameters for a specific provider and model combination.",
+          }),
+        ),
+        HttpApiEndpoint.get("toolIDs", InstancePaths.toolIDs, {
+          query: WorkspaceRoutingQuery,
+          success: described(ToolIDs, "Tool IDs"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "tool.ids",
+            summary: "List tool IDs",
+            description:
+              "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
           }),
         ),
         HttpApiEndpoint.get("lsp", InstancePaths.lsp, {

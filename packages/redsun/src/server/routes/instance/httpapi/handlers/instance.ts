@@ -6,10 +6,12 @@ import { Global } from "@opencode-ai/core/global"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
+import { ToolJsonSchema } from "@/tool/json-schema"
+import { ToolRegistry } from "@/tool/registry"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ApiVcsApplyError } from "../groups/instance"
+import { ApiVcsApplyError, ToolListQuery } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
@@ -19,6 +21,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
     const skill = yield* Skill.Service
+    const registry = yield* ToolRegistry.Service
     const vcs = yield* Vcs.Service
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
@@ -85,6 +88,23 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* skill.all()
     })
 
+    const getTool = Effect.fn("InstanceHttpApi.tool")(function* (ctx: { query: typeof ToolListQuery.Type }) {
+      const list = yield* registry.tools({
+        providerID: ctx.query.provider,
+        modelID: ctx.query.model,
+        agent: yield* agent.defaultInfo(),
+      })
+      return list.map((item) => ({
+        id: item.id,
+        description: item.description,
+        parameters: ToolJsonSchema.fromTool(item),
+      }))
+    })
+
+    const getToolIDs = Effect.fn("InstanceHttpApi.toolIDs")(function* () {
+      return yield* registry.ids()
+    })
+
     const getLsp = Effect.fn("InstanceHttpApi.lsp")(function* () {
       return yield* lsp.status()
     })
@@ -104,6 +124,8 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("command", getCommand)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
+      .handle("tool", getTool)
+      .handle("toolIDs", getToolIDs)
       .handle("lsp", getLsp)
       .handle("formatter", getFormatter)
   }),

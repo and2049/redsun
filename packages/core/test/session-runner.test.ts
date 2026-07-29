@@ -103,6 +103,7 @@ const compactModel = Model.make({
   provider: "fake",
   route: OpenAIChat.route.with({ limits: { context: 4_000, output: 50 } }),
 })
+
 const recoveryModel = Model.make({
   id: "recovery",
   provider: "fake",
@@ -3362,6 +3363,120 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.resume(sessionID).pipe(Effect.catchDefect(Effect.succeed))).toBe(
         "Tool input delta before start: call-1",
       )
+    }),
+  )
+})
+
+describe("session.next.settled", () => {
+  const readRows = Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    return yield* db
+      .select()
+      .from(EventTable)
+      .where(eq(EventTable.aggregate_id, sessionID))
+      .orderBy(asc(EventTable.seq))
+      .all()
+      .pipe(Effect.orDie)
+  })
+
+  const promptMessageIDs = (rows: ReadonlyArray<typeof EventTable.$inferSelect>) =>
+    Array.from(
+      new Set(
+        rows
+          .filter((row) => row.type.startsWith("session.next.prompted") || row.type.startsWith("session.next.prompt.admitted"))
+          .map((row) => row.data.messageID)
+          .filter((messageID): messageID is string => typeof messageID === "string"),
+      ),
+    )
+
+  it.effect("records one completed settlement after the turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      response = fragmentFixture("text", "settled-completed", ["Completed"]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Complete" }), resume: false })
+      yield* session.resume(sessionID)
+
+      const rows = yield* readRows
+
+      const settled = rows.filter((row) => row.type.startsWith("session.next.settled"))
+      const [messageID] = promptMessageIDs(rows)
+      expect(settled).toHaveLength(1)
+      expect(settled[0]?.data).toMatchObject({ outcome: "completed", messageID })
+      expect(settled[0]?.data.error).toBeUndefined()
+      expect(settled[0]!.seq).toBeGreaterThan(Math.max(...rows.filter((row) => row.seq < settled[0]!.seq).map((row) => row.seq)))
+    }),
+  )
+
+  it.effect("records one interrupted settlement", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      response = fragmentFixture("text", "settled-interrupted", ["Interrupted"]).completeEvents
+      streamGate = yield* Deferred.make<void>()
+      streamStarted = yield* Deferred.make<void>()
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Interrupt" }), resume: false })
+      const fiber = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      yield* Deferred.await(streamStarted)
+      yield* (yield* SessionExecution.Service).interrupt(sessionID)
+      yield* Fiber.interrupt(fiber)
+
+      const rows = yield* readRows
+      const settled = rows.filter((row) => row.type.startsWith("session.next.settled"))
+      const [messageID] = promptMessageIDs(rows)
+      expect(settled).toHaveLength(1)
+      expect(settled[0]?.data).toMatchObject({ outcome: "interrupted", messageID })
+      expect(settled[0]?.data.error).toBeUndefined()
+    }),
+  )
+
+  it.effect("records one failed settlement with an error", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      streamFailure = providerUnavailable()
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Fail" }), resume: false })
+      expect(yield* session.resume(sessionID).pipe(Effect.flip)).toBe(streamFailure)
+
+      const rows = yield* readRows
+      const settled = rows.filter((row) => row.type.startsWith("session.next.settled"))
+      const [messageID] = promptMessageIDs(rows)
+      expect(settled).toHaveLength(1)
+      expect(settled[0]?.data).toMatchObject({ outcome: "failed", messageID, error: { type: "unknown" } })
+      expect((settled[0]?.data.error as { message?: string }).message).toBeTruthy()
+    }),
+  )
+
+  it.effect("replays the completed settlement from persisted rows", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      response = fragmentFixture("text", "settled-replay", ["Replay"]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Replay" }), resume: false })
+      yield* session.resume(sessionID)
+
+      const before = (yield* readRows).filter((row) => row.type.startsWith("session.next.settled"))
+      const after = (yield* readRows).filter((row) => row.type.startsWith("session.next.settled"))
+      expect(after).toEqual(before)
+      expect(after).toHaveLength(1)
+    }),
+  )
+
+  it.effect("records exactly one settlement for each queued prompt", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      response = fragmentFixture("text", "settled-queued", ["Queued"]).completeEvents
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First" }), delivery: "queue", resume: false })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), delivery: "queue", resume: false })
+      yield* session.resume(sessionID)
+
+      const rows = yield* readRows
+      const settled = rows.filter((row) => row.type.startsWith("session.next.settled"))
+      const messageIDs = promptMessageIDs(rows)
+      expect(settled).toHaveLength(2)
+      expect(settled.map((row) => row.data.outcome)).toEqual(["completed", "completed"])
+      expect(new Set(settled.map((row) => row.data.messageID))).toEqual(new Set(messageIDs))
     }),
   )
 })

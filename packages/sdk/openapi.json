@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "opencode",
+    "title": "redsun",
     "version": "1.0.0",
-    "description": "opencode api"
+    "description": "redsun API"
   },
   "paths": {
     "/auth/{providerID}": {
@@ -1092,7 +1092,7 @@
     "/experimental/tool": {
       "get": {
         "tags": ["experimental"],
-        "operationId": "tool.list",
+        "operationId": "experimental.tool.list",
         "parameters": [
           {
             "name": "directory",
@@ -1157,11 +1157,12 @@
           }
         },
         "description": "Get a list of available tools with their JSON schema parameters for a specific provider and model combination.",
-        "summary": "List tools",
+        "summary": "List tools (deprecated alias for /tool)",
+        "deprecated": true,
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.tool.list({\n  ...\n})"
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.experimental.tool.list({\n  ...\n})"
           }
         ]
       }
@@ -1169,7 +1170,7 @@
     "/experimental/tool/ids": {
       "get": {
         "tags": ["experimental"],
-        "operationId": "tool.ids",
+        "operationId": "experimental.tool.ids",
         "parameters": [
           {
             "name": "directory",
@@ -1218,11 +1219,12 @@
           }
         },
         "description": "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
-        "summary": "List tool IDs",
+        "summary": "List tool IDs (deprecated alias for /tool/ids)",
+        "deprecated": true,
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.tool.ids({\n  ...\n})"
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.experimental.tool.ids({\n  ...\n})"
           }
         ]
       }
@@ -2845,6 +2847,144 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.app.skills({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/tool": {
+      "get": {
+        "tags": ["instance"],
+        "operationId": "tool.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tools",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Get a list of available tools with their JSON schema parameters for a specific provider and model combination.",
+        "summary": "List tools",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.tool.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/tool/ids": {
+      "get": {
+        "tags": ["instance"],
+        "operationId": "tool.ids",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tool IDs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolIDs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
+        "summary": "List tool IDs",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.tool.ids({\n  ...\n})"
           }
         ]
       }
@@ -15311,6 +15451,9 @@
             "$ref": "#/components/schemas/EventSessionNextPromptAdmitted"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextSettled"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextContextUpdated"
           },
           {
@@ -15399,6 +15542,9 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionError"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionGoal"
           },
           {
             "$ref": "#/components/schemas/EventInstallationUpdated"
@@ -17906,6 +18052,46 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.next.settled"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": ["completed", "interrupted", "failed"]
+                      },
+                      "error": {
+                        "$ref": "#/components/schemas/SessionErrorUnknown"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "messageID", "outcome"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["session.next.context.updated"]
                   },
                   "properties": {
@@ -19139,6 +19325,68 @@
                         ]
                       }
                     },
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.goal"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "goal": {
+                        "type": "object",
+                        "properties": {
+                          "condition": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["condition"],
+                        "additionalProperties": false
+                      },
+                      "lastVerdict": {
+                        "type": "object",
+                        "properties": {
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "impossible": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "attempt": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "messageID": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": ["ok", "reason", "attempt"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": ["sessionID"],
                     "additionalProperties": false
                   }
                 },
@@ -20458,6 +20706,9 @@
                 "$ref": "#/components/schemas/SyncEventSessionNextPromptAdmitted"
               },
               {
+                "$ref": "#/components/schemas/SyncEventSessionNextSettled"
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionNextContextUpdated"
               },
               {
@@ -21226,6 +21477,16 @@
               ]
             }
           },
+          "extension": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultProjectTrust": {
+            "type": "string",
+            "enum": ["ask", "always", "never"]
+          },
           "share": {
             "type": "string",
             "enum": ["manual", "auto", "disabled"]
@@ -21262,6 +21523,30 @@
           },
           "small_model": {
             "type": "string"
+          },
+          "task_router": {
+            "type": "object",
+            "properties": {
+              "compact": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "explore": {
+                "type": "string"
+              },
+              "general": {
+                "type": "string"
+              },
+              "worker": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
           },
           "default_agent": {
             "type": "string"
@@ -21504,6 +21789,64 @@
               "reserved": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "strategy": {
+                "type": "string",
+                "enum": ["hybrid", "algorithmic", "llm"]
+              },
+              "keepRecent": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "maxToolResults": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "triggerThreshold": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetThreshold": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
               }
             },
             "additionalProperties": false
@@ -23654,6 +23997,9 @@
             "$ref": "#/components/schemas/SessionNextPromptAdmitted"
           },
           {
+            "$ref": "#/components/schemas/SessionNextSettled"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextContextUpdated"
           },
           {
@@ -24034,6 +24380,9 @@
             "$ref": "#/components/schemas/SessionNextPromptAdmitted"
           },
           {
+            "$ref": "#/components/schemas/SessionNextSettled"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextContextUpdated"
           },
           {
@@ -24122,6 +24471,9 @@
           },
           {
             "$ref": "#/components/schemas/SessionError"
+          },
+          {
+            "$ref": "#/components/schemas/SessionGoal"
           },
           {
             "$ref": "#/components/schemas/InstallationUpdated"
@@ -25533,6 +25885,67 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "prompt", "delivery"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextSettled": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.settled.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": ["completed", "interrupted", "failed"]
+                  },
+                  "error": {
+                    "$ref": "#/components/schemas/SessionErrorUnknown"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "messageID", "outcome"],
                 "additionalProperties": false
               }
             },
@@ -28248,6 +28661,68 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "prompt", "delivery"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextSettled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.settled"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": ["completed", "interrupted", "failed"]
+              },
+              "error": {
+                "$ref": "#/components/schemas/SessionErrorUnknown"
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "outcome"],
             "additionalProperties": false
           }
         },
@@ -31647,6 +32122,90 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionGoal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.goal"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "goal": {
+                "type": "object",
+                "properties": {
+                  "condition": {
+                    "type": "string"
+                  }
+                },
+                "required": ["condition"],
+                "additionalProperties": false
+              },
+              "lastVerdict": {
+                "type": "object",
+                "properties": {
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "impossible": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "messageID": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["ok", "reason", "attempt"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "InstallationUpdated": {
         "type": "object",
         "properties": {
@@ -34288,6 +34847,46 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionNextSettled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.settled"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": ["completed", "interrupted", "failed"]
+              },
+              "error": {
+                "$ref": "#/components/schemas/SessionErrorUnknown"
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "outcome"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionNextContextUpdated": {
         "type": "object",
         "properties": {
@@ -35522,6 +36121,68 @@
                 ]
               }
             },
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionGoal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.goal"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "goal": {
+                "type": "object",
+                "properties": {
+                  "condition": {
+                    "type": "string"
+                  }
+                },
+                "required": ["condition"],
+                "additionalProperties": false
+              },
+              "lastVerdict": {
+                "type": "object",
+                "properties": {
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "impossible": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "messageID": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["ok", "reason", "attempt"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["sessionID"],
             "additionalProperties": false
           }
         },
