@@ -29,6 +29,7 @@ import { SessionCompaction } from "../compaction"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
+import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { type RunError, Service } from "./index"
@@ -175,6 +176,7 @@ const layer = Layer.effect(
       promotion: SessionInput.Delivery | undefined,
       step: number,
       recoverOverflow?: typeof compaction.compactAfterOverflow,
+      onPromptMessageID?: (messageID: SessionMessage.ID) => void,
     ) {
       const session = yield* getSession(sessionID)
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
@@ -184,13 +186,23 @@ const layer = Layer.effect(
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       let currentStep = step
+      let promptMessageID: SessionMessage.ID | undefined
       if (promotion) {
         const cutoff = yield* EventV2.latestSequence(db, session.id)
         let promoted = 0
-        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+        if (promotion === "steer") {
+          const steers = yield* SessionInput.promoteSteers(db, events, session.id, cutoff).pipe(Effect.uninterruptible)
+          promoted = steers.length
+          promptMessageID = steers[0]
+          if (promptMessageID !== undefined) onPromptMessageID?.(promptMessageID)
+        }
         if (promotion === "queue") {
-          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, session.id))
-          promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+          const queue = yield* SessionInput.promoteNextQueued(db, events, session.id).pipe(Effect.uninterruptible)
+          promoted += Option.isSome(queue) ? 1 : 0
+          promptMessageID = Option.getOrUndefined(queue)
+          if (promptMessageID !== undefined) onPromptMessageID?.(promptMessageID)
+          const steers = yield* SessionInput.promoteSteers(db, events, session.id, cutoff).pipe(Effect.uninterruptible)
+          promoted += steers.length
         }
         if (promoted > 0) currentStep = 1
       }
@@ -342,7 +354,11 @@ const layer = Layer.effect(
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
-          return { needsContinuation: !publisher.hasProviderError() && needsContinuation, step: currentStep }
+          return {
+            needsContinuation: !publisher.hasProviderError() && needsContinuation,
+            step: currentStep,
+            ...(promptMessageID === undefined ? {} : { promptMessageID }),
+          }
         }),
       )
     }, Effect.scoped)
@@ -350,31 +366,40 @@ const layer = Layer.effect(
       sessionID: SessionSchema.ID,
       promotion: SessionInput.Delivery | undefined,
       step: number,
-    ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number }, RunError>
+      onPromptMessageID: (messageID: SessionMessage.ID) => void,
+    ) => Effect.Effect<
+      { readonly needsContinuation: boolean; readonly step: number; readonly promptMessageID?: SessionMessage.ID },
+      RunError
+    >
 
-    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
-      return yield* runTurnAttempt(sessionID, promotion, step).pipe(
+    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (
+      sessionID,
+      promotion,
+      step,
+      onPromptMessageID,
+    ) {
+      return yield* runTurnAttempt(sessionID, promotion, step, undefined, onPromptMessageID).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
             yield* Effect.yieldNow
-            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)
+            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, onPromptMessageID)
           }),
         ),
       )
     })
 
-    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
-      return yield* runTurnAttempt(sessionID, promotion, step, compaction.compactAfterOverflow).pipe(
+    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step, onPromptMessageID) {
+      return yield* runTurnAttempt(sessionID, promotion, step, compaction.compactAfterOverflow, onPromptMessageID).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             yield* Effect.yieldNow
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
-              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)
-            return yield* runTurn(sessionID, undefined, defect.transition.step)
+              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step, onPromptMessageID)
+            return yield* runTurn(sessionID, undefined, defect.transition.step, onPromptMessageID)
           }),
         ),
       )
@@ -391,15 +416,49 @@ const layer = Layer.effect(
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {
-        let needsContinuation = true
-        let step = 1
-        while (needsContinuation) {
-          const result = yield* runTurn(input.sessionID, promotion, step)
-          needsContinuation = result.needsContinuation
-          step = result.step + 1
-          promotion = "steer"
-          if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
-        }
+        let iterationMessageID: SessionMessage.ID | undefined
+        let settlementPublished = false
+        const publishSettlement = (outcome: "completed" | "interrupted" | "failed", error?: SessionMessage.UnknownError) =>
+          Effect.gen(function* () {
+            if (iterationMessageID === undefined || settlementPublished) return
+            settlementPublished = true
+            yield* events.publish(SessionEvent.Settled, {
+              sessionID: input.sessionID,
+              timestamp: yield* DateTime.now,
+              messageID: iterationMessageID,
+              outcome,
+              ...(error === undefined ? {} : { error }),
+            })
+          }).pipe(Effect.uninterruptible)
+        const iteration = Effect.gen(function* () {
+          let needsContinuation = true
+          let step = 1
+          while (needsContinuation) {
+            const result = yield* runTurn(input.sessionID, promotion, step, (messageID) => {
+              iterationMessageID ??= messageID
+            })
+            iterationMessageID ??= result.promptMessageID
+            needsContinuation = result.needsContinuation
+            step = result.step + 1
+            promotion = "steer"
+            if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+          }
+        })
+        yield* iteration.pipe(
+          Effect.onInterrupt(() => publishSettlement("interrupted")),
+          Effect.matchCauseEffect({
+            onSuccess: () => publishSettlement("completed"),
+            onFailure: (cause) => {
+              if (iterationMessageID === undefined) return Effect.failCause(cause)
+              const interrupted = Cause.hasInterrupts(cause)
+              const failure = Cause.squash(cause)
+              const message = failure instanceof Error ? failure.message : String(failure)
+              return publishSettlement(interrupted ? "interrupted" : "failed", interrupted ? undefined : { type: "unknown", message }).pipe(
+                Effect.andThen(Effect.failCause(cause)),
+              )
+            },
+          }),
+        )
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
       }

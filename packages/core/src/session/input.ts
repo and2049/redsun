@@ -1,7 +1,7 @@
 export * as SessionInput from "./input"
 
 import { and, asc, eq, isNull, lte } from "drizzle-orm"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { Admitted, Delivery } from "@opencode-ai/schema/session-input"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
@@ -239,7 +239,7 @@ const publish = Effect.fn("SessionInput.publish")(function* (
         ),
       )
   }
-  return rows.length
+  return rows.map((row) => SessionMessage.ID.make(row.id))
 })
 
 export const promoteSteers = Effect.fn("SessionInput.promoteSteers")(function* (
@@ -284,5 +284,7 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
     .limit(1)
     .get()
     .pipe(Effect.orDie)
-  return row === undefined ? false : yield* publish(db, events, sessionID, [row]).pipe(Effect.as(true))
+  if (row === undefined) return Option.none()
+  yield* publish(db, events, sessionID, [row])
+  return Option.some(SessionMessage.ID.make(row.id))
 })

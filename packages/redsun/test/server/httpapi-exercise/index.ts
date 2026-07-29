@@ -525,13 +525,21 @@ const scenarios: Scenario[] = [
     }))
     .status(400),
   http.protected
-    .get("/experimental/tool", "tool.list")
+    .get("/experimental/tool", "experimental.tool.list")
     .at((ctx) => ({
       path: `/experimental/tool?${new URLSearchParams({ provider: "opencode", model: "test" })}`,
       headers: ctx.headers(),
     }))
     .json(200, array, "status"),
-  http.protected.get("/experimental/tool/ids", "tool.ids").json(200, array),
+  http.protected.get("/experimental/tool/ids", "experimental.tool.ids").json(200, array),
+  http.protected
+    .get("/tool", "tool.list")
+    .at((ctx) => ({
+      path: `/tool?${new URLSearchParams({ provider: "opencode", model: "test" })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, array, "status"),
+  http.protected.get("/tool/ids", "tool.ids").json(200, array),
   http.protected.get("/experimental/worktree", "worktree.list").json(200, array),
   http.protected
     .post("/experimental/worktree", "worktree.create")

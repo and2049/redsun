@@ -25,3 +25,22 @@ jobs:
         timeout-minutes: 10
         env:
           CI: true
+
+  openapi-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Regenerate OpenAPI spec
+        run: cd packages/redsun && bun dev generate > $RUNNER_TEMP/openapi.generated.json
+
+      - name: Check for drift vs committed spec
+        run: diff -u packages/sdk/openapi.json $RUNNER_TEMP/openapi.generated.json

@@ -16,8 +16,9 @@ import {
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
+import { ToolIDs, ToolList, ToolListQuery } from "./instance"
+
+export { ToolListQuery } from "./instance"
 
 const ConsoleStateResponse = Schema.Struct({
   consoleManagedProviders: Schema.mutable(Schema.Array(Schema.String)),
@@ -47,18 +48,6 @@ export const ConsoleSwitchPayload = Schema.Struct({
   orgID: OrgID,
 })
 
-const ToolIDs = Schema.Array(Schema.String).annotate({ identifier: "ToolIDs" })
-const ToolListItem = Schema.Struct({
-  id: Schema.String,
-  description: Schema.String,
-  parameters: Schema.Unknown,
-}).annotate({ identifier: "ToolListItem" })
-const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
-export const ToolListQuery = Schema.Struct({
-  ...WorkspaceRoutingQueryFields,
-  provider: ProviderV2.ID,
-  model: ModelV2.ID,
-})
 
 const WorktreeList = Schema.Array(Schema.String)
 const WorktreeErrorName = Schema.Union([
@@ -155,8 +144,9 @@ export const ExperimentalApi = HttpApi.make("experimental")
           error: HttpApiError.BadRequest,
         }).annotateMerge(
           OpenApi.annotations({
-            identifier: "tool.list",
-            summary: "List tools",
+            identifier: "experimental.tool.list",
+            summary: "List tools (deprecated alias for /tool)",
+            deprecated: true,
             description:
               "Get a list of available tools with their JSON schema parameters for a specific provider and model combination.",
           }),
@@ -167,8 +157,9 @@ export const ExperimentalApi = HttpApi.make("experimental")
           error: HttpApiError.BadRequest,
         }).annotateMerge(
           OpenApi.annotations({
-            identifier: "tool.ids",
-            summary: "List tool IDs",
+            identifier: "experimental.tool.ids",
+            summary: "List tool IDs (deprecated alias for /tool/ids)",
+            deprecated: true,
             description:
               "Get a list of all available tool IDs, including both built-in tools and dynamically registered tools.",
           }),
