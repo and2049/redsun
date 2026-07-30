@@ -3,20 +3,19 @@ import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import {
-  Client,
-  type ClientOptions,
-  StreamableHTTPClientTransport,
-  SSEClientTransport,
   UnauthorizedError,
-  RegistrationRejectedError,
-  SdkHttpError,
-} from "@modelcontextprotocol/client"
-import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
+} from "@modelcontextprotocol/sdk/client/auth.js"
 import {
   type LoggingMessageNotification,
   type Tool as MCPToolDef,
-} from "@modelcontextprotocol/client"
+  ListRootsRequestSchema,
+  LoggingMessageNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js"
 import { Config } from "@/config/config"
 import { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -49,8 +48,6 @@ export const CLIENT_OPTIONS = {
     // https://github.com/anomalyco/opencode/issues/28567
     // tasks: {},
   },
-  versionNegotiation: { mode: "auto" },
-  listMaxPages: 1_000,
 } satisfies ClientOptions
 
 export const Resource = Schema.Struct({
@@ -86,7 +83,7 @@ function createClient(directory: string) {
       },
     },
   )
-  client.setRequestHandler("roots/list", async () => ({ roots: [{ uri: pathToFileURL(directory).href }] }))
+  client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: [{ uri: pathToFileURL(directory).href }] }))
   return client
 }
 
@@ -302,13 +299,11 @@ const layer = Layer.effect(
           Effect.catch((error) => {
             const lastError = error instanceof Error ? error : new Error(String(error))
             const registrationRejected =
-              error instanceof RegistrationRejectedError ||
-              lastError.message.includes("registration") ||
+              lastError.message.toLowerCase().includes("registration") ||
               lastError.message.includes("client_id")
             const isAuthError =
               error instanceof UnauthorizedError ||
               registrationRejected ||
-              (authProvider && error instanceof SdkHttpError && error.status === 401) ||
               (authProvider && lastError.message.includes("OAuth"))
 
             if (isAuthError) {
@@ -471,7 +466,7 @@ const layer = Layer.effect(
         )
       }
 
-      client.setNotificationHandler("notifications/message", (notification) =>
+      client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) =>
         bridge.promise(serverLog(name, notification.params)),
       )
 
@@ -941,8 +936,9 @@ const layer = Layer.effect(
       const pending = pendingOAuthTransports.get(mcpName)
       if (!pending) throw new Error(`No pending OAuth flow for MCP server: ${mcpName}`)
 
+      pending.provider?.setIssuer(iss)
       const error = yield* Effect.tryPromise({
-        try: () => pending.transport.finishAuth(authorizationCode, iss),
+        try: () => pending.transport.finishAuth(authorizationCode),
         catch: (error) => error,
       }).pipe(
         Effect.match({
