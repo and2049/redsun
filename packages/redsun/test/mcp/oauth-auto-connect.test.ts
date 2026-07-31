@@ -1,6 +1,7 @@
 import { expect } from "bun:test"
-import { Server } from "@modelcontextprotocol/server"
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
+import { ListResourcesRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -39,13 +40,13 @@ function serveOAuthMcp(options: OAuthMcpOptions = {}) {
       let requiresAuth = true
 
       if (capabilities === "tools") {
-        protocol.setRequestHandler("tools/list", () => {
+        protocol.setRequestHandler(ListToolsRequestSchema, () => {
           listToolsCalls++
           return Promise.resolve({ tools: [{ name: "test_tool", inputSchema: { type: "object" } }] })
         })
       }
       if (capabilities === "resources") {
-        protocol.setRequestHandler("resources/list", () =>
+        protocol.setRequestHandler(ListResourcesRequestSchema, () =>
           Promise.resolve({ resources: [{ name: "docs", uri: "docs://readme" }] }),
         )
       }
@@ -197,6 +198,25 @@ mcpTest.instance("pending provider does not expose or overwrite existing credent
     expect(yield* Effect.promise(() => provider.tokens())).toBeUndefined()
     expect((yield* auth.get(name))?.tokens?.accessToken).toBe("old-token")
     expect((yield* auth.get(name))?.clientInfo?.clientId).toBe("old-client")
+  }),
+)
+
+mcpTest.instance("pending provider persists the callback issuer on commit", () =>
+  Effect.gen(function* () {
+    const auth = yield* McpAuth.Service
+    const name = "test-pending-issuer"
+    const url = "https://example.com/mcp"
+    const provider = new McpOAuthPendingProvider(name, url, {}, { onRedirect: async () => {} }, auth)
+
+    provider.setIssuer("https://issuer.example.com")
+    yield* Effect.promise(() => provider.saveClientInformation({ client_id: "new-client" }))
+    yield* Effect.promise(() => provider.saveTokens({ access_token: "new-token", token_type: "Bearer" }))
+    yield* Effect.promise(() => provider.commit())
+
+    expect(yield* auth.get(name)).toMatchObject({
+      clientInfo: { issuer: "https://issuer.example.com" },
+      tokens: { issuer: "https://issuer.example.com" },
+    })
   }),
 )
 

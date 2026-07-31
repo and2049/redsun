@@ -1,9 +1,15 @@
-import type { OAuthClientProvider } from "@modelcontextprotocol/client"
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type {
   OAuthClientMetadata,
-  StoredOAuthTokens,
-  StoredOAuthClientInformation,
-} from "@modelcontextprotocol/client"
+  OAuthTokens,
+  OAuthClientInformation,
+  OAuthClientInformationFull,
+} from "@modelcontextprotocol/sdk/shared/auth.js"
+type StoredOAuthClientInformation = Omit<OAuthClientInformationFull, "redirect_uris"> & {
+  redirect_uris?: string[]
+  issuer?: string
+}
+type StoredOAuthTokens = OAuthTokens & { issuer?: string }
 import { Effect } from "effect"
 import { McpAuth } from "./auth"
 
@@ -216,6 +222,11 @@ export class McpOAuthProvider implements OAuthClientProvider {
 export class McpOAuthPendingProvider extends McpOAuthProvider {
   private pendingClientInfo?: StoredOAuthClientInformation
   private pendingTokens?: StoredOAuthTokens
+  private issuer?: string
+
+  setIssuer(issuer?: string): void {
+    this.issuer = issuer
+  }
 
   override async clientInformation(): Promise<StoredOAuthClientInformation | undefined> {
     if (!this.config.clientId) return this.pendingClientInfo
@@ -226,7 +237,7 @@ export class McpOAuthPendingProvider extends McpOAuthProvider {
   }
 
   override async saveClientInformation(info: StoredOAuthClientInformation): Promise<void> {
-    this.pendingClientInfo = info
+    this.pendingClientInfo = { ...info, issuer: info.issuer ?? this.issuer }
   }
 
   override async tokens(): Promise<StoredOAuthTokens | undefined> {
@@ -234,7 +245,7 @@ export class McpOAuthPendingProvider extends McpOAuthProvider {
   }
 
   override async saveTokens(tokens: StoredOAuthTokens): Promise<void> {
-    this.pendingTokens = tokens
+    this.pendingTokens = { ...tokens, issuer: tokens.issuer ?? this.issuer }
   }
 
   override async invalidateCredentials(type: "all" | "client" | "tokens"): Promise<void> {
