@@ -8,12 +8,14 @@ import { Session } from "@/session/session"
 import { Tool } from "@/tool/tool"
 import * as Truncate from "@/tool/truncate"
 import { MessageID, SessionID } from "@/session/schema"
-import { Server } from "@modelcontextprotocol/server"
-import { InMemoryTransport, type Client } from "@modelcontextprotocol/client"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { type Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import {
   LATEST_PROTOCOL_VERSION,
   type Tool as MCPToolDef,
-} from "@modelcontextprotocol/client"
+} from "@modelcontextprotocol/sdk/types.js"
 import { Cause, Effect, Exit, Layer } from "effect"
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -119,8 +121,8 @@ let description: string
 
 async function buildTool() {
   const server = new Server({ name: SERVER, version: "1.0.0" }, { capabilities: { tools: {} } })
-  server.setRequestHandler("tools/list", async () => ({ tools: TOOL_DEFS }))
-  server.setRequestHandler("tools/call", async (req) =>
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFS }))
+  server.setRequestHandler(CallToolRequestSchema, async (req) =>
     handleCall(req.params.name, (req.params.arguments ?? {}) as Record<string, unknown>),
   )
 

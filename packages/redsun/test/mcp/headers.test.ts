@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
-import { Server } from "@modelcontextprotocol/server"
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
+import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Effect } from "effect"
 import { testEffect } from "../lib/effect"
@@ -12,7 +13,7 @@ const serve = Effect.acquireRelease(
   Effect.promise(async () => {
     const requests: Headers[] = []
     const protocol = new Server({ name: "headers", version: "1.0.0" }, { capabilities: { tools: {} } })
-    protocol.setRequestHandler("tools/list", () => Promise.resolve({ tools: [] }))
+    protocol.setRequestHandler(ListToolsRequestSchema, () => Promise.resolve({ tools: [] }))
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
       enableJsonResponse: true,

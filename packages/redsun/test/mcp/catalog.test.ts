@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client"
-import { Server } from "@modelcontextprotocol/server"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { McpCatalog } from "@/mcp/catalog"
 import { Effect } from "effect"
 
@@ -32,7 +34,8 @@ describe("McpCatalog.convertTool", () => {
   test("preserves content when structuredContent is also present", async () => {
     const content = [{ type: "image" as const, mimeType: "image/png", data: "AAAA" }]
     const structuredContent = { image: { mimeType: "image/png", data: "AAAA" } }
-    const converted = McpCatalog.convertTool(entry({ content, structuredContent }))
+    const item = entry({ content, structuredContent })
+    const converted = McpCatalog.convertTool(item.def, item.client)
 
     const output = await converted.execute?.({}, options)
 
@@ -41,7 +44,8 @@ describe("McpCatalog.convertTool", () => {
 
   test("falls back to structuredContent only when content is absent", async () => {
     const structuredContent = { results: [{ title: "one" }] }
-    const converted = McpCatalog.convertTool(entry({ content: [], structuredContent }))
+    const item = entry({ content: [], structuredContent })
+    const converted = McpCatalog.convertTool(item.def, item.client)
 
     const output = await converted.execute?.({}, options)
 
@@ -54,7 +58,7 @@ describe("McpCatalog.convertTool", () => {
 
 test("preserves output schema validation across paginated tool discovery", async () => {
   const server = new Server({ name: "pagination", version: "1.0.0" }, { capabilities: { tools: {} } })
-  server.setRequestHandler("tools/list", ({ params }) =>
+  server.setRequestHandler(ListToolsRequestSchema, ({ params }) =>
     Promise.resolve(
       params?.cursor === "page-2"
         ? {
@@ -86,7 +90,7 @@ test("preserves output schema validation across paginated tool discovery", async
           },
     ),
   )
-  server.setRequestHandler("tools/call", ({ params }) =>
+  server.setRequestHandler(CallToolRequestSchema, ({ params }) =>
     Promise.resolve({
       content: [],
       structuredContent: { value: params.name === "first" ? 42 : 1 },
