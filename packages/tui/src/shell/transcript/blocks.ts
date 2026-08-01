@@ -15,6 +15,11 @@
 // keyed by the first part's id. The key never changes while the run grows (the
 // run only closes when a non-collapsible part follows or the message
 // completes), so prefix stability is preserved.
+//
+// A session revert is the one thing that legitimately breaks prefix stability:
+// messages from the revert point on drop out of the list. That is deliberate —
+// the committer notices the mismatch and hands over to a replay reset
+// (see replay.ts), which is also how redo/unrevert restores them.
 import type { AssistantMessage, Message, Part, ToolPart } from "@opencode-ai/sdk/v2"
 import type { GoalVerdict } from "../../context/session-goal"
 
@@ -54,6 +59,9 @@ export type TranscriptSource = {
   partsOf: (messageID: string) => readonly Part[]
   taskDetail?: (sessionID: string) => TaskDetail | undefined
   goalVerdict?: (messageID: string) => GoalVerdict | undefined
+  // `session.revert.messageID`: this message and everything after it are
+  // reverted and drop out of the transcript, replaced by a trailing note.
+  revertedFrom?: string
 }
 
 // Tools whose consecutive calls merge into one dense block.
@@ -86,7 +94,9 @@ export function pendingAssistantID(messages: readonly Message[]): string | undef
 
 export function deriveBlocks(source: TranscriptSource): TranscriptBlock[] {
   const out: TranscriptBlock[] = []
-  const messages = source.messages
+  const revert = source.revertedFrom
+  const messages = revert ? source.messages.filter((message) => message.id < revert) : source.messages
+  const reverted = source.messages.length - messages.length
   const pending = pendingAssistantID(messages)
 
   for (let index = 0; index < messages.length; index++) {
@@ -198,6 +208,15 @@ export function deriveBlocks(source: TranscriptSource): TranscriptBlock[] {
         })
       }
     }
+  }
+
+  if (revert && reverted > 0) {
+    out.push({
+      key: `${revert}:reverted`,
+      kind: "note",
+      final: true,
+      text: `↩ ${reverted} message${reverted === 1 ? "" : "s"} reverted`,
+    })
   }
 
   return out

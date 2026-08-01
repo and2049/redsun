@@ -5,6 +5,7 @@
 // capture-stdout) — under other renderers (tests, classic fallback paths) the
 // view still mounts the dock, epilogue, and prompt wiring, but scrollback
 // writes are inert because writeToScrollback would throw.
+import { CliRenderEvents } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { useEpilogue } from "../context/epilogue"
@@ -20,12 +21,22 @@ import { normalizePath } from "../util/path"
 import * as Locale from "../util/locale"
 import { Dock } from "./dock"
 import { bannerWriter } from "./scrollback/writers"
-import { createTranscriptCommitter } from "./transcript/committer"
+import { createTranscriptReplay } from "./transcript/replay"
 
 function directoryLabel(cwd: string, home: string): string {
   const display = cwd === home ? "~" : cwd.startsWith(home) ? "~" + cwd.slice(home.length) : cwd
   return display.replaceAll("\\", "/")
 }
+
+// Blocks replayed after a scrollback reset. Older ones collapse into a note —
+// a resize should not re-render an unbounded history.
+const REPLAY_CAP = 400
+
+// DenseSession is keyed by session id, so a mount with an already-committed
+// transcript behind it means the user switched sessions: that replay starts by
+// clearing scrollback. The first session of the process keeps whatever the
+// terminal already had above it (the takeover model).
+let mounts = 0
 
 export function DenseSession() {
   const route = useRouteData("session")
@@ -78,16 +89,8 @@ export function DenseSession() {
   onMount(() => {
     if (!scrollbackActive()) return
 
-    const cwd = session()?.directory ?? paths.cwd
-    renderer.writeToScrollback(
-      bannerWriter({
-        detail: directoryLabel(cwd, paths.home),
-        theme,
-      }),
-    )
-    renderer.requestRender()
-
-    const committer = createTranscriptCommitter({
+    const switched = mounts++ > 0
+    const replay = createTranscriptReplay({
       renderer,
       sessionID: route.sessionID,
       data: sync.data,
@@ -96,14 +99,36 @@ export function DenseSession() {
       formatPath: pathFormatter.format,
       normalizePath: (path) => normalizePath(path, terminalEnvironment.platform),
       goalVerdict: (messageID) => sync.data.session_goal[route.sessionID]?.verdicts[messageID],
-      wrote: true,
+      revertedFrom: () => session()?.revert?.messageID,
+      cap: REPLAY_CAP,
+      active: scrollbackActive,
+      resetOnStart: switched,
+      banner: () => {
+        const cwd = session()?.directory ?? paths.cwd
+        renderer.writeToScrollback(bannerWriter({ detail: directoryLabel(cwd, paths.home), theme }))
+      },
     })
-    onCleanup(() => committer.dispose())
+    onCleanup(() => replay.dispose())
+
+    // A terminal resize reflows already-committed rows, so the transcript is
+    // re-written at the new width. Footer-height changes also emit RESIZE;
+    // comparing terminal geometry keeps those from triggering a replay.
+    let width = renderer.terminalWidth
+    let height = renderer.terminalHeight
+    const resized = () => {
+      if (width === renderer.terminalWidth && height === renderer.terminalHeight) return
+      width = renderer.terminalWidth
+      height = renderer.terminalHeight
+      replay.request("resize")
+    }
+    renderer.on(CliRenderEvents.RESIZE, resized)
+    onCleanup(() => renderer.off(CliRenderEvents.RESIZE, resized))
 
     // Subscribe to every field the block derivation reads so store updates
     // schedule a drain; the drain itself reads the store untracked.
     createEffect(() => {
       void sync.data.session_goal[route.sessionID]?.lastVerdict
+      void session()?.revert?.messageID
       const messages = sync.data.message[route.sessionID] ?? []
       for (const message of messages) {
         if (message.role === "assistant") {
@@ -124,7 +149,7 @@ export function DenseSession() {
           }
         }
       }
-      committer.notify()
+      replay.notify()
     })
   })
 
