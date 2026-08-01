@@ -1377,7 +1377,18 @@ export function Prompt(props: PromptProps) {
             flexGrow={1}
             width="100%"
           >
-            <box flexDirection="row" width="100%" flexShrink={0}>
+            {/* REDSUN DENSE: the input row draws its own rounded border so
+                the chat box reads as a distinct element without the classic
+                background fill. */}
+            <box
+              flexDirection="row"
+              width="100%"
+              flexShrink={0}
+              border={dense ? true : undefined}
+              borderStyle="rounded"
+              borderColor={theme.border}
+              paddingLeft={dense ? 1 : 0}
+            >
             <Show when={dense}>
               <text flexShrink={0} fg={store.mode === "shell" ? theme.warning : theme.primary}>
                 {store.mode === "shell" ? "! " : "❯ "}
