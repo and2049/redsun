@@ -30,7 +30,7 @@ import { useDialog } from "../../ui/dialog"
 import { useToast } from "../../ui/toast"
 import { isDefaultTitle } from "../../util/session"
 import * as Locale from "../../util/locale"
-import { applyFooterHeight } from "../boot"
+import { applyFooterHeight, pinScrollback } from "../boot"
 import { pendingAssistantID, queuedPrompts } from "../transcript/blocks"
 import { dockRows, dockView } from "./height"
 import { inlineSelectRows } from "./inline-select"
@@ -159,7 +159,17 @@ export function Dock(props: {
     }),
   )
 
-  createEffect(() => applyFooterHeight(renderer, rows()))
+  // On a shrink (picker, command bar, or completion closing), the split
+  // surface stays at its old top line with cleared rows below the dock until
+  // future commits push it down — re-pin it to the bottom explicitly.
+  let lastRows: number | undefined
+  createEffect(() => {
+    const next = rows()
+    const shrank = lastRows !== undefined && next < lastRows
+    lastRows = next
+    applyFooterHeight(renderer, next)
+    if (shrank) pinScrollback(renderer)
+  })
 
   // Height handed to the open dialog: everything the dock reserved minus the
   // rows it draws around it, which for an inline select comes back to exactly

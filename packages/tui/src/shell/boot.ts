@@ -11,6 +11,7 @@
 // switch external output back to passthrough before leaving split-footer mode,
 // so pending stdout doesn't get captured into the now-dead scrollback pipeline.
 import type { CliRenderer, CliRendererConfig } from "@opentui/core"
+import { spacerWriter } from "./scrollback/writers"
 
 // Whether anything was committed into native scrollback this run. The session
 // banner is the first write on every path that commits (see session.tsx), so
@@ -59,6 +60,43 @@ export function applyFooterHeight(renderer: CliRenderer, rows: number): void {
   const height = Math.max(1, Math.trunc(rows))
   if (renderer.footerHeight === height) return
   renderer.footerHeight = height
+}
+
+// Pins the dock (the split-footer surface) to the bottom of the terminal by
+// committing blank filler lines for the vertical gap above it.
+//
+// OpenTUI re-pins the surface when the footer grows but lets a shrink settle
+// lazily: the surface keeps its old top line — leaving cleared rows below the
+// dock — until future scrollback commits push it down, which an idle session
+// never sends. Called before the banner on every replay start (so the
+// transcript stacks upward from the dock, not down from a blank screen top)
+// and after any dock shrink (picker, command bar, or completion closing).
+//
+// `renderOffset` and `externalOutputQueue` are internal renderer state, not
+// public API — pinned to @opentui/core 0.4.5. Queued commits move the surface
+// when they flush, so measuring the gap while any are pending would
+// double-fill; those calls settle through `idle()` first.
+export function pinScrollback(renderer: CliRenderer): void {
+  const internals = renderer as unknown as { externalOutputQueue?: { size?: number } }
+  if ((internals.externalOutputQueue?.size ?? 0) > 0) {
+    void Promise.resolve(renderer.idle())
+      .then(() => fillToBottom(renderer))
+      .catch(() => {})
+    return
+  }
+  fillToBottom(renderer)
+}
+
+function fillToBottom(renderer: CliRenderer): void {
+  if (renderer.isDestroyed) return
+  if (renderer.screenMode !== "split-footer" || renderer.externalOutputMode !== "capture-stdout") return
+  const offset = (renderer as unknown as { renderOffset?: number }).renderOffset
+  if (typeof offset !== "number") return
+  const pinned = Math.max(0, renderer.terminalHeight - renderer.footerHeight)
+  const gap = Math.min(renderer.terminalHeight, Math.max(0, pinned - offset))
+  for (let index = 0; index < gap; index++) {
+    renderer.writeToScrollback(spacerWriter())
+  }
 }
 
 // Tears the dense renderer down in the required order:
