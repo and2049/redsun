@@ -1,23 +1,26 @@
-// DenseApp: root of the dense native-scrollback shell.
+// DenseApp: root of the dense fullscreen shell.
 //
-// Owns the home-route footerHeight policy for the split-footer renderer: on
-// the home route the pinned footer region takes over the whole viewport
-// (Claude-style takeover). The session route shrinks the footer to a bottom
-// dock and commits the transcript into native scrollback (see session.tsx,
-// which owns its own footer-height policy).
-import { CliRenderEvents } from "@opentui/core"
+// Same architecture as the classic layout (fullscreen frame, scrollbox
+// transcript, floating overlays), restyled: the dense home, the dense prompt
+// chrome, and the vim command bar as an in-flow bottom row. The session route
+// is the classic one — its scrollbox owns transcript scrolling, and dialogs,
+// pickers and autocomplete float over it without reflowing anything.
+import { MouseButton } from "@opentui/core"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
-import { createEffect, createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createMemo, Match, Show, Switch } from "solid-js"
 import { PluginRouteMissing } from "../component/plugin-route-missing"
 import { StartupLoading } from "../component/startup-loading"
 import { CommandBar } from "../component/command-bar"
+import { Flag } from "@opencode-ai/core/flag/flag"
+import { useClipboard } from "../context/clipboard"
 import { useRoute } from "../context/route"
 import { useTuiStartup } from "../context/runtime"
 import { useTheme } from "../context/theme"
 import { usePluginRuntime } from "../plugin/runtime"
-import { applyFooterHeight, applyTerminalBackground, clearTerminalHistory } from "./boot"
+import { Session } from "../routes/session"
+import { useToast } from "../ui/toast"
+import * as Selection from "../util/selection"
 import { DenseHome } from "./home"
-import { DenseSession } from "./session"
 
 export function DenseApp(props: { ready: () => boolean }) {
   const startup = useTuiStartup()
@@ -26,28 +29,8 @@ export function DenseApp(props: { ready: () => boolean }) {
   const renderer = useRenderer()
   const { theme } = useTheme()
   const pluginRuntime = usePluginRuntime()
-
-  // Home takeover, tracked across terminal resizes. processResize emits
-  // RESIZE on every terminal size change, and applyFooterHeight no-ops when
-  // the height is already right, so this cannot loop. Non-home routes manage
-  // their own footer height.
-  const takeover = () => {
-    if (route.data.type === "session") return
-    applyFooterHeight(renderer, renderer.terminalHeight)
-  }
-  createEffect(() => {
-    void route.data.type
-    takeover()
-  })
-  renderer.on(CliRenderEvents.RESIZE, takeover)
-  onCleanup(() => renderer.off(CliRenderEvents.RESIZE, takeover))
-
-  // Scrolling up stops at the app, not pre-launch shell history.
-  onMount(() => clearTerminalHistory(renderer))
-  // The terminal's default background follows the theme (and light/dark
-  // switches) — see applyTerminalBackground for why the painted root box
-  // alone is not enough.
-  createEffect(() => applyTerminalBackground(renderer, theme.background))
+  const toast = useToast()
+  const clipboard = useClipboard()
 
   const plugin = createMemo(() => {
     if (!props.ready()) return
@@ -58,15 +41,24 @@ export function DenseApp(props: { ready: () => boolean }) {
   })
 
   return (
-    // Deliberately painted theme background: committed scrollback rows sit on
-    // the terminal's own background, so the dock can read as a different slab
-    // when the two differ — but without it, themes and light/dark switching
-    // break against arbitrary terminal colours. Consistency wins.
     <box
       width={dimensions().width}
       height={dimensions().height}
       flexDirection="column"
       backgroundColor={theme.background}
+      onMouseDown={(evt) => {
+        if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
+        if (evt.button !== MouseButton.RIGHT) return
+
+        if (!Selection.copy(renderer, toast, clipboard)) return
+        evt.preventDefault()
+        evt.stopPropagation()
+      }}
+      onMouseUp={
+        !Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT
+          ? () => Selection.copy(renderer, toast, clipboard)
+          : undefined
+      }
     >
       <Show when={props.ready()}>
         <box flexGrow={1} minHeight={0} flexDirection="column">
@@ -76,7 +68,7 @@ export function DenseApp(props: { ready: () => boolean }) {
             </Match>
             <Match when={route.data.type === "session"}>
               <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
-                {(_) => <DenseSession />}
+                {(_) => <Session />}
               </Show>
             </Match>
           </Switch>
@@ -86,8 +78,7 @@ export function DenseApp(props: { ready: () => boolean }) {
           <pluginRuntime.Slot name="app_bottom" />
         </box>
         <pluginRuntime.Slot name="app" />
-        {/* The dense bar renders in flow as the last footer row; the dock's
-            height policy reserves DOCK_COMMAND_BAR_ROWS for it. */}
+        {/* In flow as the last row of the frame, not floating over content. */}
         <CommandBar variant="dense" />
       </Show>
       <Show when={!startup.skipInitialLoading}>

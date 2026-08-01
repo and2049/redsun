@@ -89,9 +89,8 @@ import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
-// REDSUN DENSE: dense native-scrollback shell (see src/shell/). Classic stays behind config `ui: "classic"`.
+// REDSUN DENSE: dense fullscreen shell (see src/shell/). Classic stays behind config `ui: "classic"`.
 import { DenseApp } from "./shell"
-import * as DenseBoot from "./shell/boot"
 
 registerOpencodeSpinner()
 
@@ -193,32 +192,27 @@ function isVersionGreater(left: string, right: string) {
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const global = yield* Global.Service
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
-  // REDSUN DENSE: the dense (default) UI boots the split-footer native-scrollback renderer
-  // and requires ordered teardown (capture→passthrough, split-footer→main-screen, destroy).
-  const dense = input.config.ui !== "classic"
-  const teardown = dense ? DenseBoot.shutdown : destroyRenderer
+  // REDSUN DENSE: both interfaces run the same fullscreen renderer; `ui`
+  // only selects which tree mounts (DenseApp vs the classic layout below).
+  const teardown = destroyRenderer
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
       const renderer = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
-            createCliRenderer(
-              dense
-                ? DenseBoot.rendererOptions()
-                : {
-                    externalOutputMode: "passthrough",
-                    targetFps: 60,
-                    gatherStats: false,
-                    exitOnCtrlC: false,
-                    useKittyKeyboard: {},
-                    autoFocus: false,
-                    openConsoleOnError: false,
-                    useMouse: !Flag.OPENCODE_DISABLE_MOUSE && input.config.mouse,
-                    consoleOptions: {
-                      keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
-                    },
-                  },
-            ),
+            createCliRenderer({
+              externalOutputMode: "passthrough",
+              targetFps: 60,
+              gatherStats: false,
+              exitOnCtrlC: false,
+              useKittyKeyboard: {},
+              autoFocus: false,
+              openConsoleOnError: false,
+              useMouse: !Flag.OPENCODE_DISABLE_MOUSE && input.config.mouse,
+              consoleOptions: {
+                keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
+              },
+            }),
           catch: (error) => (error instanceof Error ? error : new Error(String(error))),
         }),
         (renderer) =>
@@ -1112,8 +1106,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     return render({ params: route.data.data })
   })
 
-  // REDSUN DENSE: the dense (default) UI renders the shell tree; the classic fullscreen
-  // layout below stays untouched for `ui: "classic"` during stabilization.
+  // REDSUN DENSE: the dense (default) UI renders the shell tree — the same
+  // fullscreen architecture as the classic layout below, restyled. Classic
+  // stays untouched for `ui: "classic"`.
   if (tuiConfig.ui !== "classic") return <DenseApp ready={ready} />
 
   return (
