@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2"
-import { deriveBlocks } from "../../src/shell/transcript/blocks"
+import { deriveBlocks, queuedPrompts } from "../../src/shell/transcript/blocks"
 
 function user(id: string): Message {
   return { id, sessionID: "s1", role: "user", time: { created: 1 } } as Message
@@ -235,4 +235,28 @@ test("a revert drops the reverted messages and records how many", () => {
   const reverted = deriveBlocks({ ...source(messages, parts), revertedFrom: "m-2" })
   expect(reverted.map((block) => block.key)).toEqual(["m-1:user", "m-2:reverted"])
   expect(reverted.at(-1)).toMatchObject({ kind: "note", final: true, text: "↩ 2 messages reverted" })
+})
+
+test("queued prompts are the user messages behind the in-flight turn", () => {
+  const messages = [user("m-1"), assistant("m-2"), user("m-3"), user("m-4")]
+  const parts = {
+    "m-1": [textPart("p-1", "m-1", "first")],
+    "m-2": [textPart("p-2", "m-2", "working")],
+    "m-3": [textPart("p-3", "m-3", "also do this")],
+    "m-4": [textPart("p-4", "m-4", "and this")],
+  }
+
+  // The transcript holds them back until the turn completes...
+  const blocks = deriveBlocks(source(messages, parts))
+  expect(blocks.map((block) => block.key)).not.toContain("m-3:user")
+
+  // ...so the dock is where they show, newest last and bounded.
+  expect(queuedPrompts(source(messages, parts), 3)).toEqual([
+    { id: "m-3", text: "also do this" },
+    { id: "m-4", text: "and this" },
+  ])
+  expect(queuedPrompts(source(messages, parts), 1)).toEqual([{ id: "m-4", text: "and this" }])
+
+  // Nothing is queued while the session is idle.
+  expect(queuedPrompts(source([user("m-1"), assistant("m-2", 5)], parts), 3)).toEqual([])
 })

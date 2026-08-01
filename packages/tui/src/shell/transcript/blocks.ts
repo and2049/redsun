@@ -92,6 +92,31 @@ export function pendingAssistantID(messages: readonly Message[]): string | undef
   return messages.findLast((x) => x.role === "assistant" && !x.time.completed && (!completed || x.id > completed))?.id
 }
 
+export type QueuedPrompt = { id: string; text: string }
+
+// User messages submitted while a turn is in flight. They are held out of the
+// transcript until promotion, so the dock renders them as mutable rows.
+// Deduplicated by message id: the same prompt can appear twice for a moment
+// while the store reconciles an optimistic insert with the persisted message.
+export function queuedPrompts(
+  source: Pick<TranscriptSource, "messages" | "partsOf">,
+  limit: number,
+): QueuedPrompt[] {
+  const pending = pendingAssistantID(source.messages)
+  if (!pending) return []
+  const rows = new Map<string, string>()
+  for (const message of source.messages) {
+    if (message.role !== "user" || message.id <= pending) continue
+    const text = source
+      .partsOf(message.id)
+      .flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : []))
+      .join(" ")
+      .trim()
+    if (text) rows.set(message.id, text)
+  }
+  return [...rows].slice(-limit).map(([id, text]) => ({ id, text }))
+}
+
 export function deriveBlocks(source: TranscriptSource): TranscriptBlock[] {
   const out: TranscriptBlock[] = []
   const revert = source.revertedFrom
