@@ -157,9 +157,7 @@ export function shutdown(renderer: CliRenderer): void {
   renderer.setTerminalTitle("")
   if (renderer.isDestroyed) return
 
-  // Decided before the mode flips below erase the evidence. Saved lines are
-  // untouched, so whatever the takeover scrolled away at startup is still in
-  // the terminal's own scrollback.
+  // Decided before the mode flips below erase the evidence.
   const clear = !committed && renderer.screenMode === "split-footer"
 
   if (renderer.externalOutputMode === "capture-stdout") {

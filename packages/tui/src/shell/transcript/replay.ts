@@ -36,10 +36,6 @@ export type ReplayInput = Omit<CommitterInput, "wrote" | "cap" | "onDesync"> & {
   // False when the renderer cannot write scrollback (test renderers, classic
   // fallback) — replays are skipped rather than throwing.
   active: () => boolean
-  // Reset scrollback before the very first commit. True when arriving from
-  // another session, false on the first session of the process (where the
-  // terminal's existing content is deliberately left alone).
-  resetOnStart?: boolean
   onReplay?: (reason: ReplayReason) => void
 }
 
@@ -84,7 +80,13 @@ export function createTranscriptReplay(input: ReplayInput): TranscriptReplay {
     } catch {}
   }
 
-  if (input.resetOnStart && input.active()) reset()
+  // Always reset on start — including the first session of the process. Boot
+  // already erases pre-launch history (CSI 3J in boot.ts), and skipping the
+  // reset leaves the engine's committed-output model seeded from the startup
+  // cursor row: it believes the screen is full of output, so the first dock
+  // growth (command bar, autocomplete, picker) scrolls that phantom content
+  // up and leaves a permanent gap above the dock when it shrinks back.
+  if (input.active()) reset()
   input.pin?.()
   input.banner()
   renderer.requestRender()
