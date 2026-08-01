@@ -50,9 +50,14 @@ export type CommitterInput = {
   onDesync?: () => void
 }
 
+// Coalescing window for drains. Streaming text updates the store far faster
+// than anything can be committed, and each drain re-derives the whole block
+// list, so notifications are batched instead of run per store write.
+const COMMIT_INTERVAL_MS = 16
+
 export type TranscriptCommitter = {
   // Schedule a drain. Safe to call from reactive effects; drains are
-  // single-flight and re-run while notifications arrive mid-drain.
+  // single-flight, batched, and re-run while notifications arrive mid-drain.
   notify(): void
   // Resolves when no drain is running or queued.
   idle(): Promise<void>
@@ -70,6 +75,7 @@ export function createTranscriptCommitter(input: CommitterInput): TranscriptComm
   let disposed = false
   let desynced = false
   let capped = false
+  let scheduled: ReturnType<typeof setTimeout> | undefined
   const idleResolvers: (() => void)[] = []
 
   // Snapshot of a task tool's child session, read from the same store.
@@ -266,16 +272,20 @@ export function createTranscriptCommitter(input: CommitterInput): TranscriptComm
     } finally {
       draining = false
       if (!disposed) input.renderer.requestRender()
-      resolveIdle()
+      if (!scheduled) resolveIdle()
     }
   }
 
   return {
     notify() {
-      void drain()
+      if (disposed || scheduled) return
+      scheduled = setTimeout(() => {
+        scheduled = undefined
+        void drain()
+      }, COMMIT_INTERVAL_MS)
     },
     idle() {
-      if (!draining && !queued) return Promise.resolve()
+      if (!draining && !queued && !scheduled) return Promise.resolve()
       return new Promise((resolve) => idleResolvers.push(resolve))
     },
     get desynced() {
@@ -284,6 +294,8 @@ export function createTranscriptCommitter(input: CommitterInput): TranscriptComm
     dispose() {
       if (disposed) return
       disposed = true
+      if (scheduled) clearTimeout(scheduled)
+      scheduled = undefined
       dropActive()
       resolveIdle()
     },
