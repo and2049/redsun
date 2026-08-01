@@ -1311,14 +1311,17 @@ export function Prompt(props: PromptProps) {
   )
   // REDSUN DENSE: the arrow takes the agent color and greys outside insert
   // mode — the classic left bar's affordance, moved onto the chrome dense
-  // actually draws. Shell mode keeps its warning color; the border reuses
-  // borderHighlight() so both UIs tint and grey identically.
+  // actually draws. Shell mode keeps its warning color. The rounded border
+  // stays neutral so the arrow alone signals mode.
   const densePrefixColor = createMemo(() => {
     if (vim.mode !== "insert") return theme.border
     if (store.mode === "shell") return theme.warning
     const agent = local.agent.current()
     return agent ? local.agent.color(agent.name) : theme.primary
   })
+  // REDSUN DENSE: the rounded border stays agent-neutral — muted in insert
+  // mode, and outside it the same grey the agent label fades to.
+  const denseBorderColor = createMemo(() => (vim.mode === "insert" ? theme.textMuted : theme.border))
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1389,14 +1392,15 @@ export function Prompt(props: PromptProps) {
           >
             {/* REDSUN DENSE: the input row draws its own rounded border so
                 the chat box reads as a distinct element without the classic
-                background fill. */}
+                background fill. The border greys with vim mode but never
+                takes the agent tint — the arrow carries that signal. */}
             <box
               flexDirection="row"
               width="100%"
               flexShrink={0}
               border={dense ? true : undefined}
               borderStyle="rounded"
-              borderColor={borderHighlight()}
+              borderColor={denseBorderColor()}
               paddingLeft={dense ? 1 : 0}
             >
             <Show when={dense}>
