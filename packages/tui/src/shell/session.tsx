@@ -20,6 +20,7 @@ import type { PromptRef } from "../component/prompt"
 import { sessionEpilogue } from "../util/presentation"
 import { normalizePath } from "../util/path"
 import * as Locale from "../util/locale"
+import { markScrollbackCommit } from "./boot"
 import { Dock } from "./dock"
 import { useDenseSessionCommands } from "./session-commands"
 import { useDenseSessionLifecycle } from "./session-lifecycle"
@@ -121,6 +122,9 @@ export function DenseSession() {
       banner: () => {
         const cwd = session()?.directory ?? paths.cwd
         renderer.writeToScrollback(bannerWriter({ detail: directoryLabel(cwd, paths.home), theme }))
+        // First scrollback write on every committing path — tells shutdown
+        // there is a transcript worth leaving in the terminal.
+        markScrollbackCommit()
       },
     })
     onCleanup(() => replay.dispose())

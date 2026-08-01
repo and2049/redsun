@@ -12,11 +12,24 @@
 // so pending stdout doesn't get captured into the now-dead scrollback pipeline.
 import type { CliRenderer, CliRendererConfig } from "@opentui/core"
 
+// Whether anything was committed into native scrollback this run. The session
+// banner is the first write on every path that commits (see session.tsx), so
+// one flag is enough. Quitting with it still false means the terminal shows
+// nothing but our takeover frame — shutdown clears it instead of leaving a
+// dead home screen behind (transcripts, by contrast, are the point of native
+// scrollback and are left in place).
+let committed = false
+
+export function markScrollbackCommit(): void {
+  committed = true
+}
+
 // Renderer options for the dense shell. Mirrors the production `redsun --mini`
 // boot options (runtime.lifecycle.ts): no mouse capture so native terminal
 // select/copy works, kitty keyboard events on win32, and no clear on shutdown
 // so the transcript stays in the terminal after exit.
 export function rendererOptions(): CliRendererConfig {
+  committed = false
   return {
     targetFps: 60,
     gatherStats: false,
@@ -54,6 +67,11 @@ export function shutdown(renderer: CliRenderer): void {
   renderer.setTerminalTitle("")
   if (renderer.isDestroyed) return
 
+  // Decided before the mode flips below erase the evidence. Saved lines are
+  // untouched, so whatever the takeover scrolled away at startup is still in
+  // the terminal's own scrollback.
+  const clear = !committed && renderer.screenMode === "split-footer"
+
   if (renderer.externalOutputMode === "capture-stdout") {
     renderer.externalOutputMode = "passthrough"
   }
@@ -64,5 +82,9 @@ export function shutdown(renderer: CliRenderer): void {
 
   if (!renderer.isDestroyed) {
     renderer.destroy()
+  }
+
+  if (clear) {
+    process.stdout.write("\x1b[H\x1b[2J")
   }
 }
