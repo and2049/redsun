@@ -67,6 +67,12 @@ scrollbox in a content-sized column collapses to nothing and takes its siblings
 with it — the whole dialog renders blank. Keep that in mind before changing the
 dialog host's layout.
 
+**The dialog stack needs a host on every route.** The floating overlay is
+classic-only and the dock only exists on the session route, so `home.tsx`
+hosts the stack too (same definite-height rule). Without it, everything opened
+from home — session list (`l`), agent picker (`a`), command palette (`ctrl+p`),
+`:sessions` — opens logically but paints nothing.
+
 ## Deliberate differences from classic
 
 - **No mouse capture.** Native terminal select/copy is worth more than mouse
