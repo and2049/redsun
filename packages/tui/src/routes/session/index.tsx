@@ -25,7 +25,7 @@ import { useEvent } from "../../context/event"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
-import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
+import { selectedForeground, useTheme } from "../../context/theme"
 import {
   BoxRenderable,
   ScrollBoxRenderable,
@@ -1736,10 +1736,10 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const ctx = use()
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
-  // Cline-style disclosure in the default (hide) mode: completed thinking
-  // collapses to a single "▶ Thinking: …tail" line showing the end of the
-  // trace; clicking flips the chevron down and reveals the full text. The
-  // show mode (`session.toggle.thinking`) keeps the always-open block.
+  // Cline-style disclosure: completed thinking collapses to a single
+  // "▶ Thinking: …tail" line showing the end of the trace; clicking flips
+  // the chevron down and reveals the full italic trace. The show mode
+  // (`session.toggle.thinking`) renders the same look pinned open.
   const [expanded, setExpanded] = createSignal(false)
   const [hover, setHover] = createSignal(false)
 
@@ -1751,16 +1751,8 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
   const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
-  const duration = createMemo(() => {
-    const end = props.part.time.end
-    return end === undefined ? 0 : Math.max(0, end - props.part.time.start)
-  })
+  const open = createMemo(() => !inMinimal() || expanded())
   const summary = createMemo(() => reasoningSummary(content()))
-  const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
-
-  // Full trace in the disclosure (the split title stays inline there);
-  // show mode renders the title in its header, so only the body remains.
-  const body = createMemo(() => (inMinimal() ? content() : summary().body))
 
   // Collapsed teaser: the flattened tail of the trace, sized so the row
   // never wraps.
@@ -1780,85 +1772,46 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         flexDirection="column"
         flexShrink={0}
       >
-        <Switch>
-          <Match when={!isDone()}>
+        <Show
+          when={isDone()}
+          fallback={
             <box flexDirection="row">
               <Spinner color={theme.warning}>
                 {summary().title ? "Thinking: " + summary().title : "Thinking"}
               </Spinner>
             </box>
-          </Match>
-          <Match when={inMinimal()}>
-            <box
-              onMouseOver={() => setHover(true)}
-              onMouseOut={() => setHover(false)}
-              onMouseUp={() => {
-                if (renderer.getSelection()?.getSelectedText()) return
-                setExpanded((prev) => !prev)
-              }}
+          }
+        >
+          <box
+            onMouseOver={() => inMinimal() && setHover(true)}
+            onMouseOut={() => setHover(false)}
+            onMouseUp={() => {
+              if (!inMinimal()) return
+              if (renderer.getSelection()?.getSelectedText()) return
+              setExpanded((prev) => !prev)
+            }}
+          >
+            <text
+              fg={hover() ? theme.text : theme.textMuted}
+              wrapMode="none"
+              attributes={TextAttributes.ITALIC}
             >
-              <text fg={hover() ? theme.text : theme.textMuted} wrapMode="none">
-                <span>{expanded() ? "▼ " : "▶ "}</span>
-                <span style={{ attributes: TextAttributes.ITALIC }}>
-                  {expanded() ? "Thinking:" : "Thinking: " + teaser()}
-                </span>
-              </text>
-            </box>
-          </Match>
-          <Match when={true}>
-            <ReasoningHeader title={summary().title} duration={Locale.duration(duration())} />
-          </Match>
-        </Switch>
-        <Show when={(!inMinimal() || (isDone() && expanded())) && body()}>
-          {/* Hide mode matches Cline: plain italic muted lines flush under
-              the chevron row. Show mode keeps the markdown block. */}
-          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={inMinimal() ? 0 : 1}>
-            <Show
-              when={inMinimal()}
-              fallback={
-                <code
-                  filetype="markdown"
-                  drawUnstyledText={false}
-                  streaming={true}
-                  syntaxStyle={syntax()}
-                  content={body()}
-                  conceal={ctx.conceal()}
-                  fg={theme.textMuted}
-                />
-              }
-            >
-              <text fg={theme.textMuted} attributes={TextAttributes.ITALIC}>
-                {body()}
-              </text>
-            </Show>
+              {open() ? "▼ Thinking:" : "▶ Thinking: " + teaser()}
+            </text>
+          </box>
+        </Show>
+        {/* Full trace as italic muted lines flush under the chevron row —
+            open on click in hide mode, always open in show mode (where it
+            also streams in below the spinner). */}
+        <Show when={open() && content()}>
+          <box paddingLeft={2}>
+            <text fg={theme.textMuted} attributes={TextAttributes.ITALIC}>
+              {content()}
+            </text>
           </box>
         </Show>
       </box>
     </Show>
-  )
-}
-
-// The always-open "Thought" header used by the show mode.
-function ReasoningHeader(props: { title: string | null; duration?: string }) {
-  const { theme } = useTheme()
-  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
-
-  return (
-    <text fg={fg()} wrapMode="none">
-      <span>Thought</span>
-      <Show when={props.title || props.duration}>
-        <span>: </span>
-      </Show>
-      <Show when={props.title}>
-        <span>{props.title}</span>
-      </Show>
-      <Show when={props.duration}>
-        <span>
-          {props.title ? " · " : ""}
-          {props.duration}
-        </span>
-      </Show>
-    </text>
   )
 }
 
