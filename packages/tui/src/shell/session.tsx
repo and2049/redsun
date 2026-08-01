@@ -41,12 +41,6 @@ const REPLAY_CAP = 400
 // in-flight turn and the one before it.
 const TRACKED_MESSAGES = 4
 
-// DenseSession is keyed by session id, so a mount with an already-committed
-// transcript behind it means the user switched sessions: that replay starts by
-// clearing scrollback. The first session of the process keeps whatever the
-// terminal already had above it (the takeover model).
-let mounts = 0
-
 export function DenseSession() {
   const route = useRouteData("session")
   const sync = useSync()
@@ -105,7 +99,6 @@ export function DenseSession() {
   onMount(() => {
     if (!scrollbackActive()) return
 
-    const switched = mounts++ > 0
     // The dock's own height effect has not run yet (child effects flush after
     // this onMount), so the footer may still be the home takeover. Shrink it
     // to dock size first — the pin below computes the gap against it.
@@ -122,7 +115,6 @@ export function DenseSession() {
       revertedFrom: () => session()?.revert?.messageID,
       cap: REPLAY_CAP,
       active: scrollbackActive,
-      resetOnStart: switched,
       pin: () => pinScrollback(renderer),
       banner: () => {
         const cwd = session()?.directory ?? paths.cwd

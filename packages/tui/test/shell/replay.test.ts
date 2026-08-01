@@ -18,7 +18,7 @@ afterEach(() => {
   }
 })
 
-async function setup(options: { cap?: number; resetOnStart?: boolean } = {}) {
+async function setup(options: { cap?: number } = {}) {
   const out = await createTestRenderer({
     width: 80,
     screenMode: "split-footer",
@@ -51,7 +51,6 @@ async function setup(options: { cap?: number; resetOnStart?: boolean } = {}) {
     cap: options.cap,
     debounceMs: 5,
     active: () => true,
-    resetOnStart: options.resetOnStart,
     banner: () => {
       state.banners++
       out.renderer.writeToScrollback(noteWriter({ text: "= session banner", theme }))
@@ -195,8 +194,8 @@ test("a capped replay keeps the newest blocks behind a truncation note", async (
   }
 })
 
-test("switching sessions clears scrollback before the first commit", async () => {
-  const out = await setup({ resetOnStart: true })
+test("every replay start clears scrollback before the first commit", async () => {
+  const out = await setup()
 
   try {
     const { messages, parts } = conversation(1)
