@@ -5,8 +5,9 @@
 // and committed. The earliest non-final assistant-text block streams through
 // a retained StreamSurface with progressive commits; everything else commits
 // as a one-shot static writer. Committed output is immutable — a prefix-key
-// mismatch (e.g. session revert, handled by replay in a later phase) freezes
-// the committer instead of corrupting scrollback.
+// mismatch (a session revert or redo) freezes the committer instead of
+// corrupting scrollback, and reports it through `onDesync` so the replay
+// controller can reset scrollback and re-commit from scratch (see replay.ts).
 import type { CliRenderer, SyntaxStyle, TreeSitterClient } from "@opentui/core"
 import type { Message, Part } from "@opencode-ai/sdk/v2"
 import type { GoalVerdict } from "../../context/session-goal"
@@ -35,9 +36,18 @@ export type CommitterInput = {
   diffWrapMode?: () => "word" | "none"
   // Goal verdict lookup for turn summaries (sync.data.session_goal).
   goalVerdict?: (messageID: string) => GoalVerdict | undefined
+  // `session.revert.messageID`, when the session is reverted.
+  revertedFrom?: () => string | undefined
   // True when something (e.g. the session banner) was already written to
   // scrollback, so the first block gets a leading blank row.
   wrote?: boolean
+  // Upper bound on blocks written by the *first* drain. Older blocks are
+  // skipped behind a truncation note. Replaying a long session after every
+  // resize is otherwise unbounded work; live blocks arriving later are never
+  // capped.
+  cap?: number
+  // Called once when committed output stops matching the derived list.
+  onDesync?: () => void
 }
 
 export type TranscriptCommitter = {
@@ -59,6 +69,7 @@ export function createTranscriptCommitter(input: CommitterInput): TranscriptComm
   let queued = false
   let disposed = false
   let desynced = false
+  let capped = false
   const idleResolvers: (() => void)[] = []
 
   // Snapshot of a task tool's child session, read from the same store.
@@ -80,6 +91,7 @@ export function createTranscriptCommitter(input: CommitterInput): TranscriptComm
       partsOf: (messageID) => input.data.part[messageID] ?? [],
       taskDetail,
       goalVerdict: input.goalVerdict,
+      revertedFrom: input.revertedFrom?.(),
     })
 
   function writerContext(): ToolWriterContext {
@@ -169,13 +181,33 @@ export function createTranscriptCommitter(input: CommitterInput): TranscriptComm
     return active.surface
   }
 
+  // Skip everything but the newest `cap` blocks on the first drain, behind a
+  // note saying so. Runs once: blocks arriving after the initial snapshot are
+  // live output and always commit.
+  function applyCap(list: TranscriptBlock[]): void {
+    // Wait for the first non-empty snapshot: a committer built before its
+    // store is populated would otherwise "cap" nothing and disarm itself.
+    if (capped || list.length === 0) return
+    capped = true
+    const cap = input.cap
+    if (!cap || list.length <= cap) return
+    const skipped = list.length - cap
+    for (let index = 0; index < skipped; index++) processed.push(list[index].key)
+    input.renderer.writeToScrollback(
+      noteWriter({ text: `… ${skipped} earlier blocks not replayed`, theme: input.theme() }),
+    )
+    wrote = true
+  }
+
   async function step(): Promise<void> {
     if (disposed || desynced) return
     const list = blocks()
+    applyCap(list)
 
     for (let index = 0; index < processed.length; index++) {
       if (list[index]?.key !== processed[index]) {
         desynced = true
+        input.onDesync?.()
         return
       }
     }

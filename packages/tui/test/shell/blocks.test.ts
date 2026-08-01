@@ -220,3 +220,19 @@ test("empty finals are skipped, not rendered", () => {
   expect(blocks.find((block) => block.key === "m-1:user")).toMatchObject({ final: true, skip: true })
   expect(blocks.find((block) => block.key === "p-2:text")).toMatchObject({ final: true, skip: true })
 })
+
+test("a revert drops the reverted messages and records how many", () => {
+  const messages = [user("m-1"), assistant("m-2", 5), user("m-3")]
+  const parts = {
+    "m-1": [textPart("p-1", "m-1", "first")],
+    "m-2": [textPart("p-2", "m-2", "reply", 4)],
+    "m-3": [textPart("p-3", "m-3", "second")],
+  }
+
+  const live = deriveBlocks(source(messages, parts))
+  expect(live.map((block) => block.key)).toContain("m-3:user")
+
+  const reverted = deriveBlocks({ ...source(messages, parts), revertedFrom: "m-2" })
+  expect(reverted.map((block) => block.key)).toEqual(["m-1:user", "m-2:reverted"])
+  expect(reverted.at(-1)).toMatchObject({ kind: "note", final: true, text: "↩ 2 messages reverted" })
+})
