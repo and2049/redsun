@@ -1606,7 +1606,10 @@ const next = transition(vim.mode, e)
             />
           </box>
         </Show>
-        <Show when={footerVisible()}>
+        {/* REDSUN DENSE: in a dense session the dock draws its own status row
+            above the prompt, so this footer would double it and pad the dock
+            out a row — it stays home-only there. Classic keeps it always. */}
+        <Show when={footerVisible() && (!dense || !props.sessionID)}>
           <box width="100%" flexDirection="row" justifyContent="space-between">
             <Switch>
             <Match when={status().type !== "idle"}>

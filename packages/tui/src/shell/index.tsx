@@ -13,7 +13,6 @@ import { StartupLoading } from "../component/startup-loading"
 import { CommandBar } from "../component/command-bar"
 import { useRoute } from "../context/route"
 import { useTuiStartup } from "../context/runtime"
-import { useTheme } from "../context/theme"
 import { usePluginRuntime } from "../plugin/runtime"
 import { applyFooterHeight } from "./boot"
 import { DenseHome } from "./home"
@@ -24,7 +23,6 @@ export function DenseApp(props: { ready: () => boolean }) {
   const route = useRoute()
   const dimensions = useTerminalDimensions()
   const renderer = useRenderer()
-  const { theme } = useTheme()
   const pluginRuntime = usePluginRuntime()
 
   // Home takeover, tracked across terminal resizes. processResize emits
@@ -51,12 +49,10 @@ export function DenseApp(props: { ready: () => boolean }) {
   })
 
   return (
-    <box
-      width={dimensions().width}
-      height={dimensions().height}
-      flexDirection="column"
-      backgroundColor={theme.background}
-    >
+    // No painted background: committed scrollback rows sit on the terminal's
+    // own background, so painting theme.background here would render the dock
+    // as a visibly different slab whenever the two differ.
+    <box width={dimensions().width} height={dimensions().height} flexDirection="column">
       <Show when={props.ready()}>
         <box flexGrow={1} minHeight={0} flexDirection="column">
           <Switch>
