@@ -89,6 +89,8 @@ import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
+// REDSUN DENSE: dense fullscreen shell (see src/shell/). Classic stays behind config `ui: "classic"`.
+import { DenseApp } from "./shell"
 
 registerOpencodeSpinner()
 
@@ -190,6 +192,9 @@ function isVersionGreater(left: string, right: string) {
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const global = yield* Global.Service
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
+  // REDSUN DENSE: both interfaces run the same fullscreen renderer; `ui`
+  // only selects which tree mounts (DenseApp vs the classic layout below).
+  const teardown = destroyRenderer
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
       const renderer = yield* Effect.acquireRelease(
@@ -212,7 +217,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         }),
         (renderer) =>
           Effect.sync(() => {
-            destroyRenderer(renderer)
+            teardown(renderer)
           }),
       )
       win32DisableProcessedInput()
@@ -232,7 +237,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
       )
       yield* Effect.addFinalizer(() => Effect.sync(TuiAudio.dispose))
       const shutdown = yield* Deferred.make<unknown>()
-      const onSighup = () => destroyRenderer(renderer)
+      const onSighup = () => teardown(renderer)
       yield* Effect.acquireRelease(
         Effect.sync(() => process.on("SIGHUP", onSighup)),
         () => Effect.sync(() => process.off("SIGHUP", onSighup)),
@@ -252,7 +257,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
               exit={(reason) => {
                 if (renderer.isDestroyed) return
                 exit.reason = reason
-                destroyRenderer(renderer)
+                teardown(renderer)
               }}
             >
               <EpilogueProvider set={(value) => (exit.epilogue = value)}>
@@ -1100,6 +1105,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     if (!render) return <PluginRouteMissing id={route.data.id} onHome={() => route.navigate({ type: "home" })} />
     return render({ params: route.data.data })
   })
+
+  // REDSUN DENSE: the dense (default) UI renders the shell tree — the same
+  // fullscreen architecture as the classic layout below, restyled. Classic
+  // stays untouched for `ui: "classic"`.
+  if (tuiConfig.ui !== "classic") return <DenseApp ready={ready} />
 
   return (
     <box

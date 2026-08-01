@@ -96,6 +96,16 @@ export type PromptRef = {
   blur(): void
   focus(): void
   submit(): void
+  // REDSUN DENSE: trigger character of the open completion popup, or false.
+  // The dense dock reserves footer rows for it (the popup draws upward from
+  // the prompt and would otherwise be clamped to one row). Optional so the
+  // plugin-facing `TuiPromptRef` contract stays assignable both ways.
+  readonly autocomplete?: false | "@" | "/"
+  // REDSUN DENSE: rows the draft currently needs, so the dock can grow with a
+  // multi-line prompt instead of clipping it. Logical lines clamped to the
+  // textarea's max height — soft-wrapped long lines are not counted, which
+  // costs a row of draft at most. Also optional, for the same reason.
+  readonly rows?: number
 }
 
 const DRAFT_RETENTION_MIN_CHARS = 20
@@ -161,6 +171,10 @@ export function Prompt(props: PromptProps) {
   const workerDisplay = createMemo(() => workerModelDisplay(workerRoute(), sync.data.provider))
   const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
+  // REDSUN DENSE: chrome-only variant for the bottom dock — no panel
+  // background, no wide padding, a leading `❯`/`!` sigil and a thin rule
+  // instead of the left border rail. All prompt logic is shared.
+  const dense = tuiConfig.ui !== "classic"
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
@@ -558,6 +572,12 @@ export function Prompt(props: PromptProps) {
   const ref: PromptRef = {
     get focused() {
       return input.focused
+    },
+    get autocomplete() {
+      return auto()?.visible ?? false
+    },
+    get rows() {
+      return Math.min(maxHeight(), Math.max(1, store.prompt.input.split("\n").length))
     },
     get current() {
       return store.prompt
@@ -1289,6 +1309,16 @@ export function Prompt(props: PromptProps) {
   const borderHighlight = createMemo(() =>
     vim.mode === "insert" ? tint(theme.border, highlight(), agentMetaAlpha()) : theme.border,
   )
+  // REDSUN DENSE: the arrow takes the agent color and greys outside insert
+  // mode — the classic left bar's affordance, moved onto the chrome dense
+  // actually draws. Shell mode keeps its warning color; the border reuses
+  // borderHighlight() so both UIs tint and grey identically.
+  const densePrefixColor = createMemo(() => {
+    if (vim.mode !== "insert") return theme.border
+    if (store.mode === "shell") return theme.warning
+    const agent = local.agent.current()
+    return agent ? local.agent.color(agent.name) : theme.primary
+  })
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1341,7 +1371,7 @@ export function Prompt(props: PromptProps) {
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         <box
           width="100%"
-          border={["left"]}
+          border={dense ? undefined : ["left"]}
           borderColor={borderHighlight()}
           customBorderChars={{
             ...SplitBorder.customBorderChars,
@@ -1349,16 +1379,34 @@ export function Prompt(props: PromptProps) {
           }}
         >
           <box
-            paddingLeft={2}
-            paddingRight={2}
-            paddingTop={1}
+            paddingLeft={dense ? 0 : 2}
+            paddingRight={dense ? 0 : 2}
+            paddingTop={dense ? 0 : 1}
             flexShrink={0}
-            backgroundColor={theme.backgroundElement}
+            backgroundColor={dense ? undefined : theme.backgroundElement}
             flexGrow={1}
             width="100%"
           >
-            <textarea
+            {/* REDSUN DENSE: the input row draws its own rounded border so
+                the chat box reads as a distinct element without the classic
+                background fill. */}
+            <box
+              flexDirection="row"
               width="100%"
+              flexShrink={0}
+              border={dense ? true : undefined}
+              borderStyle="rounded"
+              borderColor={borderHighlight()}
+              paddingLeft={dense ? 1 : 0}
+            >
+            <Show when={dense}>
+              <text flexShrink={0} fg={densePrefixColor()}>
+                {store.mode === "shell" ? "! " : "❯ "}
+              </text>
+            </Show>
+            <textarea
+              width={dense ? undefined : "100%"}
+              flexGrow={dense ? 1 : undefined}
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
               textColor={vim.mode !== "insert" ? theme.textMuted : theme.text}
@@ -1429,15 +1477,37 @@ const next = transition(vim.mode, e)
                 setTimeout(() => {
                   // setTimeout is a workaround and needs to be addressed properly
                   if (!input || input.isDestroyed) return
-                  input.cursorColor = props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text
+                  input.cursorColor =
+                    props.disabled || vim.mode !== "insert"
+                      ? dense
+                        ? theme.background
+                        : theme.backgroundElement
+                      : theme.text
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text}
+              // REDSUN DENSE: no fill behind the input — the dense prompt is
+              // chromeless, so the focused background would read as a stray
+              // grey bar. The hidden-cursor colour has to match whatever the
+              // row behind it actually is.
+              focusedBackgroundColor={dense ? undefined : theme.backgroundElement}
+              cursorColor={
+                props.disabled || vim.mode !== "insert"
+                  ? dense
+                    ? theme.background
+                    : theme.backgroundElement
+                  : theme.text
+              }
               syntaxStyle={syntax()}
             />
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+            </box>
+            <box
+              flexDirection="row"
+              flexShrink={0}
+              paddingTop={dense ? 0 : 1}
+              gap={1}
+              justifyContent="space-between"
+            >
               <box flexDirection="row" gap={1}>
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
@@ -1508,33 +1578,38 @@ const next = transition(vim.mode, e)
             </box>
           </box>
         </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
+        <Show when={!dense}>
           <box
             height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
-        <Show when={footerVisible()}>
+            border={["left"]}
+            borderColor={borderHighlight()}
+            customBorderChars={{
+              ...EmptyBorder,
+              vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
+            }}
+          >
+            <box
+              height={1}
+              border={["bottom"]}
+              borderColor={theme.backgroundElement}
+              customBorderChars={
+                theme.backgroundElement.a !== 0
+                  ? {
+                      ...EmptyBorder,
+                      horizontal: "▀",
+                    }
+                  : {
+                      ...EmptyBorder,
+                      horizontal: " ",
+                    }
+              }
+            />
+          </box>
+        </Show>
+        {/* REDSUN DENSE: in a dense session the dock draws its own status row
+            above the prompt, so this footer would double it and pad the dock
+            out a row — it stays home-only there. Classic keeps it always. */}
+        <Show when={footerVisible() && (!dense || !props.sessionID)}>
           <box width="100%" flexDirection="row" justifyContent="space-between">
             <Switch>
             <Match when={status().type !== "idle"}>
@@ -1669,6 +1744,12 @@ const next = transition(vim.mode, e)
               {props.hint}
             </Match>
             </Switch>
+            {/* REDSUN DENSE: hold the left slot so the home hints sit at the
+                right edge — the Switch above renders nothing on an idle home,
+                which would let space-between pull them left. */}
+            <Show when={dense}>
+              <box flexGrow={1} />
+            </Show>
             <Show when={!props.sessionID}>
               <box gap={2} flexDirection="row">
                 <Switch>
