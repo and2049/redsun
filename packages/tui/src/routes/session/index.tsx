@@ -1507,7 +1507,6 @@ function UserMessage(props: {
 }
 
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
-  const ctx = use()
   const { theme } = useTheme()
   const sync = useSync()
   const goalVerdict = createMemo(() => sync.data.session_goal[props.message.sessionID]?.verdicts[props.message.id])
@@ -1517,10 +1516,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   // Consecutive completed read/search tools collapse into one summary line,
   // Claude Code style ("Read 3 files, searched for 2 patterns"). A run
-  // survives parts that render nothing (hidden thinking, empty text,
+  // survives parts that render nothing (empty text, empty reasoning,
   // unmapped part types); anything visible breaks it.
   const items = createMemo<TranscriptItem[]>(() => {
-    const thinkingHidden = ctx.thinkingMode() === "hide"
     const result: TranscriptItem[] = []
     let run: ToolPart[] | undefined
     for (const part of props.parts) {
@@ -1532,7 +1530,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         run.push(part)
         continue
       }
-      if (!invisiblePart(part, thinkingHidden)) run = undefined
+      if (!invisiblePart(part)) run = undefined
       result.push({ part })
     }
     return result
@@ -1645,13 +1643,11 @@ function collapsibleTool(part: Part): part is ToolPart {
 }
 
 // Whether a part renders nothing right now — such parts must not break a
-// collapsed tool run, or hidden thinking between reads would split it.
-function invisiblePart(part: Part, thinkingHidden: boolean): boolean {
+// collapsed tool run. Thinking always renders (at least the collapsed
+// "▶ Thinking:" row), so any non-empty reasoning splits runs, Cline-style.
+function invisiblePart(part: Part): boolean {
   if (part.type === "text") return !part.text.trim()
-  if (part.type === "reasoning") {
-    if (!part.text.replace("[REDACTED]", "").trim()) return true
-    return thinkingHidden && part.time.end !== undefined
-  }
+  if (part.type === "reasoning") return !part.text.replace("[REDACTED]", "").trim()
   if (part.type === "tool") return false
   return !(part.type in PART_MAPPING)
 }
@@ -1738,9 +1734,14 @@ const INLINE_TOOL_ICON_WIDTH = 2
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
   const { theme } = useTheme()
   const ctx = use()
-  // Collapsed by default in hide mode: a single line throughout, so the
-  // layout never shifts. Click to open the full markdown block, click to close.
+  const renderer = useRenderer()
+  const dimensions = useTerminalDimensions()
+  // Cline-style disclosure in the default (hide) mode: completed thinking
+  // collapses to a single "▶ Thinking: …tail" line showing the end of the
+  // trace; clicking flips the chevron down and reveals the full text. The
+  // show mode (`session.toggle.thinking`) keeps the always-open block.
   const [expanded, setExpanded] = createSignal(false)
+  const [hover, setHover] = createSignal(false)
 
   const content = createMemo(() => {
     // OpenRouter encrypts some reasoning blocks; drop the placeholder.
@@ -1757,17 +1758,21 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
 
-  const toggle = () => {
-    if (!inMinimal()) return
-    setExpanded((prev) => !prev)
-  }
+  // Full trace in the disclosure (the split title stays inline there);
+  // show mode renders the title in its header, so only the body remains.
+  const body = createMemo(() => (inMinimal() ? content() : summary().body))
 
-  // Claude Code-style: completed thinking leaves no trace in the default
-  // (hide) mode — the transcript keeps only what the model did and said.
-  // While streaming, the spinner line below shows progress; `session.toggle
-  // .thinking` (show mode) renders the full block.
+  // Collapsed teaser: the flattened tail of the trace, sized so the row
+  // never wraps.
+  const teaser = createMemo(() => {
+    const available = Math.max(10, dimensions().width - 3 - "▶ Thinking: ".length - 4)
+    const flat = content().replace(/\s+/g, " ").trim()
+    if (flat.length <= available) return flat
+    return "..." + flat.slice(flat.length - available)
+  })
+
   return (
-    <Show when={content() && (!inMinimal() || !isDone())}>
+    <Show when={content()}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
         paddingLeft={3}
@@ -1775,26 +1780,57 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         flexDirection="column"
         flexShrink={0}
       >
-        <box onMouseUp={toggle}>
-          <ReasoningHeader
-            toggleable={inMinimal()}
-            open={!inMinimal() || expanded()}
-            done={isDone()}
-            title={summary().title}
-            duration={isDone() ? Locale.duration(duration()) : undefined}
-          />
-        </box>
-        <Show when={(!inMinimal() || expanded()) && summary().body}>
-          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={1}>
-            <code
-              filetype="markdown"
-              drawUnstyledText={false}
-              streaming={true}
-              syntaxStyle={syntax()}
-              content={summary().body}
-              conceal={ctx.conceal()}
-              fg={theme.textMuted}
-            />
+        <Switch>
+          <Match when={!isDone()}>
+            <box flexDirection="row">
+              <Spinner color={theme.warning}>
+                {summary().title ? "Thinking: " + summary().title : "Thinking"}
+              </Spinner>
+            </box>
+          </Match>
+          <Match when={inMinimal()}>
+            <box
+              onMouseOver={() => setHover(true)}
+              onMouseOut={() => setHover(false)}
+              onMouseUp={() => {
+                if (renderer.getSelection()?.getSelectedText()) return
+                setExpanded((prev) => !prev)
+              }}
+            >
+              <text fg={hover() ? theme.text : theme.textMuted} wrapMode="none">
+                <span>{expanded() ? "▼ " : "▶ "}</span>
+                <span style={{ attributes: TextAttributes.ITALIC }}>
+                  {expanded() ? "Thinking:" : "Thinking: " + teaser()}
+                </span>
+              </text>
+            </box>
+          </Match>
+          <Match when={true}>
+            <ReasoningHeader title={summary().title} duration={Locale.duration(duration())} />
+          </Match>
+        </Switch>
+        <Show when={(!inMinimal() || (isDone() && expanded())) && body()}>
+          {/* Hide mode matches Cline: plain italic muted lines flush under
+              the chevron row. Show mode keeps the markdown block. */}
+          <box paddingLeft={inMinimal() ? 2 : 0} marginTop={inMinimal() ? 0 : 1}>
+            <Show
+              when={inMinimal()}
+              fallback={
+                <code
+                  filetype="markdown"
+                  drawUnstyledText={false}
+                  streaming={true}
+                  syntaxStyle={syntax()}
+                  content={body()}
+                  conceal={ctx.conceal()}
+                  fg={theme.textMuted}
+                />
+              }
+            >
+              <text fg={theme.textMuted} attributes={TextAttributes.ITALIC}>
+                {body()}
+              </text>
+            </Show>
           </box>
         </Show>
       </box>
@@ -1802,47 +1838,27 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   )
 }
 
-function ReasoningHeader(props: {
-  toggleable: boolean
-  open: boolean
-  done: boolean
-  title: string | null
-  duration?: string
-}) {
+// The always-open "Thought" header used by the show mode.
+function ReasoningHeader(props: { title: string | null; duration?: string }) {
   const { theme } = useTheme()
-  const fg = () =>
-    props.open
-      ? RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
-      : theme.warning
+  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
 
   return (
-    <Switch>
-      <Match when={!props.done}>
-        <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
-        </box>
-      </Match>
-      <Match when={true}>
-        <text fg={fg()} wrapMode="none">
-          <Show when={props.toggleable}>
-            <span>{props.open ? "- " : "+ "}</span>
-          </Show>
-          <span>Thought</span>
-          <Show when={props.title || props.duration}>
-            <span>: </span>
-          </Show>
-          <Show when={props.title}>
-            <span>{props.title}</span>
-          </Show>
-          <Show when={props.duration}>
-            <span>
-              {props.title ? " · " : ""}
-              {props.duration}
-            </span>
-          </Show>
-        </text>
-      </Match>
-    </Switch>
+    <text fg={fg()} wrapMode="none">
+      <span>Thought</span>
+      <Show when={props.title || props.duration}>
+        <span>: </span>
+      </Show>
+      <Show when={props.title}>
+        <span>{props.title}</span>
+      </Show>
+      <Show when={props.duration}>
+        <span>
+          {props.title ? " · " : ""}
+          {props.duration}
+        </span>
+      </Show>
+    </text>
   )
 }
 
