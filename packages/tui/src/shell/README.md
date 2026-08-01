@@ -59,7 +59,9 @@ The `TuiHostSlotMap` type is unchanged and every slot still has a host:
 
 Dense draws no sidebar column, so the sidebar slots moved into the session
 overview dialog rather than being dropped. Plugins that assume a permanently
-visible sidebar will render only while the overview is open.
+visible sidebar will render only while the overview is open. The overview takes
+the whole viewport and lays its slots out in flow — a `scrollbox` does not
+render inside the dock's dialog host, so content taller than the screen clips.
 
 ## Deliberate differences from classic
 

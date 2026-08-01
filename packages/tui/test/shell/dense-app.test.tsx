@@ -107,6 +107,71 @@ test("the dense shell renders pickers inline in the dock, not as a modal", async
   }
 })
 
+test("the session overview opens in the dock and hosts the sidebar slots", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
+  const core = await import("@opentui/core")
+  mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
+  const events = createEventSource()
+  const calls = createFetch(sessionRoutes)
+  let api: TuiPluginApi | undefined
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+
+  try {
+    const { run } = await import("../../src/app")
+    const task = Effect.runPromise(
+      run({
+        url: "http://test",
+        directory,
+        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        fetch: calls.fetch,
+        events: events.source,
+        args: { continue: true },
+        pluginHost: {
+          async start(input) {
+            api = input.api
+            started()
+          },
+          async dispose() {},
+        },
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+    )
+
+    await ready
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    // The command classic uses for the sidebar opens the dense overview.
+    api?.keymap.dispatchCommand("session.sidebar.toggle")
+    let frame = ""
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await setup.renderOnce()
+      await Bun.sleep(25)
+      frame = setup.captureCharFrame()
+      if (frame.includes("Demo session")) break
+    }
+    // Its title and its content both sit inside plugin slots, which render
+    // null under this stubbed host (see the note at the top of this file), and
+    // the footer region does not resize under a plain test renderer. So the
+    // assertion is that the overview mounted above the dock footer at all; the
+    // room it gets is covered by dock-height.test.ts (xlarge → viewport).
+    expect(frame).toContain("esc")
+    const lines = frame.split("\n")
+    const hint = lines.findIndex((line) => line.includes("esc"))
+    const footer = lines.findIndex((line) => line.includes("Demo session"))
+    expect(hint).toBeGreaterThanOrEqual(0)
+    expect(footer).toBeGreaterThan(hint)
+
+    api?.keymap.dispatchCommand("app.exit")
+    await task
+  } finally {
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    mock.restore()
+  }
+})
+
 test("dense sessions register the session commands classic keeps in its route", async () => {
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
   const core = await import("@opentui/core")
