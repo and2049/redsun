@@ -1,10 +1,11 @@
 // The pinned bottom dock of the dense session view.
 //
 // Stack (top→bottom): live-tail preview of in-flight work (running tools and
-// the streaming text tail — committed to scrollback only once final), a
-// fixed-height status row (anti-jitter), a single-line toast notice, the
-// active view (inline dialog / permission / question / prompt), and a two-line
-// dim footer. DenseApp renders the vim `:` bar below as the last footer row.
+// the streaming text tail — committed to scrollback only once final), queued
+// prompt rows, a fixed-height status row (anti-jitter), a single-line toast
+// notice, the subagent strip on child sessions, the active view (inline dialog
+// / permission / question / prompt), and a two-line dim footer. DenseApp
+// renders the vim `:` bar below as the last footer row.
 //
 // View precedence is dialog → permission → question → prompt: a permission or
 // question arriving while a picker is open queues behind it and appears when
@@ -30,12 +31,17 @@ import { useToast } from "../../ui/toast"
 import { isDefaultTitle } from "../../util/session"
 import * as Locale from "../../util/locale"
 import { applyFooterHeight } from "../boot"
-import { pendingAssistantID } from "../transcript/blocks"
+import { pendingAssistantID, queuedPrompts } from "../transcript/blocks"
 import { dockRows, dockView } from "./height"
 import { inlineSelectRows } from "./inline-select"
 import { Notice } from "./notice"
+import { SubagentStrip } from "./subagent"
 
 export { DOCK_ROWS, DOCK_TALL_ROWS, dockRows } from "./height"
+
+// Queued prompts shown at once; older ones are elided rather than pushing the
+// dock over the transcript.
+const DOCK_QUEUED_MAX = 3
 
 export function Dock(props: {
   sessionID: string
@@ -106,6 +112,20 @@ export function Dock(props: {
   })
 
   const notice = createMemo(() => Boolean(toast.currentToast))
+  const subagent = createMemo(() => Boolean(session()?.parentID))
+
+  // Prompts submitted while a turn is in flight. They are held out of the
+  // transcript until promotion (see blocks.ts), so the dock is the only place
+  // they appear.
+  const queued = createMemo(() =>
+    queuedPrompts(
+      {
+        messages: sync.data.message[props.sessionID] ?? [],
+        partsOf: (messageID) => sync.data.part[messageID] ?? [],
+      },
+      DOCK_QUEUED_MAX,
+    ),
+  )
 
   // The `/` and `@` completion popup draws upward from the prompt, so the dock
   // has to make room for it before it can render at a useful height.
@@ -124,9 +144,12 @@ export function Dock(props: {
         tail: tail().length,
         notice: notice(),
         selectRows: inlineSelectRows(),
+        dialogSize: dialog.size,
         commandBar: vim.mode === "command",
         autocomplete: Boolean(promptRef()?.autocomplete),
         prompt: props.visible,
+        queued: queued().length,
+        subagent: subagent(),
       }),
     )
   })
@@ -138,6 +161,15 @@ export function Dock(props: {
           <box height={1} flexDirection="row">
             <text fg={theme.textMuted} wrapMode="none" truncate>
               {line}
+            </text>
+          </box>
+        )}
+      </For>
+      <For each={queued()}>
+        {(item) => (
+          <box height={1} flexDirection="row" flexShrink={0}>
+            <text fg={theme.textMuted} wrapMode="none" truncate>
+              ⋯ ❯ {item.text}
             </text>
           </box>
         )}
@@ -160,8 +192,19 @@ export function Dock(props: {
         </Show>
       </box>
       <Notice width={dimensions().width} />
+      <Show when={subagent()}>
+        <SubagentStrip />
+      </Show>
       <Show when={view() === "dialog"}>
-        <box flexDirection="column" flexShrink={0}>
+        {/* Inline selects declare their exact rows, so they size themselves.
+            Everything else (help, timeline, diff viewer, plugin browser) keeps
+            its classic layout and fills the tall dock reserved for it. */}
+        <box
+          flexDirection="column"
+          flexShrink={inlineSelectRows() > 0 ? 0 : 1}
+          flexGrow={inlineSelectRows() > 0 ? 0 : 1}
+          minHeight={0}
+        >
           {dialog.stack.at(-1)!.element}
         </box>
       </Show>

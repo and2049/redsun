@@ -36,6 +36,26 @@ test("dialogs that are not select-based fall back to the tall dock", () => {
   expect(dockRows({ view: "dialog", viewport: 20 })).toBe(DOCK_TALL_ROWS)
 })
 
+test("a non-select dialog gets room in proportion to the size it asked for", () => {
+  // Diff viewer and the timeline ask for "large"; the plugin browser and
+  // move-session ask for "xlarge" and take the whole viewport.
+  expect(dockRows({ view: "dialog", viewport: 40, dialogSize: "medium" })).toBe(20)
+  expect(dockRows({ view: "dialog", viewport: 40, dialogSize: "large" })).toBe(30)
+  expect(dockRows({ view: "dialog", viewport: 40, dialogSize: "xlarge" })).toBe(40)
+  // The size only matters when no inline select declared its own rows.
+  expect(dockRows({ view: "dialog", viewport: 40, dialogSize: "xlarge", selectRows: 5 })).toBe(
+    DOCK_BASE_ROWS + DOCK_PROMPT_ROWS + 5,
+  )
+})
+
+test("queued prompts and the subagent strip each take a row", () => {
+  expect(dockRows({ view: "prompt", viewport: 50, queued: 2 })).toBe(DOCK_ROWS + 2)
+  expect(dockRows({ view: "prompt", viewport: 50, subagent: true })).toBe(DOCK_ROWS + 1)
+  expect(dockRows({ view: "prompt", viewport: 50, queued: 1, subagent: true, tail: 2, notice: true })).toBe(
+    DOCK_ROWS + 5,
+  )
+})
+
 test("permission and question prompts always take the tall dock", () => {
   expect(dockRows({ view: "permission", viewport: 60 })).toBe(30)
   expect(dockRows({ view: "question", viewport: 60, selectRows: 3 })).toBe(30)
