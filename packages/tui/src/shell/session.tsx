@@ -9,6 +9,7 @@ import { CliRenderEvents } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { useEpilogue } from "../context/epilogue"
+import { LocationProvider } from "../context/location"
 import { usePathFormatter } from "../context/path-format"
 import { usePromptRef } from "../context/prompt"
 import { useRouteData } from "../context/route"
@@ -20,6 +21,8 @@ import { sessionEpilogue } from "../util/presentation"
 import { normalizePath } from "../util/path"
 import * as Locale from "../util/locale"
 import { Dock } from "./dock"
+import { useDenseSessionCommands } from "./session-commands"
+import { useDenseSessionLifecycle } from "./session-lifecycle"
 import { bannerWriter } from "./scrollback/writers"
 import { createTranscriptReplay } from "./transcript/replay"
 
@@ -54,6 +57,13 @@ export function DenseSession() {
     !renderer.isDestroyed && renderer.screenMode === "split-footer" && renderer.externalOutputMode === "capture-stdout"
 
   const session = createMemo(() => sync.session.get(route.sessionID))
+  const location = createMemo(() => {
+    const current = session()
+    return current ? { directory: current.directory, workspaceID: current.workspaceID } : undefined
+  })
+
+  useDenseSessionLifecycle()
+  useDenseSessionCommands()
 
   createEffect(() => {
     const title = Locale.truncate(session()?.title ?? "", 50)
@@ -154,15 +164,17 @@ export function DenseSession() {
   })
 
   return (
-    <box width="100%" height="100%" flexDirection="column" justifyContent="flex-end">
-      <Dock
-        sessionID={route.sessionID}
-        bind={bind}
-        visible={visible()}
-        disabled={disabled()}
-        permissions={permissions()}
-        questions={questions()}
-      />
-    </box>
+    <LocationProvider location={location()}>
+      <box width="100%" height="100%" flexDirection="column" justifyContent="flex-end">
+        <Dock
+          sessionID={route.sessionID}
+          bind={bind}
+          visible={visible()}
+          disabled={disabled()}
+          permissions={permissions()}
+          questions={questions()}
+        />
+      </box>
+    </LocationProvider>
   )
 }
