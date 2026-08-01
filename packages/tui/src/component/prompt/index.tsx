@@ -1309,6 +1309,16 @@ export function Prompt(props: PromptProps) {
   const borderHighlight = createMemo(() =>
     vim.mode === "insert" ? tint(theme.border, highlight(), agentMetaAlpha()) : theme.border,
   )
+  // REDSUN DENSE: the arrow takes the agent color and greys outside insert
+  // mode — the classic left bar's affordance, moved onto the chrome dense
+  // actually draws. Shell mode keeps its warning color; the border reuses
+  // borderHighlight() so both UIs tint and grey identically.
+  const densePrefixColor = createMemo(() => {
+    if (vim.mode !== "insert") return theme.border
+    if (store.mode === "shell") return theme.warning
+    const agent = local.agent.current()
+    return agent ? local.agent.color(agent.name) : theme.primary
+  })
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1386,11 +1396,11 @@ export function Prompt(props: PromptProps) {
               flexShrink={0}
               border={dense ? true : undefined}
               borderStyle="rounded"
-              borderColor={theme.border}
+              borderColor={borderHighlight()}
               paddingLeft={dense ? 1 : 0}
             >
             <Show when={dense}>
-              <text flexShrink={0} fg={store.mode === "shell" ? theme.warning : theme.primary}>
+              <text flexShrink={0} fg={densePrefixColor()}>
                 {store.mode === "shell" ? "! " : "❯ "}
               </text>
             </Show>
