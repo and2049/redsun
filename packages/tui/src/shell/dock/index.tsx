@@ -37,6 +37,13 @@ import { inlineSelectRows } from "./inline-select"
 import { Notice } from "./notice"
 import { SubagentStrip } from "./subagent"
 
+import {
+  DOCK_COMMAND_BAR_ROWS,
+  DOCK_FOOTER_ROWS,
+  DOCK_PROMPT_ROWS,
+  DOCK_STATUS_ROWS,
+} from "./height"
+
 export { DOCK_ROWS, DOCK_TALL_ROWS, dockRows } from "./height"
 
 // Queued prompts shown at once; older ones are elided rather than pushing the
@@ -135,25 +142,44 @@ export function Dock(props: {
     props.bind(ref)
   }
 
-  createEffect(() => {
-    applyFooterHeight(
-      renderer,
-      dockRows({
-        view: view(),
-        viewport: renderer.terminalHeight,
-        tail: tail().length,
-        notice: notice(),
-        selectRows: inlineSelectRows(),
-        dialogSize: dialog.size,
-        commandBar: vim.mode === "command",
-        autocomplete: Boolean(promptRef()?.autocomplete),
-        prompt: props.visible,
-        promptRows: promptRef()?.rows,
-        queued: queued().length,
-        subagent: subagent(),
-      }),
-    )
-  })
+  const rows = createMemo(() =>
+    dockRows({
+      view: view(),
+      viewport: renderer.terminalHeight,
+      tail: tail().length,
+      notice: notice(),
+      selectRows: inlineSelectRows(),
+      dialogSize: dialog.size,
+      commandBar: vim.mode === "command",
+      autocomplete: Boolean(promptRef()?.autocomplete),
+      prompt: props.visible,
+      promptRows: promptRef()?.rows,
+      queued: queued().length,
+      subagent: subagent(),
+    }),
+  )
+
+  createEffect(() => applyFooterHeight(renderer, rows()))
+
+  // Height handed to the open dialog: everything the dock reserved minus the
+  // rows it draws around it, which for an inline select comes back to exactly
+  // the rows it declared. It has to be a definite height — classic dialogs lay
+  // out with `height="100%"` scrollboxes, which collapse to nothing (and take
+  // their siblings with them) inside a content-sized column.
+  const dialogRows = createMemo(() =>
+    Math.max(
+      1,
+      rows() -
+        (tail().length +
+          queued().length +
+          DOCK_STATUS_ROWS +
+          (notice() ? 1 : 0) +
+          (subagent() ? 1 : 0) +
+          DOCK_FOOTER_ROWS +
+          DOCK_COMMAND_BAR_ROWS +
+          (props.visible ? DOCK_PROMPT_ROWS + Math.max(0, (promptRef()?.rows ?? 1) - 1) : 0)),
+    ),
+  )
 
   return (
     <box flexDirection="column" width="100%" flexShrink={0}>
@@ -197,15 +223,7 @@ export function Dock(props: {
         <SubagentStrip />
       </Show>
       <Show when={view() === "dialog"}>
-        {/* Inline selects declare their exact rows, so they size themselves.
-            Everything else (help, timeline, diff viewer, plugin browser) keeps
-            its classic layout and fills the tall dock reserved for it. */}
-        <box
-          flexDirection="column"
-          flexShrink={inlineSelectRows() > 0 ? 0 : 1}
-          flexGrow={inlineSelectRows() > 0 ? 0 : 1}
-          minHeight={0}
-        >
+        <box flexDirection="column" flexShrink={0} height={dialogRows()} minHeight={0}>
           {dialog.stack.at(-1)!.element}
         </box>
       </Show>

@@ -3,20 +3,21 @@
 // Dense draws no sidebar, so the `sidebar_title` / `sidebar_content` /
 // `sidebar_footer` plugin slots would otherwise render nowhere and the built-in
 // panels behind them (todos, changed files, context usage, LSP and MCP status)
-// would be invisible. This hosts them in a dialog instead, opened by the same
-// `session.sidebar.toggle` command classic binds — so the slot contract, the
-// plugins and the keybind all keep working.
+// would be invisible. This hosts them in a tall-dock dialog instead, opened by
+// the same `session.sidebar.toggle` command classic binds — so the slot
+// contract, the plugins and the keybind all keep working.
 //
-// It asks for the whole viewport (`xlarge`) and lays the slots out in flow. A
-// scrollbox does not render inside the dock's dialog host, so content taller
-// than the viewport clips instead of scrolling; taking the full height keeps
-// that from biting in practice.
+// Like the classic sidebar it scrolls, which only works because the dock gives
+// non-select dialogs a definite height: a scrollbox inside a content-sized
+// column collapses to nothing and takes its siblings with it.
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { TextAttributes } from "@opentui/core"
-import { createMemo, onMount, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { WorkspaceLabel } from "../../component/workspace-label"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
+import { useBindings } from "../../keymap"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { useDialog } from "../../ui/dialog"
 
@@ -33,7 +34,24 @@ export function SessionOverview(props: { sessionID: string }) {
     return workspaceID ? project.workspace.get(workspaceID) : undefined
   }
 
-  onMount(() => dialog.setSize("xlarge"))
+  let scroll: ScrollBoxRenderable | undefined
+  const by = (rows: number) => () => {
+    if (!scroll || scroll.isDestroyed) return
+    scroll.scrollBy(rows)
+  }
+
+  // The dock has no focused editor here, so the view drives its own scrolling
+  // rather than relying on the scrollbox's own focus handling.
+  useBindings(() => ({
+    bindings: [
+      { key: "up", desc: "Scroll up", group: "Overview", cmd: by(-1) },
+      { key: "k", desc: "Scroll up", group: "Overview", cmd: by(-1) },
+      { key: "down", desc: "Scroll down", group: "Overview", cmd: by(1) },
+      { key: "j", desc: "Scroll down", group: "Overview", cmd: by(1) },
+      { key: "pageup", desc: "Page up", group: "Overview", cmd: by(-10) },
+      { key: "pagedown", desc: "Page down", group: "Overview", cmd: by(10) },
+    ],
+  }))
 
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0}>
@@ -70,10 +88,12 @@ export function SessionOverview(props: { sessionID: string }) {
         </pluginRuntime.Slot>
         <text fg={theme.textMuted}>esc</text>
       </box>
-      <box flexGrow={1} minHeight={0} gap={1} paddingTop={1}>
-        <pluginRuntime.Slot name="sidebar_content" session_id={props.sessionID} />
-      </box>
-      <box height={1} flexDirection="row" flexShrink={0}>
+      <scrollbox ref={(item: ScrollBoxRenderable) => (scroll = item)} flexGrow={1} minHeight={0}>
+        <box flexShrink={0} gap={1} paddingTop={1}>
+          <pluginRuntime.Slot name="sidebar_content" session_id={props.sessionID} />
+        </box>
+      </scrollbox>
+      <box height={1} flexDirection="row" onMouseUp={() => dialog.clear()}>
         <pluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID} />
       </box>
     </box>
