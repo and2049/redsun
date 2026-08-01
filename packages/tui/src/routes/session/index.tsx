@@ -1504,25 +1504,9 @@ function UserMessage(props: {
 }
 
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
-  const ctx = use()
-  const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
-  const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
-  const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
   const goalVerdict = createMemo(() => sync.data.session_goal[props.message.sessionID]?.verdicts[props.message.id])
-
-  const final = createMemo(() => {
-    return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
-  })
-
-  const duration = createMemo(() => {
-    if (!final()) return 0
-    if (!props.message.time.completed) return 0
-    const user = messages().find((x) => x.role === "user" && x.id === props.message.parentID)
-    if (!user || !user.time) return 0
-    return props.message.time.completed - user.time.created
-  })
 
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
@@ -1608,32 +1592,16 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           </box>
         )}
       </Show>
-      <Switch>
-        <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
-          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
-              <span
-                style={{
-                  fg:
-                    props.message.error?.name === "MessageAbortedError"
-                      ? theme.textMuted
-                      : local.agent.color(props.message.agent),
-                }}
-              >
-                ▣{" "}
-              </span>{" "}
-              <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
-              <span style={{ fg: theme.textMuted }}> · {model()}</span>
-              <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
-              </Show>
-              <Show when={props.message.error?.name === "MessageAbortedError"}>
-                <span style={{ fg: theme.textMuted }}> · interrupted</span>
-              </Show>
-            </text>
-          </box>
-        </Match>
-      </Switch>
+      {/* No turn-summary line: mode and model already live in the bottom
+          bar, and the duration is not worth a transcript row. Aborted turns
+          keep a marker because that state has no other home. */}
+      <Show when={props.message.error?.name === "MessageAbortedError"}>
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
+          <text marginTop={1} fg={theme.textMuted}>
+            ⊘ interrupted
+          </text>
+        </box>
+      </Show>
     </>
   )
 }
