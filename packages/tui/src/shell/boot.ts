@@ -10,7 +10,7 @@
 // Shutdown order matters (see packages/redsun/src/cli/cmd/run/runtime.lifecycle.ts):
 // switch external output back to passthrough before leaving split-footer mode,
 // so pending stdout doesn't get captured into the now-dead scrollback pipeline.
-import type { CliRenderer, CliRendererConfig } from "@opentui/core"
+import type { CliRenderer, CliRendererConfig, RGBA } from "@opentui/core"
 import { spacerWriter } from "./scrollback/writers"
 
 // Whether anything was committed into native scrollback this run. The session
@@ -31,6 +31,7 @@ export function markScrollbackCommit(): void {
 // so the transcript stays in the terminal after exit.
 export function rendererOptions(): CliRendererConfig {
   committed = false
+  backgroundApplied = false
   return {
     targetFps: 60,
     gatherStats: false,
@@ -60,6 +61,44 @@ export function applyFooterHeight(renderer: CliRenderer, rows: number): void {
   const height = Math.max(1, Math.trunc(rows))
   if (renderer.footerHeight === height) return
   renderer.footerHeight = height
+}
+
+// Raw terminal write, bypassing the capture-stdout interception (which would
+// swallow control sequences into the scrollback pipeline). `writeOut` is the
+// renderer's own internal writer — pinned to @opentui/core 0.4.5.
+function writeRaw(renderer: CliRenderer, data: string): void {
+  const writeOut = (renderer as unknown as { writeOut?: (chunk: string) => void }).writeOut
+  if (typeof writeOut === "function") writeOut.call(renderer, data)
+}
+
+// Whether we changed the terminal's default background (OSC 11); shutdown
+// resets it (OSC 111) so the user's terminal comes back untinted.
+let backgroundApplied = false
+
+// Sets the terminal's default background colour to the theme background.
+//
+// Committed scrollback rows carry no explicit background, so they normally
+// render on whatever the terminal is configured with — which breaks themes and
+// light/dark switching. OSC 11 recolours every default-background cell at
+// once (transcript, voids, the lot) and retroactively follows theme switches.
+// Terminals without OSC 11 support ignore it and keep today's behaviour.
+export function applyTerminalBackground(renderer: CliRenderer, color: RGBA): void {
+  if (renderer.isDestroyed) return
+  if (renderer.screenMode !== "split-footer") return
+  const [r, g, b] = color.toInts()
+  const hex = (value: number) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")
+  writeRaw(renderer, `\x1b]11;rgb:${hex(r)}/${hex(g)}/${hex(b)}\x07`)
+  backgroundApplied = true
+}
+
+// Erases the terminal's saved-lines buffer so scrolling up stops at the app
+// itself instead of drifting into pre-launch shell history — the same
+// behaviour as Claude Code's startup. One-shot at dense boot; per-session
+// replays clear saved lines themselves.
+export function clearTerminalHistory(renderer: CliRenderer): void {
+  if (renderer.isDestroyed) return
+  if (renderer.screenMode !== "split-footer") return
+  writeRaw(renderer, "\x1b[3J")
 }
 
 // Pins the dock (the split-footer surface) to the bottom of the terminal by
@@ -124,5 +163,11 @@ export function shutdown(renderer: CliRenderer): void {
 
   if (clear) {
     process.stdout.write("\x1b[H\x1b[2J")
+  }
+  if (backgroundApplied) {
+    // Post-destroy stdout is the real stream again. OSC 111 restores the
+    // terminal's own default background.
+    process.stdout.write("\x1b]111\x07")
+    backgroundApplied = false
   }
 }
