@@ -75,7 +75,9 @@ export function DenseApp(props: { ready: () => boolean }) {
           <pluginRuntime.Slot name="app_bottom" />
         </box>
         <pluginRuntime.Slot name="app" />
-        <CommandBar />
+        {/* The dense bar renders in flow as the last footer row; the dock's
+            height policy reserves DOCK_COMMAND_BAR_ROWS for it. */}
+        <CommandBar variant="dense" />
       </Show>
       <Show when={!startup.skipInitialLoading}>
         <StartupLoading ready={props.ready} />

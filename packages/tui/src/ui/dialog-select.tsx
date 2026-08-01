@@ -15,6 +15,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import * as fuzzysort from "fuzzysort"
 import { isDeepEqual } from "remeda"
 import { useDialog, type DialogContext } from "./dialog"
+import { InlineSelect } from "../shell/dock/inline-select"
 import { Locale } from "../util/locale"
 import { getScrollAcceleration } from "../util/scroll"
 import { useTuiConfig } from "../config"
@@ -85,6 +86,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dialog = useDialog()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
+
+  // REDSUN DENSE: the dense shell renders selects inline in the bottom dock
+  // instead of a floating modal. Every picker built on DialogSelect ports for
+  // free; the classic path below is untouched.
+  if (tuiConfig.ui !== "classic") return <InlineSelect {...props} />
+
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
 
   const [store, setStore] = createStore({
