@@ -4,8 +4,9 @@
 // the streaming text tail — committed to scrollback only once final), queued
 // prompt rows, a fixed-height status row (anti-jitter), a single-line toast
 // notice, the subagent strip on child sessions, the active view (inline dialog
-// / permission / question / prompt), and a two-line dim footer. DenseApp
-// renders the vim `:` bar below as the last footer row.
+// / permission / question / prompt), and a one-line dim footer (directory ·
+// branch · title). DenseApp renders the vim `:` bar below as the last footer
+// row; that bar carries the vim mode and session usage.
 //
 // View precedence is dialog → permission → question → prompt: a permission or
 // question arriving while a picker is open queues behind it and appears when
@@ -19,7 +20,6 @@ import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from
 import { Prompt, type PromptRef } from "../../component/prompt"
 import { Spinner } from "../../component/spinner"
 import { useDirectory } from "../../context/directory"
-import { useLocal } from "../../context/local"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
 import { useVim } from "../../context/vim"
@@ -29,6 +29,7 @@ import { QuestionPrompt } from "../../routes/session/question"
 import { useDialog } from "../../ui/dialog"
 import { useToast } from "../../ui/toast"
 import { isDefaultTitle } from "../../util/session"
+import { useCommandShortcut } from "../../keymap"
 import * as Locale from "../../util/locale"
 import { applyFooterHeight, pinScrollback } from "../boot"
 import { pendingAssistantID, queuedPrompts } from "../transcript/blocks"
@@ -59,7 +60,6 @@ export function Dock(props: {
   questions: QuestionRequest[]
 }) {
   const sync = useSync()
-  const local = useLocal()
   const vim = useVim()
   const dialog = useDialog()
   const toast = useToast()
@@ -78,12 +78,7 @@ export function Dock(props: {
     return Locale.truncate(value, 40)
   })
   const branch = createMemo(() => sync.data.vcs?.branch)
-  const model = createMemo(() => local.model.current())
-  const agent = createMemo(() => local.agent.current()?.name)
-  // Temporary normal mode (ctrl+x) counts down in place of the plain label.
-  const vimMode = createMemo(() =>
-    vim.tempRemaining() != null ? `<NORMAL ${vim.tempRemaining()}s>` : `<${vim.mode.toUpperCase()}>`,
-  )
+  const interruptShortcut = useCommandShortcut("session.interrupt")
 
   const view = createMemo(() =>
     dockView({
@@ -219,7 +214,7 @@ export function Dock(props: {
           <Spinner color={theme.secondary} />
           <text fg={theme.textMuted} wrapMode="none" truncate>
             {status()?.type === "retry" ? "retrying…" : "working…"}
-            <span style={{ fg: theme.textMuted }}> (esc to interrupt)</span>
+            <span style={{ fg: theme.textMuted }}> ({interruptShortcut() ?? "ctrl+\\"} to interrupt)</span>
           </text>
         </Show>
         <Show when={goal()}>
@@ -280,12 +275,6 @@ export function Dock(props: {
           {directory()}
           {branch() ? ` (${branch()})` : ""}
           {title() ? ` · ${title()}` : ""}
-        </text>
-      </box>
-      <box height={1} flexDirection="row" gap={1}>
-        <text fg={theme.textMuted} wrapMode="none" truncate>
-          {vimMode()} {agent() ? `${agent()} · ` : ""}
-          {model() ? `${model()!.providerID}/${model()!.modelID}` : "no model"}
         </text>
       </box>
     </box>

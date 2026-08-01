@@ -7,7 +7,8 @@
 // oscillate.
 
 export const DOCK_STATUS_ROWS = 1
-export const DOCK_FOOTER_ROWS = 2
+// Directory · branch · title. The vim mode lives in the command bar row.
+export const DOCK_FOOTER_ROWS = 1
 // DenseApp renders the vim command bar as the last row of the footer region,
 // below the dock itself — it still consumes footer rows.
 export const DOCK_COMMAND_BAR_ROWS = 1
