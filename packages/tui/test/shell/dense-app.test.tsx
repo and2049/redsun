@@ -156,7 +156,7 @@ test("dense sessions register the session commands classic keeps in its route", 
     // These live in routes/session/index.tsx in classic, which the dense
     // shell never mounts — they only appear if the dense session registered
     // them itself.
-    for (const query of ["Export session", "Rename session", "Compact session"]) {
+    for (const query of ["Export session", "Rename session", "Compact session", "Session overview"]) {
       await setup.mockInput.typeText(query)
       for (let attempt = 0; attempt < 10; attempt++) {
         await setup.renderOnce()
