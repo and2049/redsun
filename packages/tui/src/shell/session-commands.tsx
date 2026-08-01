@@ -8,10 +8,14 @@
 // the same in both UIs.
 //
 // Deliberately not ported: the scroll commands (page/line/first/last/message
-// navigation) and the render toggles (sidebar, timestamps, conceal, tool
-// details, scrollbar, generic tool output). Native scrollback replaces the
-// former, and the latter configure a scrollbox that dense does not draw. They
-// stay registered in classic, so a `--classic` session is unaffected.
+// navigation) and the render toggles (timestamps, conceal, tool details,
+// scrollbar, generic tool output). Native scrollback replaces the former, and
+// the latter configure a scrollbox that dense does not draw. They stay
+// registered in classic, so a `--classic` session is unaffected.
+//
+// `session.sidebar.toggle` keeps its name and keybind but opens the session
+// overview (dock/overview.tsx), which is where the sidebar plugin slots live
+// in dense.
 import path from "node:path"
 import { mkdir, writeFile } from "node:fs/promises"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
@@ -30,6 +34,7 @@ import { useSDK } from "../context/sdk"
 import { useSync } from "../context/sync"
 import { openEditor } from "../editor"
 import { OPENCODE_BASE_MODE, useBindings } from "../keymap"
+import { SessionOverview } from "./dock/overview"
 import { DialogForkFromTimeline } from "../routes/session/dialog-fork-from-timeline"
 import { DialogTimeline } from "../routes/session/dialog-timeline"
 import { useTuiConfig } from "../config"
@@ -50,6 +55,7 @@ const denseBindingCommands = [
   "session.unshare",
   "session.undo",
   "session.redo",
+  "session.sidebar.toggle",
   "messages.copy",
   "session.copy",
   "session.export",
@@ -305,6 +311,15 @@ export function useDenseSessionCommands() {
           return
         }
         void sdk.client.session.revert({ sessionID: route.sessionID, messageID: message.id })
+      },
+    },
+    {
+      title: "Session overview",
+      value: "session.sidebar.toggle",
+      category: "Session",
+      slash: { name: "overview" },
+      run: () => {
+        dialog.replace(() => <SessionOverview sessionID={route.sessionID} />)
       },
     },
     {
