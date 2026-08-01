@@ -1359,15 +1359,6 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <Show when={dense}>
-          <box
-            height={1}
-            flexShrink={0}
-            border={["bottom"]}
-            borderColor={theme.border}
-            customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
-          />
-        </Show>
         <box
           width="100%"
           border={dense ? undefined : ["left"]}
@@ -1465,12 +1456,27 @@ const next = transition(vim.mode, e)
                 setTimeout(() => {
                   // setTimeout is a workaround and needs to be addressed properly
                   if (!input || input.isDestroyed) return
-                  input.cursorColor = props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text
+                  input.cursorColor =
+                    props.disabled || vim.mode !== "insert"
+                      ? dense
+                        ? theme.background
+                        : theme.backgroundElement
+                      : theme.text
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text}
+              // REDSUN DENSE: no fill behind the input — the dense prompt is
+              // chromeless, so the focused background would read as a stray
+              // grey bar. The hidden-cursor colour has to match whatever the
+              // row behind it actually is.
+              focusedBackgroundColor={dense ? undefined : theme.backgroundElement}
+              cursorColor={
+                props.disabled || vim.mode !== "insert"
+                  ? dense
+                    ? theme.background
+                    : theme.backgroundElement
+                  : theme.text
+              }
               syntaxStyle={syntax()}
             />
             </box>
@@ -1714,6 +1720,12 @@ const next = transition(vim.mode, e)
               {props.hint}
             </Match>
             </Switch>
+            {/* REDSUN DENSE: hold the left slot so the home hints sit at the
+                right edge — the Switch above renders nothing on an idle home,
+                which would let space-between pull them left. */}
+            <Show when={dense}>
+              <box flexGrow={1} />
+            </Show>
             <Show when={!props.sessionID}>
               <box gap={2} flexDirection="row">
                 <Switch>
