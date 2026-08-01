@@ -54,6 +54,14 @@ scrollback, so scrolling, selecting and copying are the terminal's job.
 transcript work is gated on `scrollbackActive()` and stays inert under test
 renderers.
 
+Two boot-time terminal-level moves (both no-ops on unsupporting terminals):
+**OSC 11** sets the terminal's default background to the theme background —
+committed scrollback rows carry no explicit background, so this is what makes
+the transcript follow themes and light/dark switches; shutdown resets it with
+OSC 111. **CSI 3J** erases the saved-lines buffer so scrolling up stops at the
+app instead of drifting into pre-launch shell history (Claude Code does the
+same).
+
 ## Plugin slots
 
 The `TuiHostSlotMap` type is unchanged and every slot still has a host:

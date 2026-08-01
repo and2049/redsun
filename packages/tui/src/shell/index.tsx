@@ -7,7 +7,7 @@
 // which owns its own footer-height policy).
 import { CliRenderEvents } from "@opentui/core"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
-import { createEffect, createMemo, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { PluginRouteMissing } from "../component/plugin-route-missing"
 import { StartupLoading } from "../component/startup-loading"
 import { CommandBar } from "../component/command-bar"
@@ -15,7 +15,7 @@ import { useRoute } from "../context/route"
 import { useTuiStartup } from "../context/runtime"
 import { useTheme } from "../context/theme"
 import { usePluginRuntime } from "../plugin/runtime"
-import { applyFooterHeight } from "./boot"
+import { applyFooterHeight, applyTerminalBackground, clearTerminalHistory } from "./boot"
 import { DenseHome } from "./home"
 import { DenseSession } from "./session"
 
@@ -41,6 +41,13 @@ export function DenseApp(props: { ready: () => boolean }) {
   })
   renderer.on(CliRenderEvents.RESIZE, takeover)
   onCleanup(() => renderer.off(CliRenderEvents.RESIZE, takeover))
+
+  // Scrolling up stops at the app, not pre-launch shell history.
+  onMount(() => clearTerminalHistory(renderer))
+  // The terminal's default background follows the theme (and light/dark
+  // switches) — see applyTerminalBackground for why the painted root box
+  // alone is not enough.
+  createEffect(() => applyTerminalBackground(renderer, theme.background))
 
   const plugin = createMemo(() => {
     if (!props.ready()) return
