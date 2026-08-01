@@ -1,7 +1,6 @@
-// End-to-end check that the dense shell wires the dialog stack into the dock:
-// boot the real app on the dense default, open the command palette, and assert
-// the picker renders as dock rows directly above the footer rather than as a
-// centred modal.
+// End-to-end checks that the dense shell boots the fullscreen architecture:
+// the classic session route mounts under the dense default, and dialogs open
+// in the shared floating overlay — from the session route and from home.
 //
 // Note: `pluginRuntime.Slot` renders null until the plugin host calls
 // `setupSlots`, which this stubbed host never does — so the prompt row is
@@ -26,8 +25,8 @@ const SESSION = {
   time: { created: 0, updated: 0 },
 }
 
-// The dense shell loads the session itself (shell/session-lifecycle.ts), so
-// the sub-resources sync() fetches have to be served too.
+// The classic session route loads the session itself, so the sub-resources
+// sync() fetches have to be served too.
 function sessionRoutes(url: URL) {
   if (url.pathname === "/session") return json([SESSION])
   if (url.pathname === "/session/dummy") return json(SESSION)
@@ -37,8 +36,7 @@ function sessionRoutes(url: URL) {
   if (url.pathname === "/session/dummy/children") return json([])
 }
 
-test("the dense shell renders pickers inline in the dock, not as a modal", async () => {
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
+async function boot(setup: Awaited<ReturnType<typeof createTestRenderer>>, args: { continue?: boolean }) {
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
   const events = createEventSource()
@@ -48,58 +46,65 @@ test("the dense shell renders pickers inline in the dock, not as a modal", async
   const ready = new Promise<void>((resolve) => {
     started = resolve
   })
-
-  try {
-    const { run } = await import("../../src/app")
-    const task = Effect.runPromise(
-      run({
-        url: "http://test",
-        directory,
-        config: createTuiResolvedConfig({ plugin_enabled: {} }),
-        fetch: calls.fetch,
-        events: events.source,
-        args: { continue: true },
-        pluginHost: {
-          async start(input) {
-            api = input.api
-            started()
-          },
-          async dispose() {},
+  const { run } = await import("../../src/app")
+  const task = Effect.runPromise(
+    run({
+      url: "http://test",
+      directory,
+      config: createTuiResolvedConfig({ plugin_enabled: {} }),
+      fetch: calls.fetch,
+      events: events.source,
+      args,
+      pluginHost: {
+        async start(input) {
+          api = input.api
+          started()
         },
-      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
-    )
+        async dispose() {},
+      },
+    }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+  )
+  await ready
+  await setup.renderOnce()
+  await setup.renderOnce()
+  return { task, api: () => api }
+}
 
-    await ready
+async function frameContaining(
+  setup: Awaited<ReturnType<typeof createTestRenderer>>,
+  needle: string,
+): Promise<string> {
+  let frame = ""
+  for (let attempt = 0; attempt < 10; attempt++) {
     await setup.renderOnce()
-    await setup.renderOnce()
+    await Bun.sleep(25)
+    frame = setup.captureCharFrame()
+    if (frame.includes(needle)) break
+  }
+  return frame
+}
 
-    api?.keymap.dispatchCommand("command.palette.show")
+test("pickers open as a floating modal over the dense session", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
+  try {
+    const { task, api } = await boot(setup, { continue: true })
 
-    let frame = ""
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await setup.renderOnce()
-      await Bun.sleep(25)
-      frame = setup.captureCharFrame()
-      if (frame.includes("Commands")) break
-    }
+    api()?.keymap.dispatchCommand("command.palette.show")
+    const frame = await frameContaining(setup, "Commands")
 
-    // Inline chrome: title + position counter + esc hint + `❯` filter row.
+    // Modal chrome: title + esc hint + filter placeholder row.
     expect(frame).toContain("Commands")
-    expect(frame).toContain("1/")
     expect(frame).toContain("esc")
-    expect(frame).toContain("❯ Search")
+    expect(frame).toContain("Search")
 
-    // Inline, not modal: the picker sits immediately above the dock footer.
-    // A centred modal would open near the top of a 30-row viewport, leaving a
-    // ~20 row gap before the footer.
+    // Floating, not inline: the overlay opens in the upper half of a 30-row
+    // viewport (paddingTop = height/4), not pinned to the bottom rows.
     const lines = frame.split("\n")
     const picker = lines.findIndex((line) => line.includes("Commands"))
-    const footer = lines.findIndex((line) => line.includes("Demo session"))
     expect(picker).toBeGreaterThan(0)
-    expect(footer).toBeGreaterThan(picker)
-    expect(footer - picker).toBeLessThanOrEqual(11)
+    expect(picker).toBeLessThan(15)
 
-    api?.keymap.dispatchCommand("app.exit")
+    api()?.keymap.dispatchCommand("app.exit")
     await task
   } finally {
     if (!setup.renderer.isDestroyed) setup.renderer.destroy()
@@ -107,59 +112,19 @@ test("the dense shell renders pickers inline in the dock, not as a modal", async
   }
 })
 
-test("the dense home hosts the dialog stack, so pickers opened before a session render", async () => {
+test("pickers opened from the dense home render in the floating overlay", async () => {
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
-  const core = await import("@opentui/core")
-  mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
-  const events = createEventSource()
-  const calls = createFetch(sessionRoutes)
-  let api: TuiPluginApi | undefined
-  let started!: () => void
-  const ready = new Promise<void>((resolve) => {
-    started = resolve
-  })
-
   try {
-    const { run } = await import("../../src/app")
-    const task = Effect.runPromise(
-      run({
-        url: "http://test",
-        directory,
-        config: createTuiResolvedConfig({ plugin_enabled: {} }),
-        fetch: calls.fetch,
-        events: events.source,
-        // No --continue: the app stays on the home route, where the dock (and
-        // its inline dialog host) does not exist. The floating overlay is
-        // classic-only, so without a host in home.tsx this dialog would open
-        // logically but paint nothing — which is exactly the regression this
-        // guards against (home keybinds l/a/ctrl+p and `:sessions`).
-        args: {},
-        pluginHost: {
-          async start(input) {
-            api = input.api
-            started()
-          },
-          async dispose() {},
-        },
-      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
-    )
+    // No --continue: the app stays on the home route. Dialogs opened there
+    // (home keybinds l/a/ctrl+p and `:sessions`) paint in the shared overlay.
+    const { task, api } = await boot(setup, {})
 
-    await ready
-    await setup.renderOnce()
-    await setup.renderOnce()
-
-    api?.keymap.dispatchCommand("command.palette.show")
-    let frame = ""
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await setup.renderOnce()
-      await Bun.sleep(25)
-      frame = setup.captureCharFrame()
-      if (frame.includes("Commands")) break
-    }
+    api()?.keymap.dispatchCommand("command.palette.show")
+    const frame = await frameContaining(setup, "Commands")
     expect(frame).toContain("Commands")
-    expect(frame).toContain("❯ Search")
+    expect(frame).toContain("Search")
 
-    api?.keymap.dispatchCommand("app.exit")
+    api()?.keymap.dispatchCommand("app.exit")
     await task
   } finally {
     if (!setup.renderer.isDestroyed) setup.renderer.destroy()
@@ -167,133 +132,25 @@ test("the dense home hosts the dialog stack, so pickers opened before a session 
   }
 })
 
-test("the session overview opens in the dock and hosts the sidebar slots", async () => {
+test("the dense session exposes the classic route's session commands", async () => {
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
-  const core = await import("@opentui/core")
-  mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
-  const events = createEventSource()
-  const calls = createFetch(sessionRoutes)
-  let api: TuiPluginApi | undefined
-  let started!: () => void
-  const ready = new Promise<void>((resolve) => {
-    started = resolve
-  })
-
   try {
-    const { run } = await import("../../src/app")
-    const task = Effect.runPromise(
-      run({
-        url: "http://test",
-        directory,
-        config: createTuiResolvedConfig({ plugin_enabled: {} }),
-        fetch: calls.fetch,
-        events: events.source,
-        args: { continue: true },
-        pluginHost: {
-          async start(input) {
-            api = input.api
-            started()
-          },
-          async dispose() {},
-        },
-      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
-    )
+    const { task, api } = await boot(setup, { continue: true })
 
-    await ready
-    await setup.renderOnce()
-    await setup.renderOnce()
-
-    // The command classic uses for the sidebar opens the dense overview.
-    api?.keymap.dispatchCommand("session.sidebar.toggle")
-    let frame = ""
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await setup.renderOnce()
-      await Bun.sleep(25)
-      frame = setup.captureCharFrame()
-      if (frame.includes("Demo session")) break
-    }
-    // Its title and its content both sit inside plugin slots, which render
-    // null under this stubbed host (see the note at the top of this file), and
-    // the footer region does not resize under a plain test renderer. So the
-    // assertion is that the overview mounted above the dock footer at all; the
-    // room it gets is covered by dock-height.test.ts (xlarge → viewport).
-    expect(frame).toContain("esc")
-    const lines = frame.split("\n")
-    const hint = lines.findIndex((line) => line.includes("esc"))
-    const footer = lines.findIndex((line) => line.includes("Demo session"))
-    expect(hint).toBeGreaterThanOrEqual(0)
-    expect(footer).toBeGreaterThan(hint)
-
-    api?.keymap.dispatchCommand("app.exit")
-    await task
-  } finally {
-    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
-    mock.restore()
-  }
-})
-
-test("dense sessions register the session commands classic keeps in its route", async () => {
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
-  const core = await import("@opentui/core")
-  mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
-  const events = createEventSource()
-  const calls = createFetch(sessionRoutes)
-  let api: TuiPluginApi | undefined
-  let started!: () => void
-  const ready = new Promise<void>((resolve) => {
-    started = resolve
-  })
-
-  try {
-    const { run } = await import("../../src/app")
-    const task = Effect.runPromise(
-      run({
-        url: "http://test",
-        directory,
-        config: createTuiResolvedConfig({ plugin_enabled: {} }),
-        fetch: calls.fetch,
-        events: events.source,
-        args: { continue: true },
-        pluginHost: {
-          async start(input) {
-            api = input.api
-            started()
-          },
-          async dispose() {},
-        },
-      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
-    )
-
-    await ready
-    await setup.renderOnce()
-    await setup.renderOnce()
-
-    api?.keymap.dispatchCommand("command.palette.show")
-    let frame = ""
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await setup.renderOnce()
-      await Bun.sleep(25)
-      frame = setup.captureCharFrame()
-      if (frame.includes("Commands")) break
-    }
+    api()?.keymap.dispatchCommand("command.palette.show")
+    let frame = await frameContaining(setup, "Commands")
     expect(frame).toContain("Commands")
 
-    // These live in routes/session/index.tsx in classic, which the dense
-    // shell never mounts — they only appear if the dense session registered
-    // them itself.
-    for (const query of ["Export session", "Rename session", "Compact session", "Session overview"]) {
+    // These live in routes/session/index.tsx — present only if the dense
+    // shell really mounts the classic session route.
+    for (const query of ["Export session", "Rename session", "Compact session"]) {
       await setup.mockInput.typeText(query)
-      for (let attempt = 0; attempt < 10; attempt++) {
-        await setup.renderOnce()
-        await Bun.sleep(25)
-        frame = setup.captureCharFrame()
-        if (frame.includes(query)) break
-      }
+      frame = await frameContaining(setup, query)
       expect(frame).toContain(query)
       for (let index = 0; index < query.length; index++) setup.mockInput.pressBackspace()
     }
 
-    api?.keymap.dispatchCommand("app.exit")
+    api()?.keymap.dispatchCommand("app.exit")
     await task
   } finally {
     if (!setup.renderer.isDestroyed) setup.renderer.destroy()
