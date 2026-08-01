@@ -25,6 +25,10 @@ export const ScrollAcceleration = Schema.Struct({
 export const DiffStyle = Schema.Literals(["auto", "stacked"]).annotate({
   description: "Control diff rendering style: 'auto' adapts to terminal width, 'stacked' always shows single column",
 })
+export const Ui = Schema.Literals(["dense", "classic"]).annotate({
+  description:
+    "Interface style: 'dense' streams the transcript into native terminal scrollback, 'classic' is the fullscreen interface (default: dense)",
+})
 
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
@@ -57,10 +61,11 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
+  ui: Schema.optional(Ui),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
-export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse"> & {
+export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "ui"> & {
   attention: {
     enabled: boolean
     notifications: boolean
@@ -71,6 +76,7 @@ export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse"> & {
   }
   keybinds: TuiKeybind.BindingLookupView
   mouse: boolean
+  ui: Schema.Schema.Type<typeof Ui>
 }
 
 export const ResolveOptions = Schema.Struct({
@@ -105,6 +111,7 @@ export function resolve(input: Info, options: ResolveOptions): Resolved {
       bindingDefaults: TuiKeybind.bindingDefaults(),
     }),
     mouse: input.mouse ?? true,
+    ui: input.ui ?? "dense",
   }
 }
 

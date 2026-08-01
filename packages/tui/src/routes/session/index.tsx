@@ -5,6 +5,7 @@ import {
   createMemo,
   createSignal,
   For,
+  Index,
   Match,
   on,
   onCleanup,
@@ -1431,12 +1432,12 @@ function UserMessage(props: {
   return (
     <>
       <Show when={text()}>
+        {/* Claude Code-style prompt row: `❯ text` on a tinted background that
+            wraps tightly — no border, no vertical padding. The `❯` carries the
+            agent colour (the dense identity accent). */}
         <box
           id={props.message.id}
           ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-          border={["left"]}
-          borderColor={color()}
-          customBorderChars={SplitBorder.customBorderChars}
           marginTop={props.index === 0 ? 0 : 1}
         >
           <box
@@ -1447,13 +1448,15 @@ function UserMessage(props: {
               setHover(false)
             }}
             onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
-            paddingLeft={2}
+            paddingLeft={1}
+            paddingRight={1}
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
           >
-            <text fg={theme.text}>{text()}</text>
+            <text fg={theme.text}>
+              <span style={{ fg: color() }}>❯ </span>
+              {text()}
+            </text>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
                 <For each={files()}>
@@ -1505,45 +1508,48 @@ function UserMessage(props: {
 
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
-  const local = useLocal()
   const { theme } = useTheme()
   const sync = useSync()
-  const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
-  const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
   const goalVerdict = createMemo(() => sync.data.session_goal[props.message.sessionID]?.verdicts[props.message.id])
-
-  const final = createMemo(() => {
-    return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
-  })
-
-  const duration = createMemo(() => {
-    if (!final()) return 0
-    if (!props.message.time.completed) return 0
-    const user = messages().find((x) => x.role === "user" && x.id === props.message.parentID)
-    if (!user || !user.time) return 0
-    return props.message.time.completed - user.time.created
-  })
 
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
 
+  // Consecutive completed read/search tools collapse into one summary line,
+  // Claude Code style ("Read 3 files, searched for 2 patterns"). A run
+  // survives parts that render nothing (hidden thinking, empty text,
+  // unmapped part types); anything visible breaks it.
+  const items = createMemo<TranscriptItem[]>(() => {
+    const thinkingHidden = ctx.thinkingMode() === "hide"
+    const result: TranscriptItem[] = []
+    let run: ToolPart[] | undefined
+    for (const part of props.parts) {
+      if (collapsibleTool(part)) {
+        if (!run) {
+          run = []
+          result.push({ run })
+        }
+        run.push(part)
+        continue
+      }
+      if (!invisiblePart(part, thinkingHidden)) run = undefined
+      result.push({ part })
+    }
+    return result
+  })
+
   return (
     <>
-      <For each={props.parts}>
-        {(part, index) => {
-          const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
-          return (
-            <Show when={component()}>
-              <Dynamic
-                last={index() === props.parts.length - 1}
-                component={component()}
-                part={part as any}
-                message={props.message}
-              />
-            </Show>
-          )
-        }}
-      </For>
+      <Index each={items()}>
+        {(item, index) => (
+          <Show
+            when={"run" in item() ? (item() as { run: ToolPart[] }).run : undefined}
+            fallback={<PartRow item={item()} last={index === items().length - 1} message={props.message} />}
+          >
+            {(run) => <ToolRun parts={run()} message={props.message} />}
+          </Show>
+        )}
+      </Index>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
         <box paddingTop={1} paddingLeft={3}>
           <text fg={theme.text}>
@@ -1608,32 +1614,16 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           </box>
         )}
       </Show>
-      <Switch>
-        <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
-          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
-            <text marginTop={1}>
-              <span
-                style={{
-                  fg:
-                    props.message.error?.name === "MessageAbortedError"
-                      ? theme.textMuted
-                      : local.agent.color(props.message.agent),
-                }}
-              >
-                ▣{" "}
-              </span>{" "}
-              <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
-              <span style={{ fg: theme.textMuted }}> · {model()}</span>
-              <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
-              </Show>
-              <Show when={props.message.error?.name === "MessageAbortedError"}>
-                <span style={{ fg: theme.textMuted }}> · interrupted</span>
-              </Show>
-            </text>
-          </box>
-        </Match>
-      </Switch>
+      {/* No turn-summary line: mode and model already live in the bottom
+          bar, and the duration is not worth a transcript row. Aborted turns
+          keep a marker because that state has no other home. */}
+      <Show when={props.message.error?.name === "MessageAbortedError"}>
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
+          <text marginTop={1} fg={theme.textMuted}>
+            ⊘ interrupted
+          </text>
+        </box>
+      </Show>
     </>
   )
 }
@@ -1642,6 +1632,105 @@ const PART_MAPPING = {
   text: TextPart,
   tool: ToolPart,
   reasoning: ReasoningPart,
+}
+
+type TranscriptItem = { run: ToolPart[] } | { part: Part }
+
+const COLLAPSIBLE_TOOLS = new Set(["read", "glob", "grep", "webfetch", "websearch"])
+
+function collapsibleTool(part: Part): part is ToolPart {
+  if (part.type !== "tool") return false
+  if (part.state.status !== "completed") return false
+  return COLLAPSIBLE_TOOLS.has(toolDisplay(part.tool)) || part.tool === "list"
+}
+
+// Whether a part renders nothing right now — such parts must not break a
+// collapsed tool run, or hidden thinking between reads would split it.
+function invisiblePart(part: Part, thinkingHidden: boolean): boolean {
+  if (part.type === "text") return !part.text.trim()
+  if (part.type === "reasoning") {
+    if (!part.text.replace("[REDACTED]", "").trim()) return true
+    return thinkingHidden && part.time.end !== undefined
+  }
+  if (part.type === "tool") return false
+  return !(part.type in PART_MAPPING)
+}
+
+function PartRow(props: { item: TranscriptItem; last: boolean; message: AssistantMessage }) {
+  const part = () => (props.item as { part: Part }).part
+  const component = createMemo(() => PART_MAPPING[part().type as keyof typeof PART_MAPPING])
+  return (
+    <Show when={component()}>
+      <Dynamic last={props.last} component={component()} part={part() as any} message={props.message} />
+    </Show>
+  )
+}
+
+// A collapsed run of read/search tool calls: one muted summary line for the
+// whole batch, click to toggle the individual rows.
+function ToolRun(props: { parts: ToolPart[]; message: AssistantMessage }) {
+  const ctx = use()
+  const { theme } = useTheme()
+  const renderer = useRenderer()
+  const [expanded, setExpanded] = createSignal(false)
+  const [hover, setHover] = createSignal(false)
+
+  const summary = createMemo(() => {
+    let read = 0
+    let search = 0
+    let list = 0
+    let fetch = 0
+    let web = 0
+    for (const part of props.parts) {
+      const display = toolDisplay(part.tool)
+      if (display === "read") read++
+      else if (display === "grep" || display === "glob") search++
+      else if (display === "webfetch") fetch++
+      else if (display === "websearch") web++
+      else list++
+    }
+    const phrases: string[] = []
+    if (read) phrases.push(`read ${read} ${read === 1 ? "file" : "files"}`)
+    if (search) phrases.push(`searched for ${search} ${search === 1 ? "pattern" : "patterns"}`)
+    if (list) phrases.push(`listed ${list} ${list === 1 ? "directory" : "directories"}`)
+    if (fetch) phrases.push(`fetched ${fetch} ${fetch === 1 ? "page" : "pages"}`)
+    if (web) phrases.push(`ran ${web} web ${web === 1 ? "search" : "searches"}`)
+    const text = phrases.join(", ")
+    return text.charAt(0).toUpperCase() + text.slice(1)
+  })
+
+  return (
+    <Show when={ctx.showDetails()}>
+      <Show
+        when={props.parts.length > 1}
+        fallback={<ToolPart last={false} part={props.parts[0]} message={props.message} />}
+      >
+        <box
+          paddingLeft={3}
+          ref={(el: BoxRenderable) => {
+            setPreLayoutSiblingMargin(el, (previous) =>
+              previous instanceof BoxRenderable && (previous.height > 1 || alwaysSeparate.has(previous)) ? 1 : 0,
+            )
+          }}
+          onMouseOver={() => setHover(true)}
+          onMouseOut={() => setHover(false)}
+          onMouseUp={() => {
+            if (renderer.getSelection()?.getSelectedText()) return
+            setExpanded((value) => !value)
+          }}
+        >
+          <text fg={hover() ? theme.text : theme.textMuted}>
+            {expanded() ? "− " : ""}
+            {summary()}
+            {expanded() ? "" : " (click to expand)"}
+          </text>
+        </box>
+        <Show when={expanded()}>
+          <For each={props.parts}>{(part) => <ToolPart last={false} part={part} message={props.message} />}</For>
+        </Show>
+      </Show>
+    </Show>
+  )
 }
 
 const INLINE_TOOL_ICON_WIDTH = 2
@@ -1673,8 +1762,12 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     setExpanded((prev) => !prev)
   }
 
+  // Claude Code-style: completed thinking leaves no trace in the default
+  // (hide) mode — the transcript keeps only what the model did and said.
+  // While streaming, the spinner line below shows progress; `session.toggle
+  // .thinking` (show mode) renders the full block.
   return (
-    <Show when={content()}>
+    <Show when={content() && (!inMinimal() || !isDone())}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
         paddingLeft={3}
@@ -1882,8 +1975,8 @@ function GenericTool(props: ToolProps) {
     <Show
       when={props.output && ctx.showGenericToolOutput()}
       fallback={
-        <InlineTool icon="⚙" pending="Writing command..." complete={true} part={props.part}>
-          {props.tool} {input(props.input)}
+        <InlineTool icon="→" pending="Writing command..." complete={true} part={props.part}>
+          {Locale.titlecase(props.tool)} {input(props.input)}
         </InlineTool>
       }
     >
@@ -2076,11 +2169,8 @@ function BlockTool(props: {
     <box
       ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
       border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
       paddingLeft={2}
       marginTop={1}
-      gap={1}
       backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
       customBorderChars={SplitBorder.customBorderChars}
       borderColor={theme.background}
@@ -2120,13 +2210,17 @@ function Shell(props: ToolProps) {
   const isRunning = createMemo(() => props.part.state.status === "running")
   const output = createMemo(() => stripAnsi(stringValue(props.metadata.output)?.trim() ?? ""))
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 10
+  // Claude Code shows 3 output lines before truncating; one more here since
+  // the hint line replaces the last row anyway.
+  const maxLines = 4
   const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
   const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
-    return collapsed().output
+    // The hint row below carries the ellipsis and the hidden-line count.
+    return collapsed().output.replace(/\n…$/, "")
   })
+  const remaining = createMemo(() => Math.max(0, output().split("\n").length - maxLines))
 
   const workdirDisplay = createMemo(() => {
     const workdir = stringValue(props.input.workdir)
@@ -2150,7 +2244,7 @@ function Shell(props: ToolProps) {
           part={props.part}
           onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
         >
-          <box gap={1}>
+          <box>
             <Show when={isRunning()} fallback={<text fg={theme.text}>$ {stringValue(props.input.command)}</text>}>
               <Spinner color={theme.text}>{stringValue(props.input.command)}</Spinner>
             </Show>
@@ -2158,7 +2252,13 @@ function Shell(props: ToolProps) {
               <text fg={theme.text}>{limited()}</text>
             </Show>
             <Show when={collapsed().overflow}>
-              <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
+              <text fg={theme.textMuted}>
+                {expanded()
+                  ? "click to collapse"
+                  : remaining() > 0
+                    ? `… +${remaining()} ${remaining() === 1 ? "line" : "lines"} (click to expand)`
+                    : "… (click to expand)"}
+              </text>
             </Show>
           </box>
         </BlockTool>
@@ -2604,7 +2704,7 @@ function TodoWrite(props: ToolProps) {
       </Match>
       <Match when={true}>
         <InlineTool
-          icon="⚙"
+          icon="→"
           pending="Updating todos..."
           failure="Todo update failed"
           complete={false}
