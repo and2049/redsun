@@ -59,9 +59,13 @@ The `TuiHostSlotMap` type is unchanged and every slot still has a host:
 
 Dense draws no sidebar column, so the sidebar slots moved into the session
 overview dialog rather than being dropped. Plugins that assume a permanently
-visible sidebar will render only while the overview is open. The overview takes
-the whole viewport and lays its slots out in flow — a `scrollbox` does not
-render inside the dock's dialog host, so content taller than the screen clips.
+visible sidebar will render only while the overview is open.
+
+The dock hands the open dialog a **definite height** (`dialogRows()`), not
+`flexGrow`. Classic dialogs lay out with `height="100%"` scrollboxes, and a
+scrollbox in a content-sized column collapses to nothing and takes its siblings
+with it — the whole dialog renders blank. Keep that in mind before changing the
+dialog host's layout.
 
 ## Deliberate differences from classic
 
