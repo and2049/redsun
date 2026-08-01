@@ -11,8 +11,8 @@ export const DOCK_FOOTER_ROWS = 2
 // DenseApp renders the vim command bar as the last row of the footer region,
 // below the dock itself — it still consumes footer rows.
 export const DOCK_COMMAND_BAR_ROWS = 1
-// Dense prompt chrome: rule + textarea + badge row + hint row.
-export const DOCK_PROMPT_ROWS = 4
+// Dense prompt chrome: textarea + badge row + hint row.
+export const DOCK_PROMPT_ROWS = 3
 // Rows reserved for the `:` suggestion list while the vim command bar is open.
 export const DOCK_COMMAND_ROWS = 10
 // Rows reserved for the prompt's `/` and `@` completion popup, which draws
