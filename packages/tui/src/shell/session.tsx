@@ -35,6 +35,11 @@ function directoryLabel(cwd: string, home: string): string {
 // a resize should not re-render an unbounded history.
 const REPLAY_CAP = 400
 
+// Newest messages whose parts the notify effect subscribes to. A completed
+// turn is a user message plus one assistant message, so this covers the
+// in-flight turn and the one before it.
+const TRACKED_MESSAGES = 4
+
 // DenseSession is keyed by session id, so a mount with an already-committed
 // transcript behind it means the user switched sessions: that replay starts by
 // clearing scrollback. The first session of the process keeps whatever the
@@ -134,12 +139,19 @@ export function DenseSession() {
     renderer.on(CliRenderEvents.RESIZE, resized)
     onCleanup(() => renderer.off(CliRenderEvents.RESIZE, resized))
 
-    // Subscribe to every field the block derivation reads so store updates
+    // Subscribe to the fields the block derivation reads so store updates
     // schedule a drain; the drain itself reads the store untracked.
+    //
+    // Only the newest few messages are tracked. Subscribing to every part of
+    // every message costs O(session) on each streamed token, and older
+    // messages are complete — their blocks are already committed, and
+    // scrollback cannot be rewritten in place anyway. Appending a message
+    // still notifies, because the messages array itself is tracked.
     createEffect(() => {
       void sync.data.session_goal[route.sessionID]?.lastVerdict
       void session()?.revert?.messageID
-      const messages = sync.data.message[route.sessionID] ?? []
+      const all = sync.data.message[route.sessionID] ?? []
+      const messages = all.slice(-TRACKED_MESSAGES)
       for (const message of messages) {
         if (message.role === "assistant") {
           void message.time.completed
