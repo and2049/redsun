@@ -194,6 +194,29 @@ test("a capped replay keeps the newest blocks behind a truncation note", async (
   }
 })
 
+test("a surface restore replays every block even when resize replay is capped", async () => {
+  const out = await setup({ cap: 2 })
+
+  try {
+    const { messages, parts } = conversation(5)
+    out.data.message.s1 = messages
+    out.data.part = parts
+    out.replay.notify()
+    await out.replay.flush()
+    expect(out.external.takeText()).toContain("3 earlier blocks not replayed")
+
+    out.replay.request("surface")
+    await out.replay.flush()
+
+    const restored = out.external.takeText()
+    expect(restored).not.toContain("earlier blocks not replayed")
+    expect(restored).toContain("message 1")
+    expect(restored).toContain("message 5")
+  } finally {
+    out.replay.dispose()
+  }
+})
+
 test("every replay start clears scrollback before the first commit", async () => {
   const out = await setup()
 

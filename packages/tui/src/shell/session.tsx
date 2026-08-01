@@ -7,7 +7,7 @@
 // writes are inert because writeToScrollback would throw.
 import { CliRenderEvents } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { useEpilogue } from "../context/epilogue"
 import { LocationProvider } from "../context/location"
 import { usePathFormatter } from "../context/path-format"
@@ -21,6 +21,7 @@ import { sessionEpilogue } from "../util/presentation"
 import { normalizePath } from "../util/path"
 import * as Locale from "../util/locale"
 import { applyFooterHeight, markScrollbackCommit, pinScrollback } from "./boot"
+import { createCoverController, type CoverController } from "./cover"
 import { DOCK_ROWS, Dock } from "./dock"
 import { useDenseSessionCommands } from "./session-commands"
 import { useDenseSessionLifecycle } from "./session-lifecycle"
@@ -96,6 +97,10 @@ export function DenseSession() {
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
+  // Transient-surface controller, created with the replay in onMount and
+  // handed to the dock for its footer-height policy (see cover.ts).
+  const [cover, setCover] = createSignal<CoverController>()
+
   onMount(() => {
     if (!scrollbackActive()) return
 
@@ -103,6 +108,7 @@ export function DenseSession() {
     // this onMount), so the footer may still be the home takeover. Shrink it
     // to dock size first — the pin below computes the gap against it.
     applyFooterHeight(renderer, DOCK_ROWS)
+    let controller: CoverController | undefined
     const replay = createTranscriptReplay({
       renderer,
       sessionID: route.sessionID,
@@ -125,6 +131,21 @@ export function DenseSession() {
       },
     })
     onCleanup(() => replay.dispose())
+
+    controller = createCoverController({
+      renderer,
+      active: scrollbackActive,
+      restore: async () => {
+        replay.request("surface")
+        await replay.flush()
+      },
+      notify: () => replay.notify(),
+    })
+    setCover(controller)
+    onCleanup(() => {
+      controller?.dispose()
+      setCover(undefined)
+    })
 
     // A terminal resize reflows already-committed rows, so the transcript is
     // re-written at the new width. Footer-height changes also emit RESIZE;
@@ -172,7 +193,9 @@ export function DenseSession() {
           }
         }
       }
-      replay.notify()
+      // Routed through the cover controller: drains are deferred while a
+      // tall view covers the transcript (they would commit into its rows).
+      controller?.notify()
     })
   })
 
@@ -186,6 +209,7 @@ export function DenseSession() {
           disabled={disabled()}
           permissions={permissions()}
           questions={questions()}
+          cover={cover()}
         />
       </box>
     </LocationProvider>
