@@ -101,6 +101,11 @@ export type PromptRef = {
   // the prompt and would otherwise be clamped to one row). Optional so the
   // plugin-facing `TuiPromptRef` contract stays assignable both ways.
   readonly autocomplete?: false | "@" | "/"
+  // REDSUN DENSE: rows the draft currently needs, so the dock can grow with a
+  // multi-line prompt instead of clipping it. Logical lines clamped to the
+  // textarea's max height — soft-wrapped long lines are not counted, which
+  // costs a row of draft at most. Also optional, for the same reason.
+  readonly rows?: number
 }
 
 const DRAFT_RETENTION_MIN_CHARS = 20
@@ -570,6 +575,9 @@ export function Prompt(props: PromptProps) {
     },
     get autocomplete() {
       return auto()?.visible ?? false
+    },
+    get rows() {
+      return Math.min(maxHeight(), Math.max(1, store.prompt.input.split("\n").length))
     },
     get current() {
       return store.prompt

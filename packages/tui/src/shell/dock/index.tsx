@@ -148,6 +148,7 @@ export function Dock(props: {
         commandBar: vim.mode === "command",
         autocomplete: Boolean(promptRef()?.autocomplete),
         prompt: props.visible,
+        promptRows: promptRef()?.rows,
         queued: queued().length,
         subagent: subagent(),
       }),
