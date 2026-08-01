@@ -228,17 +228,23 @@ export function Dock(props: {
         </box>
       </Show>
       <Switch>
+        {/* Both take a definite height for the same reason the dialog host
+            does: their diff preview is a `height="100%"` scrollbox. */}
         <Match when={view() === "permission"}>
-          <PermissionPrompt
-            request={props.permissions[0]}
-            directory={sync.session.get(props.permissions[0].sessionID)?.directory}
-          />
+          <box flexDirection="column" flexShrink={0} height={dialogRows()} minHeight={0}>
+            <PermissionPrompt
+              request={props.permissions[0]}
+              directory={sync.session.get(props.permissions[0].sessionID)?.directory}
+            />
+          </box>
         </Match>
         <Match when={view() === "question"}>
-          <QuestionPrompt
-            request={props.questions[0]}
-            directory={sync.session.get(props.questions[0].sessionID)?.directory}
-          />
+          <box flexDirection="column" flexShrink={0} height={dialogRows()} minHeight={0}>
+            <QuestionPrompt
+              request={props.questions[0]}
+              directory={sync.session.get(props.questions[0].sessionID)?.directory}
+            />
+          </box>
         </Match>
         <Match when={props.visible}>
           <pluginRuntime.Slot
