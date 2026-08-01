@@ -22,8 +22,9 @@ export type ReplayReason = "resize" | "revert" | "session"
 
 export type ReplayInput = Omit<CommitterInput, "wrote" | "cap" | "onDesync"> & {
   // Pins the dock to the terminal bottom (see boot.ts pinScrollback). Called
-  // before `banner` on every start and reset so the transcript stacks upward
-  // from the dock instead of starting at the top of a fresh screen.
+  // before `banner` on every start and reset so a fresh session shows the
+  // banner at the top and the dock at the bottom, with the transcript filling
+  // the gap top-down — instead of the dock floating directly under the banner.
   pin?: () => void
   // Writes the session banner (or anything else that heads the transcript).
   // Called once at start and again after every scrollback reset.

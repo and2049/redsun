@@ -11,7 +11,6 @@
 // switch external output back to passthrough before leaving split-footer mode,
 // so pending stdout doesn't get captured into the now-dead scrollback pipeline.
 import type { CliRenderer, CliRendererConfig, RGBA } from "@opentui/core"
-import { spacerWriter } from "./scrollback/writers"
 
 // Whether anything was committed into native scrollback this run. The session
 // banner is the first write on every path that commits (see session.tsx), so
@@ -102,40 +101,54 @@ export function clearTerminalHistory(renderer: CliRenderer): void {
 }
 
 // Pins the dock (the split-footer surface) to the bottom of the terminal by
-// committing blank filler lines for the vertical gap above it.
+// forcing the surface offset to the pinned line — never by committing filler.
 //
-// OpenTUI re-pins the surface when the footer grows but lets a shrink settle
-// lazily: the surface keeps its old top line — leaving cleared rows below the
-// dock — until future scrollback commits push it down, which an idle session
-// never sends. Called before the banner on every replay start (so the
-// transcript stacks upward from the dock, not down from a blank screen top)
-// and after any dock shrink (picker, command bar, or completion closing).
+// OpenTUI's native model keeps the surface directly below committed output:
+// a footer shrink strands it mid-screen, and only output commits push it down.
+// Crucially, the engine tracks committed output (`published_rows`) separately
+// from the surface offset: growth scrolls history only by the *output* gap and
+// otherwise expands into blank rows, commits land at the output tail, and both
+// commit and repaint frames clamp the surface to [output, pinned] — so a
+// forced pin is stable, and content fills the gap between output and dock
+// top-down, Claude Code style. (Committing spacer rows instead would advance
+// the output counter to the dock and poison all of that: every footer grow
+// would scroll real history and every shrink would add more spacers — a gap
+// that widens on each `:`/dialog round-trip.)
 //
-// `renderOffset` and `externalOutputQueue` are internal renderer state, not
-// public API — pinned to @opentui/core 0.4.5. Queued commits move the surface
-// when they flush, so measuring the gap while any are pending would
-// double-fill; those calls settle through `idle()` first.
+// Called before the banner on every replay start and after any dock shrink.
+// Settles through `idle()` first so pending commits and the shrink's deferred
+// footer transition are consumed before the offset is measured and forced.
+// `renderOffset`, `lib.setRenderOffset`, `clearStaleSplitSurfaceRows` and
+// `forceFullRepaintRequested` are internal — pinned to @opentui/core 0.4.5.
 export function pinScrollback(renderer: CliRenderer): void {
-  const internals = renderer as unknown as { externalOutputQueue?: { size?: number } }
-  if ((internals.externalOutputQueue?.size ?? 0) > 0) {
-    void Promise.resolve(renderer.idle())
-      .then(() => fillToBottom(renderer))
-      .catch(() => {})
-    return
-  }
-  fillToBottom(renderer)
+  void Promise.resolve(renderer.idle())
+    .then(() => forcePin(renderer))
+    .catch(() => {})
 }
 
-function fillToBottom(renderer: CliRenderer): void {
+function forcePin(renderer: CliRenderer): void {
   if (renderer.isDestroyed) return
   if (renderer.screenMode !== "split-footer" || renderer.externalOutputMode !== "capture-stdout") return
-  const offset = (renderer as unknown as { renderOffset?: number }).renderOffset
-  if (typeof offset !== "number") return
-  const pinned = Math.max(0, renderer.terminalHeight - renderer.footerHeight)
-  const gap = Math.min(renderer.terminalHeight, Math.max(0, pinned - offset))
-  for (let index = 0; index < gap; index++) {
-    renderer.writeToScrollback(spacerWriter())
+  const internals = renderer as unknown as {
+    renderOffset?: number
+    rendererPtr?: unknown
+    lib?: { setRenderOffset?: (ptr: unknown, offset: number) => void }
+    getSplitPinnedRenderOffset?: () => number
+    clearStaleSplitSurfaceRows?: (prevTop: number, prevHeight: number, nextTop: number, nextHeight: number) => void
+    forceFullRepaintRequested?: boolean
   }
+  const offset = internals.renderOffset
+  if (typeof offset !== "number" || typeof internals.lib?.setRenderOffset !== "function") return
+  const pinned =
+    internals.getSplitPinnedRenderOffset?.() ?? Math.max(0, renderer.terminalHeight - renderer.footerHeight)
+  if (offset >= pinned) return
+  // Blank the vacated rows (old surface top through the row above the new
+  // top); the repaint below covers only the new surface region.
+  internals.clearStaleSplitSurfaceRows?.(offset + 1, pinned - offset, pinned + 1, renderer.terminalHeight - pinned)
+  internals.renderOffset = pinned
+  internals.lib.setRenderOffset(internals.rendererPtr, pinned)
+  internals.forceFullRepaintRequested = true
+  renderer.requestRender()
 }
 
 // Tears the dense renderer down in the required order:

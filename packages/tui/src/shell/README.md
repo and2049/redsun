@@ -32,9 +32,15 @@ scrollback, so scrolling, selecting and copying are the terminal's job.
   invariant**: OpenTUI's natural split-footer behaviour puts the surface
   directly under the committed content (top of a fresh screen) and only lets
   commits push it down — and after a footer shrink it leaves the surface
-  stranded mid-screen with cleared rows below. `pinScrollback` commits blank
-  filler lines for the gap; the replay calls it before every banner and the
-  dock calls it after every shrink.
+  stranded mid-screen with cleared rows below. `pinScrollback` forces the
+  surface offset to the pinned line (the engine clamps the surface to
+  `[output, pinned]`, so the pin is stable and commits keep landing at the
+  output tail, filling the gap top-down); the replay calls it before every
+  banner and the dock calls it after every shrink. It must **never** commit
+  filler rows instead: committed rows advance the engine's output counter,
+  and footer growth scrolls history by the *output* gap — filler makes every
+  `:`/dialog open scroll real history and every close add more filler, a gap
+  that widens on each round-trip.
 - `scrollback/` — `StreamSurface` (progressive commit of a growing block) and
   the one-shot writers. **Writers render outside the app's Solid context**, so
   they take theme/width/formatters as plain arguments — no context hooks.
