@@ -1975,8 +1975,8 @@ function GenericTool(props: ToolProps) {
     <Show
       when={props.output && ctx.showGenericToolOutput()}
       fallback={
-        <InlineTool icon="⚙" pending="Writing command..." complete={true} part={props.part}>
-          {props.tool} {input(props.input)}
+        <InlineTool icon="→" pending="Writing command..." complete={true} part={props.part}>
+          {Locale.titlecase(props.tool)} {input(props.input)}
         </InlineTool>
       }
     >
@@ -2297,7 +2297,7 @@ function Write(props: ToolProps) {
       </Match>
       <Match when={true}>
         <InlineTool
-          icon="←"
+          icon="→"
           pending="Preparing write..."
           complete={stringValue(props.input.filePath)}
           part={props.part}
@@ -2312,7 +2312,7 @@ function Write(props: ToolProps) {
 function Glob(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Finding files..." complete={stringValue(props.input.pattern)} part={props.part}>
+    <InlineTool icon="→" pending="Finding files..." complete={stringValue(props.input.pattern)} part={props.part}>
       Glob "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.count)}>
@@ -2360,7 +2360,7 @@ function Read(props: ToolProps) {
 function Grep(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Searching content..." complete={stringValue(props.input.pattern)} part={props.part}>
+    <InlineTool icon="→" pending="Searching content..." complete={stringValue(props.input.pattern)} part={props.part}>
       Grep "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.matches)}>
@@ -2372,7 +2372,7 @@ function Grep(props: ToolProps) {
 
 function WebFetch(props: ToolProps) {
   return (
-    <InlineTool icon="%" pending="Fetching from the web..." complete={stringValue(props.input.url)} part={props.part}>
+    <InlineTool icon="→" pending="Fetching from the web..." complete={stringValue(props.input.url)} part={props.part}>
       WebFetch {stringValue(props.input.url)}
     </InlineTool>
   )
@@ -2380,7 +2380,7 @@ function WebFetch(props: ToolProps) {
 
 function WebSearch(props: ToolProps) {
   return (
-    <InlineTool icon="◈" pending="Searching web..." complete={stringValue(props.input.query)} part={props.part}>
+    <InlineTool icon="→" pending="Searching web..." complete={stringValue(props.input.query)} part={props.part}>
       {webSearchProviderLabel(props.metadata.provider)} "{stringValue(props.input.query)}"{" "}
       <Show when={numberValue(props.metadata.numResults)}>({numberValue(props.metadata.numResults)} results)</Show>
     </InlineTool>
@@ -2607,7 +2607,7 @@ function Edit(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="←" pending="Preparing edit..." complete={stringValue(props.input.filePath)} part={props.part}>
+        <InlineTool icon="→" pending="Preparing edit..." complete={stringValue(props.input.filePath)} part={props.part}>
           Edit {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
@@ -2683,7 +2683,7 @@ function ApplyPatch(props: ToolProps) {
         </For>
       </Match>
       <Match when={true}>
-        <InlineTool icon="%" pending="Preparing patch..." failure="Patch failed" complete={false} part={props.part}>
+        <InlineTool icon="→" pending="Preparing patch..." failure="Patch failed" complete={false} part={props.part}>
           Patch
         </InlineTool>
       </Match>
@@ -2704,7 +2704,7 @@ function TodoWrite(props: ToolProps) {
       </Match>
       <Match when={true}>
         <InlineTool
-          icon="⚙"
+          icon="→"
           pending="Updating todos..."
           failure="Todo update failed"
           complete={false}
