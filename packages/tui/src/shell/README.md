@@ -26,8 +26,15 @@ uses in production. The Solid tree paints only the pinned footer region (the
 dock); finished transcript rows are committed into the terminal's own
 scrollback, so scrolling, selecting and copying are the terminal's job.
 
-- `boot.ts` — renderer options, the startup full-viewport takeover, and the
-  ordered shutdown (capture→passthrough, split-footer→main-screen, destroy).
+- `boot.ts` — renderer options, the startup full-viewport takeover, the
+  ordered shutdown (capture→passthrough, split-footer→main-screen, destroy),
+  and `pinScrollback`. **The dock is pinned to the terminal bottom as an
+  invariant**: OpenTUI's natural split-footer behaviour puts the surface
+  directly under the committed content (top of a fresh screen) and only lets
+  commits push it down — and after a footer shrink it leaves the surface
+  stranded mid-screen with cleared rows below. `pinScrollback` commits blank
+  filler lines for the gap; the replay calls it before every banner and the
+  dock calls it after every shrink.
 - `scrollback/` — `StreamSurface` (progressive commit of a growing block) and
   the one-shot writers. **Writers render outside the app's Solid context**, so
   they take theme/width/formatters as plain arguments — no context hooks.

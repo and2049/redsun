@@ -21,6 +21,10 @@ import { createTranscriptCommitter, type CommitterInput, type TranscriptCommitte
 export type ReplayReason = "resize" | "revert" | "session"
 
 export type ReplayInput = Omit<CommitterInput, "wrote" | "cap" | "onDesync"> & {
+  // Pins the dock to the terminal bottom (see boot.ts pinScrollback). Called
+  // before `banner` on every start and reset so the transcript stacks upward
+  // from the dock instead of starting at the top of a fresh screen.
+  pin?: () => void
   // Writes the session banner (or anything else that heads the transcript).
   // Called once at start and again after every scrollback reset.
   banner: () => void
@@ -80,6 +84,7 @@ export function createTranscriptReplay(input: ReplayInput): TranscriptReplay {
   }
 
   if (input.resetOnStart && input.active()) reset()
+  input.pin?.()
   input.banner()
   renderer.requestRender()
   let committer = build()
@@ -97,6 +102,7 @@ export function createTranscriptReplay(input: ReplayInput): TranscriptReplay {
 
       committer.dispose()
       reset()
+      input.pin?.()
       input.banner()
       renderer.requestRender()
       committer = build()

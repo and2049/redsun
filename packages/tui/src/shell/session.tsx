@@ -20,8 +20,8 @@ import type { PromptRef } from "../component/prompt"
 import { sessionEpilogue } from "../util/presentation"
 import { normalizePath } from "../util/path"
 import * as Locale from "../util/locale"
-import { markScrollbackCommit } from "./boot"
-import { Dock } from "./dock"
+import { applyFooterHeight, markScrollbackCommit, pinScrollback } from "./boot"
+import { DOCK_ROWS, Dock } from "./dock"
 import { useDenseSessionCommands } from "./session-commands"
 import { useDenseSessionLifecycle } from "./session-lifecycle"
 import { bannerWriter } from "./scrollback/writers"
@@ -106,6 +106,10 @@ export function DenseSession() {
     if (!scrollbackActive()) return
 
     const switched = mounts++ > 0
+    // The dock's own height effect has not run yet (child effects flush after
+    // this onMount), so the footer may still be the home takeover. Shrink it
+    // to dock size first — the pin below computes the gap against it.
+    applyFooterHeight(renderer, DOCK_ROWS)
     const replay = createTranscriptReplay({
       renderer,
       sessionID: route.sessionID,
@@ -119,6 +123,7 @@ export function DenseSession() {
       cap: REPLAY_CAP,
       active: scrollbackActive,
       resetOnStart: switched,
+      pin: () => pinScrollback(renderer),
       banner: () => {
         const cwd = session()?.directory ?? paths.cwd
         renderer.writeToScrollback(bannerWriter({ detail: directoryLabel(cwd, paths.home), theme }))
