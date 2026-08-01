@@ -16,6 +16,15 @@ test("the prompt view is compact and grows with the live tail and notices", () =
   expect(dockRows({ view: "prompt", viewport: 50, tail: 2, notice: true })).toBe(DOCK_ROWS + 3)
 })
 
+test("the dock grows with a multi-line draft", () => {
+  expect(dockRows({ view: "prompt", viewport: 50, promptRows: 1 })).toBe(DOCK_ROWS)
+  expect(dockRows({ view: "prompt", viewport: 50, promptRows: 5 })).toBe(DOCK_ROWS + 4)
+  // A draft under an open picker keeps its rows too.
+  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 3, promptRows: 3 })).toBe(
+    DOCK_BASE_ROWS + DOCK_PROMPT_ROWS + 2 + 3,
+  )
+})
+
 test("the vim command bar reserves suggestion rows while it is open", () => {
   expect(dockRows({ view: "prompt", viewport: 50, commandBar: true })).toBe(DOCK_ROWS + DOCK_COMMAND_ROWS)
 })
