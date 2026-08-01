@@ -11,14 +11,17 @@
 //   revert   a revert/redo truncates or restores the derived block list, so
 //            the committer desyncs (see committer.ts) and hands over here
 //   session  switching sessions replaces the transcript entirely
+//   surface  a transient dock overlay closed after painting over transcript
+//            rows, so their pixels and native output model need one rebuild
 //
 // Resize replays are debounced (a drag emits a RESIZE per column) and bounded
 // by `cap`, so a very long session does not re-render its whole history on
-// every wobble.
+// every wobble. Surface restores are deliberately uncapped: opening a menu
+// must never discard older transcript blocks.
 import type { CliRenderer } from "@opentui/core"
 import { createTranscriptCommitter, type CommitterInput, type TranscriptCommitter } from "./committer"
 
-export type ReplayReason = "resize" | "revert" | "session"
+export type ReplayReason = "resize" | "revert" | "session" | "surface"
 
 export type ReplayInput = Omit<CommitterInput, "wrote" | "cap" | "onDesync"> & {
   // Pins the dock to the terminal bottom (see boot.ts pinScrollback). Called
@@ -62,11 +65,11 @@ export function createTranscriptReplay(input: ReplayInput): TranscriptReplay {
   let scheduled: ReplayReason | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  function build(): TranscriptCommitter {
+  function build(capped = true): TranscriptCommitter {
     return createTranscriptCommitter({
       ...input,
       wrote: true,
-      cap: input.cap,
+      cap: capped ? input.cap : undefined,
       onDesync: () => request("revert"),
     })
   }
@@ -108,7 +111,7 @@ export function createTranscriptReplay(input: ReplayInput): TranscriptReplay {
       input.pin?.()
       input.banner()
       renderer.requestRender()
-      committer = build()
+      committer = build(reason !== "surface")
       replays++
       input.onReplay?.(reason)
       committer.notify()

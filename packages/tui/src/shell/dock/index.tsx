@@ -32,18 +32,14 @@ import { isDefaultTitle } from "../../util/session"
 import { useCommandShortcut } from "../../keymap"
 import * as Locale from "../../util/locale"
 import { applyFooterHeight, pinScrollback } from "../boot"
+import type { CoverController } from "../cover"
 import { pendingAssistantID, queuedPrompts } from "../transcript/blocks"
 import { dockRows, dockView } from "./height"
 import { inlineSelectRows } from "./inline-select"
 import { Notice } from "./notice"
 import { SubagentStrip } from "./subagent"
 
-import {
-  DOCK_COMMAND_BAR_ROWS,
-  DOCK_FOOTER_ROWS,
-  DOCK_PROMPT_ROWS,
-  DOCK_STATUS_ROWS,
-} from "./height"
+import { DOCK_COMMAND_BAR_ROWS, DOCK_FOOTER_ROWS, DOCK_PROMPT_ROWS, DOCK_STATUS_ROWS } from "./height"
 
 export { DOCK_ROWS, DOCK_TALL_ROWS, dockRows } from "./height"
 
@@ -58,6 +54,9 @@ export function Dock(props: {
   disabled: boolean
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
+  // Overlay-and-replay controller for footer-height changes (see ../cover.ts).
+  // Absent under test renderers; heights then apply directly.
+  cover?: CoverController
 }) {
   const sync = useSync()
   const vim = useVim()
@@ -154,12 +153,22 @@ export function Dock(props: {
     }),
   )
 
-  // On a shrink (picker, command bar, or completion closing), the split
-  // surface stays at its old top line with cleared rows below the dock until
-  // future commits push it down — re-pin it to the bottom explicitly.
+  // True while a view that may need transcript rows is up. The cover
+  // controller uses this to decide when to overlay and when to replay
+  // (see ../cover.ts) — prompt-only growth (tail, queued rows) never covers.
+  const tall = createMemo(() => view() !== "prompt" || vim.mode === "command" || Boolean(promptRef()?.autocomplete))
+
+  // Footer height policy. With a cover controller (the dense session route),
+  // tall views cover the transcript and replay it on close; without one
+  // (tests), shrink re-pins the stranded surface directly.
   let lastRows: number | undefined
   createEffect(() => {
     const next = rows()
+    const controller = props.cover
+    if (controller) {
+      controller.apply(next, tall())
+      return
+    }
     const shrank = lastRows !== undefined && next < lastRows
     lastRows = next
     applyFooterHeight(renderer, next)

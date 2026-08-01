@@ -41,6 +41,11 @@ scrollback, so scrolling, selecting and copying are the terminal's job.
   and footer growth scrolls history by the *output* gap — filler makes every
   `:`/dialog open scroll real history and every close add more filler, a gap
   that widens on each round-trip.
+- `cover.ts` — transient tall views (`/` completion, Vim `:`, inline pickers,
+  permissions and questions) rebase the native output boundary before growing
+  the footer, so they paint over transcript rows without scrolling them.
+  Closing uses the existing authoritative replay path to restore both pixels
+  and output state; it never measures or partially rewinds committed blocks.
 - `scrollback/` — `StreamSurface` (progressive commit of a growing block) and
   the one-shot writers. **Writers render outside the app's Solid context**, so
   they take theme/width/formatters as plain arguments — no context hooks.

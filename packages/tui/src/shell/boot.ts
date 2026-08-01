@@ -126,6 +126,26 @@ export function pinScrollback(renderer: CliRenderer): void {
     .catch(() => {})
 }
 
+// Rebases the engine's committed-output model to `row` so a following footer
+// grow expands over the rows below it without scrolling anything: growth
+// scrolls history by the *output* gap, so lowering the model to the target
+// line makes that gap zero. The rows below `row` become the dock surface's to
+// paint. Closing the transient surface replays the transcript from the sync
+// store, which restores both the pixels and the native output model.
+export function coverScrollbackTo(renderer: CliRenderer, row: number): boolean {
+  if (renderer.isDestroyed) return false
+  if (renderer.screenMode !== "split-footer" || renderer.externalOutputMode !== "capture-stdout") return false
+  const internals = renderer as unknown as {
+    resetSplitScrollback?: (seedRows: number) => void
+    forceFullRepaintRequested?: boolean
+  }
+  if (typeof internals.resetSplitScrollback !== "function") return false
+  internals.resetSplitScrollback(Math.max(0, Math.trunc(row)))
+  internals.forceFullRepaintRequested = true
+  renderer.requestRender()
+  return true
+}
+
 function forcePin(renderer: CliRenderer): void {
   if (renderer.isDestroyed) return
   if (renderer.screenMode !== "split-footer" || renderer.externalOutputMode !== "capture-stdout") return
