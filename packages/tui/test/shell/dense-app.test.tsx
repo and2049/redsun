@@ -107,6 +107,66 @@ test("the dense shell renders pickers inline in the dock, not as a modal", async
   }
 })
 
+test("the dense home hosts the dialog stack, so pickers opened before a session render", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
+  const core = await import("@opentui/core")
+  mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
+  const events = createEventSource()
+  const calls = createFetch(sessionRoutes)
+  let api: TuiPluginApi | undefined
+  let started!: () => void
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+
+  try {
+    const { run } = await import("../../src/app")
+    const task = Effect.runPromise(
+      run({
+        url: "http://test",
+        directory,
+        config: createTuiResolvedConfig({ plugin_enabled: {} }),
+        fetch: calls.fetch,
+        events: events.source,
+        // No --continue: the app stays on the home route, where the dock (and
+        // its inline dialog host) does not exist. The floating overlay is
+        // classic-only, so without a host in home.tsx this dialog would open
+        // logically but paint nothing — which is exactly the regression this
+        // guards against (home keybinds l/a/ctrl+p and `:sessions`).
+        args: {},
+        pluginHost: {
+          async start(input) {
+            api = input.api
+            started()
+          },
+          async dispose() {},
+        },
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node))),
+    )
+
+    await ready
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    api?.keymap.dispatchCommand("command.palette.show")
+    let frame = ""
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await setup.renderOnce()
+      await Bun.sleep(25)
+      frame = setup.captureCharFrame()
+      if (frame.includes("Commands")) break
+    }
+    expect(frame).toContain("Commands")
+    expect(frame).toContain("❯ Search")
+
+    api?.keymap.dispatchCommand("app.exit")
+    await task
+  } finally {
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    mock.restore()
+  }
+})
+
 test("the session overview opens in the dock and hosts the sidebar slots", async () => {
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false })
   const core = await import("@opentui/core")
