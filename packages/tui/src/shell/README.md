@@ -5,7 +5,7 @@ launch/scrollback model with pi `--alt` density. The classic fullscreen UI is
 still available behind `redsun --classic` or `tui.ui: "classic"`.
 
 Everything here is additive and Redsun-specific. Retained OpenCode files carry
-exactly seven marked `REDSUN DENSE` hooks:
+exactly eight marked `REDSUN DENSE` hooks:
 
 | File | Hook |
 | --- | --- |
@@ -14,6 +14,7 @@ exactly seven marked `REDSUN DENSE` hooks:
 | `ui/dialog.tsx` | the floating overlay is classic-only |
 | `ui/dialog-select.tsx` | dense early return into `InlineSelect` |
 | `component/prompt/index.tsx` | dense chrome variant; optional `PromptRef.autocomplete` and `PromptRef.rows` |
+| `component/prompt/autocomplete.tsx` | opaque backdrop under the popup (the dense home logo bleeds through otherwise) |
 | `component/command-bar.tsx` | `variant="dense"` (in-flow bar) |
 | `../../redsun/src/cli/cmd/tui.ts` | `--classic` flag |
 

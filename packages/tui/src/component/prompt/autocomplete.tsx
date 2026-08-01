@@ -729,6 +729,10 @@ export function Autocomplete(props: {
       zIndex={100}
       {...SplitBorder}
       borderColor={theme.border}
+      // REDSUN DENSE: opaque base under the translucent menu background. The
+      // popup draws over whatever sits above the prompt — on the dense home
+      // that is the logo, which otherwise bleeds through every unselected row.
+      backgroundColor={tuiConfig.ui !== "classic" ? theme.background : undefined}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => (scroll = r)}

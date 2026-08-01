@@ -116,6 +116,13 @@ export function DenseHome() {
             </pluginRuntime.Slot>
           </box>
         </Show>
+        <Show when={!dialogOpen()}>
+          {/* Content-sized so the column's alignItems="center" centres it
+              under the logo, like the logo itself. */}
+          <box height={1} flexShrink={0} marginTop={1}>
+            <text fg={theme.textMuted}>/ commands · ! shell · esc vim</text>
+          </box>
+        </Show>
         <Show when={dialogOpen()}>
           <box
             width="100%"
@@ -136,11 +143,6 @@ export function DenseHome() {
             <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
           </pluginRuntime.Slot>
         </box>
-        <Show when={!dialogOpen()}>
-          <box height={1} flexShrink={0} width="100%" maxWidth={promptMaxWidth()} marginTop={1}>
-            <text fg={theme.textMuted}>/ commands · ! shell · esc vim</text>
-          </box>
-        </Show>
         <pluginRuntime.Slot name="home_bottom" />
         <box flexGrow={1} minHeight={0} />
         <Toast />
