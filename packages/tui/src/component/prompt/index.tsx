@@ -161,6 +161,10 @@ export function Prompt(props: PromptProps) {
   const workerDisplay = createMemo(() => workerModelDisplay(workerRoute(), sync.data.provider))
   const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
+  // REDSUN DENSE: chrome-only variant for the bottom dock — no panel
+  // background, no wide padding, a leading `❯`/`!` sigil and a thin rule
+  // instead of the left border rail. All prompt logic is shared.
+  const dense = tuiConfig.ui !== "classic"
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
@@ -1339,9 +1343,18 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+        <Show when={dense}>
+          <box
+            height={1}
+            flexShrink={0}
+            border={["bottom"]}
+            borderColor={theme.border}
+            customBorderChars={{ ...EmptyBorder, horizontal: "─" }}
+          />
+        </Show>
         <box
           width="100%"
-          border={["left"]}
+          border={dense ? undefined : ["left"]}
           borderColor={borderHighlight()}
           customBorderChars={{
             ...SplitBorder.customBorderChars,
@@ -1349,16 +1362,23 @@ export function Prompt(props: PromptProps) {
           }}
         >
           <box
-            paddingLeft={2}
-            paddingRight={2}
-            paddingTop={1}
+            paddingLeft={dense ? 0 : 2}
+            paddingRight={dense ? 0 : 2}
+            paddingTop={dense ? 0 : 1}
             flexShrink={0}
-            backgroundColor={theme.backgroundElement}
+            backgroundColor={dense ? undefined : theme.backgroundElement}
             flexGrow={1}
             width="100%"
           >
+            <box flexDirection="row" width="100%" flexShrink={0}>
+            <Show when={dense}>
+              <text flexShrink={0} fg={store.mode === "shell" ? theme.warning : theme.primary}>
+                {store.mode === "shell" ? "! " : "❯ "}
+              </text>
+            </Show>
             <textarea
-              width="100%"
+              width={dense ? undefined : "100%"}
+              flexGrow={dense ? 1 : undefined}
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
               textColor={vim.mode !== "insert" ? theme.textMuted : theme.text}
@@ -1437,7 +1457,14 @@ const next = transition(vim.mode, e)
               cursorColor={props.disabled || vim.mode !== "insert" ? theme.backgroundElement : theme.text}
               syntaxStyle={syntax()}
             />
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+            </box>
+            <box
+              flexDirection="row"
+              flexShrink={0}
+              paddingTop={dense ? 0 : 1}
+              gap={1}
+              justifyContent="space-between"
+            >
               <box flexDirection="row" gap={1}>
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
@@ -1508,32 +1535,34 @@ const next = transition(vim.mode, e)
             </box>
           </box>
         </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
+        <Show when={!dense}>
           <box
             height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
+            border={["left"]}
+            borderColor={borderHighlight()}
+            customBorderChars={{
+              ...EmptyBorder,
+              vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
+            }}
+          >
+            <box
+              height={1}
+              border={["bottom"]}
+              borderColor={theme.backgroundElement}
+              customBorderChars={
+                theme.backgroundElement.a !== 0
+                  ? {
+                      ...EmptyBorder,
+                      horizontal: "▀",
+                    }
+                  : {
+                      ...EmptyBorder,
+                      horizontal: " ",
+                    }
+              }
+            />
+          </box>
+        </Show>
         <Show when={footerVisible()}>
           <box width="100%" flexDirection="row" justifyContent="space-between">
             <Switch>

@@ -13,7 +13,11 @@ import { fitSessionUsage, sessionUsage } from "../util/session-usage"
 
 const MAX_SUGGESTIONS = 10
 
-export function CommandBar() {
+// REDSUN DENSE: `variant="dense"` makes the bar participate in the dock's
+// column layout instead of floating over the last row, and drops the idle mode
+// label (the dense footer already shows the vim mode) in favour of the session
+// usage readout. Behaviour, bindings and command resolution are shared.
+export function CommandBar(props: { variant?: "dense" } = {}) {
   const vim = useVim()
   const { theme } = useTheme()
   const keymap = useOpencodeKeymap()
@@ -130,10 +134,11 @@ export function CommandBar() {
 
   return (
     <box
-      position="absolute"
-      bottom={0}
-      left={0}
-      width={dimensions().width}
+      position={props.variant === "dense" ? "relative" : "absolute"}
+      bottom={props.variant === "dense" ? undefined : 0}
+      left={props.variant === "dense" ? undefined : 0}
+      width={props.variant === "dense" ? "100%" : dimensions().width}
+      flexShrink={0}
       height={1}
       zIndex={1000}
       backgroundColor={vim.mode === "command" ? theme.backgroundElement : theme.background}
@@ -186,10 +191,16 @@ export function CommandBar() {
           </Show>
         </Match>
         <Match when={true}>
-          <box flexDirection="row" flexGrow={1} justifyContent="space-between">
-            <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
-              {modeLabel()}
-            </text>
+          <box
+            flexDirection="row"
+            flexGrow={1}
+            justifyContent={props.variant === "dense" ? "flex-end" : "space-between"}
+          >
+            <Show when={props.variant !== "dense"}>
+              <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
+                {modeLabel()}
+              </text>
+            </Show>
             <Show when={usageLabel()}>
               {(value) => (
                 <text fg={theme.textMuted} wrapMode="none">

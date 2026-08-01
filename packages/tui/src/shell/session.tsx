@@ -7,7 +7,6 @@
 // writes are inert because writeToScrollback would throw.
 import { useRenderer } from "@opentui/solid"
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
-import { useDialog } from "../ui/dialog"
 import { useEpilogue } from "../context/epilogue"
 import { usePathFormatter } from "../context/path-format"
 import { usePromptRef } from "../context/prompt"
@@ -19,8 +18,7 @@ import type { PromptRef } from "../component/prompt"
 import { sessionEpilogue } from "../util/presentation"
 import { normalizePath } from "../util/path"
 import * as Locale from "../util/locale"
-import { applyFooterHeight } from "./boot"
-import { Dock, DOCK_ROWS, DOCK_TALL_ROWS } from "./dock"
+import { Dock } from "./dock"
 import { bannerWriter } from "./scrollback/writers"
 import { createTranscriptCommitter } from "./transcript/committer"
 
@@ -33,7 +31,6 @@ export function DenseSession() {
   const route = useRouteData("session")
   const sync = useSync()
   const renderer = useRenderer()
-  const dialog = useDialog()
   const themeState = useTheme()
   const { theme, syntax } = themeState
   const setEpilogue = useEpilogue()
@@ -77,15 +74,6 @@ export function DenseSession() {
   })
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
-
-  // Footer-height policy: compact dock by default; grow for permission or
-  // question prompts and floating dialogs (inline dock dialogs land in a
-  // later phase); the resize path clamps automatically.
-  createEffect(() => {
-    const tall = dialog.stack.length > 0 || permissions().length > 0 || questions().length > 0
-    const rows = tall ? Math.max(DOCK_TALL_ROWS, Math.floor(renderer.terminalHeight / 2)) : DOCK_ROWS
-    applyFooterHeight(renderer, Math.min(rows, Math.max(1, renderer.terminalHeight)))
-  })
 
   onMount(() => {
     if (!scrollbackActive()) return

@@ -2,11 +2,19 @@
 //
 // Stack (top→bottom): live-tail preview of in-flight work (running tools and
 // the streaming text tail — committed to scrollback only once final), a
-// fixed-height status row (anti-jitter), inline permission/question prompts,
-// the existing prompt component, and a two-line dim footer. Inline pickers and
-// queued rows land in later phases.
+// fixed-height status row (anti-jitter), a single-line toast notice, the
+// active view (inline dialog / permission / question / prompt), and a two-line
+// dim footer. DenseApp renders the vim `:` bar below as the last footer row.
+//
+// View precedence is dialog → permission → question → prompt: a permission or
+// question arriving while a picker is open queues behind it and appears when
+// the picker closes, rather than yanking the view out from under the user.
+//
+// The dock owns the footer-region height policy (see height.ts) because it is
+// the only place that can see every input to it.
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
-import { createMemo, For, Show } from "solid-js"
+import { useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { createEffect, createMemo, For, Match, Show, Switch } from "solid-js"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import { Spinner } from "../../component/spinner"
 import { useDirectory } from "../../context/directory"
@@ -17,15 +25,17 @@ import { useVim } from "../../context/vim"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { PermissionPrompt } from "../../routes/session/permission"
 import { QuestionPrompt } from "../../routes/session/question"
-import { Toast } from "../../ui/toast"
+import { useDialog } from "../../ui/dialog"
+import { useToast } from "../../ui/toast"
 import { isDefaultTitle } from "../../util/session"
 import * as Locale from "../../util/locale"
+import { applyFooterHeight } from "../boot"
 import { pendingAssistantID } from "../transcript/blocks"
+import { dockRows, type DockView } from "./height"
+import { inlineSelectRows } from "./inline-select"
+import { Notice } from "./notice"
 
-// Base dock height while the plain prompt view is active. Permission/question
-// prompts and dialogs grow the footer region (see session.tsx).
-export const DOCK_ROWS = 10
-export const DOCK_TALL_ROWS = 20
+export { DOCK_ROWS, DOCK_TALL_ROWS, dockRows } from "./height"
 
 export function Dock(props: {
   sessionID: string
@@ -38,6 +48,10 @@ export function Dock(props: {
   const sync = useSync()
   const local = useLocal()
   const vim = useVim()
+  const dialog = useDialog()
+  const toast = useToast()
+  const renderer = useRenderer()
+  const dimensions = useTerminalDimensions()
   const { theme } = useTheme()
   const directory = useDirectory()
   const pluginRuntime = usePluginRuntime()
@@ -53,7 +67,17 @@ export function Dock(props: {
   const branch = createMemo(() => sync.data.vcs?.branch)
   const model = createMemo(() => local.model.current())
   const agent = createMemo(() => local.agent.current()?.name)
-  const vimMode = createMemo(() => `<${vim.mode.toUpperCase()}>`)
+  // Temporary normal mode (ctrl+x) counts down in place of the plain label.
+  const vimMode = createMemo(() =>
+    vim.tempRemaining() != null ? `<NORMAL ${vim.tempRemaining()}s>` : `<${vim.mode.toUpperCase()}>`,
+  )
+
+  const view = createMemo<DockView>(() => {
+    if (dialog.stack.length > 0) return "dialog"
+    if (props.permissions.length > 0) return "permission"
+    if (props.questions.length > 0) return "question"
+    return "prompt"
+  })
 
   // Bounded preview of uncommitted in-flight work: running tools plus the
   // last line of streaming text/reasoning. The transcript committer only
@@ -78,6 +102,22 @@ export function Dock(props: {
       lines.push("✳ thinking…")
     }
     return lines.slice(-3)
+  })
+
+  const notice = createMemo(() => Boolean(toast.currentToast))
+
+  createEffect(() => {
+    applyFooterHeight(
+      renderer,
+      dockRows({
+        view: view(),
+        viewport: renderer.terminalHeight,
+        tail: tail().length,
+        notice: notice(),
+        selectRows: inlineSelectRows(),
+        commandBar: vim.mode === "command",
+      }),
+    )
   })
 
   return (
@@ -108,36 +148,44 @@ export function Dock(props: {
           </text>
         </Show>
       </box>
-      <Show when={props.permissions.length > 0}>
-        <PermissionPrompt
-          request={props.permissions[0]}
-          directory={sync.session.get(props.permissions[0].sessionID)?.directory}
-        />
-      </Show>
-      <Show when={props.permissions.length === 0 && props.questions.length > 0}>
-        <QuestionPrompt
-          request={props.questions[0]}
-          directory={sync.session.get(props.questions[0].sessionID)?.directory}
-        />
-      </Show>
-      <Show when={props.visible}>
-        <pluginRuntime.Slot
-          name="session_prompt"
-          mode="replace"
-          session_id={props.sessionID}
-          visible={props.visible}
-          disabled={props.disabled}
-          ref={props.bind}
-        >
-          <Prompt
-            visible={props.visible}
-            ref={props.bind}
-            disabled={props.disabled}
-            sessionID={props.sessionID}
-            right={<pluginRuntime.Slot name="session_prompt_right" session_id={props.sessionID} />}
+      <Notice width={dimensions().width} />
+      <Switch>
+        <Match when={view() === "dialog"}>
+          <box flexDirection="column" flexShrink={0}>
+            {dialog.stack.at(-1)!.element}
+          </box>
+        </Match>
+        <Match when={view() === "permission"}>
+          <PermissionPrompt
+            request={props.permissions[0]}
+            directory={sync.session.get(props.permissions[0].sessionID)?.directory}
           />
-        </pluginRuntime.Slot>
-      </Show>
+        </Match>
+        <Match when={view() === "question"}>
+          <QuestionPrompt
+            request={props.questions[0]}
+            directory={sync.session.get(props.questions[0].sessionID)?.directory}
+          />
+        </Match>
+        <Match when={props.visible}>
+          <pluginRuntime.Slot
+            name="session_prompt"
+            mode="replace"
+            session_id={props.sessionID}
+            visible={props.visible}
+            disabled={props.disabled}
+            ref={props.bind}
+          >
+            <Prompt
+              visible={props.visible}
+              ref={props.bind}
+              disabled={props.disabled}
+              sessionID={props.sessionID}
+              right={<pluginRuntime.Slot name="session_prompt_right" session_id={props.sessionID} />}
+            />
+          </pluginRuntime.Slot>
+        </Match>
+      </Switch>
       <box height={1} flexDirection="row" gap={1}>
         <text fg={theme.textMuted} wrapMode="none" truncate>
           {directory()}
@@ -151,7 +199,6 @@ export function Dock(props: {
           {model() ? `${model()!.providerID}/${model()!.modelID}` : "no model"}
         </text>
       </box>
-      <Toast />
     </box>
   )
 }

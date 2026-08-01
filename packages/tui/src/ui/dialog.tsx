@@ -7,6 +7,7 @@ import { useToast } from "./toast"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
+import { useTuiConfig } from "../config"
 
 export function Dialog(
   props: ParentProps<{
@@ -184,6 +185,10 @@ export function DialogProvider(props: ParentProps) {
   const renderer = useRenderer()
   const toast = useToast()
   const clipboard = useClipboard()
+  // REDSUN DENSE: the dense shell hosts the dialog stack inline in the bottom
+  // dock (shell/dock/index.tsx), so the floating overlay is classic-only. The
+  // context, stack and escape bindings are shared by both UIs.
+  const tuiConfig = useTuiConfig()
 
   function copySelection() {
     const text = renderer.getSelection()?.getSelectedText()
@@ -212,7 +217,7 @@ export function DialogProvider(props: ParentProps) {
         }}
         onMouseUp={!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
-        <Show when={value.stack.length}>
+        <Show when={tuiConfig.ui === "classic" && value.stack.length}>
           <Dialog onClose={() => value.clear()} size={value.size}>
             {value.stack.at(-1)!.element}
           </Dialog>
