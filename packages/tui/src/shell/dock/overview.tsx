@@ -51,33 +51,39 @@ export function SessionOverview(props: { sessionID: string }) {
 
   return (
     <box flexDirection="column" flexGrow={1} minHeight={0}>
-      <box height={1} flexDirection="row" justifyContent="space-between">
-        <text fg={theme.text} attributes={TextAttributes.BOLD} wrapMode="none" truncate>
-          {session()?.title ?? "Session"}
-        </text>
+      <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
+        <pluginRuntime.Slot
+          name="sidebar_title"
+          mode="single_winner"
+          session_id={props.sessionID}
+          title={session()?.title ?? ""}
+          share_url={session()?.share?.url}
+        >
+          <box flexDirection="column">
+            <text fg={theme.text} attributes={TextAttributes.BOLD} wrapMode="none" truncate>
+              {session()?.title ?? "Session"}
+            </text>
+            <Show when={workspace()}>
+              {(item) => (
+                <text fg={theme.textMuted} wrapMode="none" truncate>
+                  <WorkspaceLabel
+                    type={item().type}
+                    name={item().name}
+                    status={project.workspace.status(item().id) ?? "error"}
+                    icon
+                  />
+                </text>
+              )}
+            </Show>
+            <Show when={session()?.share?.url}>
+              <text fg={theme.textMuted} wrapMode="none" truncate>
+                {session()!.share!.url}
+              </text>
+            </Show>
+          </box>
+        </pluginRuntime.Slot>
         <text fg={theme.textMuted}>esc</text>
       </box>
-      <Show when={workspace()}>
-        {(item) => (
-          <box height={1} flexDirection="row">
-            <text fg={theme.textMuted} wrapMode="none" truncate>
-              <WorkspaceLabel
-                type={item().type}
-                name={item().name}
-                status={project.workspace.status(item().id) ?? "error"}
-                icon
-              />
-            </text>
-          </box>
-        )}
-      </Show>
-      <Show when={session()?.share?.url}>
-        <box height={1} flexDirection="row">
-          <text fg={theme.textMuted} wrapMode="none" truncate>
-            {session()!.share!.url}
-          </text>
-        </box>
-      </Show>
       <scrollbox ref={(item: ScrollBoxRenderable) => (scroll = item)} flexGrow={1} minHeight={0}>
         <box flexShrink={0} gap={1} paddingTop={1}>
           <pluginRuntime.Slot name="sidebar_content" session_id={props.sessionID} />

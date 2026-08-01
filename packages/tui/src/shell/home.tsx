@@ -1,8 +1,10 @@
 // Dense home: full-viewport takeover view shown before the first session.
 //
-// Reuses the gradient logo and the existing prompt component (its dense chrome
-// variant lands in a later phase). On submit the prompt creates a session and
-// the route switches to the session view.
+// Reuses the gradient logo and the existing prompt component in its dense
+// chrome variant, plus every home plugin slot. On submit the prompt creates a
+// session and the route switches to the session view, which commits a banner
+// and takes over the dock. The floating `Toast` stays here: home has no dock,
+// so it is the only place a notice can land before a session starts.
 import { useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createMemo, createSignal, onMount } from "solid-js"
 import { Prompt, type PromptRef } from "../component/prompt"
