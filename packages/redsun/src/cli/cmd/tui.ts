@@ -125,6 +125,11 @@ export const TuiThreadCommand = cmd({
         describe: "start the minimal interactive interface",
         default: false,
       })
+      .option("classic", {
+        type: "boolean",
+        describe: "start the classic fullscreen interface instead of the dense scrollback interface",
+        default: false,
+      })
       .option("replay", {
         type: "boolean",
         hidden: true,
@@ -150,6 +155,11 @@ export const TuiThreadCommand = cmd({
     const noReplay = args.replay === false || args.noReplay === true
 
     if (args.mini) {
+      if (args.classic) {
+        UI.error("--classic cannot be used with --mini")
+        process.exitCode = 1
+        return
+      }
       const network = ["--port", "--hostname", "--mdns", "--no-mdns", "--mdns-domain", "--cors"].find((option) =>
         process.argv.some((arg) => arg === option || arg.startsWith(option + "=")),
       )
@@ -228,7 +238,9 @@ export const TuiThreadCommand = cmd({
       }
 
       const prompt = await input(args.prompt)
-      const config = await TuiConfig.get()
+      // REDSUN DENSE: --classic forces the classic fullscreen interface over the dense scrollback default.
+      const resolvedConfig = await TuiConfig.get()
+      const config = args.classic ? { ...resolvedConfig, ui: "classic" as const } : resolvedConfig
 
       const network = resolveNetworkOptionsNoConfig(args)
       const external = hasArg("--port") || hasArg("--hostname") || network.mdns === true
