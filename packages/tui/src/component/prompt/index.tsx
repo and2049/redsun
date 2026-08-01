@@ -96,6 +96,11 @@ export type PromptRef = {
   blur(): void
   focus(): void
   submit(): void
+  // REDSUN DENSE: trigger character of the open completion popup, or false.
+  // The dense dock reserves footer rows for it (the popup draws upward from
+  // the prompt and would otherwise be clamped to one row). Optional so the
+  // plugin-facing `TuiPromptRef` contract stays assignable both ways.
+  readonly autocomplete?: false | "@" | "/"
 }
 
 const DRAFT_RETENTION_MIN_CHARS = 20
@@ -562,6 +567,9 @@ export function Prompt(props: PromptProps) {
   const ref: PromptRef = {
     get focused() {
       return input.focused
+    },
+    get autocomplete() {
+      return auto()?.visible ?? false
     },
     get current() {
       return store.prompt

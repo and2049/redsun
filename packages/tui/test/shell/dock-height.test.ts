@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test"
 import {
+  DOCK_AUTOCOMPLETE_ROWS,
   DOCK_BASE_ROWS,
   DOCK_COMMAND_ROWS,
   DOCK_PROMPT_ROWS,
   DOCK_ROWS,
   DOCK_TALL_ROWS,
   dockRows,
+  dockView,
 } from "../../src/shell/dock/height"
 
 test("the prompt view is compact and grows with the live tail and notices", () => {
@@ -19,10 +21,14 @@ test("the vim command bar reserves suggestion rows while it is open", () => {
 })
 
 test("an inline select sizes the dock to exactly the rows it asked for", () => {
-  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 5 })).toBe(DOCK_BASE_ROWS + 5)
-  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 11, tail: 1 })).toBe(DOCK_BASE_ROWS + 12)
-  // The prompt is hidden behind a dialog, so its rows are not reserved.
-  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 1 })).toBe(DOCK_ROWS - DOCK_PROMPT_ROWS + 1)
+  // The prompt stays mounted under an open picker, so its rows stay reserved.
+  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 5 })).toBe(DOCK_BASE_ROWS + DOCK_PROMPT_ROWS + 5)
+  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 11, tail: 1 })).toBe(
+    DOCK_BASE_ROWS + DOCK_PROMPT_ROWS + 12,
+  )
+  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 1 })).toBe(DOCK_ROWS + 1)
+  // A permission behind the picker hides the prompt and frees its rows.
+  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 5, prompt: false })).toBe(DOCK_BASE_ROWS + 5)
 })
 
 test("dialogs that are not select-based fall back to the tall dock", () => {
@@ -33,6 +39,22 @@ test("dialogs that are not select-based fall back to the tall dock", () => {
 test("permission and question prompts always take the tall dock", () => {
   expect(dockRows({ view: "permission", viewport: 60 })).toBe(30)
   expect(dockRows({ view: "question", viewport: 60, selectRows: 3 })).toBe(30)
+})
+
+test("the prompt completion popup gets its own reserved rows", () => {
+  expect(dockRows({ view: "prompt", viewport: 50, autocomplete: true })).toBe(DOCK_ROWS + DOCK_AUTOCOMPLETE_ROWS)
+  // A picker owns the keyboard, so the prompt's popup reservation does not apply.
+  expect(dockRows({ view: "dialog", viewport: 50, selectRows: 3, autocomplete: true })).toBe(
+    DOCK_BASE_ROWS + DOCK_PROMPT_ROWS + 3,
+  )
+})
+
+test("a permission arriving mid-picker queues behind the open dialog", () => {
+  expect(dockView({ dialogs: 1, permissions: 1, questions: 0 })).toBe("dialog")
+  // …and takes over once the picker closes.
+  expect(dockView({ dialogs: 0, permissions: 1, questions: 1 })).toBe("permission")
+  expect(dockView({ dialogs: 0, permissions: 0, questions: 1 })).toBe("question")
+  expect(dockView({ dialogs: 0, permissions: 0, questions: 0 })).toBe("prompt")
 })
 
 test("rows never exceed the viewport or drop below one", () => {

@@ -14,7 +14,7 @@
 // the only place that can see every input to it.
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
-import { createEffect, createMemo, For, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import { Spinner } from "../../component/spinner"
 import { useDirectory } from "../../context/directory"
@@ -31,7 +31,7 @@ import { isDefaultTitle } from "../../util/session"
 import * as Locale from "../../util/locale"
 import { applyFooterHeight } from "../boot"
 import { pendingAssistantID } from "../transcript/blocks"
-import { dockRows, type DockView } from "./height"
+import { dockRows, dockView } from "./height"
 import { inlineSelectRows } from "./inline-select"
 import { Notice } from "./notice"
 
@@ -72,12 +72,13 @@ export function Dock(props: {
     vim.tempRemaining() != null ? `<NORMAL ${vim.tempRemaining()}s>` : `<${vim.mode.toUpperCase()}>`,
   )
 
-  const view = createMemo<DockView>(() => {
-    if (dialog.stack.length > 0) return "dialog"
-    if (props.permissions.length > 0) return "permission"
-    if (props.questions.length > 0) return "question"
-    return "prompt"
-  })
+  const view = createMemo(() =>
+    dockView({
+      dialogs: dialog.stack.length,
+      permissions: props.permissions.length,
+      questions: props.questions.length,
+    }),
+  )
 
   // Bounded preview of uncommitted in-flight work: running tools plus the
   // last line of streaming text/reasoning. The transcript committer only
@@ -106,6 +107,14 @@ export function Dock(props: {
 
   const notice = createMemo(() => Boolean(toast.currentToast))
 
+  // The `/` and `@` completion popup draws upward from the prompt, so the dock
+  // has to make room for it before it can render at a useful height.
+  const [promptRef, setPromptRef] = createSignal<PromptRef>()
+  const bind = (ref: PromptRef | undefined) => {
+    setPromptRef(() => ref)
+    props.bind(ref)
+  }
+
   createEffect(() => {
     applyFooterHeight(
       renderer,
@@ -116,6 +125,8 @@ export function Dock(props: {
         notice: notice(),
         selectRows: inlineSelectRows(),
         commandBar: vim.mode === "command",
+        autocomplete: Boolean(promptRef()?.autocomplete),
+        prompt: props.visible,
       }),
     )
   })
@@ -149,12 +160,12 @@ export function Dock(props: {
         </Show>
       </box>
       <Notice width={dimensions().width} />
+      <Show when={view() === "dialog"}>
+        <box flexDirection="column" flexShrink={0}>
+          {dialog.stack.at(-1)!.element}
+        </box>
+      </Show>
       <Switch>
-        <Match when={view() === "dialog"}>
-          <box flexDirection="column" flexShrink={0}>
-            {dialog.stack.at(-1)!.element}
-          </box>
-        </Match>
         <Match when={view() === "permission"}>
           <PermissionPrompt
             request={props.permissions[0]}
@@ -174,11 +185,11 @@ export function Dock(props: {
             session_id={props.sessionID}
             visible={props.visible}
             disabled={props.disabled}
-            ref={props.bind}
+            ref={bind}
           >
             <Prompt
               visible={props.visible}
-              ref={props.bind}
+              ref={bind}
               disabled={props.disabled}
               sessionID={props.sessionID}
               right={<pluginRuntime.Slot name="session_prompt_right" session_id={props.sessionID} />}
