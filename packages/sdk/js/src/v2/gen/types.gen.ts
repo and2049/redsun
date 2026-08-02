@@ -21,6 +21,7 @@ export type Event =
   | EventSessionNextMoved
   | EventSessionNextPrompted
   | EventSessionNextPromptAdmitted
+  | EventSessionNextSettled
   | EventSessionNextContextUpdated
   | EventSessionNextSynthetic
   | EventSessionNextShellStarted
@@ -94,6 +95,10 @@ export type Event =
   | EventWorktreeFailed
   | EventServerConnected
   | EventGlobalDisposed
+  | EventRedsunSessionGoalSet
+  | EventRedsunSessionGoalCleared
+  | EventRedsunSessionGoalVerdict
+  | EventRedsunSessionAdvisoryIssued
   | EventServerInstanceDisposed
 
 export type QuestionReplied = {
@@ -873,6 +878,17 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.settled"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          outcome: "completed" | "interrupted" | "failed"
+          error?: SessionErrorUnknown
+        }
+      }
+    | {
+        id: string
         type: "session.next.context.updated"
         properties: {
           timestamp: number
@@ -1619,6 +1635,52 @@ export type GlobalEvent = {
           [key: string]: unknown
         }
       }
+    | {
+        id: string
+        type: "redsun.session.goal.set"
+        properties: {
+          timestamp: number
+          sessionID: string
+          condition: string
+          budget?: RedsunSessionGoalBudget
+        }
+      }
+    | {
+        id: string
+        type: "redsun.session.goal.cleared"
+        properties: {
+          timestamp: number
+          sessionID: string
+          reason: "satisfied" | "impossible" | "capped" | "manual" | "judge-error"
+        }
+      }
+    | {
+        id: string
+        type: "redsun.session.goal.verdict"
+        properties: {
+          timestamp: number
+          sessionID: string
+          condition: string
+          ok: boolean
+          impossible?: boolean
+          reason: string
+          attempt: number
+          judgedMessageID?: string
+          judgeError?: boolean
+        }
+      }
+    | {
+        id: string
+        type: "redsun.session.advisory.issued"
+        properties: {
+          timestamp: number
+          sessionID: string
+          severity: "interrupt" | "aside"
+          note: string
+          judgedMessageID?: string
+          model?: string
+        }
+      }
     | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
@@ -1632,6 +1694,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
     | SyncEventSessionNextPromptAdmitted
+    | SyncEventSessionNextSettled
     | SyncEventSessionNextContextUpdated
     | SyncEventSessionNextSynthetic
     | SyncEventSessionNextShellStarted
@@ -1655,6 +1718,10 @@ export type GlobalEvent = {
     | SyncEventSessionNextRevertStaged
     | SyncEventSessionNextRevertCleared
     | SyncEventSessionNextRevertCommitted
+    | SyncEventRedsunSessionGoalSet
+    | SyncEventRedsunSessionGoalCleared
+    | SyncEventRedsunSessionGoalVerdict
+    | SyncEventRedsunSessionAdvisoryIssued
 }
 
 /**
@@ -2776,6 +2843,7 @@ export type SessionDurableEvent =
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
+  | SessionNextSettled
   | SessionNextContextUpdated
   | SessionNextSynthetic
   | SessionNextShellStarted
@@ -2903,6 +2971,7 @@ export type V2Event =
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
+  | SessionNextSettled
   | SessionNextContextUpdated
   | SessionNextSynthetic
   | SessionNextShellStarted
@@ -2976,6 +3045,10 @@ export type V2Event =
   | WorktreeFailed
   | ServerConnected
   | GlobalDisposed
+  | RedsunSessionGoalSet
+  | RedsunSessionGoalCleared
+  | RedsunSessionGoalVerdict
+  | RedsunSessionAdvisoryIssued
 
 export type V2EventStream = string
 
@@ -2989,6 +3062,33 @@ export type ProjectCopyError = {
   data: {
     message: string
     forceRequired?: boolean
+  }
+}
+
+export type RedsunGoalState = {
+  condition: string
+  budget?: RedsunSessionGoalBudget
+  attempts: number
+  lastVerdict?: {
+    ok: boolean
+    impossible?: boolean
+    reason: string
+    attempt: number
+    judgedMessageID?: string
+    error?: boolean
+  }
+}
+
+export type RedsunGoalResponse = {
+  data: {
+    goal?: RedsunGoalState
+  }
+}
+
+export type RedsunGoalSetResponse = {
+  data: {
+    goal: RedsunGoalState
+    admitted?: SessionInputAdmitted
   }
 }
 
@@ -3218,6 +3318,11 @@ export type ProjectTime = {
   initialized?: number
 }
 
+export type RedsunSessionGoalBudget = {
+  tokens?: number
+  wallClockMs?: number
+}
+
 export type EventServerInstanceDisposed = {
   id: string
   type: "server.instance.disposed"
@@ -3416,6 +3521,24 @@ export type SyncEventSessionNextPromptAdmitted = {
       messageID: string
       prompt: Prompt
       delivery: "steer" | "queue"
+    }
+  }
+}
+
+export type SyncEventSessionNextSettled = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.settled.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      outcome: "completed" | "interrupted" | "failed"
+      error?: SessionErrorUnknown
     }
   }
 }
@@ -3858,6 +3981,80 @@ export type SyncEventSessionNextRevertCommitted = {
   }
 }
 
+export type SyncEventRedsunSessionGoalSet = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "redsun.session.goal.set.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      condition: string
+      budget?: RedsunSessionGoalBudget
+    }
+  }
+}
+
+export type SyncEventRedsunSessionGoalCleared = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "redsun.session.goal.cleared.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      reason: "satisfied" | "impossible" | "capped" | "manual" | "judge-error"
+    }
+  }
+}
+
+export type SyncEventRedsunSessionGoalVerdict = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "redsun.session.goal.verdict.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      condition: string
+      ok: boolean
+      impossible?: boolean
+      reason: string
+      attempt: number
+      judgedMessageID?: string
+      judgeError?: boolean
+    }
+  }
+}
+
+export type SyncEventRedsunSessionAdvisoryIssued = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "redsun.session.advisory.issued.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      severity: "interrupt" | "aside"
+      note: string
+      judgedMessageID?: string
+      model?: string
+    }
+  }
+}
+
 export type ConfigV2ReferenceGit = {
   repository: string
   branch?: string
@@ -4296,6 +4493,27 @@ export type SessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+  }
+}
+
+export type SessionNextSettled = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.settled"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    outcome: "completed" | "interrupted" | "failed"
+    error?: SessionErrorUnknown
   }
 }
 
@@ -6168,6 +6386,92 @@ export type GlobalDisposed = {
   }
 }
 
+export type RedsunSessionGoalSet = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "redsun.session.goal.set"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    condition: string
+    budget?: RedsunSessionGoalBudget
+  }
+}
+
+export type RedsunSessionGoalCleared = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "redsun.session.goal.cleared"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    reason: "satisfied" | "impossible" | "capped" | "manual" | "judge-error"
+  }
+}
+
+export type RedsunSessionGoalVerdict = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "redsun.session.goal.verdict"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    condition: string
+    ok: boolean
+    impossible?: boolean
+    reason: string
+    attempt: number
+    judgedMessageID?: string
+    judgeError?: boolean
+  }
+}
+
+export type RedsunSessionAdvisoryIssued = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "redsun.session.advisory.issued"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    severity: "interrupt" | "aside"
+    note: string
+    judgedMessageID?: string
+    model?: string
+  }
+}
+
 export type QuestionV2Request = {
   id: string
   sessionID: string
@@ -6365,6 +6669,18 @@ export type EventSessionNextPromptAdmitted = {
     messageID: string
     prompt: Prompt
     delivery: "steer" | "queue"
+  }
+}
+
+export type EventSessionNextSettled = {
+  id: string
+  type: "session.next.settled"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    outcome: "completed" | "interrupted" | "failed"
+    error?: SessionErrorUnknown
   }
 }
 
@@ -7134,6 +7450,56 @@ export type EventGlobalDisposed = {
   }
 }
 
+export type EventRedsunSessionGoalSet = {
+  id: string
+  type: "redsun.session.goal.set"
+  properties: {
+    timestamp: number
+    sessionID: string
+    condition: string
+    budget?: RedsunSessionGoalBudget
+  }
+}
+
+export type EventRedsunSessionGoalCleared = {
+  id: string
+  type: "redsun.session.goal.cleared"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reason: "satisfied" | "impossible" | "capped" | "manual" | "judge-error"
+  }
+}
+
+export type EventRedsunSessionGoalVerdict = {
+  id: string
+  type: "redsun.session.goal.verdict"
+  properties: {
+    timestamp: number
+    sessionID: string
+    condition: string
+    ok: boolean
+    impossible?: boolean
+    reason: string
+    attempt: number
+    judgedMessageID?: string
+    judgeError?: boolean
+  }
+}
+
+export type EventRedsunSessionAdvisoryIssued = {
+  id: string
+  type: "redsun.session.advisory.issued"
+  properties: {
+    timestamp: number
+    sessionID: string
+    severity: "interrupt" | "aside"
+    note: string
+    judgedMessageID?: string
+    model?: string
+  }
+}
+
 export type CredentialOAuth = {
   type: "oauth"
   methodID: string
@@ -7704,7 +8070,7 @@ export type ExperimentalConsoleSwitchOrgResponses = {
 export type ExperimentalConsoleSwitchOrgResponse =
   ExperimentalConsoleSwitchOrgResponses[keyof ExperimentalConsoleSwitchOrgResponses]
 
-export type ToolListData = {
+export type ExperimentalToolListData = {
   body?: never
   path?: never
   query: {
@@ -7716,25 +8082,25 @@ export type ToolListData = {
   url: "/experimental/tool"
 }
 
-export type ToolListErrors = {
+export type ExperimentalToolListErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type ToolListError = ToolListErrors[keyof ToolListErrors]
+export type ExperimentalToolListError = ExperimentalToolListErrors[keyof ExperimentalToolListErrors]
 
-export type ToolListResponses = {
+export type ExperimentalToolListResponses = {
   /**
    * Tools
    */
   200: ToolList
 }
 
-export type ToolListResponse = ToolListResponses[keyof ToolListResponses]
+export type ExperimentalToolListResponse = ExperimentalToolListResponses[keyof ExperimentalToolListResponses]
 
-export type ToolIdsData = {
+export type ExperimentalToolIdsData = {
   body?: never
   path?: never
   query?: {
@@ -7744,23 +8110,23 @@ export type ToolIdsData = {
   url: "/experimental/tool/ids"
 }
 
-export type ToolIdsErrors = {
+export type ExperimentalToolIdsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type ToolIdsError = ToolIdsErrors[keyof ToolIdsErrors]
+export type ExperimentalToolIdsError = ExperimentalToolIdsErrors[keyof ExperimentalToolIdsErrors]
 
-export type ToolIdsResponses = {
+export type ExperimentalToolIdsResponses = {
   /**
    * Tool IDs
    */
   200: ToolIds
 }
 
-export type ToolIdsResponse = ToolIdsResponses[keyof ToolIdsResponses]
+export type ExperimentalToolIdsResponse = ExperimentalToolIdsResponses[keyof ExperimentalToolIdsResponses]
 
 export type WorktreeRemoveData = {
   body?: WorktreeRemoveInput
@@ -8453,6 +8819,64 @@ export type AppSkillsResponses = {
 }
 
 export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
+
+export type ToolListData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    provider: string
+    model: string
+  }
+  url: "/tool"
+}
+
+export type ToolListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ToolListError = ToolListErrors[keyof ToolListErrors]
+
+export type ToolListResponses = {
+  /**
+   * Tools
+   */
+  200: ToolList
+}
+
+export type ToolListResponse = ToolListResponses[keyof ToolListResponses]
+
+export type ToolIdsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/tool/ids"
+}
+
+export type ToolIdsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ToolIdsError = ToolIdsErrors[keyof ToolIdsErrors]
+
+export type ToolIdsResponses = {
+  /**
+   * Tool IDs
+   */
+  200: ToolIds
+}
+
+export type ToolIdsResponse = ToolIdsResponses[keyof ToolIdsResponses]
 
 export type LspStatusData = {
   body?: never
@@ -13667,6 +14091,119 @@ export type V2ProjectCopyRefreshResponses = {
 }
 
 export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
+
+export type RedsunSessionGoalClearData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal"
+}
+
+export type RedsunSessionGoalClearErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type RedsunSessionGoalClearError = RedsunSessionGoalClearErrors[keyof RedsunSessionGoalClearErrors]
+
+export type RedsunSessionGoalClearResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type RedsunSessionGoalClearResponse = RedsunSessionGoalClearResponses[keyof RedsunSessionGoalClearResponses]
+
+export type RedsunSessionGoalGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal"
+}
+
+export type RedsunSessionGoalGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type RedsunSessionGoalGetError = RedsunSessionGoalGetErrors[keyof RedsunSessionGoalGetErrors]
+
+export type RedsunSessionGoalGetResponses = {
+  /**
+   * RedsunGoalResponse
+   */
+  200: RedsunGoalResponse
+}
+
+export type RedsunSessionGoalGetResponse = RedsunSessionGoalGetResponses[keyof RedsunSessionGoalGetResponses]
+
+export type RedsunSessionGoalSetData = {
+  body: {
+    condition: string
+    budget?: RedsunSessionGoalBudget
+    prompt?: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/goal"
+}
+
+export type RedsunSessionGoalSetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type RedsunSessionGoalSetError = RedsunSessionGoalSetErrors[keyof RedsunSessionGoalSetErrors]
+
+export type RedsunSessionGoalSetResponses = {
+  /**
+   * RedsunGoalSetResponse
+   */
+  200: RedsunGoalSetResponse
+}
+
+export type RedsunSessionGoalSetResponse = RedsunSessionGoalSetResponses[keyof RedsunSessionGoalSetResponses]
 
 export type PtyConnectData = {
   body?: never
