@@ -15558,6 +15558,81 @@
         ]
       }
     },
+    "/api/session/{sessionID}/advisor": {
+      "get": {
+        "tags": ["redsun.advisor"],
+        "operationId": "redsun.session.advisor.get",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RedsunAdvisorResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedsunAdvisorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Report whether the watchdog advisor is enabled and list the newest durable advisories for a v2 session.",
+        "summary": "Get advisor status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.redsun.session.advisor.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/pty/{ptyID}/connect": {
       "get": {
         "tags": ["pty"],
@@ -21995,6 +22070,48 @@
             },
             "additionalProperties": false
           },
+          "advisor": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "model": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["auto", "aside-only"]
+              },
+              "cooldownTurns": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "guidance": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
           "default_agent": {
             "type": "string"
           },
@@ -25187,6 +25304,49 @@
               }
             },
             "required": ["goal"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["data"],
+        "additionalProperties": false
+      },
+      "RedsunAdvisorResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "advisories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "timestamp": {
+                      "type": "number"
+                    },
+                    "severity": {
+                      "type": "string",
+                      "enum": ["interrupt", "aside"]
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "judgedMessageID": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["timestamp", "severity", "note"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["enabled", "advisories"],
             "additionalProperties": false
           }
         },
@@ -38807,6 +38967,9 @@
     },
     {
       "name": "redsun.goal"
+    },
+    {
+      "name": "redsun.advisor"
     },
     {
       "name": "pty",
