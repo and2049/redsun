@@ -14,8 +14,10 @@ import { SessionStore } from "@opencode-ai/core/session/store"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { toLLMMessages } from "@opencode-ai/core/session/runner/to-llm-message"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { Event } from "@opencode-ai/schema/event"
 import { RedsunGoalEvent } from "@opencode-ai/schema/redsun-goal-event"
-import { Cause, DateTime, Effect, Exit, Layer } from "effect"
+import { SessionEvent } from "@opencode-ai/schema/session-event"
+import { Cause, DateTime, Effect, Exit, Layer, Schema } from "effect"
 import { continuationText, JUDGE_SYSTEM, judgeQuestion, parseVerdict, REACT_CAP, type Verdict } from "./goal-shared"
 
 /**
@@ -93,6 +95,53 @@ export const get = Effect.fn("GoalV2.get")(function* (db: Db, sessionID: Session
     if (!page.hasMore) break
   }
   return state
+})
+
+const StepEndedManifest = {
+  definitions: Event.durable([SessionEvent.Step.Ended]),
+  schema: Schema.Union([SessionEvent.Step.Ended], { mode: "oneOf" }).pipe(Schema.toTaggedUnion("type")),
+} as const
+
+/** Input + output + reasoning tokens spent since the goal was set; cache tokens excluded. */
+export const spentTokens = Effect.fn("GoalV2.spentTokens")(function* (
+  db: Db,
+  sessionID: SessionSchema.ID,
+  afterSeq: number,
+) {
+  let spent = 0
+  let after = afterSeq
+  while (true) {
+    const page = yield* EventV2.readAggregate(db, {
+      aggregateID: sessionID,
+      after,
+      limit: PAGE,
+      manifest: StepEndedManifest,
+    })
+    for (const event of page.events) {
+      after = event.durable?.seq ?? after
+      spent += event.data.tokens.input + event.data.tokens.output + event.data.tokens.reasoning
+    }
+    if (!page.hasMore) break
+  }
+  return spent
+})
+
+const budgetExhausted = Effect.fn("GoalV2.budgetExhausted")(function* (
+  db: Db,
+  sessionID: SessionSchema.ID,
+  state: GoalState,
+) {
+  const budget = state.budget
+  if (!budget) return undefined
+  if (budget.wallClockMs !== undefined) {
+    const elapsed = DateTime.toEpochMillis(yield* DateTime.now) - DateTime.toEpochMillis(state.setTimestamp)
+    if (elapsed >= budget.wallClockMs) return `wall-clock budget exhausted (${elapsed}ms of ${budget.wallClockMs}ms)`
+  }
+  if (budget.tokens !== undefined) {
+    const spent = yield* spentTokens(db, sessionID, state.setSeq)
+    if (spent >= budget.tokens) return `token budget exhausted (${spent} of ${budget.tokens} tokens)`
+  }
+  return undefined
 })
 
 const mirror = (
@@ -217,6 +266,18 @@ const policyLayer = Layer.effect(
       Effect.gen(function* () {
         const state = yield* get(db, sessionID)
         if (!state) return
+        const exhausted = yield* budgetExhausted(db, sessionID, state)
+        if (exhausted !== undefined) {
+          // Budget exhaustion stops without spending a judge call.
+          yield* recordVerdict(events, {
+            sessionID,
+            condition: state.condition,
+            verdict: { ok: false, reason: `Goal ${exhausted}` },
+            attempt: state.attempts,
+          })
+          yield* clear(events, { sessionID, reason: "capped" })
+          return
+        }
         const session = yield* store.get(sessionID)
         if (!session) return
         const context = yield* store.context(sessionID)
