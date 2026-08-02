@@ -57,6 +57,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Goal } from "./goal"
+import { continuationText, REACT_CAP } from "./goal-shared"
 import { ContextOptimizer } from "./context-optimizer"
 import { ExtensionRuntime } from "@/extension/runtime"
 import { ProjectTrust } from "@/trust"
@@ -724,7 +725,7 @@ const layer = Layer.effect(
       }
 
       const attempt = yield* goal.bumpReact(input.sessionID)
-      if (attempt > 12) {
+      if (attempt > REACT_CAP) {
         yield* goal.publishVerdict({ sessionID: input.sessionID, verdict: verdict.value, attempt, messageID })
         yield* goal.clear(input.sessionID)
         return "stop" as const
@@ -745,7 +746,7 @@ const layer = Layer.effect(
           modelID: input.model.id,
           ...(input.variant ? { variant: input.variant } : {}),
         },
-        text: `Your goal is not yet satisfied: "${active.condition}".\n\nThe independent judge noted:\n${verdict.value.reason}\n\nKeep working toward the goal. Do not stop until it is genuinely met or impossible.`,
+        text: continuationText(active.condition, verdict.value.reason),
       })
       return "continue" as const
     })

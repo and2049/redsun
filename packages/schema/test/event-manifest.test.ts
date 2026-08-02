@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { FileSystem, Integration, Permission, Project, Reference, Session, Workspace } from "../src"
 import { EventManifest } from "../src/event-manifest"
 import { IdeEvent } from "../src/ide-event"
+import { RedsunAdvisorEvent } from "../src/redsun-advisor-event"
+import { RedsunGoalEvent } from "../src/redsun-goal-event"
 import { SessionEvent } from "../src/session-event"
 import { SessionTodo } from "../src/session-todo"
 import { SessionV1 } from "../src/session-v1"
@@ -9,8 +11,8 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(59)
-    expect(EventManifest.Definitions.length).toBe(90)
+    expect(EventManifest.ServerDefinitions.length).toBe(63)
+    expect(EventManifest.Definitions.length).toBe(94)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,
       SessionV1.Event.Updated,
@@ -24,8 +26,8 @@ describe("public event manifest", () => {
       SessionV1.Event.Error,
       SessionV1.Event.GoalUpdated,
     ])
-    expect(EventManifest.Latest.size).toBe(90)
-    expect(EventManifest.Durable.size).toBe(36)
+    expect(EventManifest.Latest.size).toBe(94)
+    expect(EventManifest.Durable.size).toBe(40)
     expect(new Set(EventManifest.Definitions.map((definition) => definition.type)).size).toBe(EventManifest.Latest.size)
     for (const definition of EventManifest.Durable.values()) {
       expect(EventManifest.Latest.has(definition.type)).toBe(true)
@@ -58,5 +60,9 @@ describe("public event manifest", () => {
     expect(EventManifest.Durable.get("session.next.settled.1")).toBe(SessionEvent.Settled)
     expect(EventManifest.Durable.has("session.next.step.ended.1")).toBe(false)
     expect(EventManifest.Durable.get("session.next.step.ended.2")).toBe(SessionEvent.Step.Ended)
+    expect(EventManifest.Durable.get("redsun.session.goal.set.1")).toBe(RedsunGoalEvent.Set)
+    expect(EventManifest.Durable.get("redsun.session.goal.cleared.1")).toBe(RedsunGoalEvent.Cleared)
+    expect(EventManifest.Durable.get("redsun.session.goal.verdict.1")).toBe(RedsunGoalEvent.Verdict)
+    expect(EventManifest.Durable.get("redsun.session.advisory.issued.1")).toBe(RedsunAdvisorEvent.Issued)
   })
 })

@@ -11,6 +11,7 @@ import { MessageV2 } from "./message-v2"
 import { SessionID } from "./schema"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { customMessages } from "@/extension/runtime"
+import { JUDGE_SYSTEM, judgeQuestion, parseVerdict, Verdict } from "./goal-shared"
 import { LLM } from "./llm"
 
 export const Info = Schema.Struct({
@@ -19,16 +20,7 @@ export const Info = Schema.Struct({
 })
 export type Info = typeof Info.Type
 
-export const Verdict = Schema.Struct({
-  ok: Schema.Boolean,
-  impossible: Schema.optional(Schema.Boolean),
-  reason: Schema.String,
-})
-export type Verdict = typeof Verdict.Type
-
-const JUDGE_SYSTEM = `You are evaluating a stop condition. Judge only from the conversation transcript.
-
-Return JSON with {"ok":true,"reason":"evidence"} when the condition is satisfied, {"ok":false,"reason":"what is missing"} when work remains, or {"ok":false,"impossible":true,"reason":"why"} only when the condition genuinely cannot be achieved in this session. Always include a specific reason.`
+export { parseVerdict, Verdict }
 
 const key = (sessionID: SessionID) => ["session_goal", sessionID]
 
@@ -126,7 +118,7 @@ const layer = Layer.effect(
           : []),
         {
           role: "user",
-          content: `Has this stopping condition been satisfied?\n\nCondition: ${input.condition}`,
+          content: judgeQuestion(input.condition),
         },
       ]
       let text = ""
@@ -161,13 +153,5 @@ export const node = LayerNode.make({
   layer,
   deps: [Storage.node, EventV2Bridge.node, LLM.node],
 })
-
-export function parseVerdict(input: string): Verdict {
-  const fenced = input.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
-  const start = input.indexOf("{")
-  const end = input.lastIndexOf("}")
-  const value = fenced ?? (start >= 0 && end > start ? input.slice(start, end + 1) : input)
-  return Schema.decodeUnknownSync(Verdict)(JSON.parse(value.trim()))
-}
 
 export * as Goal from "./goal"
