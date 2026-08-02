@@ -2027,6 +2027,13 @@ export type Config = {
     general?: string
     worker?: string
   }
+  advisor?: {
+    enabled?: boolean
+    model?: string
+    mode?: "auto" | "aside-only"
+    cooldownTurns?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    guidance?: string
+  }
   default_agent?: string
   subagent_depth?: number
   username?: string
@@ -3089,6 +3096,19 @@ export type RedsunGoalSetResponse = {
   data: {
     goal: RedsunGoalState
     admitted?: SessionInputAdmitted
+  }
+}
+
+export type RedsunAdvisorResponse = {
+  data: {
+    enabled: boolean
+    advisories: Array<{
+      timestamp: number
+      severity: "interrupt" | "aside"
+      note: string
+      judgedMessageID?: string
+      model?: string
+    }>
   }
 }
 
@@ -14204,6 +14224,41 @@ export type RedsunSessionGoalSetResponses = {
 }
 
 export type RedsunSessionGoalSetResponse = RedsunSessionGoalSetResponses[keyof RedsunSessionGoalSetResponses]
+
+export type RedsunSessionAdvisorGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/advisor"
+}
+
+export type RedsunSessionAdvisorGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type RedsunSessionAdvisorGetError = RedsunSessionAdvisorGetErrors[keyof RedsunSessionAdvisorGetErrors]
+
+export type RedsunSessionAdvisorGetResponses = {
+  /**
+   * RedsunAdvisorResponse
+   */
+  200: RedsunAdvisorResponse
+}
+
+export type RedsunSessionAdvisorGetResponse = RedsunSessionAdvisorGetResponses[keyof RedsunSessionAdvisorGetResponses]
 
 export type PtyConnectData = {
   body?: never

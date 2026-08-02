@@ -1202,6 +1202,27 @@ const scenarios: Scenario[] = [
     }))
     .status(204, undefined, "none"),
   http.protected
+    .get("/api/session/{sessionID}/advisor", "redsun.session.advisor.missing")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/advisor", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .get("/api/session/{sessionID}/advisor", "redsun.session.advisor.get")
+    .seeded((ctx) => ctx.session({ title: "Advisor session" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/advisor", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        isRecord(body.data) && body.data.enabled === false && Array.isArray(body.data.advisories),
+        "advisor status should report disabled with no advisories by default",
+      )
+    }),
+  http.protected
     .get("/session", "session.list")
     .seeded((ctx) => ctx.session({ title: "List me" }))
     .at((ctx) => ({ path: "/session?roots=true", headers: ctx.headers() }))

@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { NonNegativeInt } from "@opencode-ai/schema/schema"
+import { DateTimeUtcFromMillis, NonNegativeInt } from "@opencode-ai/schema/schema"
+import { RedsunAdvisorEvent } from "@opencode-ai/schema/redsun-advisor-event"
 import { RedsunGoalEvent } from "@opencode-ai/schema/redsun-goal-event"
 import { Session } from "@opencode-ai/schema/session"
 import { SessionInput } from "@opencode-ai/schema/session-input"
@@ -94,6 +95,37 @@ export const GoalApi = HttpApi.make("redsun-goal")
             }),
           ),
       ),
+  )
+  .add(
+    HttpApiGroup.make("redsun.advisor").add(
+      HttpApiEndpoint.get("advisor.get", "/api/session/:sessionID/advisor", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({
+          data: Schema.Struct({
+            enabled: Schema.Boolean,
+            advisories: Schema.Array(
+              Schema.Struct({
+                timestamp: DateTimeUtcFromMillis,
+                severity: RedsunAdvisorEvent.Severity,
+                note: Schema.String,
+                judgedMessageID: Schema.String.pipe(Schema.optional),
+                model: Schema.String.pipe(Schema.optional),
+              }),
+            ),
+          }),
+        }).annotate({ identifier: "RedsunAdvisorResponse" }),
+        error: SessionNotFoundError,
+      })
+        .middleware(SessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "redsun.session.advisor.get",
+            summary: "Get advisor status",
+            description:
+              "Report whether the watchdog advisor is enabled and list the newest durable advisories for a v2 session.",
+          }),
+        ),
+    ),
   )
   .middleware(Authorization)
   .middleware(SchemaErrorMiddleware)

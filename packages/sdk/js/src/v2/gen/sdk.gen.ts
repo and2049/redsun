@@ -179,6 +179,8 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  RedsunSessionAdvisorGetErrors,
+  RedsunSessionAdvisorGetResponses,
   RedsunSessionGoalBudget,
   RedsunSessionGoalClearErrors,
   RedsunSessionGoalClearResponses,
@@ -7257,10 +7259,40 @@ export class Goal extends HeyApiClient {
   }
 }
 
+export class Advisor extends HeyApiClient {
+  /**
+   * Get advisor status
+   *
+   * Report whether the watchdog advisor is enabled and list the newest durable advisories for a v2 session.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<
+      RedsunSessionAdvisorGetResponses,
+      RedsunSessionAdvisorGetErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/advisor",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session4 extends HeyApiClient {
   private _goal?: Goal
   get goal(): Goal {
     return (this._goal ??= new Goal({ client: this.client }))
+  }
+
+  private _advisor?: Advisor
+  get advisor(): Advisor {
+    return (this._advisor ??= new Advisor({ client: this.client }))
   }
 }
 

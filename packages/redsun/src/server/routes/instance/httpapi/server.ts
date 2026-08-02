@@ -5,6 +5,7 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Observability from "@opencode-ai/core/observability"
 import { Account } from "@/account/account"
+import { Advisor } from "@/advisor/advisor"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
@@ -84,6 +85,7 @@ import {
 import { EventApi } from "./groups/event"
 import { GoalApi } from "./groups/goal"
 import { PtyConnectApi } from "./groups/pty"
+import { advisorHandlers } from "./handlers/advisor"
 import { eventHandlers } from "./handlers/event"
 import { goalHandlers } from "./handlers/goal"
 import { configHandlers } from "./handlers/config"
@@ -183,9 +185,9 @@ const serverRoutes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(PluginPtyEnvironment.layer),
   Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
 )
-// REDSUN: Redsun-owned goal endpoints beside the upstream v2 /api tree.
+// REDSUN: Redsun-owned goal and advisor endpoints beside the upstream v2 /api tree.
 const goalApiRoutes = HttpApiBuilder.layer(GoalApi).pipe(
-  Layer.provide(goalHandlers),
+  Layer.provide([goalHandlers, advisorHandlers]),
   Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
 )
 
@@ -307,7 +309,9 @@ export function createRoutes(
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
     Layer.provide(
-      AppNodeBuilderV1.build(SessionV2.node, [
+      // REDSUN: the advisor daemon builds beside SessionV2 so it shares the same
+      // Database/EventV2/LocationServiceMap instances and can steer v2 sessions.
+      AppNodeBuilderV1.build(LayerNode.group([SessionV2.node, Advisor.node]), [
         [LocationServiceMap.node, locationServiceMapV2],
         [SessionExecution.node, SessionExecutionLocal.node],
       ]),
