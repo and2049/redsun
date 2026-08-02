@@ -11,6 +11,7 @@ import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
+import { ExtensionV2Bridge } from "@/extension/v2-bridge"
 import { GoalV2 } from "@/session/goal-v2"
 import { Workspace } from "@/control-plane/workspace"
 import { Env } from "@/env"
@@ -309,9 +310,9 @@ export function createRoutes(
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
     Layer.provide(
-      // REDSUN: the advisor daemon builds beside SessionV2 so it shares the same
-      // Database/EventV2/LocationServiceMap instances and can steer v2 sessions.
-      AppNodeBuilderV1.build(LayerNode.group([SessionV2.node, Advisor.node]), [
+      // REDSUN: the advisor daemon and extension bridge build beside SessionV2 so they
+      // share the same Database/EventV2/LocationServiceMap instances.
+      AppNodeBuilderV1.build(LayerNode.group([SessionV2.node, Advisor.node, ExtensionV2Bridge.node]), [
         [LocationServiceMap.node, locationServiceMapV2],
         [SessionExecution.node, SessionExecutionLocal.node],
       ]),

@@ -28,11 +28,23 @@ export type State = {
   extensionCompactions: Set<string>
   contextWindows: Map<string, number>
   contextUsage: Map<string, Extension.ContextUsage>
+  systemContextSources: Map<string, () => string | Promise<string>>
   shutdownReason: "quit" | "reload"
 }
 
 const states = new Map<string, State>()
 const startReasons = new Map<string, "reload">()
+// The v2 bridge re-registers extension tools and system-context sources when a
+// runtime's registrations change (live register/unregister, reload, startup).
+const changeListeners = new Set<(directory: string) => void>()
+export function onRegistrationsChanged(listener: (directory: string) => void) {
+  changeListeners.add(listener)
+  return () => changeListeners.delete(listener)
+}
+function notifyRegistrationsChanged(directory: string) {
+  for (const listener of changeListeners) listener(directory)
+}
+export const directories = () => Array.from(states.keys())
 export const stateFor = (directory: string) => states.get(path.resolve(directory))
 export const activeToolIDs = (directory: string) => stateFor(directory)?.activeTools
 export const commandFor = (directory: string, name: string) => stateFor(directory)?.commands.get(name)
@@ -302,11 +314,23 @@ function api(state: State, source: Extension.SourceInfo): Extension.API {
         },
       })
       state.toolDefinitions[tool.id] = state.tools.get(tool.id)!.definition
+      notifyRegistrationsChanged(state.directory)
     },
     unregisterTool(id) {
       assertActive()
       state.tools.delete(id)
       delete state.toolDefinitions[id]
+      notifyRegistrationsChanged(state.directory)
+    },
+    registerSystemContext(key, loader) {
+      assertActive()
+      state.systemContextSources.set(key, loader)
+      notifyRegistrationsChanged(state.directory)
+    },
+    unregisterSystemContext(key) {
+      assertActive()
+      state.systemContextSources.delete(key)
+      notifyRegistrationsChanged(state.directory)
     },
     setActiveTools(ids) {
       assertActive()
@@ -474,6 +498,7 @@ export async function create(input: {
     extensionCompactions: new Set(),
     contextWindows: new Map(),
     contextUsage: new Map(),
+    systemContextSources: new Map(),
     shutdownReason: "quit",
   }
   states.set(directory, state)
@@ -509,6 +534,7 @@ export async function create(input: {
     }
   }
   await emit(state, { type: "session_start", reason: startReason })
+  notifyRegistrationsChanged(directory)
 
   const hooks: Hooks = {
     tool: state.toolDefinitions,
