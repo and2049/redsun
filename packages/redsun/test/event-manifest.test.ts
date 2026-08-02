@@ -9,7 +9,7 @@ describe("public event manifest", () => {
     expect(EventManifest.Definitions).toBe(SchemaEventManifest.Definitions)
     expect(EventManifest.Latest).toBe(SchemaEventManifest.Latest)
     expect(EventManifest.Durable).toBe(SchemaEventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(90)
+    expect(EventManifest.Latest.size).toBe(94)
     expect(new Set(EventManifest.Definitions.map((definition) => definition.type)).size).toBe(EventManifest.Latest.size)
     expect(EventManifest.Definitions.filter((definition) => definition.type === "session.next.settled")).toEqual([
       SessionEvent.Settled,

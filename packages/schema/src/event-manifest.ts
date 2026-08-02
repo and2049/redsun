@@ -19,6 +19,8 @@ import { ProjectDirectories } from "./project-directories"
 import { Pty } from "./pty"
 import { Question } from "./question"
 import { QuestionV1 } from "./question-v1"
+import { RedsunAdvisorEvent } from "./redsun-advisor-event"
+import { RedsunGoalEvent } from "./redsun-goal-event"
 import { Reference } from "./reference"
 import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
@@ -54,10 +56,13 @@ const featureDefinitions = Event.inventory(
   ...Question.Event.Definitions,
 )
 
+const redsunDefinitions = Event.inventory(...RedsunGoalEvent.Definitions, ...RedsunAdvisorEvent.Definitions)
+
 export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
+  ...redsunDefinitions,
 )
 
 export const Definitions = Event.inventory(
@@ -79,6 +84,7 @@ export const Definitions = Event.inventory(
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,
+  ...redsunDefinitions,
 )
 export const Latest = Event.latest(Definitions)
 export { Durable }

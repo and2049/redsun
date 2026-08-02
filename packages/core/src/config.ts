@@ -44,6 +44,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     general: Schema.String.pipe(Schema.optional),
     worker: Schema.String.pipe(Schema.optional),
   }).pipe(Schema.optional),
+  advisor: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional),
+    model: Schema.String.pipe(Schema.optional),
+    mode: Schema.Literals(["auto", "aside-only"]).pipe(Schema.optional),
+    cooldownTurns: Schema.Number.pipe(Schema.optional),
+    guidance: Schema.String.pipe(Schema.optional),
+  }).pipe(Schema.optional),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
     description: "Default primary agent to use when no session agent is selected",
   }),
