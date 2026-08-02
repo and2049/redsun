@@ -418,7 +418,7 @@ const layer = Layer.effect(
   }),
 )
 
-function isZodType(value: unknown): value is z.ZodType {
+export function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value
 }
 
@@ -430,7 +430,7 @@ function isJsonSchemaDefinition(value: unknown): value is JSONSchema7Definition 
   return typeof value === "boolean" || (typeof value === "object" && value !== null && !Array.isArray(value))
 }
 
-function legacyJsonSchema(entries: [string, unknown][]): JSONSchema7 {
+export function legacyJsonSchema(entries: [string, unknown][]): JSONSchema7 {
   const properties = Object.fromEntries(
     entries.filter((entry): entry is [string, JSONSchema7Definition] => isJsonSchemaDefinition(entry[1])),
   )
@@ -441,7 +441,7 @@ function legacyJsonSchema(entries: [string, unknown][]): JSONSchema7 {
   }
 }
 
-function zodJsonSchema(schema: z.ZodType): JSONSchema7 {
+export function zodJsonSchema(schema: z.ZodType): JSONSchema7 {
   const result = normalizeZodJsonSchema(z.toJSONSchema(schema, { io: "input", metadata: zodMetadataRegistry(schema) }))
   if (!isJsonSchemaObject(result)) throw new Error("plugin tool Zod schema produced a non-object JSON Schema")
   const { $defs, ...rest } = result

@@ -131,6 +131,38 @@ export function make<
   return tool
 }
 
+/**
+ * Wrap an externally-described tool (plugin, extension, or MCP) whose input contract is
+ * a raw JSON Schema rather than an Effect Schema. Input is passed to `execute` untyped;
+ * the executor owns validation. Canonical plugin/MCP registration still needs a designed
+ * path (see AGENTS.md) — this helper only covers the JSON-Schema impedance.
+ */
+export function fromJsonSchema(config: {
+  readonly description: string
+  readonly inputSchema: JsonSchema.JsonSchema
+  readonly outputSchema?: JsonSchema.JsonSchema
+  readonly execute: (input: unknown, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
+}): AnyTool {
+  const tool = Object.freeze({}) as AnyTool
+  const definitions = new Map<string, ToolDefinition>()
+  runtimes.set(tool, {
+    definition: (name) => {
+      const cached = definitions.get(name)
+      if (cached) return cached
+      const definition = new ToolDefinition({
+        name,
+        description: config.description,
+        inputSchema: config.inputSchema,
+        outputSchema: config.outputSchema,
+      })
+      definitions.set(name, definition)
+      return definition
+    },
+    settle: (call, context) => config.execute(call.input, context),
+  })
+  return tool
+}
+
 export const validateName = (name: string) =>
   /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)
     ? Effect.void
