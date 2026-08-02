@@ -15311,6 +15311,253 @@
         ]
       }
     },
+    "/api/session/{sessionID}/goal": {
+      "get": {
+        "tags": ["redsun.goal"],
+        "operationId": "redsun.session.goal.get",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RedsunGoalResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedsunGoalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve the durable goal stop condition for a v2 session, if one is active.",
+        "summary": "Get session goal",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.redsun.session.goal.get({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["redsun.goal"],
+        "operationId": "redsun.session.goal.set",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RedsunGoalSetResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedsunGoalSetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Durably set the goal stop condition for a v2 session. The session keeps working until an independent judge confirms the condition is satisfied, impossible, or the attempt cap is reached.",
+        "summary": "Set session goal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "condition": {
+                    "type": "string"
+                  },
+                  "budget": {
+                    "$ref": "#/components/schemas/RedsunSessionGoalBudget"
+                  },
+                  "prompt": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["condition"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.redsun.session.goal.set({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["redsun.goal"],
+        "operationId": "redsun.session.goal.clear",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Clear the goal stop condition for a v2 session.",
+        "summary": "Clear session goal",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.redsun.session.goal.clear({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/pty/{ptyID}/connect": {
       "get": {
         "tags": ["pty"],
@@ -15671,6 +15918,18 @@
           },
           {
             "$ref": "#/components/schemas/EventGlobalDisposed"
+          },
+          {
+            "$ref": "#/components/schemas/EventRedsunSessionGoalSet"
+          },
+          {
+            "$ref": "#/components/schemas/EventRedsunSessionGoalCleared"
+          },
+          {
+            "$ref": "#/components/schemas/EventRedsunSessionGoalVerdict"
+          },
+          {
+            "$ref": "#/components/schemas/EventRedsunSessionAdvisoryIssued"
           },
           {
             "$ref": "#/components/schemas/EventServerInstanceDisposed"
@@ -20667,6 +20926,169 @@
                 "additionalProperties": false
               },
               {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["redsun.session.goal.set"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "condition": {
+                        "type": "string"
+                      },
+                      "budget": {
+                        "$ref": "#/components/schemas/RedsunSessionGoalBudget"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "condition"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["redsun.session.goal.cleared"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": ["satisfied", "impossible", "capped", "manual", "judge-error"]
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "reason"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["redsun.session.goal.verdict"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "condition": {
+                        "type": "string"
+                      },
+                      "ok": {
+                        "type": "boolean"
+                      },
+                      "impossible": {
+                        "type": "boolean"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "attempt": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "judgedMessageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "judgeError": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "condition", "ok", "reason", "attempt"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["redsun.session.advisory.issued"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "severity": {
+                        "type": "string",
+                        "enum": ["interrupt", "aside"]
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "judgedMessageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "model": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "severity", "note"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
                 "$ref": "#/components/schemas/EventServerInstanceDisposed"
               },
               {
@@ -20776,6 +21198,18 @@
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextRevertCommitted"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventRedsunSessionGoalSet"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventRedsunSessionGoalCleared"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventRedsunSessionGoalVerdict"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventRedsunSessionAdvisoryIssued"
               }
             ]
           }
@@ -24620,6 +25054,18 @@
           },
           {
             "$ref": "#/components/schemas/GlobalDisposed"
+          },
+          {
+            "$ref": "#/components/schemas/RedsunSessionGoalSet"
+          },
+          {
+            "$ref": "#/components/schemas/RedsunSessionGoalCleared"
+          },
+          {
+            "$ref": "#/components/schemas/RedsunSessionGoalVerdict"
+          },
+          {
+            "$ref": "#/components/schemas/RedsunSessionAdvisoryIssued"
           }
         ]
       },
@@ -24666,6 +25112,85 @@
           }
         },
         "required": ["name", "data"],
+        "additionalProperties": false
+      },
+      "RedsunGoalState": {
+        "type": "object",
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/RedsunSessionGoalBudget"
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastVerdict": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "impossible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "judgedMessageID": {
+                "type": "string"
+              },
+              "error": {
+                "type": "boolean"
+              }
+            },
+            "required": ["ok", "reason", "attempt"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["condition", "attempts"],
+        "additionalProperties": false
+      },
+      "RedsunGoalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "goal": {
+                "$ref": "#/components/schemas/RedsunGoalState"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["data"],
+        "additionalProperties": false
+      },
+      "RedsunGoalSetResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "goal": {
+                "$ref": "#/components/schemas/RedsunGoalState"
+              },
+              "admitted": {
+                "$ref": "#/components/schemas/SessionInputAdmitted"
+              }
+            },
+            "required": ["goal"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["data"],
         "additionalProperties": false
       },
       "effect_HttpApiError_Forbidden": {
@@ -25238,6 +25763,20 @@
           }
         },
         "required": ["created", "updated"],
+        "additionalProperties": false
+      },
+      "RedsunSessionGoalBudget": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wallClockMs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
         "additionalProperties": false
       },
       "EventServerInstanceDisposed": {
@@ -27419,6 +27958,253 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventRedsunSessionGoalSet": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["redsun.session.goal.set.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "condition": {
+                    "type": "string"
+                  },
+                  "budget": {
+                    "$ref": "#/components/schemas/RedsunSessionGoalBudget"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "condition"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventRedsunSessionGoalCleared": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["redsun.session.goal.cleared.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": ["satisfied", "impossible", "capped", "manual", "judge-error"]
+                  }
+                },
+                "required": ["timestamp", "sessionID", "reason"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventRedsunSessionGoalVerdict": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["redsun.session.goal.verdict.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "condition": {
+                    "type": "string"
+                  },
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "impossible": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "judgedMessageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "judgeError": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "condition", "ok", "reason", "attempt"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventRedsunSessionAdvisoryIssued": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["redsun.session.advisory.issued.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": ["interrupt", "aside"]
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "judgedMessageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": ["timestamp", "sessionID", "severity", "note"],
                 "additionalProperties": false
               }
             },
@@ -34262,6 +35048,257 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "RedsunSessionGoalSet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.goal.set"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "condition": {
+                "type": "string"
+              },
+              "budget": {
+                "$ref": "#/components/schemas/RedsunSessionGoalBudget"
+              }
+            },
+            "required": ["timestamp", "sessionID", "condition"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "RedsunSessionGoalCleared": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.goal.cleared"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["satisfied", "impossible", "capped", "manual", "judge-error"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "RedsunSessionGoalVerdict": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.goal.verdict"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "condition": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "impossible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "judgedMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "judgeError": {
+                "type": "boolean"
+              }
+            },
+            "required": ["timestamp", "sessionID", "condition", "ok", "reason", "attempt"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "RedsunSessionAdvisoryIssued": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.advisory.issued"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["interrupt", "aside"]
+              },
+              "note": {
+                "type": "string"
+              },
+              "judgedMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "severity", "note"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "QuestionV2Request": {
         "type": "object",
         "properties": {
@@ -37344,6 +38381,169 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventRedsunSessionGoalSet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.goal.set"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "condition": {
+                "type": "string"
+              },
+              "budget": {
+                "$ref": "#/components/schemas/RedsunSessionGoalBudget"
+              }
+            },
+            "required": ["timestamp", "sessionID", "condition"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventRedsunSessionGoalCleared": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.goal.cleared"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["satisfied", "impossible", "capped", "manual", "judge-error"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventRedsunSessionGoalVerdict": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.goal.verdict"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "condition": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "impossible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "judgedMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "judgeError": {
+                "type": "boolean"
+              }
+            },
+            "required": ["timestamp", "sessionID", "condition", "ok", "reason", "attempt"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventRedsunSessionAdvisoryIssued": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["redsun.session.advisory.issued"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["interrupt", "aside"]
+              },
+              "note": {
+                "type": "string"
+              },
+              "judgedMessageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": ["timestamp", "sessionID", "severity", "note"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "CredentialOAuth": {
         "type": "object",
         "properties": {
@@ -37604,6 +38804,9 @@
     {
       "name": "projectCopy",
       "description": "Project copy management routes."
+    },
+    {
+      "name": "redsun.goal"
     },
     {
       "name": "pty",

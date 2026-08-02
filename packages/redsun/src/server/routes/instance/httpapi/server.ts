@@ -82,8 +82,10 @@ import {
   serverAuthorizationLayer,
 } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
+import { GoalApi } from "./groups/goal"
 import { PtyConnectApi } from "./groups/pty"
 import { eventHandlers } from "./handlers/event"
+import { goalHandlers } from "./handlers/goal"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
@@ -179,6 +181,11 @@ const instanceRoutes = instanceApiRoutes.pipe(
 const serverRoutes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(handlers),
   Layer.provide(PluginPtyEnvironment.layer),
+  Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
+)
+// REDSUN: Redsun-owned goal endpoints beside the upstream v2 /api tree.
+const goalApiRoutes = HttpApiBuilder.layer(GoalApi).pipe(
+  Layer.provide(goalHandlers),
   Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
 )
 
@@ -282,6 +289,7 @@ export function createRoutes(
     ptyConnectApiRoutes,
     instanceRoutes,
     serverRoutes,
+    goalApiRoutes,
     docRoute,
     uiRoute,
   ).pipe(
