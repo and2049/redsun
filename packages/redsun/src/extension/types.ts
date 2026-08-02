@@ -94,6 +94,14 @@ export namespace Extension {
     on<E extends Event>(event: E["type"], handler: Handler<E>): void
     registerTool(tool: ToolInfo, source?: SourceInfo): Promise<void>
     unregisterTool(id: string): void
+    /**
+     * Register additive model-visible system context for v2 sessions in this project.
+     * The loader is re-read at safe turn boundaries; changes surface as ordinary
+     * context updates. This is the v2-compatible contract — per-turn transform hooks
+     * do not exist on the v2 runner.
+     */
+    registerSystemContext(key: string, loader: () => string | Promise<string>): void
+    unregisterSystemContext(key: string): void
     setActiveTools(toolNames: string[]): void
     getActiveTools(): string[]
     getAllTools(): Array<{ id: string; description: string; source: SourceInfo }>

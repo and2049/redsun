@@ -93,6 +93,15 @@ export const Info = Schema.Struct({
       worker: Schema.optional(Schema.String),
     }),
   ).annotate({ description: "Optional provider/model overrides for lightweight internal tasks" }),
+  advisor: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean),
+      model: Schema.optional(Schema.String),
+      mode: Schema.optional(Schema.Literals(["auto", "aside-only"])),
+      cooldownTurns: Schema.optional(Schema.Number),
+      guidance: Schema.optional(Schema.String),
+    }),
+  ).annotate({ description: "Redsun watchdog advisor that reviews completed v2 session turns with a second model" }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:
       "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",

@@ -26,6 +26,7 @@ import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
+import { SessionContinuationPolicy } from "../continuation-policy"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
@@ -106,6 +107,7 @@ const layer = Layer.effect(
     const referenceGuidance = yield* ReferenceGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
+    const continuation = yield* SessionContinuationPolicy.Service
     const db = (yield* Database.Service).db
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -442,6 +444,10 @@ const layer = Layer.effect(
             step = result.step + 1
             promotion = "steer"
             if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+            if (!needsContinuation && !(yield* SessionInput.hasPending(db, input.sessionID, "queue"))) {
+              yield* continuation.onSettle({ sessionID: input.sessionID })
+              needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+            }
           }
         })
         yield* iteration.pipe(
@@ -482,6 +488,7 @@ export const node = makeLocationNode({
     SessionStore.node,
     Location.node,
     SystemContextRegistry.node,
+    SessionContinuationPolicy.node,
     SkillGuidance.node,
     ReferenceGuidance.node,
     Config.node,

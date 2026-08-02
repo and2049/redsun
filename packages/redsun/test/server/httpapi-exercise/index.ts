@@ -1158,6 +1158,71 @@ const scenarios: Scenario[] = [
     }))
     .status(404, undefined, "status"),
   http.protected
+    .get("/api/session/{sessionID}/goal", "redsun.session.goal.missing")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/goal", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .get("/api/session/{sessionID}/goal", "redsun.session.goal.get")
+    .seeded((ctx) => ctx.session({ title: "Goal-free session" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/goal", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(isRecord(body.data) && body.data.goal === undefined, "session without a goal should return empty data")
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/goal", "redsun.session.goal.set")
+    .seeded((ctx) => ctx.session({ title: "Goal session" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/goal", { sessionID: ctx.state.id }),
+      headers: { ...ctx.headers(), "content-type": "application/json" },
+      body: { condition: "all tests pass", prompt: false, budget: { tokens: 500000, wallClockMs: 3600000 } },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        isRecord(body.data) &&
+          isRecord(body.data.goal) &&
+          body.data.goal.condition === "all tests pass" &&
+          body.data.goal.attempts === 0,
+        "set goal should return the durable goal state",
+      )
+    }),
+  http.protected
+    .delete("/api/session/{sessionID}/goal", "redsun.session.goal.clear")
+    .seeded((ctx) => ctx.session({ title: "Goal cleared session" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/goal", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .status(204, undefined, "none"),
+  http.protected
+    .get("/api/session/{sessionID}/advisor", "redsun.session.advisor.missing")
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/advisor", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .get("/api/session/{sessionID}/advisor", "redsun.session.advisor.get")
+    .seeded((ctx) => ctx.session({ title: "Advisor session" }))
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/advisor", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        isRecord(body.data) && body.data.enabled === false && Array.isArray(body.data.advisories),
+        "advisor status should report disabled with no advisories by default",
+      )
+    }),
+  http.protected
     .get("/session", "session.list")
     .seeded((ctx) => ctx.session({ title: "List me" }))
     .at((ctx) => ({ path: "/session?roots=true", headers: ctx.headers() }))

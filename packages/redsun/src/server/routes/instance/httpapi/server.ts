@@ -5,11 +5,14 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Observability from "@opencode-ai/core/observability"
 import { Account } from "@/account/account"
+import { Advisor } from "@/advisor/advisor"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
+import { ExtensionV2Bridge } from "@/extension/v2-bridge"
+import { GoalV2 } from "@/session/goal-v2"
 import { Workspace } from "@/control-plane/workspace"
 import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -62,6 +65,7 @@ import { ProjectV2 } from "@opencode-ai/core/project"
 import { ProjectCopy } from "@opencode-ai/core/project/copy"
 import { PtyTicket } from "@opencode-ai/core/pty/ticket"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
+import { SessionContinuationPolicy } from "@opencode-ai/core/session/continuation-policy"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
@@ -80,8 +84,11 @@ import {
   serverAuthorizationLayer,
 } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
+import { GoalApi } from "./groups/goal"
 import { PtyConnectApi } from "./groups/pty"
+import { advisorHandlers } from "./handlers/advisor"
 import { eventHandlers } from "./handlers/event"
+import { goalHandlers } from "./handlers/goal"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
@@ -179,6 +186,11 @@ const serverRoutes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(PluginPtyEnvironment.layer),
   Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
 )
+// REDSUN: Redsun-owned goal and advisor endpoints beside the upstream v2 /api tree.
+const goalApiRoutes = HttpApiBuilder.layer(GoalApi).pipe(
+  Layer.provide([goalHandlers, advisorHandlers]),
+  Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
+)
 
 // `OpenApi.fromApi` is non-trivial; defer until /doc is actually hit so
 // processes that never serve it (CLI, scripts) don't pay at module load.
@@ -271,7 +283,8 @@ const app = LayerNode.group([
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  const locationServiceMapV2 = buildLocationServiceMap()
+  // REDSUN: v2 sessions consult the goal continuation policy when a drain settles.
+  const locationServiceMapV2 = buildLocationServiceMap([[SessionContinuationPolicy.node, GoalV2.policyNode]])
 
   return Layer.mergeAll(
     rootApiRoutes,
@@ -279,6 +292,7 @@ export function createRoutes(
     ptyConnectApiRoutes,
     instanceRoutes,
     serverRoutes,
+    goalApiRoutes,
     docRoute,
     uiRoute,
   ).pipe(
@@ -296,7 +310,9 @@ export function createRoutes(
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
     Layer.provide(
-      AppNodeBuilderV1.build(SessionV2.node, [
+      // REDSUN: the advisor daemon and extension bridge build beside SessionV2 so they
+      // share the same Database/EventV2/LocationServiceMap instances.
+      AppNodeBuilderV1.build(LayerNode.group([SessionV2.node, Advisor.node, ExtensionV2Bridge.node]), [
         [LocationServiceMap.node, locationServiceMapV2],
         [SessionExecution.node, SessionExecutionLocal.node],
       ]),
