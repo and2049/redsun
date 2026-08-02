@@ -13,6 +13,8 @@ import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionContinuationPolicy } from "@opencode-ai/core/session/continuation-policy"
 import { SessionInput } from "@opencode-ai/core/session/input"
+import { SessionEvent } from "@opencode-ai/core/session/event"
+import { SessionMessage } from "@opencode-ai/core/session/message"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { SessionStore } from "@opencode-ai/core/session/store"
@@ -20,7 +22,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import type { SessionSchema } from "@opencode-ai/core/session/schema"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { asc, eq } from "drizzle-orm"
-import { Effect, Fiber, Layer } from "effect"
+import { DateTime, Effect, Fiber, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { GoalV2 } from "../../src/session/goal-v2"
 import { REACT_CAP } from "../../src/session/goal-shared"
@@ -203,6 +205,64 @@ describe("GoalV2", () => {
       const state = yield* GoalV2.get(db, sessionID)
       expect(state).toMatchObject({ condition: "all tests pass" })
       expect(state?.lastVerdict).toMatchObject({ ok: false, error: true })
+    }),
+  )
+
+  it.effect("stops without judging when the wall-clock budget is exhausted", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      judgeText = '{"ok":false,"reason":"should never be asked"}'
+      yield* GoalV2.set(events, { sessionID, condition: "all tests pass", budget: { wallClockMs: 0 } })
+
+      yield* onSettle
+
+      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(false)
+      expect(yield* GoalV2.get(db, sessionID)).toBeUndefined()
+      const rows = yield* goalRows
+      expect(rows.at(-2)?.data).toMatchObject({ ok: false })
+      expect(String((rows.at(-2)?.data as { reason?: string }).reason)).toContain("wall-clock budget exhausted")
+      expect(rows.at(-1)?.data).toMatchObject({ reason: "capped" })
+    }),
+  )
+
+  it.effect("stops when the token budget is exhausted", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* GoalV2.set(events, { sessionID, condition: "all tests pass", budget: { tokens: 100 } })
+      yield* events.publish(SessionEvent.Step.Ended, {
+        timestamp: yield* DateTime.now,
+        sessionID,
+        assistantMessageID: SessionMessage.ID.create(),
+        finish: "stop",
+        cost: 0,
+        tokens: { input: 80, output: 30, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+
+      yield* onSettle
+
+      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(false)
+      expect(yield* GoalV2.get(db, sessionID)).toBeUndefined()
+      const rows = yield* goalRows
+      expect(String((rows.at(-2)?.data as { reason?: string }).reason)).toContain("token budget exhausted")
+      expect(rows.at(-1)?.data).toMatchObject({ reason: "capped" })
+    }),
+  )
+
+  it.effect("keeps judging while the token budget has headroom", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* GoalV2.set(events, { sessionID, condition: "all tests pass", budget: { tokens: 1_000_000 } })
+
+      yield* onSettle
+
+      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(true)
+      expect(yield* GoalV2.get(db, sessionID)).toMatchObject({ attempts: 1 })
     }),
   )
 

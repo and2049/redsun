@@ -1181,7 +1181,7 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({
       path: route("/api/session/{sessionID}/goal", { sessionID: ctx.state.id }),
       headers: { ...ctx.headers(), "content-type": "application/json" },
-      body: { condition: "all tests pass", prompt: false },
+      body: { condition: "all tests pass", prompt: false, budget: { tokens: 500000, wallClockMs: 3600000 } },
     }))
     .json(200, (body) => {
       object(body)
