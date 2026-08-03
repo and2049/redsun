@@ -380,6 +380,35 @@ describe("tool.task", () => {
   )
 
   routed.instance(
+    "task router applies the configured worker variant",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "compose",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
+        expect(seen?.variant).toBe("xhigh")
+      }),
+    { config: { task_router: { worker: "test/test-model", worker_variant: "xhigh" } } },
+  )
+
+  routed.instance(
     "task router applies to general and explore subagents",
     () =>
       Effect.gen(function* () {
@@ -450,7 +479,7 @@ describe("tool.task", () => {
         expect(seen?.model).toEqual(ref)
         expect(seen?.variant).toBe("low")
       }),
-    { config: { task_router: { worker: "other/new-worker-model" } } },
+    { config: { task_router: { worker: "other/new-worker-model", worker_variant: "xhigh" } } },
   )
 
   routed.instance(

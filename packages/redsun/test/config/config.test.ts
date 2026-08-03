@@ -921,7 +921,13 @@ it.instance("updates JSONC project config without losing existing settings", () 
     yield* FSUtil.use.writeWithDirs(file, '{\n  // Keep this comment\n  "model": "planner/model"\n}\n')
 
     yield* Config.Service.use((svc) =>
-      svc.update(ConfigParse.schema(ConfigV1.Info, { task_router: { worker: "worker/model" } }, "test:config")),
+      svc.update(
+        ConfigParse.schema(
+          ConfigV1.Info,
+          { task_router: { worker: "worker/model", worker_variant: "high" } },
+          "test:config",
+        ),
+      ),
     )
 
     const content = yield* FSUtil.use.readFileString(file)
@@ -929,6 +935,7 @@ it.instance("updates JSONC project config without losing existing settings", () 
     expect(content).toContain("// Keep this comment")
     expect(parsed.model).toBe("planner/model")
     expect(parsed.task_router?.worker).toBe("worker/model")
+    expect(parsed.task_router?.worker_variant).toBe("high")
   }),
 )
 

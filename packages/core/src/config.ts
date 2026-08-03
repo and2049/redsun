@@ -43,6 +43,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     explore: Schema.String.pipe(Schema.optional),
     general: Schema.String.pipe(Schema.optional),
     worker: Schema.String.pipe(Schema.optional),
+    worker_variant: Schema.String.pipe(Schema.optional),
   }).pipe(Schema.optional),
   advisor: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional),

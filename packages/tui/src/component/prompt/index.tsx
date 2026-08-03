@@ -50,7 +50,7 @@ import { useKV } from "../../context/kv"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
-import { needsWorkerModel, useWorkerModelDialog, workerModelDisplay } from "../dialog-worker-model"
+import { needsWorkerModel, useWorkerModelDialog, workerModelDisplay, workerVariantDisplay } from "../dialog-worker-model"
 import { useArgs } from "../../context/args"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../config"
@@ -169,6 +169,13 @@ export function Prompt(props: PromptProps) {
     return model ? `${model.providerID}/${model.modelID}` : undefined
   })
   const workerDisplay = createMemo(() => workerModelDisplay(workerRoute(), sync.data.provider))
+  const workerVariant = createMemo(() =>
+    workerVariantDisplay(
+      sync.data.config.task_router?.worker,
+      sync.data.config.task_router?.worker_variant,
+      sync.data.provider,
+    ),
+  )
   const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
   // REDSUN DENSE: chrome-only variant for the bottom dock — no panel
@@ -1532,6 +1539,14 @@ const next = transition(vim.mode, e)
                             {local.model.parsed().model}
                           </text>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+                          <Show when={showVariant()}>
+                            <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                            <text>
+                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
+                                {local.model.variant.current()}
+                              </span>
+                            </text>
+                          </Show>
                           <Show when={agent().name === "compose" && dimensions().width >= 90}>
                             <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
                             <Show
@@ -1549,17 +1564,17 @@ const next = transition(vim.mode, e)
                                     {worker().model}
                                   </text>
                                   <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{worker().provider}</text>
+                                  <Show when={workerVariant()}>
+                                    <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                                    <text>
+                                      <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
+                                        {workerVariant()}
+                                      </span>
+                                    </text>
+                                  </Show>
                                 </>
                               )}
                             </Show>
-                          </Show>
-                          <Show when={showVariant()}>
-                            <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
-                            <text>
-                              <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
-                                {local.model.variant.current()}
-                              </span>
-                            </text>
                           </Show>
                         </box>
                       </Show>

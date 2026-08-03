@@ -2026,6 +2026,7 @@ export type Config = {
     explore?: string
     general?: string
     worker?: string
+    worker_variant?: string
   }
   advisor?: {
     enabled?: boolean

@@ -40,7 +40,7 @@ import { LocationProvider } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
-import { useWorkerModelDialog } from "./component/dialog-worker-model"
+import { useWorkerModelDialog, useWorkerVariantDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -393,6 +393,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const sync = useSync()
   const project = useProject()
   const openWorkerModelDialog = useWorkerModelDialog()
+  const openWorkerVariantDialog = useWorkerVariantDialog()
   const exit = useExit()
   const promptRef = usePromptRef()
   const pluginRuntime = usePluginRuntime()
@@ -659,6 +660,13 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "worker-model",
         slashAliases: ["wm"],
         run: openWorkerModelDialog,
+      },
+      {
+        name: "worker.variant",
+        title: "Switch worker model variant",
+        category: "Agent",
+        slashName: "worker-variant",
+        run: () => openWorkerVariantDialog(),
       },
       {
         name: "model.cycle_recent",
