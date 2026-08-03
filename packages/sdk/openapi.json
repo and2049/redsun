@@ -22066,6 +22066,9 @@
               },
               "worker": {
                 "type": "string"
+              },
+              "worker_variant": {
+                "type": "string"
               }
             },
             "additionalProperties": false
