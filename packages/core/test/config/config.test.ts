@@ -91,9 +91,9 @@ describe("Config", () => {
     Effect.sync(() => {
       expect(
         ConfigMigrateV1.migrate({
-          task_router: { worker: "openai/gpt-5-mini", general: "openai/gpt-5" },
+          task_router: { worker: "openai/gpt-5-mini", worker_variant: "high", general: "openai/gpt-5" },
         }).task_router,
-      ).toEqual({ worker: "openai/gpt-5-mini", general: "openai/gpt-5" })
+      ).toEqual({ worker: "openai/gpt-5-mini", worker_variant: "high", general: "openai/gpt-5" })
     }),
   )
 

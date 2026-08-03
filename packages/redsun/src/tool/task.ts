@@ -196,7 +196,9 @@ export const TaskTool = Tool.define(
           : route || next.model
             ? next.model && !route
               ? next.variant
-              : undefined
+              : next.name === "worker" && cfg.task_router?.worker_variant !== "default"
+                ? cfg.task_router?.worker_variant
+                : undefined
             : parentVariant
       const nextSession =
         session ??

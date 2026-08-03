@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, onCleanup } from "solid-js"
 import { useLocal } from "../context/local"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
@@ -13,9 +13,17 @@ export function DialogModel(props: {
   providerID?: string
   title?: string
   current?: { providerID: string; modelID: string }
-  onSelect?: (model: { providerID: string; modelID: string }) => Promise<void> | void
+  onSelect?: (
+    model: { providerID: string; modelID: string },
+    context: { active: () => boolean },
+  ) => Promise<void> | void
   onError?: (error: unknown) => void
+  closeOnSelect?: boolean
 }) {
+  let active = true
+  onCleanup(() => {
+    active = false
+  })
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
@@ -147,8 +155,10 @@ export function DialogModel(props: {
 
   function onSelect(providerID: string, modelID: string) {
     if (props.onSelect) {
-      void Promise.resolve(props.onSelect({ providerID, modelID }))
-        .then(() => dialog.clear())
+      void Promise.resolve(props.onSelect({ providerID, modelID }, { active: () => active }))
+        .then(() => {
+          if (active && props.closeOnSelect !== false) dialog.clear()
+        })
         .catch((error) => props.onError?.(error))
       return
     }
