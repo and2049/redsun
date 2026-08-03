@@ -27,3 +27,7 @@ export function computePromptTraits(input: PromptTraitsInput): PromptTraits {
     role: "prompt",
   }
 }
+
+export function shouldShowDenseInterrupt(dense: boolean, status: string) {
+  return dense && status !== "idle"
+}
