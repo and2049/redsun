@@ -83,6 +83,7 @@ import { setPreLayoutSiblingMargin } from "../../util/layout"
 import { useTuiConfig } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
+import { compactionSummary } from "../../util/compaction"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
@@ -1427,8 +1428,6 @@ function UserMessage(props: {
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
   const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
 
-  const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
-
   return (
     <>
       <Show when={text()}>
@@ -1493,20 +1492,15 @@ function UserMessage(props: {
           </box>
         </box>
       </Show>
-      <Show when={compaction()}>
-        <box
-          marginTop={1}
-          border={["top"]}
-          title=" Compaction "
-          titleAlignment="center"
-          borderColor={theme.borderActive}
-        />
-      </Show>
     </>
   )
 }
 
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
+  if (props.message.summary) {
+    return <CompactionSummary parts={props.parts} />
+  }
+
   const { theme } = useTheme()
   const sync = useSync()
   const goalVerdict = createMemo(() => sync.data.session_goal[props.message.sessionID]?.verdicts[props.message.id])
@@ -1808,6 +1802,51 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
             <text fg={theme.textMuted} attributes={TextAttributes.ITALIC}>
               {content()}
             </text>
+          </box>
+        </Show>
+      </box>
+    </Show>
+  )
+}
+
+function CompactionSummary(props: { parts: Part[] }) {
+  const { theme } = useTheme()
+  const renderer = useRenderer()
+  const dimensions = useTerminalDimensions()
+  const [expanded, setExpanded] = createSignal(false)
+  const [hover, setHover] = createSignal(false)
+  const content = createMemo(() => compactionSummary(props.parts))
+  const teaser = createMemo(() => {
+    const available = Math.max(10, dimensions().width - 3 - "▶ Compaction: ".length - 4)
+    const flat = content().replace(/\s+/g, " ").trim()
+    if (flat.length <= available) return flat
+    return "..." + flat.slice(flat.length - available)
+  })
+
+  return (
+    <Show when={content()}>
+      <box
+        ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+        paddingLeft={3}
+        marginTop={1}
+        flexDirection="column"
+        flexShrink={0}
+      >
+        <box
+          onMouseOver={() => setHover(true)}
+          onMouseOut={() => setHover(false)}
+          onMouseUp={() => {
+            if (renderer.getSelection()?.getSelectedText()) return
+            setExpanded((prev) => !prev)
+          }}
+        >
+          <text fg={hover() ? theme.text : theme.textMuted} wrapMode="none">
+            {expanded() ? "▼ Compaction:" : "▶ Compaction: " + teaser()}
+          </text>
+        </box>
+        <Show when={expanded()}>
+          <box paddingLeft={2}>
+            <text fg={theme.textMuted}>{content()}</text>
           </box>
         </Show>
       </box>
