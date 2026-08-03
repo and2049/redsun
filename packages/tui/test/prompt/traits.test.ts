@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { computePromptTraits } from "../../src/prompt/traits"
+import { computePromptTraits, shouldShowDenseInterrupt } from "../../src/prompt/traits"
 
 describe("computePromptTraits", () => {
   test("normal mode without autocomplete only captures tab", () => {
@@ -21,5 +21,14 @@ describe("computePromptTraits", () => {
     expect(traits.capture).toBeUndefined()
     expect(traits.suspend).toBeUndefined()
     expect(traits.status).toBe("SHELL")
+  })
+})
+
+describe("shouldShowDenseInterrupt", () => {
+  test("only shows for a working dense prompt", () => {
+    expect(shouldShowDenseInterrupt(true, "busy")).toBe(true)
+    expect(shouldShowDenseInterrupt(true, "retry")).toBe(true)
+    expect(shouldShowDenseInterrupt(true, "idle")).toBe(false)
+    expect(shouldShowDenseInterrupt(false, "busy")).toBe(false)
   })
 })

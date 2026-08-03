@@ -31,7 +31,7 @@ import { useExit } from "../../context/exit"
 import { promptOffsetWidth } from "../../prompt/display"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "../../prompt/history"
-import { computePromptTraits } from "../../prompt/traits"
+import { computePromptTraits, shouldShowDenseInterrupt } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
 import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
@@ -1582,8 +1582,19 @@ const next = transition(vim.mode, e)
                   )}
                 </Show>
               </box>
-              <Show when={hasRightContent()}>
+              <Show when={hasRightContent() || shouldShowDenseInterrupt(dense, status().type)}>
                 <box flexDirection="row" gap={1} alignItems="center">
+                  <Show when={shouldShowDenseInterrupt(dense, status().type)}>
+                    <box flexDirection="row" gap={1} alignItems="center">
+                      <Show when={animationsEnabled()} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
+                        <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+                      </Show>
+                      <text fg={theme.text}>
+                        {interruptShortcut()}{" "}
+                        <span style={{ fg: theme.textMuted }}>interrupt</span>
+                      </text>
+                    </box>
+                  </Show>
                   <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
                     {(file) => (
                       <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>
