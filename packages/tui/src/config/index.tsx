@@ -30,6 +30,15 @@ export const Ui = Schema.Literals(["dense", "classic"]).annotate({
     "Interface style: 'dense' streams the transcript into native terminal scrollback, 'classic' is the fullscreen interface (default: dense)",
 })
 
+export const Cursor = Schema.Struct({
+  style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({
+    description: "Cursor shape. Use 'default' to preserve the terminal setting",
+  }),
+  blinking: Schema.optional(Schema.Boolean).annotate({
+    description: "Whether the cursor blinks. Has no effect when style is 'default'",
+  }),
+}).annotate({ description: "Terminal cursor settings" })
+
 export const AttentionSounds = Schema.Record(AttentionSoundName, Schema.optionalKey(Schema.String))
 export type AttentionSoundPaths = Schema.Schema.Type<typeof AttentionSounds>
 export const Attention = Schema.Struct({
@@ -62,10 +71,11 @@ export const Info = Schema.Struct({
   diff_style: Schema.optional(DiffStyle),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
   ui: Schema.optional(Ui),
+  cursor: Schema.optional(Cursor),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
-export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "ui"> & {
+export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "ui" | "cursor"> & {
   attention: {
     enabled: boolean
     notifications: boolean
@@ -77,6 +87,10 @@ export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "ui"> & {
   keybinds: TuiKeybind.BindingLookupView
   mouse: boolean
   ui: Schema.Schema.Type<typeof Ui>
+  cursor?: {
+    style: "block" | "underline" | "line" | "default"
+    blinking: boolean
+  }
 }
 
 export const ResolveOptions = Schema.Struct({
@@ -112,6 +126,12 @@ export function resolve(input: Info, options: ResolveOptions): Resolved {
     }),
     mouse: input.mouse ?? true,
     ui: input.ui ?? "dense",
+    cursor: input.cursor
+      ? {
+          style: input.cursor.style ?? "block",
+          blinking: input.cursor.blinking ?? true,
+        }
+      : undefined,
   }
 }
 
