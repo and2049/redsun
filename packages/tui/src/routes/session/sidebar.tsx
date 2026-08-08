@@ -45,7 +45,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             },
           }}
         >
-          <box flexShrink={0} gap={1} paddingRight={1}>
+          <box flexShrink={0} gap={1} paddingRight={2}>
             <pluginRuntime.Slot
               name="sidebar_title"
               mode="single_winner"
@@ -53,7 +53,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               title={session()!.title}
               share_url={session()!.share?.url}
             >
-              <box paddingRight={1}>
+              <box>
                 <text fg={theme.text}>
                   <b>{session()!.title}</b>
                 </text>
