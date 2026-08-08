@@ -276,6 +276,7 @@ export function Prompt(props: PromptProps) {
     const inactive = props.disabled || vim.mode !== "insert"
     if (!input || input.isDestroyed) return
     input.cursorColor = inactive ? theme.backgroundElement : theme.text
+    if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
     if (vim.mode === "command") {
       input.blur()
       return
@@ -1409,6 +1410,7 @@ export function Prompt(props: PromptProps) {
               borderStyle="rounded"
               borderColor={denseBorderColor()}
               paddingLeft={dense ? 1 : 0}
+              paddingRight={dense ? 1 : 0}
             >
             <Show when={dense}>
               <text flexShrink={0} fg={densePrefixColor()}>
@@ -1494,6 +1496,7 @@ const next = transition(vim.mode, e)
                         ? theme.background
                         : theme.backgroundElement
                       : theme.text
+                  if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
@@ -1509,6 +1512,7 @@ const next = transition(vim.mode, e)
                     : theme.backgroundElement
                   : theme.text
               }
+              cursorStyle={tuiConfig.cursor}
               syntaxStyle={syntax()}
             />
             </box>
