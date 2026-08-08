@@ -1410,6 +1410,7 @@ export function Prompt(props: PromptProps) {
               borderStyle="rounded"
               borderColor={denseBorderColor()}
               paddingLeft={dense ? 1 : 0}
+              paddingRight={dense ? 1 : 0}
             >
             <Show when={dense}>
               <text flexShrink={0} fg={densePrefixColor()}>
