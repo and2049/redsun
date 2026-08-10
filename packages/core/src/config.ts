@@ -52,6 +52,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     cooldownTurns: Schema.Number.pipe(Schema.optional),
     guidance: Schema.String.pipe(Schema.optional),
   }).pipe(Schema.optional),
+  claude_code: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional),
+    binary_path: Schema.String.pipe(Schema.optional),
+    config_dir: Schema.String.pipe(Schema.optional),
+    permission_mode: Schema.Literals(["default", "acceptEdits", "bypassPermissions", "plan"]).pipe(Schema.optional),
+    worker_permission_mode: Schema.Literals(["inherit", "acceptEdits", "bypassPermissions"]).pipe(Schema.optional),
+    extra_args: Schema.Record(Schema.String, Schema.NullOr(Schema.String)).pipe(Schema.optional),
+    env: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Claude Code delegated-agent provider driven headlessly through the Claude Agent SDK (compatibility metadata; V1 runtime only)",
+    }),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
     description: "Default primary agent to use when no session agent is selected",
   }),

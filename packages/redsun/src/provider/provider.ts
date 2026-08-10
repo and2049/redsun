@@ -1068,6 +1068,10 @@ export const ListResult = Schema.Struct({
   all: Schema.Array(Info),
   default: DefaultModelIDs,
   connected: Schema.Array(Schema.String),
+  // REDSUN CLAUDE-CODE: non-secret credential metadata (e.g. the Claude Code
+  // probe's email/subscription/backend) keyed by provider id. Never carries
+  // keys or tokens.
+  authMetadata: Schema.optional(Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String))),
 })
 export type ListResult = Types.DeepMutable<Schema.Schema.Type<typeof ListResult>>
 

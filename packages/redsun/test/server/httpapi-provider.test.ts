@@ -379,6 +379,34 @@ describe("provider HttpApi", () => {
   )
 
   it.instance(
+    "exposes stored credential metadata for connected providers without leaking secrets",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      yield* setEnvScoped(
+        "OPENCODE_AUTH_CONTENT",
+        JSON.stringify({
+          google: {
+            type: "api",
+            key: "sk-super-secret",
+            metadata: { email: "user@example.com", subscription: "max", backend: "firstParty" },
+          },
+        }),
+      )
+      const response = yield* request("/provider", { headers: { "x-opencode-directory": directory } })
+      expect(response.status).toBe(200)
+      const body = yield* response.json
+      const authMetadata = isRecord(body) ? body.authMetadata : undefined
+      expect(authMetadata).toEqual({
+        google: { email: "user@example.com", subscription: "max", backend: "firstParty" },
+      })
+      // The metadata field itself must never carry credential secrets. (The
+      // provider entries' options.apiKey is upstream behavior, out of scope.)
+      expect(JSON.stringify(authMetadata)).not.toContain("sk-super-secret")
+    }),
+    projectOptions,
+  )
+
+  it.instance(
     "keeps provider.models hook input mutations out of provider state",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory

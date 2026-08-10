@@ -2,6 +2,7 @@ import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
+import { ClaudeCodeModels } from "@/claude-code/models"
 import { Question } from "../question"
 import { Session } from "@/session/session"
 import { MessageV2 } from "../session/message-v2"
@@ -26,12 +27,22 @@ export const PlanExitTool = Tool.define(
         Effect.gen(function* () {
           const instance = yield* InstanceState.context
           const info = yield* session.get(ctx.sessionID)
-          const plan = path.relative(instance.worktree, Session.plan(info, instance))
+          // REDSUN CLAUDE-CODE: delegated sessions use Claude Code's plan mode,
+          // which keeps the plan in its own file — redsun's plan path would
+          // point at a file that was never written, so leave it out.
+          const turnModel = ctx.extra?.model
+          const delegated =
+            !!turnModel &&
+            typeof turnModel === "object" &&
+            "providerID" in turnModel &&
+            typeof turnModel.providerID === "string" &&
+            ClaudeCodeModels.isDelegated({ providerID: turnModel.providerID })
+          const plan = delegated ? undefined : path.relative(instance.worktree, Session.plan(info, instance))
           const answers = yield* question.ask({
             sessionID: ctx.sessionID,
             questions: [
               {
-                question: `Plan at ${plan} is complete. Would you like to switch to the build agent and start implementing?`,
+                question: `${plan ? `Plan at ${plan}` : "The plan"} is complete. Would you like to switch to the build agent and start implementing?`,
                 header: "Build Agent",
                 custom: false,
                 options: [
@@ -64,7 +75,7 @@ export const PlanExitTool = Tool.define(
             messageID: msg.id,
             sessionID: ctx.sessionID,
             type: "text",
-            text: `The plan at ${plan} has been approved, you can now edit files. Execute the plan`,
+            text: `${plan ? `The plan at ${plan}` : "The plan"} has been approved, you can now edit files. Execute the plan`,
             synthetic: true,
           } satisfies SessionV1.TextPart)
 

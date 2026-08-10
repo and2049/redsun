@@ -39,6 +39,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     model: info.model,
     task_router: info.task_router,
     advisor: info.advisor,
+    claude_code: info.claude_code,
     default_agent: info.default_agent,
     autoupdate: info.autoupdate,
     share: info.share ?? (info.autoshare ? "auto" : undefined),

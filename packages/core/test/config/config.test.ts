@@ -97,6 +97,16 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("preserves v1 claude_code configuration", () =>
+    Effect.sync(() => {
+      expect(
+        ConfigMigrateV1.migrate({
+          claude_code: { permission_mode: "acceptEdits", worker_permission_mode: "inherit", env: { FOO: "bar" } },
+        }).claude_code,
+      ).toEqual({ permission_mode: "acceptEdits", worker_permission_mode: "inherit", env: { FOO: "bar" } })
+    }),
+  )
+
   it.effect("migrates v1 provider setup options into AISDK settings", () =>
     Effect.sync(() => {
       const migrated = ConfigMigrateV1.migrate({

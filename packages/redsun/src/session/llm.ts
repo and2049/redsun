@@ -31,6 +31,7 @@ import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
 import { ContextOptimizer } from "./context-optimizer"
 import { Storage } from "@/storage/storage"
+import { ClaudeCode } from "@/claude-code/runtime"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -76,6 +77,7 @@ const live: Layer.Layer<
   | LLMClientService
   | RuntimeFlags.Service
   | Storage.Service
+  | ClaudeCode.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -88,6 +90,7 @@ const live: Layer.Layer<
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
     const storage = yield* Storage.Service
+    const claudeCode = yield* ClaudeCode.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       yield* Effect.logInfo("stream", {
@@ -98,6 +101,20 @@ const live: Layer.Layer<
         agent: input.agent.name,
         mode: input.agent.mode,
       })
+
+      // REDSUN CLAUDE-CODE: delegated-agent runtime. Claude Code runs its own
+      // loop through the Agent SDK; never resolve an AI SDK for this provider.
+      if (claudeCode.isDelegated(input.model)) {
+        yield* Effect.logInfo("llm runtime selected", {
+          "llm.runtime": "claude-code",
+          "llm.provider": input.model.providerID,
+          "llm.model": input.model.id,
+        })
+        return {
+          type: "native" as const,
+          stream: claudeCode.stream(input),
+        }
+      }
 
       const [language, cfg, item, info] = yield* Effect.all(
         [
@@ -414,6 +431,7 @@ export const node = LayerNode.make({
     llmClient,
     RuntimeFlags.node,
     Storage.node,
+    ClaudeCode.node,
   ],
 })
 

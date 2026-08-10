@@ -5157,6 +5157,15 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "authMetadata": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": ["all", "default", "connected"],
@@ -22111,6 +22120,41 @@
               },
               "guidance": {
                 "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "claude_code": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "binary_path": {
+                "type": "string"
+              },
+              "config_dir": {
+                "type": "string"
+              },
+              "permission_mode": {
+                "type": "string",
+                "enum": ["default", "acceptEdits", "bypassPermissions", "plan"]
+              },
+              "worker_permission_mode": {
+                "type": "string",
+                "enum": ["inherit", "acceptEdits", "bypassPermissions"]
+              },
+              "extra_args": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
               }
             },
             "additionalProperties": false

@@ -2035,6 +2035,19 @@ export type Config = {
     cooldownTurns?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     guidance?: string
   }
+  claude_code?: {
+    enabled?: boolean
+    binary_path?: string
+    config_dir?: string
+    permission_mode?: "default" | "acceptEdits" | "bypassPermissions" | "plan"
+    worker_permission_mode?: "inherit" | "acceptEdits" | "bypassPermissions"
+    extra_args?: {
+      [key: string]: string
+    }
+    env?: {
+      [key: string]: string
+    }
+  }
   default_agent?: string
   subagent_depth?: number
   username?: string
@@ -9855,6 +9868,11 @@ export type ProviderListResponses = {
       [key: string]: string
     }
     connected: Array<string>
+    authMetadata?: {
+      [key: string]: {
+        [key: string]: string
+      }
+    }
   }
 }
 

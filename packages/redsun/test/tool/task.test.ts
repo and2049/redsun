@@ -87,6 +87,43 @@ const routed = testEffect(
   ),
 )
 
+const claudeRef = {
+  providerID: ProviderV2.ID.make("claude-code"),
+  modelID: ModelV2.ID.make("opus"),
+}
+const claudeProvider = ProviderTest.fake({
+  model: ProviderTest.model({
+    id: claudeRef.modelID,
+    providerID: claudeRef.providerID,
+    api: { id: claudeRef.modelID, url: "", npm: "@redsun/claude-code-delegated" },
+  }),
+})
+const claudeRouted = testEffect(
+  LayerNode.compile(
+    LayerNode.group([
+      Agent.node,
+      BackgroundJob.node,
+      EventV2Bridge.node,
+      Config.node,
+      CrossSpawnSpawner.node,
+      Session.node,
+      SessionProjector.node,
+      SessionRunState.node,
+      SessionStatus.node,
+      Truncate.node,
+      ToolRegistry.node,
+      Database.node,
+      RuntimeFlags.node,
+      Ripgrep.node,
+      Provider.node,
+    ]),
+    [
+      [RuntimeFlags.node, RuntimeFlags.layer({})],
+      [Provider.node, claudeProvider.layer],
+    ],
+  ),
+)
+
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   const promise = new Promise<T>((done) => {
@@ -406,6 +443,35 @@ describe("tool.task", () => {
         expect(seen?.variant).toBe("xhigh")
       }),
     { config: { task_router: { worker: "test/test-model", worker_variant: "xhigh" } } },
+  )
+
+  claudeRouted.instance(
+    "task router routes a worker onto the claude-code delegated provider",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "compose",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(claudeRef)
+        expect(seen?.variant).toBeUndefined()
+      }),
+    { config: { task_router: { worker: "claude-code/opus" } } },
   )
 
   routed.instance(
