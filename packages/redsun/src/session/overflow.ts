@@ -4,6 +4,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import type { MessageV2 } from "./message-v2"
+import { ClaudeCodeModels } from "@/claude-code/models"
 
 const COMPACTION_BUFFER = 20_000
 
@@ -25,6 +26,9 @@ export function isOverflow(input: {
   model: Provider.Model
   outputTokenMax?: number
 }) {
+  // REDSUN CLAUDE-CODE: delegated sessions auto-compact inside Claude Code
+  // (compact_boundary); redsun compaction must never run on them.
+  if (ClaudeCodeModels.isDelegated(input.model)) return false
   if (input.cfg.compaction?.auto === false) return false
   if (input.model.limit.context === 0) return false
 

@@ -22,7 +22,9 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 2,
   "github-copilot": 3,
   anthropic: 4,
-  google: 5,
+  // REDSUN CLAUDE-CODE: delegated-agent provider beside the API-key entry
+  "claude-code": 5,
+  google: 6,
 }
 
 const CUSTOM_PROVIDER_OPTION_VALUE = "__opencode_custom_provider__"
@@ -61,6 +63,7 @@ export function providerOptions(list: { id: string; name: string }[]): ProviderO
         description: {
           opencode: "(Recommended)",
           anthropic: "(API key)",
+          "claude-code": "(Claude Pro/Max subscription)",
           openai: "(ChatGPT Plus/Pro or API key)",
           "opencode-go": "Low cost subscription for everyone",
         }[provider.id],
@@ -134,11 +137,18 @@ export function createDialogProviderOptions() {
         const providerID = provider.providerID
         const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, providerID)
         const connected = sync.data.provider_next.connected.includes(providerID)
+        // REDSUN CLAUDE-CODE: show the verified account/backend instead of the
+        // static label so billing-pool changes (e.g. an API key routed through
+        // claude_code.env) are visible rather than silent.
+        const meta = providerID === "claude-code" ? sync.data.provider_next.authMetadata?.[providerID] : undefined
+        const description = meta
+          ? [meta.email, meta.subscription, meta.backend].filter(Boolean).join(" · ") || provider.description
+          : provider.description
 
         return {
           title: provider.title,
           value: provider.value,
-          description: provider.description,
+          description,
           footer: consoleManaged ? sync.data.console_state.activeOrgName : undefined,
           category: provider.category,
           gutter: connected && onboarded() ? () => <text fg={theme.success}>✓</text> : undefined,

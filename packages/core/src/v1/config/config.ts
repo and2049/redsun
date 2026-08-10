@@ -103,6 +103,20 @@ export const Info = Schema.Struct({
       guidance: Schema.optional(Schema.String),
     }),
   ).annotate({ description: "Redsun watchdog advisor that reviews completed v2 session turns with a second model" }),
+  claude_code: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean),
+      binary_path: Schema.optional(Schema.String),
+      config_dir: Schema.optional(Schema.String),
+      permission_mode: Schema.optional(Schema.Literals(["default", "acceptEdits", "bypassPermissions", "plan"])),
+      worker_permission_mode: Schema.optional(Schema.Literals(["inherit", "acceptEdits", "bypassPermissions"])),
+      extra_args: Schema.optional(Schema.Record(Schema.String, Schema.NullOr(Schema.String))),
+      env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+    }),
+  ).annotate({
+    description:
+      "Claude Code delegated-agent provider. Drives the claude CLI headlessly through the Claude Agent SDK using the user's existing subscription login",
+  }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:
       "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",

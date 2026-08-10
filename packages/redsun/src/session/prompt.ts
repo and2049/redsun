@@ -58,6 +58,7 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Goal } from "./goal"
 import { continuationText, REACT_CAP } from "./goal-shared"
+import { ClaudeCodeModels } from "@/claude-code/models"
 import { ContextOptimizer } from "./context-optimizer"
 import { ExtensionRuntime } from "@/extension/runtime"
 import { ProjectTrust } from "@/trust"
@@ -683,6 +684,10 @@ const layer = Layer.effect(
       model: Provider.Model
       variant?: string
     }) {
+      // REDSUN CLAUDE-CODE: delegated sessions run Claude Code's native /goal
+      // loop; redsun's judge must never stack a second iteration loop on top.
+      if (ClaudeCodeModels.isDelegated(input.model)) return "stop" as const
+
       const active = yield* goal.get(input.sessionID)
       if (!active) return "stop" as const
 
@@ -1311,7 +1316,9 @@ const layer = Layer.effect(
           }
           const maxSteps = agent.steps ?? Infinity
           const isLastStep = step >= maxSteps
-          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
+          // REDSUN CLAUDE-CODE: `model` lets reminders skip redsun's plan-mode
+          // text for delegated sessions, which use Claude Code's own plan mode.
+          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session, model }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(FSUtil.Service, fsys),
             Effect.provideService(Session.Service, sessions),
@@ -1542,19 +1549,38 @@ const layer = Layer.effect(
       })
       if (input.command === Command.Default.GOAL) {
         const condition = input.arguments.trim()
+        const goalModel = input.model ? Provider.parseModel(input.model) : yield* currentModel(input.sessionID)
+        // REDSUN CLAUDE-CODE: forward /goal into Claude Code's native goal loop
+        // (single iteration loop, internal judge); redsun keeps the condition
+        // in its store so the TUI shows the active goal, and clears it when
+        // the delegated drain settles.
+        const delegated = ClaudeCodeModels.isDelegated({ providerID: goalModel.providerID })
         if (condition) {
           yield* goal.set(input.sessionID, condition)
-          const parts = yield* resolvePromptParts(condition)
+          const parts = yield* resolvePromptParts(delegated ? `/goal ${condition}` : condition)
+          const result = yield* prompt({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            model: goalModel,
+            agent: input.agent ?? (yield* agents.defaultInfo()).name,
+            parts,
+            variant: input.variant,
+          })
+          if (delegated) yield* goal.clear(input.sessionID)
+          return result
+        }
+        yield* goal.clear(input.sessionID)
+        if (delegated) {
+          const parts = yield* resolvePromptParts("/goal")
           return yield* prompt({
             sessionID: input.sessionID,
             messageID: input.messageID,
-            model: input.model ? Provider.parseModel(input.model) : yield* currentModel(input.sessionID),
+            model: goalModel,
             agent: input.agent ?? (yield* agents.defaultInfo()).name,
             parts,
             variant: input.variant,
           })
         }
-        yield* goal.clear(input.sessionID)
         const model = yield* currentModel(input.sessionID)
         return yield* addSyntheticUserMessage({
           sessionID: input.sessionID,

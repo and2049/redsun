@@ -955,6 +955,33 @@ it.instance("updates an existing .redsun project config", () =>
   }),
 )
 
+it.instance("parses the claude_code delegated-agent section", () =>
+  Effect.gen(function* () {
+    const parsed = ConfigParse.schema(
+      ConfigV1.Info,
+      {
+        claude_code: {
+          enabled: true,
+          binary_path: "C:\\tools\\claude.exe",
+          config_dir: "C:\\claude-config",
+          permission_mode: "acceptEdits",
+          worker_permission_mode: "bypassPermissions",
+          extra_args: { chrome: null, "append-system-prompt": "extra" },
+          env: { FOO: "bar" },
+        },
+      },
+      "test:config",
+    )
+    expect(parsed.claude_code?.permission_mode).toBe("acceptEdits")
+    expect(parsed.claude_code?.worker_permission_mode).toBe("bypassPermissions")
+    expect(parsed.claude_code?.extra_args).toEqual({ chrome: null, "append-system-prompt": "extra" })
+
+    expect(() =>
+      ConfigParse.schema(ConfigV1.Info, { claude_code: { permission_mode: "invalid" } }, "test:config"),
+    ).toThrow()
+  }),
+)
+
 it.instance("gets config directories", () =>
   Effect.gen(function* () {
     const dirs = yield* Config.use.directories()

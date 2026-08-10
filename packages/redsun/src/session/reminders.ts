@@ -2,6 +2,7 @@ import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Effect } from "effect"
 import { Agent } from "@/agent/agent"
+import { ClaudeCodeModels } from "@/claude-code/models"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -18,7 +19,13 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   messages: SessionV1.WithParts[]
   agent: Agent.Info
   session: Session.Info
+  model: { providerID: string }
 }) {
+  // REDSUN CLAUDE-CODE: delegated sessions run Claude Code's own plan mode,
+  // which owns read-only enforcement and its own plan file. Redsun's plan
+  // reminders name a plan path the CLI will not write, so they are skipped;
+  // the compose and worker reminders below are model-agnostic and stay.
+  const delegated = ClaudeCodeModels.isDelegated(input.model)
   const flags = yield* RuntimeFlags.Service
   const fsys = yield* FSUtil.Service
   const sessions = yield* Session.Service
@@ -38,7 +45,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   }
 
   if (!flags.experimentalPlanMode) {
-    if (input.agent.name === "plan") {
+    if (input.agent.name === "plan" && !delegated) {
       userMessage.parts.push({
         id: PartID.ascending(),
         messageID: userMessage.info.id,
@@ -66,7 +73,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   if (input.agent.name !== "plan" && assistantMessage?.info.agent === "plan") {
     const ctx = yield* InstanceState.context
     const plan = Session.plan(input.session, ctx)
-    const exists = yield* fsys.existsSafe(plan)
+    const exists = !delegated && (yield* fsys.existsSafe(plan))
     const part = yield* sessions.updatePart({
       id: PartID.ascending(),
       messageID: userMessage.info.id,
@@ -81,7 +88,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
     return input.messages
   }
 
-  if (input.agent.name !== "plan" || assistantMessage?.info.agent === "plan") return input.messages
+  if (input.agent.name !== "plan" || assistantMessage?.info.agent === "plan" || delegated) return input.messages
 
   const ctx = yield* InstanceState.context
   const plan = Session.plan(input.session, ctx)

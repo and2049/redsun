@@ -1,0 +1,248 @@
+import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
+import { LLMEvent, Usage } from "@opencode-ai/llm"
+
+/**
+ * Pure state machine translating Claude Agent SDK messages into the LLMEvent
+ * stream SessionProcessor consumes. Claude Code executes its own tools, so
+ * every tool event carries `providerExecuted: true` — the processor persists
+ * them as completed foreign tool parts and the turn loop never tries to
+ * continue them.
+ *
+ * Streaming fidelity comes from `stream_event` frames
+ * (`includePartialMessages: true`); full `assistant` messages supply the
+ * authoritative tool_use inputs and full `user` messages supply tool_results.
+ * Subagent-attributed frames (`parent_tool_use_id` set) are dropped — the
+ * main-thread Task tool_use/result still marks the subagent boundary.
+ */
+
+type OpenBlock =
+  | { kind: "text" | "reasoning"; id: string }
+  | { kind: "tool"; id: string; name: string }
+  | { kind: "ignored" }
+
+export interface State {
+  toolNames: Map<string, string>
+  openBlocks: Map<number, OpenBlock>
+  messageId: string
+  claudeSessionID?: string
+  result?: SDKResultMessage
+}
+
+export function makeState(): State {
+  return { toolNames: new Map(), openBlocks: new Map(), messageId: "claude" }
+}
+
+function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return content === undefined || content === null ? "" : JSON.stringify(content)
+  return content
+    .map((item) => {
+      if (item && typeof item === "object" && "type" in item && item.type === "text" && "text" in item)
+        return String(item.text)
+      return ""
+    })
+    .filter(Boolean)
+    .join("\n")
+}
+
+function mapUsage(usage: Record<string, unknown> | undefined): Usage | undefined {
+  if (!usage) return undefined
+  const number = (key: string) => (typeof usage[key] === "number" ? (usage[key] as number) : undefined)
+  const nonCached = number("input_tokens")
+  const cacheRead = number("cache_read_input_tokens")
+  const cacheWrite = number("cache_creation_input_tokens")
+  const outputTokens = number("output_tokens")
+  const inputTokens =
+    nonCached === undefined && cacheRead === undefined && cacheWrite === undefined
+      ? undefined
+      : (nonCached ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0)
+  return new Usage({
+    inputTokens,
+    outputTokens,
+    nonCachedInputTokens: nonCached,
+    cacheReadInputTokens: cacheRead,
+    cacheWriteInputTokens: cacheWrite,
+    totalTokens:
+      inputTokens === undefined && outputTokens === undefined ? undefined : (inputTokens ?? 0) + (outputTokens ?? 0),
+  })
+}
+
+const TOOL_USE_TYPES = new Set(["tool_use", "server_tool_use", "mcp_tool_use"])
+
+const INTERRUPT_PATTERN = /request was aborted|interrupted by user|aborted/i
+
+function isInterruptedResult(result: SDKResultMessage): boolean {
+  if ("terminal_reason" in result && typeof result.terminal_reason === "string") {
+    if (result.terminal_reason.startsWith("aborted")) return true
+  }
+  if (result.subtype === "error_during_execution" && !result.is_error) return true
+  if ("errors" in result && Array.isArray(result.errors)) {
+    return result.errors.some((error) => INTERRUPT_PATTERN.test(String(error)))
+  }
+  return false
+}
+
+export function resultErrorMessage(result: SDKResultMessage): string {
+  const errors = "errors" in result && Array.isArray(result.errors) ? result.errors.map(String) : []
+  // CLI-internal diagnostics must never become the user-facing error banner.
+  const visible = errors.filter((error) => !error.startsWith("[ede_diagnostic]"))
+  if (visible.length) return visible[0]!
+  switch (result.subtype) {
+    case "error_max_turns":
+      return "Claude Code stopped after reaching its turn limit."
+    case "error_max_budget_usd":
+      return "Claude Code stopped after reaching its budget limit."
+    default:
+      return "Claude Code reported an error while executing the turn."
+  }
+}
+
+function contentBlockStart(state: State, index: number, block: Record<string, any>): LLMEvent[] {
+  const blockId = `${state.messageId}:${index}`
+  switch (block.type) {
+    case "text":
+      state.openBlocks.set(index, { kind: "text", id: blockId })
+      return [LLMEvent.textStart({ id: blockId })]
+    case "thinking":
+      state.openBlocks.set(index, { kind: "reasoning", id: blockId })
+      return [LLMEvent.reasoningStart({ id: blockId })]
+    default:
+      if (TOOL_USE_TYPES.has(block.type) && typeof block.id === "string" && typeof block.name === "string") {
+        state.toolNames.set(block.id, block.name)
+        state.openBlocks.set(index, { kind: "tool", id: block.id, name: block.name })
+        return [LLMEvent.toolInputStart({ id: block.id, name: block.name })]
+      }
+      state.openBlocks.set(index, { kind: "ignored" })
+      return []
+  }
+}
+
+function contentBlockDelta(state: State, index: number, delta: Record<string, any>): LLMEvent[] {
+  const open = state.openBlocks.get(index)
+  if (!open || open.kind === "ignored") return []
+  switch (delta.type) {
+    case "text_delta":
+      return open.kind === "text" ? [LLMEvent.textDelta({ id: open.id, text: String(delta.text ?? "") })] : []
+    case "thinking_delta":
+      return open.kind === "reasoning"
+        ? [LLMEvent.reasoningDelta({ id: open.id, text: String(delta.thinking ?? "") })]
+        : []
+    case "input_json_delta":
+      return open.kind === "tool"
+        ? [LLMEvent.toolInputDelta({ id: open.id, name: open.name, text: String(delta.partial_json ?? "") })]
+        : []
+    default:
+      return []
+  }
+}
+
+function contentBlockStop(state: State, index: number): LLMEvent[] {
+  const open = state.openBlocks.get(index)
+  state.openBlocks.delete(index)
+  if (!open || open.kind === "ignored") return []
+  switch (open.kind) {
+    case "text":
+      return [LLMEvent.textEnd({ id: open.id })]
+    case "reasoning":
+      return [LLMEvent.reasoningEnd({ id: open.id })]
+    case "tool":
+      return [LLMEvent.toolInputEnd({ id: open.id, name: open.name })]
+  }
+}
+
+function streamEvent(state: State, event: Record<string, any>): LLMEvent[] {
+  switch (event.type) {
+    case "message_start":
+      if (typeof event.message?.id === "string") state.messageId = event.message.id
+      return []
+    case "content_block_start":
+      return contentBlockStart(state, event.index, event.content_block ?? {})
+    case "content_block_delta":
+      return contentBlockDelta(state, event.index, event.delta ?? {})
+    case "content_block_stop":
+      return contentBlockStop(state, event.index)
+    default:
+      return []
+  }
+}
+
+function assistantMessage(state: State, content: unknown): LLMEvent[] {
+  if (!Array.isArray(content)) return []
+  const events: LLMEvent[] = []
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue
+    const item = block as Record<string, any>
+    if (!TOOL_USE_TYPES.has(item.type)) continue
+    if (typeof item.id !== "string" || typeof item.name !== "string") continue
+    state.toolNames.set(item.id, item.name)
+    events.push(
+      LLMEvent.toolCall({
+        id: item.id,
+        name: item.name,
+        input: item.input ?? {},
+        providerExecuted: true,
+      }),
+    )
+  }
+  return events
+}
+
+function userMessage(state: State, content: unknown): LLMEvent[] {
+  if (!Array.isArray(content)) return []
+  const events: LLMEvent[] = []
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue
+    const item = block as Record<string, any>
+    if (item.type !== "tool_result" || typeof item.tool_use_id !== "string") continue
+    const name = state.toolNames.get(item.tool_use_id)
+    if (!name) continue
+    events.push(
+      LLMEvent.toolResult({
+        id: item.tool_use_id,
+        name,
+        result: {
+          type: item.is_error ? "error" : "text",
+          value: toolResultText(item.content),
+        },
+        providerExecuted: true,
+      }),
+    )
+  }
+  return events
+}
+
+function resultMessage(state: State, result: SDKResultMessage): LLMEvent[] {
+  state.result = result
+  const usage = mapUsage("usage" in result ? (result.usage as Record<string, unknown>) : undefined)
+  if (result.subtype === "success" || isInterruptedResult(result)) {
+    return [
+      LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
+      LLMEvent.finish({ reason: "stop", usage }),
+    ]
+  }
+  return [LLMEvent.providerError({ message: resultErrorMessage(result), retryable: false })]
+}
+
+/** Translate one SDK message into zero or more LLMEvents. */
+export function translate(state: State, message: SDKMessage): LLMEvent[] {
+  if ("session_id" in message && typeof message.session_id === "string" && message.session_id)
+    state.claudeSessionID = message.session_id
+
+  switch (message.type) {
+    case "stream_event":
+      if (message.parent_tool_use_id) return []
+      return streamEvent(state, message.event as unknown as Record<string, any>)
+    case "assistant":
+      if (message.parent_tool_use_id) return []
+      return assistantMessage(state, (message.message as Record<string, any>)?.content)
+    case "user":
+      if (message.parent_tool_use_id) return []
+      return userMessage(state, (message.message as Record<string, any>)?.content)
+    case "result":
+      return resultMessage(state, message)
+    default:
+      return []
+  }
+}
+
+export * as ClaudeCodeTranslate from "./translate"
