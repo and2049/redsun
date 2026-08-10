@@ -44,6 +44,8 @@ function model(input: {
  * usage is covered by the subscription, not API billing.
  */
 export const MODELS: Record<string, typeof ConfigProviderV1.Model.Type> = {
+  // Max-plan only; Pro accounts selecting it get the CLI's access error.
+  fable: model({ name: "Claude Fable (Claude Code, Max only)", family: "claude-fable", limit: LIMIT_1M }),
   opus: model({ name: "Claude Opus (Claude Code)", family: "claude-opus", limit: LIMIT_200K }),
   "opus[1m]": model({ name: "Claude Opus 1M (Claude Code)", family: "claude-opus", limit: LIMIT_1M }),
   sonnet: model({ name: "Claude Sonnet (Claude Code)", family: "claude-sonnet", limit: LIMIT_200K }),
