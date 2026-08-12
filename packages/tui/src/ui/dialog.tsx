@@ -7,16 +7,22 @@ import { useToast } from "./toast"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
+import { SplitBorder } from "./border"
+import { useTuiConfig } from "../config"
+
+export type DialogPlacement = "center" | "bottom"
 
 export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge"
+    placement?: DialogPlacement
     onClose: () => void
   }>,
 ) {
   const dimensions = useTerminalDimensions()
   const { theme } = useTheme()
   const renderer = useRenderer()
+  const tuiConfig = useTuiConfig()
 
   let dismiss = false
   const width = () => {
@@ -24,6 +30,7 @@ export function Dialog(
     if (props.size === "large") return 88
     return 60
   }
+  const bottom = () => props.placement === "bottom"
 
   return (
     <box
@@ -39,13 +46,15 @@ export function Dialog(
       }}
       width={dimensions().width}
       height={dimensions().height}
-      alignItems="center"
+      alignItems={bottom() ? "stretch" : "center"}
+      justifyContent={bottom() ? "flex-end" : "flex-start"}
       position="absolute"
       zIndex={3000}
-      paddingTop={dimensions().height / 4}
+      paddingTop={bottom() ? 0 : dimensions().height / 4}
+      paddingBottom={bottom() ? 1 : 0}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      backgroundColor={bottom() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -55,12 +64,20 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={width()}
-        maxWidth={dimensions().width - 2}
-        backgroundColor={theme.backgroundPanel}
-        paddingTop={1}
+        width={bottom() ? "100%" : width()}
+        maxWidth={bottom() ? dimensions().width : dimensions().width - 2}
+        border={bottom() ? SplitBorder.border : undefined}
+        customBorderChars={SplitBorder.customBorderChars}
+        borderColor={theme.border}
+        backgroundColor={
+          bottom() ? (tuiConfig.ui !== "classic" ? theme.background : undefined) : theme.backgroundPanel
+        }
       >
-        {props.children}
+        {/* The menu surface sits on an opaque base in the dense shell so content
+            doesn't bleed through translucent backgroundMenu (same as autocomplete). */}
+        <box backgroundColor={bottom() ? theme.backgroundMenu : RGBA.fromInts(0, 0, 0, 0)} paddingTop={1}>
+          {props.children}
+        </box>
       </box>
     </box>
   )
@@ -73,6 +90,7 @@ function init() {
       onClose?: () => void
     }[],
     size: "medium" as "medium" | "large" | "xlarge",
+    placement: "center" as DialogPlacement,
   })
 
   const renderer = useRenderer()
@@ -143,6 +161,7 @@ function init() {
       }
       batch(() => {
         setStore("size", "medium")
+        setStore("placement", "center")
         setStore("stack", [])
       })
       refocus()
@@ -156,6 +175,7 @@ function init() {
         if (item.onClose) item.onClose()
       }
       setStore("size", "medium")
+      setStore("placement", "center")
       setStore("stack", [
         {
           element: input,
@@ -171,6 +191,12 @@ function init() {
     },
     setSize(size: "medium" | "large" | "xlarge") {
       setStore("size", size)
+    },
+    get placement() {
+      return store.placement
+    },
+    setPlacement(placement: DialogPlacement) {
+      setStore("placement", placement)
     },
   }
 }
@@ -213,7 +239,7 @@ export function DialogProvider(props: ParentProps) {
         onMouseUp={!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size}>
+          <Dialog onClose={() => value.clear()} size={value.size} placement={value.placement}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

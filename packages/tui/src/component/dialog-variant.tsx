@@ -13,6 +13,7 @@ export function DialogVariant(
 ) {
   const local = useLocal()
   const dialog = useDialog()
+  dialog.setPlacement("bottom")
   let active = true
   onCleanup(() => {
     active = false
