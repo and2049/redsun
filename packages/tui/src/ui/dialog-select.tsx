@@ -211,7 +211,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   const dimensions = useTerminalDimensions()
-  const height = createMemo(() => Math.min(rows(), Math.floor(dimensions().height / 2) - 6))
+  const height = createMemo(() => {
+    const cap = Math.floor(dimensions().height / 2) - 6
+    // Bottom-anchored menus stay compact, like the prompt autocomplete popup.
+    if (dialog.placement === "bottom") return Math.min(rows(), cap, 12)
+    return Math.min(rows(), cap)
+  })
 
   const selected = createMemo(() => flat()[store.selected])
 
