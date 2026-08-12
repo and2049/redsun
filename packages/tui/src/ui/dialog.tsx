@@ -8,7 +8,6 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 import { SplitBorder } from "./border"
-import { useTuiConfig } from "../config"
 
 export type DialogPlacement = "center" | "bottom"
 
@@ -22,7 +21,6 @@ export function Dialog(
   const dimensions = useTerminalDimensions()
   const { theme } = useTheme()
   const renderer = useRenderer()
-  const tuiConfig = useTuiConfig()
 
   let dismiss = false
   const width = () => {
@@ -51,7 +49,6 @@ export function Dialog(
       position="absolute"
       zIndex={3000}
       paddingTop={bottom() ? 0 : dimensions().height / 4}
-      paddingBottom={bottom() ? 1 : 0}
       left={0}
       top={0}
       backgroundColor={bottom() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
@@ -69,12 +66,11 @@ export function Dialog(
         border={bottom() ? SplitBorder.border : undefined}
         customBorderChars={SplitBorder.customBorderChars}
         borderColor={theme.border}
-        backgroundColor={
-          bottom() ? (tuiConfig.ui !== "classic" ? theme.background : undefined) : theme.backgroundPanel
-        }
+        backgroundColor={bottom() ? theme.background : theme.backgroundPanel}
       >
-        {/* The menu surface sits on an opaque base in the dense shell so content
-            doesn't bleed through translucent backgroundMenu (same as autocomplete). */}
+        {/* The menu runs flush to the terminal's last row, covering the command
+            bar, so it needs an opaque base to keep the bar (and transcript) from
+            bleeding through translucent backgroundMenu. */}
         <box backgroundColor={bottom() ? theme.backgroundMenu : RGBA.fromInts(0, 0, 0, 0)} paddingTop={1}>
           {props.children}
         </box>
