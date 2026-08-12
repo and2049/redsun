@@ -123,6 +123,10 @@ test("the model selector opens as a bottom-anchored menu", async () => {
     const title = lines.findIndex((line) => line.includes("Select model"))
     expect(title).toBeGreaterThan(15)
 
+    // The menu runs flush to the terminal's last row and covers the command
+    // bar — the vim mode indicator ("insert") is hidden while it's open.
+    expect(frame).not.toContain("insert")
+
     // Enter on the first row (Anthropic) expands just that provider.
     setup.mockInput.pressEnter()
     frame = await frameContaining(setup, "Fable 5")
