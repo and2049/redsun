@@ -53,6 +53,8 @@ export function Dialog(
       top={0}
       backgroundColor={bottom() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
+      {/* opentui force-enables a full border when borderColor/customBorderChars
+          are set, so the centered panel must not receive any border props. */}
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
           // A selection release must bubble up to the copy-on-select handler in
@@ -63,9 +65,9 @@ export function Dialog(
         }}
         width={bottom() ? "100%" : width()}
         maxWidth={bottom() ? dimensions().width : dimensions().width - 2}
-        border={bottom() ? SplitBorder.border : undefined}
-        customBorderChars={SplitBorder.customBorderChars}
-        borderColor={theme.border}
+        border={bottom() ? SplitBorder.border : false}
+        customBorderChars={bottom() ? SplitBorder.customBorderChars : undefined}
+        borderColor={bottom() ? theme.border : undefined}
         backgroundColor={bottom() ? theme.background : theme.backgroundPanel}
       >
         {/* The menu runs flush to the terminal's last row, covering the command

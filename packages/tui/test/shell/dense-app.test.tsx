@@ -104,6 +104,10 @@ test("pickers open as a floating modal over the dense session", async () => {
     expect(picker).toBeGreaterThan(0)
     expect(picker).toBeLessThan(15)
 
+    // Regression: the bottom-menu's SplitBorder must not leak onto centered
+    // panels (opentui force-enables a border if any border prop is set).
+    expect(lines[picker]).not.toContain("┃")
+
     api()?.keymap.dispatchCommand("app.exit")
     await task
   } finally {
