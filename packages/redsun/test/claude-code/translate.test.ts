@@ -136,6 +136,68 @@ describe("claude-code translate", () => {
     expect(state.claudeSessionID).toBe(sid)
   })
 
+  test("turn usage reflects the last API call, not the result's cumulative sum", () => {
+    const assistant = (usage: Record<string, number>, parent: string | null = null): SDKMessage =>
+      ({
+        type: "assistant",
+        message: { content: [], usage },
+        parent_tool_use_id: parent,
+        uuid: "u",
+        session_id: sid,
+      }) as never
+    const { events } = run([
+      assistant({ input_tokens: 10, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 22_000 }),
+      assistant({ input_tokens: 8, output_tokens: 1, cache_read_input_tokens: 22_000, cache_creation_input_tokens: 300 }),
+      // A subagent frame after the last main-thread call must not win.
+      assistant({ input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 900_000 }, "parent_tool"),
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        // The SDK sums usage across both calls; only output_tokens is trusted.
+        usage: { input_tokens: 18, output_tokens: 240, cache_read_input_tokens: 22_000, cache_creation_input_tokens: 22_300 },
+        session_id: sid,
+        uuid: "u",
+      } as never,
+    ])
+    const finish = events.at(-1) as { usage?: Record<string, number> }
+    expect(finish.usage).toMatchObject({
+      inputTokens: 8 + 22_000 + 300,
+      outputTokens: 240,
+      cacheReadInputTokens: 22_000,
+      cacheWriteInputTokens: 300,
+    })
+  })
+
+  test("manual compact boundary renders as a text notice", () => {
+    const { events } = run([
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "manual", pre_tokens: 22_605, post_tokens: 1_531 },
+        session_id: sid,
+        uuid: "u",
+      } as never,
+    ])
+    expect(events.map((event) => event.type)).toEqual(["text-start", "text-delta", "text-end"])
+    const delta = events[1] as { text: string }
+    expect(delta.text).toContain("22,605")
+    expect(delta.text).toContain("1,531")
+  })
+
+  test("auto compact boundary stays silent", () => {
+    const { events } = run([
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 180_000, post_tokens: 2_000 },
+        session_id: sid,
+        uuid: "u",
+      } as never,
+    ])
+    expect(events).toEqual([])
+  })
+
   test("interrupted result finishes without a provider error", () => {
     const { events } = run([
       {

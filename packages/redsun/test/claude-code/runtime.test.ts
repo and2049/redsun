@@ -246,6 +246,34 @@ describe("claude-code delegated runtime", () => {
     ),
   )
 
+  it.instance("manual compaction of a live session sends the CLI's /compact command", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({ agent: { name: "custom", prompt: "CUSTOM BRIEF" }, text: "one" })
+        yield* turn({ agent: { name: "custom", prompt: "CUSTOM BRIEF" }, text: "two" })
+        yield* turn({ agent: { name: "compaction" }, text: "Summarize this conversation." })
+        yield* turn({ agent: { name: "custom", prompt: "CUSTOM BRIEF" }, text: "three" })
+        // The summarize prompt never reaches the CLI, and the agent brief is
+        // re-sent after compaction dropped it from the session history.
+        expect(record.prompts).toEqual([
+          "CUSTOM BRIEF\n\none",
+          "two",
+          "/compact",
+          "CUSTOM BRIEF\n\nthree",
+        ])
+      }),
+    ),
+  )
+
+  it.instance("compaction without a live Claude session falls back to the summarize prompt", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({ agent: { name: "compaction" }, text: "Summarize this conversation." })
+        expect(record.prompts).toEqual(["Summarize this conversation."])
+      }),
+    ),
+  )
+
   it.instance("every spawned query targets the resolved CLI, never the SDK's bundled one", () =>
     withRuntime(({ record, turn }) =>
       Effect.gen(function* () {

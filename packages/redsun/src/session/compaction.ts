@@ -23,6 +23,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { buildPrompt } from "@opencode-ai/core/session/compaction"
 import { SessionCompactionEvent } from "@opencode-ai/schema/session-compaction-event"
 import { CompactionExtractor } from "./compaction-extractor"
+import { ClaudeCodeModels } from "@/claude-code/models"
 import PROMPT_COMPACTION_HYBRID from "@/agent/prompt/compaction-hybrid.txt"
 
 export const Event = SessionCompactionEvent
@@ -371,15 +372,23 @@ const layer = Layer.effect(
       if (route && (!routed?.providerID || !routed.modelID)) {
         return yield* Effect.die(new Error(`Configured task_router.compact model is invalid: ${route}`))
       }
-      const model = routed
-        ? yield* provider
-            .getModel(routed.providerID, routed.modelID)
-            .pipe(
-              Effect.catchCause(() =>
-                Effect.die(new Error(`Configured task_router.compact model is unavailable: ${route}`)),
-              ),
-            )
-        : yield* provider.getModel(fallbackModel.providerID, fallbackModel.modelID).pipe(Effect.orDie)
+      // REDSUN CLAUDE-CODE: a delegated session's history lives inside Claude
+      // Code, so only the CLI's own /compact command can shrink it — the
+      // delegated runtime sends that instead of the summarize prompt built
+      // below. task_router.compact cannot reroute this: a foreign model has
+      // no way to touch Claude Code's context.
+      const delegated = ClaudeCodeModels.isDelegated(userMessage.model)
+      const model = delegated
+        ? yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
+        : routed
+          ? yield* provider
+              .getModel(routed.providerID, routed.modelID)
+              .pipe(
+                Effect.catchCause(() =>
+                  Effect.die(new Error(`Configured task_router.compact model is unavailable: ${route}`)),
+                ),
+              )
+          : yield* provider.getModel(fallbackModel.providerID, fallbackModel.modelID).pipe(Effect.orDie)
       const strategy = cfg.compaction?.strategy ?? "hybrid"
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       const prior = completedCompactions(history)
@@ -516,7 +525,10 @@ const layer = Layer.effect(
         yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
       })
 
-      if (strategy === "algorithmic") {
+      // Delegated sessions always take the processor path: an algorithmic
+      // summary of redsun's transcript would leave Claude Code's context
+      // untouched, which is the whole point of compacting here.
+      if (strategy === "algorithmic" && !delegated) {
         if (!algorithmic.trim()) return "stop"
         yield* session.updatePart({
           id: PartID.ascending(),

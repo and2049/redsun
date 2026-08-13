@@ -26,6 +26,8 @@ export interface State {
   messageId: string
   claudeSessionID?: string
   result?: SDKResultMessage
+  /** Raw API usage of the turn's most recent main-thread assistant message. */
+  lastCallUsage?: Record<string, unknown>
 }
 
 export function makeState(): State {
@@ -211,9 +213,30 @@ function userMessage(state: State, content: unknown): LLMEvent[] {
   return events
 }
 
+/**
+ * Usage for the turn's step-finish/finish events. `result.usage` sums every
+ * API call in the turn, so its cache reads count the whole context once per
+ * tool round-trip — a long turn reports millions of "context" tokens. The
+ * last main-thread assistant message carries the final call's real input-side
+ * usage; only output tokens come from the result, because assistant frames
+ * snapshot output_tokens before the message finishes streaming.
+ */
+function turnUsage(state: State, result: SDKResultMessage): Usage | undefined {
+  const resultUsage =
+    "usage" in result && result.usage && typeof result.usage === "object"
+      ? (result.usage as Record<string, unknown>)
+      : undefined
+  if (!state.lastCallUsage) return mapUsage(resultUsage)
+  const output = resultUsage?.["output_tokens"]
+  return mapUsage({
+    ...state.lastCallUsage,
+    ...(typeof output === "number" ? { output_tokens: output } : {}),
+  })
+}
+
 function resultMessage(state: State, result: SDKResultMessage): LLMEvent[] {
   state.result = result
-  const usage = mapUsage("usage" in result ? (result.usage as Record<string, unknown>) : undefined)
+  const usage = turnUsage(state, result)
   if (result.subtype === "success" || isInterruptedResult(result)) {
     return [
       LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
@@ -221,6 +244,25 @@ function resultMessage(state: State, result: SDKResultMessage): LLMEvent[] {
     ]
   }
   return [LLMEvent.providerError({ message: resultErrorMessage(result), retryable: false })]
+}
+
+/**
+ * A manual `/compact` renders as a short text part on the compaction message.
+ * Auto-compaction happens mid-turn inside Claude Code and stays silent — the
+ * next turn's usage reflects it.
+ */
+function compactBoundary(state: State, message: Record<string, any>): LLMEvent[] {
+  const meta = message.compact_metadata
+  if (!meta || typeof meta !== "object" || meta.trigger !== "manual") return []
+  const before = typeof meta.pre_tokens === "number" ? meta.pre_tokens : undefined
+  const after = typeof meta.post_tokens === "number" ? meta.post_tokens : undefined
+  const detail =
+    before !== undefined && after !== undefined
+      ? ` (${before.toLocaleString("en-US")} → ${after.toLocaleString("en-US")} conversation tokens)`
+      : ""
+  const id = `${state.messageId}:compact`
+  const text = `Claude Code compacted its session history${detail}.`
+  return [LLMEvent.textStart({ id }), LLMEvent.textDelta({ id, text }), LLMEvent.textEnd({ id })]
 }
 
 /** Translate one SDK message into zero or more LLMEvents. */
@@ -232,12 +274,19 @@ export function translate(state: State, message: SDKMessage): LLMEvent[] {
     case "stream_event":
       if (message.parent_tool_use_id) return []
       return streamEvent(state, message.event as unknown as Record<string, any>)
-    case "assistant":
+    case "assistant": {
       if (message.parent_tool_use_id) return []
-      return assistantMessage(state, (message.message as Record<string, any>)?.content)
+      const inner = message.message as Record<string, any>
+      if (inner?.usage && typeof inner.usage === "object") state.lastCallUsage = inner.usage
+      return assistantMessage(state, inner?.content)
+    }
     case "user":
       if (message.parent_tool_use_id) return []
       return userMessage(state, (message.message as Record<string, any>)?.content)
+    case "system":
+      if ((message as Record<string, any>).subtype === "compact_boundary")
+        return compactBoundary(state, message as unknown as Record<string, any>)
+      return []
     case "result":
       return resultMessage(state, message)
     default:
