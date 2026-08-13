@@ -84,6 +84,7 @@ import { useTuiConfig } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { compactionSummary } from "../../util/compaction"
+import { toolTeaser } from "../../util/tool-teaser"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
@@ -1984,38 +1985,53 @@ type ToolProps = {
 function GenericTool(props: ToolProps) {
   const { theme } = useTheme()
   const ctx = use()
-  const output = createMemo(() => props.output?.trim() ?? "")
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 3
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
-  const limited = createMemo(() => {
-    if (expanded() || !collapsed().overflow) return output()
-    return collapsed().output
-  })
+
+  const output = createMemo(() => (ctx.showGenericToolOutput() && props.output ? props.output.trim() : ""))
+  const detail = createMemo(() => `${Locale.titlecase(props.tool)} ${input(props.input)}`.trim())
+
+  // Same disclosure as thinking: long calls collapse to a one-row teaser by
+  // default, and clicking reveals the full args and output.
+  const collapse = createMemo(() => toolTeaser({ detail: detail(), output: output(), width: ctx.width }))
 
   return (
-    <Show
-      when={props.output && ctx.showGenericToolOutput()}
-      fallback={
+    <Switch>
+      <Match when={!collapse().collapsible}>
         <InlineTool icon="→" pending="Writing command..." complete={true} part={props.part}>
-          {Locale.titlecase(props.tool)} {input(props.input)}
+          {detail()}
         </InlineTool>
-      }
-    >
-      <BlockTool
-        title={`# ${props.tool} ${input(props.input)}`}
-        part={props.part}
-        onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
-      >
-        <box gap={1}>
-          <text fg={theme.text}>{limited()}</text>
-          <Show when={collapsed().overflow}>
-            <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
-          </Show>
-        </box>
-      </BlockTool>
-    </Show>
+      </Match>
+      <Match when={!expanded()}>
+        <InlineTool
+          icon="→"
+          pending="Writing command..."
+          complete={true}
+          part={props.part}
+          onClick={() => setExpanded(true)}
+        >
+          {collapse().teaser} (click to expand)
+        </InlineTool>
+      </Match>
+      <Match when={output()}>
+        <BlockTool title={`# ${detail()}`} part={props.part} onClick={() => setExpanded(false)}>
+          <box gap={1}>
+            <text fg={theme.text}>{output()}</text>
+            <text fg={theme.textMuted}>Click to collapse</text>
+          </box>
+        </BlockTool>
+      </Match>
+      <Match when={true}>
+        <InlineTool
+          icon="→"
+          pending="Writing command..."
+          complete={true}
+          part={props.part}
+          onClick={() => setExpanded(false)}
+        >
+          {detail()} (click to collapse)
+        </InlineTool>
+      </Match>
+    </Switch>
   )
 }
 
