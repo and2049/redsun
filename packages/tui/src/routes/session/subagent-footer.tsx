@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Show } from "solid-js"
+import { useTuiConfig } from "../../config"
 import { useRouteData } from "../../context/route"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
@@ -55,6 +56,27 @@ export function SubagentFooter() {
   })
 
   const { theme } = useTheme()
+  const tuiConfig = useTuiConfig()
+  // Dense UI draws the footer in the chat box's rounded shape. A fill would
+  // paint the full rectangle behind the rounded corners (terminal cells can't
+  // clip), so like the prompt box it stays on the plain background; classic
+  // keeps the original filled left-bar block.
+  const dense = createMemo(() => tuiConfig.ui !== "classic")
+  const shape = createMemo(() =>
+    dense()
+      ? { border: true as const, borderStyle: "rounded" as const, paddingLeft: 1, paddingRight: 1 }
+      : {
+          ...SplitBorder,
+          border: ["left" as const],
+          paddingTop: 1,
+          paddingBottom: 1,
+          paddingLeft: 2,
+          paddingRight: 1,
+          backgroundColor: theme.backgroundPanel,
+        },
+  )
+  const buttonBackground = (active: boolean) =>
+    active ? theme.backgroundElement : dense() ? undefined : theme.backgroundPanel
   const keymap = useOpencodeKeymap()
   const parentShortcut = useCommandShortcut("session.parent")
   const previousShortcut = useCommandShortcut("session.child.previous")
@@ -64,17 +86,7 @@ export function SubagentFooter() {
 
   return (
     <box flexShrink={0}>
-      <box
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={1}
-        {...SplitBorder}
-        border={["left"]}
-        borderColor={theme.border}
-        flexShrink={0}
-        backgroundColor={theme.backgroundPanel}
-      >
+      <box {...shape()} borderColor={theme.border} flexShrink={0}>
         <box flexDirection="row" justifyContent="space-between" gap={1}>
           <box flexDirection="row" gap={1}>
             <text fg={theme.text}>
@@ -98,7 +110,7 @@ export function SubagentFooter() {
               onMouseOver={() => setHover("parent")}
               onMouseOut={() => setHover(null)}
               onMouseUp={() => keymap.dispatchCommand("session.parent")}
-              backgroundColor={hover() === "parent" ? theme.backgroundElement : theme.backgroundPanel}
+              backgroundColor={buttonBackground(hover() === "parent")}
             >
               <text fg={theme.text}>
                 Parent <span style={{ fg: theme.textMuted }}>{parentShortcut()}</span>
@@ -108,7 +120,7 @@ export function SubagentFooter() {
               onMouseOver={() => setHover("prev")}
               onMouseOut={() => setHover(null)}
               onMouseUp={() => keymap.dispatchCommand("session.child.previous")}
-              backgroundColor={hover() === "prev" ? theme.backgroundElement : theme.backgroundPanel}
+              backgroundColor={buttonBackground(hover() === "prev")}
             >
               <text fg={theme.text}>
                 Prev <span style={{ fg: theme.textMuted }}>{previousShortcut()}</span>
@@ -118,7 +130,7 @@ export function SubagentFooter() {
               onMouseOver={() => setHover("next")}
               onMouseOut={() => setHover(null)}
               onMouseUp={() => keymap.dispatchCommand("session.child.next")}
-              backgroundColor={hover() === "next" ? theme.backgroundElement : theme.backgroundPanel}
+              backgroundColor={buttonBackground(hover() === "next")}
             >
               <text fg={theme.text}>
                 Next <span style={{ fg: theme.textMuted }}>{nextShortcut()}</span>
