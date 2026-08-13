@@ -209,6 +209,33 @@ const providerErrorLLM = Layer.succeed(
 const providerErrorEnv = LayerNode.compile(root, [...replacements, [LLM.node, providerErrorLLM]])
 const itProviderError = testEffect(providerErrorEnv)
 
+const subagentMetadataLLM = Layer.succeed(
+  LLM.Service,
+  LLM.Service.of({
+    stream: () =>
+      Stream.make(
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({
+          id: "call-task",
+          name: "task",
+          input: { description: "Scan" },
+          providerExecuted: true,
+          providerMetadata: { redsun: { sessionId: "ses_child", parentSessionId: "ses_parent" } },
+        }),
+        LLMEvent.toolResult({
+          id: "call-task",
+          name: "task",
+          result: { type: "error", value: "interrupted" },
+          providerExecuted: true,
+        }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ),
+  }),
+)
+const subagentMetadataEnv = LayerNode.compile(root, [...replacements, [LLM.node, subagentMetadataLLM]])
+const itSubagentMetadata = testEffect(subagentMetadataEnv)
+
 const fragmentFailureLLM = Layer.succeed(
   LLM.Service,
   LLM.Service.of({
@@ -1055,6 +1082,50 @@ itProviderError.live("session.processor effect tests fail provider-executed erro
         expect(seen).toContain(MessageV2.Event.PartUpdated.type)
         expect(seen).toContain(MessageV2.Event.Updated.type)
         expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
+      }),
+    { config: cfg },
+  ),
+)
+
+// REDSUN CLAUDE-CODE: providerMetadata.redsun on a provider-executed tool-call
+// is lifted into the tool state's metadata (the delegated task tool's subagent
+// session link) and survives the error path.
+itSubagentMetadata.live("session.processor lifts redsun provider metadata into the tool state", () =>
+  provideTmpdirInstance(
+    (dir) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "delegate a task")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+
+        yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "delegate a task" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+        const call = parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
+        expect(call?.state.status).toBe("error")
+        expect(call?.state.status === "error" ? call.state.metadata : undefined).toMatchObject({
+          sessionId: "ses_child",
+          parentSessionId: "ses_parent",
+        })
       }),
     { config: cfg },
   ),

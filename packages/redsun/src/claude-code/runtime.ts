@@ -11,6 +11,8 @@ import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"
 import { Question } from "@/question"
 import { SessionID } from "@/session/schema"
+import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
 import { Storage } from "@/storage/storage"
 import type { LLM } from "@/session/llm"
 import { ClaudeCodeExecutable } from "./executable"
@@ -19,6 +21,7 @@ import { ClaudeCodeModels } from "./models"
 import { ClaudeCodeModes } from "./modes"
 import { makeCanUseTool, type TurnContext } from "./permissions"
 import { SessionManager, type CreateQuery, type QueryLike } from "./sessions"
+import { ClaudeCodeSubagents } from "./subagents"
 import { ClaudeCodeTranslate } from "./translate"
 import PLAN_WORKFLOW from "./prompt/plan-workflow.txt"
 
@@ -50,6 +53,8 @@ interface InstanceData {
   contexts: Map<string, TurnContext>
   /** Last agent each session ran under, so the mode brief is sent on change. */
   agents: Map<string, string>
+  /** Mirrors Claude Code's built-in Task subagents into redsun child sessions. */
+  mirror: ClaudeCodeSubagents.Mirror
 }
 
 function messageText(content: unknown): string {
@@ -107,7 +112,7 @@ const defaultCreateQuery: CreateQuery = (input) => {
 export function layerWith(createQuery: CreateQuery): Layer.Layer<
   Service,
   never,
-  Config.Service | Storage.Service | Permission.Service | Question.Service
+  Config.Service | Storage.Service | Permission.Service | Question.Service | Session.Service | SessionStatus.Service
 > {
   return Layer.effect(
     Service,
@@ -116,6 +121,8 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
       const storage = yield* Storage.Service
       const permission = yield* Permission.Service
       const question = yield* Question.Service
+      const sessions = yield* Session.Service
+      const sessionStatus = yield* SessionStatus.Service
 
       const state = yield* InstanceState.make<InstanceData>(
         Effect.fn("ClaudeCode.state")(function* () {
@@ -123,6 +130,12 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             manager: new SessionManager(createQuery),
             contexts: new Map(),
             agents: new Map(),
+            mirror: ClaudeCodeSubagents.make({
+              createSession: (input) => sessions.create(input),
+              updateMessage: sessions.updateMessage,
+              updatePart: sessions.updatePart,
+              setStatus: sessionStatus.set,
+            }),
           }
           yield* Effect.addFinalizer(() => Effect.sync(() => data.manager.stopAll()))
           return data
@@ -282,7 +295,12 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
           },
         }
 
-        const translateState = ClaudeCodeTranslate.makeState()
+        const turnInfo: ClaudeCodeSubagents.TurnInfo = {
+          sessionID,
+          model: { providerID: input.model.providerID, modelID: input.model.id },
+          path: { cwd: base.instance.directory, root: base.instance.worktree },
+        }
+        const translateState = ClaudeCodeTranslate.makeState(data.mirror.children)
         const iterable = yield* Effect.tryPromise({
           try: () =>
             data.manager.turn(input.sessionID, prompt, {
@@ -303,6 +321,10 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             ).pipe(
               Stream.mapEffect((message) =>
                 Effect.gen(function* () {
+                  // Mirror before translate: the same assistant frame that
+                  // announces a Task tool_use must first mint its child
+                  // session so the toolCall event can carry the sessionId.
+                  yield* data.mirror.onMessage(turnInfo, message)
                   const events = ClaudeCodeTranslate.translate(translateState, message)
                   if (message.type === "result" && translateState.claudeSessionID) {
                     yield* storage
@@ -322,7 +344,7 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             Effect.sync(() => {
               input.abort.removeEventListener("abort", onAbort)
               data.contexts.delete(input.sessionID)
-            }),
+            }).pipe(Effect.andThen(data.mirror.turnEnded(sessionID))),
           ),
         )
       })
@@ -348,7 +370,7 @@ const layer = layerWith(defaultCreateQuery)
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [Config.node, Storage.node, Permission.node, Question.node],
+  deps: [Config.node, Storage.node, Permission.node, Question.node, Session.node, SessionStatus.node],
 })
 
 export * as ClaudeCode from "./runtime"

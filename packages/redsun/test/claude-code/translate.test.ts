@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { TaskChild } from "@/claude-code/subagents"
 import { ClaudeCodeTranslate } from "@/claude-code/translate"
 
 const sid = "11111111-1111-4111-8111-111111111111"
@@ -8,8 +9,8 @@ function stream(event: Record<string, unknown>, parent: string | null = null): S
   return { type: "stream_event", event, parent_tool_use_id: parent, uuid: "u", session_id: sid } as never
 }
 
-function run(messages: SDKMessage[]) {
-  const state = ClaudeCodeTranslate.makeState()
+function run(messages: SDKMessage[], taskChildren?: ReadonlyMap<string, TaskChild>) {
+  const state = ClaudeCodeTranslate.makeState(taskChildren)
   return { state, events: messages.flatMap((message) => ClaudeCodeTranslate.translate(state, message)) }
 }
 
@@ -107,6 +108,94 @@ describe("claude-code translate", () => {
       } as never,
     ])
     expect(events).toEqual([])
+  })
+
+  test("claude code's Task tool surfaces as redsun's task tool", () => {
+    const { events } = run([
+      stream({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_t", name: "Task" } }),
+      stream({ type: "content_block_stop", index: 0 }),
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_t", name: "Task", input: { description: "Find code" } }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events.map((event) => event.type)).toEqual(["tool-input-start", "tool-input-end", "tool-call"])
+    expect(events[0]).toMatchObject({ name: "task" })
+    expect(events[2]).toMatchObject({ name: "task", input: { description: "Find code" } })
+  })
+
+  test("a mirrored Task call and result carry the child session link", () => {
+    const child: TaskChild = {
+      sessionID: "ses_child" as never,
+      parentSessionID: "ses_parent" as never,
+      description: "Find code",
+    }
+    const { events } = run(
+      [
+        {
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", id: "tu_t", name: "Task", input: { description: "Find code", prompt: "look" } },
+            ],
+          },
+          parent_tool_use_id: null,
+          uuid: "u",
+          session_id: sid,
+        } as never,
+        {
+          type: "user",
+          message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_t", content: "report" }] },
+          parent_tool_use_id: null,
+          tool_use_result: { status: "completed", totalToolUseCount: 7, totalDurationMs: 1234 },
+          uuid: "u",
+          session_id: sid,
+        } as never,
+      ],
+      new Map([["tu_t", child]]),
+    )
+    expect(events[0]).toMatchObject({
+      type: "tool-call",
+      name: "task",
+      providerMetadata: { redsun: { sessionId: "ses_child", parentSessionId: "ses_parent" } },
+    })
+    expect(events[1]).toMatchObject({
+      type: "tool-result",
+      name: "task",
+      result: {
+        type: "json",
+        value: {
+          output: "report",
+          title: "Find code",
+          metadata: { sessionId: "ses_child", parentSessionId: "ses_parent", toolcalls: 7, duration: 1234 },
+        },
+      },
+    })
+  })
+
+  test("an unmapped Task call falls back to plain events", () => {
+    const { events } = run([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_t", name: "Task", input: {} }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_t", content: "report" }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events[0]).toMatchObject({ type: "tool-call", name: "task" })
+    expect((events[0] as { providerMetadata?: unknown }).providerMetadata).toBeUndefined()
+    expect(events[1]).toMatchObject({ type: "tool-result", result: { type: "text", value: "report" } })
   })
 
   test("success result emits step-finish and finish with inclusive usage", () => {

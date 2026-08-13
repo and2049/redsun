@@ -17,6 +17,8 @@ import { Permission } from "@/permission"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { InstanceStore } from "@/project/instance-store"
 import { Question } from "@/question"
+import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
 import { Storage } from "@/storage/storage"
 import { TestConfig } from "../fixture/config"
 import { TestInstance } from "../fixture/fixture"
@@ -105,18 +107,32 @@ const questionLayer = Layer.succeed(Question.Service, {
   list: () => Effect.succeed([]),
 } as never)
 
+const sessionLayer = Layer.succeed(Session.Service, {
+  create: () => Effect.succeed({ id: "ses_subagent_child" }),
+  updateMessage: (msg: unknown) => Effect.succeed(msg),
+  updatePart: (part: unknown) => Effect.succeed(part),
+} as never)
+
+const sessionStatusLayer = Layer.succeed(SessionStatus.Service, {
+  get: () => Effect.succeed({ type: "idle" }),
+  list: () => Effect.succeed(new Map()),
+  set: () => Effect.void,
+} as never)
+
 function runtimeLayer(createQuery: CreateQuery, config: Partial<ConfigV1.Info>) {
   return AppNodeBuilder.build(
     LayerNode.make({
       service: ClaudeCode.Service,
       layer: ClaudeCode.layerWith(createQuery),
-      deps: [Config.node, Storage.node, Permission.node, Question.node],
+      deps: [Config.node, Storage.node, Permission.node, Question.node, Session.node, SessionStatus.node],
     }),
     [
       [Config.node, Layer.succeed(Config.Service, TestConfig.make({ get: () => Effect.succeed(config) }))],
       [Storage.node, storageLayer()],
       [Permission.node, permissionLayer],
       [Question.node, questionLayer],
+      [Session.node, sessionLayer],
+      [SessionStatus.node, sessionStatusLayer],
     ],
   )
 }
@@ -242,6 +258,15 @@ describe("claude-code delegated runtime", () => {
       Effect.gen(function* () {
         yield* turn({ agent: { name: "build" }, text: "hello" })
         expect(Object.keys(record.options[0]?.mcpServers ?? {})).toEqual(["redsun"])
+      }),
+    ),
+  )
+
+  it.instance("interactive sessions forward subagent conversations for the mirror", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({ agent: { name: "build" }, text: "hello" })
+        expect(record.options[0]).toMatchObject({ forwardSubagentText: true, includePartialMessages: true })
       }),
     ),
   )

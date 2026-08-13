@@ -70,7 +70,10 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 export interface SessionOptions {
   readonly model: string
   readonly permissionMode: PermissionMode
-  readonly options: Omit<Options, "model" | "permissionMode" | "allowDangerouslySkipPermissions" | "includePartialMessages">
+  readonly options: Omit<
+    Options,
+    "model" | "permissionMode" | "allowDangerouslySkipPermissions" | "includePartialMessages" | "forwardSubagentText"
+  >
 }
 
 interface LiveSession {
@@ -102,6 +105,9 @@ export class SessionManager {
         permissionMode: input.permissionMode,
         ...(input.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
         includePartialMessages: true,
+        // Full subagent conversations (text/thinking, not just tool frames)
+        // so subagents.ts can mirror them into redsun child sessions.
+        forwardSubagentText: true,
       },
     })
     const session: LiveSession = {

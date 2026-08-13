@@ -334,16 +334,29 @@ const layer = Layer.effect(
             }
             yield* ensureToolCall(value)
             const input = isRecord(value.input) ? value.input : { value: value.input }
+            // REDSUN CLAUDE-CODE: provider-executed tools have no ctx.metadata
+            // channel, so a `redsun` record in providerMetadata is lifted into
+            // the running state's metadata (where the TUI reads e.g. the task
+            // tool's subagent sessionId). Other providers are unaffected.
+            const lifted =
+              value.providerExecuted && isRecord(value.providerMetadata?.["redsun"])
+                ? value.providerMetadata["redsun"]
+                : undefined
             yield* updateToolCall(value.id, (match) => ({
               ...match,
               tool: value.name,
               state:
                 match.state.status === "running"
-                  ? { ...match.state, input }
+                  ? {
+                      ...match.state,
+                      input,
+                      ...(lifted ? { metadata: { ...match.state.metadata, ...lifted } } : {}),
+                    }
                   : {
                       status: "running",
                       input,
                       time: { start: Date.now() },
+                      ...(lifted ? { metadata: lifted } : {}),
                     },
               metadata: match.metadata?.providerExecuted
                 ? { ...value.providerMetadata, providerExecuted: true }
