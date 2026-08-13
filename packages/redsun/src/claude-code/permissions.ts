@@ -10,6 +10,7 @@ import type { Question } from "@/question"
 import { SessionID } from "@/session/schema"
 import { Effect } from "effect"
 import { TASK_TOOL } from "./modes"
+import { SUBAGENT_TOOLS } from "./subagents"
 
 /**
  * Bridges the Agent SDK's `canUseTool` callback onto redsun's V1 permission
@@ -65,7 +66,7 @@ function mapPermission(
   if (toolName === "Read") return { permission: "read", pattern: relative || "*" }
   if (toolName === "WebFetch") return { permission: "webfetch", pattern: text("url") ?? "*" }
   if (toolName === "WebSearch") return { permission: "webfetch", pattern: text("query") ?? "*" }
-  if (toolName === "Task") return { permission: "task", pattern: text("subagent_type") ?? "*" }
+  if (SUBAGENT_TOOLS.has(toolName)) return { permission: "task", pattern: text("subagent_type") ?? "*" }
   return { permission: "claude_code", pattern: toolName }
 }
 
@@ -160,9 +161,10 @@ export function makeCanUseTool(getContext: () => TurnContext | undefined): CanUs
     if (toolName === TASK_TOOL && ctx.agentName === "plan")
       return { behavior: "deny", message: "Plan mode is read-only. Delegate work after the plan is approved." }
     // Compose exists to route work onto whatever provider task_router assigns.
-    // Claude Code's built-in Task would run subagents inside Claude Code and
-    // silently bypass that, so send it to redsun's routed tool instead.
-    if (toolName === "Task" && ctx.agentName === "compose" && ctx.taskTool)
+    // Claude Code's built-in subagent tool (Task/Agent) would run subagents
+    // inside Claude Code and silently bypass that, so send it to redsun's
+    // routed tool instead.
+    if (SUBAGENT_TOOLS.has(toolName) && ctx.agentName === "compose" && ctx.taskTool)
       return {
         behavior: "deny",
         message: `Use the ${TASK_TOOL} tool (subagent_type: "worker" or "explore") in this session — the built-in Task tool bypasses redsun's task_router.`,

@@ -109,6 +109,7 @@ const questionLayer = Layer.succeed(Question.Service, {
 
 const sessionLayer = Layer.succeed(Session.Service, {
   create: () => Effect.succeed({ id: "ses_subagent_child" }),
+  touch: () => Effect.void,
   updateMessage: (msg: unknown) => Effect.succeed(msg),
   updatePart: (part: unknown) => Effect.succeed(part),
 } as never)

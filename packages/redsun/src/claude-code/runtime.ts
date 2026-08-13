@@ -132,6 +132,7 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             agents: new Map(),
             mirror: ClaudeCodeSubagents.make({
               createSession: (input) => sessions.create(input),
+              touchSession: sessions.touch,
               updateMessage: sessions.updateMessage,
               updatePart: sessions.updatePart,
               setStatus: sessionStatus.set,
