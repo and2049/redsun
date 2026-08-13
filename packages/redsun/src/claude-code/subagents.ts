@@ -23,6 +23,14 @@ import type { SessionStatus } from "@/session/status"
  * session pump drops between-turn frames).
  */
 
+/**
+ * Claude Code's built-in subagent tool: named `Task` on older CLIs and
+ * `Agent` on current ones (the SDK types call its input AgentInput). Both
+ * take {description, prompt, subagent_type} and tag child frames with
+ * parent_tool_use_id, so everything downstream treats them identically.
+ */
+export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["Task", "Agent"])
+
 /** What translate.ts needs to annotate the parent's Task tool events. */
 export interface TaskChild {
   sessionID: SessionID
@@ -34,6 +42,12 @@ export interface TaskChild {
 /** Narrow port over Session/SessionStatus so tests need no layers. */
 export interface Ops {
   createSession: (input: { parentID: SessionID; title: string; agent: string }) => Effect.Effect<{ id: SessionID }>
+  /**
+   * Publish a `session.updated` for a fresh child: the TUI's sync store only
+   * inserts sessions on that event, so without it the child stays invisible
+   * to already-connected clients and child navigation no-ops.
+   */
+  touchSession: (sessionID: SessionID) => Effect.Effect<void>
   updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
   updatePart: <T extends SessionV1.Part>(part: T) => Effect.Effect<T>
   setStatus: (sessionID: SessionID, status: SessionStatus.Info) => Effect.Effect<void>
@@ -126,6 +140,7 @@ export function make(ops: Ops): Mirror {
       } satisfies SessionV1.TextPart)
     }
     yield* ops.setStatus(session.id, { type: "busy" })
+    yield* ops.touchSession(session.id)
     const child: TaskChild = { sessionID: session.id, parentSessionID: turn.sessionID, description }
     entries.set(block.id, {
       child,
@@ -288,7 +303,7 @@ export function make(ops: Ops): Mirror {
           return
         }
         for (const block of contentBlocks(message.message)) {
-          if (block.type !== "tool_use" || block.name !== "Task" || typeof block.id !== "string") continue
+          if (block.type !== "tool_use" || !SUBAGENT_TOOLS.has(block.name) || typeof block.id !== "string") continue
           if (entries.has(block.id)) continue
           yield* createChild(turn, block)
         }
@@ -322,8 +337,10 @@ export function make(ops: Ops): Mirror {
         if (!entry) return
         const summary = typeof system.summary === "string" ? system.summary : undefined
         yield* finalize(entry, system.status === "completed" ? undefined : (summary ?? "Task failed"))
-        entries.delete(system.tool_use_id)
-        children.delete(system.tool_use_id)
+        // Keep the map entry: for foreground tasks the CLI emits the
+        // notification BEFORE the main-thread tool_result, and translate
+        // still needs the lookup to keep the child link in the completed
+        // tool state. The turn-end sweep removes finalized entries.
         return
       }
       default:

@@ -4,6 +4,7 @@ import { ClaudeCodeSubagents, type TurnInfo } from "@/claude-code/subagents"
 
 function harness() {
   const created: Record<string, any>[] = []
+  const touched: string[] = []
   const messages: Record<string, any>[] = []
   const parts: Record<string, any>[] = []
   const statuses: { sessionID: string; status: { type: string } }[] = []
@@ -15,6 +16,7 @@ function harness() {
         next += 1
         return { id: `ses_child_${next}` as never }
       }),
+    touchSession: (sessionID) => Effect.sync(() => void touched.push(sessionID)),
     updateMessage: (msg) =>
       Effect.sync(() => {
         messages.push(structuredClone(msg))
@@ -34,12 +36,15 @@ function harness() {
   }
   const on = (message: Record<string, unknown>) => Effect.runSync(mirror.onMessage(turn, message as never))
   const sweep = () => Effect.runSync(mirror.turnEnded(turn.sessionID))
-  return { mirror, created, messages, parts, statuses, on, sweep }
+  return { mirror, created, touched, messages, parts, statuses, on, sweep }
 }
 
-const taskCall = (input: Record<string, unknown> = { description: "Scan", prompt: "go", subagent_type: "explorer" }) => ({
+const taskCall = (
+  input: Record<string, unknown> = { description: "Scan", prompt: "go", subagent_type: "explorer" },
+  name = "Task",
+) => ({
   type: "assistant",
-  message: { id: "msg_main", content: [{ type: "tool_use", id: "task_1", name: "Task", input }] },
+  message: { id: "msg_main", content: [{ type: "tool_use", id: "task_1", name, input }] },
   parent_tool_use_id: null,
 })
 
@@ -79,6 +84,7 @@ describe("claude-code subagent mirror", () => {
     expect(h.messages[0]).toMatchObject({ role: "user", sessionID: "ses_child_1", agent: "explorer" })
     expect(h.parts[0]).toMatchObject({ type: "text", text: "go", sessionID: "ses_child_1" })
     expect(h.statuses).toEqual([{ sessionID: "ses_child_1", status: { type: "busy" } }])
+    expect(h.touched).toEqual(["ses_child_1"])
     expect(h.mirror.children.get("task_1")).toMatchObject({
       sessionID: "ses_child_1",
       parentSessionID: "ses_parent",
@@ -115,6 +121,13 @@ describe("claude-code subagent mirror", () => {
     expect(textParts).toHaveLength(1)
     const assistants = new Set(h.messages.filter((msg) => msg.role === "assistant").map((msg) => msg.id))
     expect(assistants.size).toBe(1)
+  })
+
+  test("the Agent tool name (current CLIs) mints a child too", () => {
+    const h = harness()
+    h.on(taskCall(undefined, "Agent"))
+    expect(h.created).toHaveLength(1)
+    expect(h.mirror.children.get("task_1")).toMatchObject({ sessionID: "ses_child_1" })
   })
 
   test("frames for unknown parent ids are ignored", () => {
@@ -162,6 +175,27 @@ describe("claude-code subagent mirror", () => {
     const errored = h.parts.at(-1)!
     expect(errored).toMatchObject({ callID: "sub_t1", state: { status: "error", error: "boom" } })
     expect(h.statuses.at(-1)).toEqual({ sessionID: "ses_child_1", status: { type: "idle" } })
+    // Entry survives until the sweep: a foreground notification precedes the
+    // main-thread tool_result, which translate still needs to annotate.
+    expect(h.mirror.children.has("task_1")).toBe(true)
+    h.sweep()
+    expect(h.mirror.children.has("task_1")).toBe(false)
+  })
+
+  test("a completed notification before the tool_result keeps the child link", () => {
+    // Real CLI ordering for foreground tasks: task_notification arrives first,
+    // then the main-thread tool_result — which translate must still resolve.
+    const h = harness()
+    h.on(taskCall())
+    h.on(subAssistant())
+    h.on(subToolResult)
+    h.on({ type: "system", subtype: "task_notification", tool_use_id: "task_1", status: "completed", summary: "ok" })
+    expect(h.mirror.children.has("task_1")).toBe(true)
+    h.on(mainResult())
+    expect(h.mirror.children.has("task_1")).toBe(true)
+    // Finalize ran once; idle was published exactly once.
+    expect(h.statuses.filter((entry) => entry.status.type === "idle")).toHaveLength(1)
+    h.sweep()
     expect(h.mirror.children.has("task_1")).toBe(false)
   })
 

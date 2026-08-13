@@ -1,6 +1,6 @@
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
 import { LLMEvent, Usage } from "@opencode-ai/llm"
-import type { TaskChild } from "./subagents"
+import { SUBAGENT_TOOLS, type TaskChild } from "./subagents"
 
 /**
  * Pure state machine translating Claude Agent SDK messages into the LLMEvent
@@ -41,11 +41,12 @@ export function makeState(taskChildren?: ReadonlyMap<string, TaskChild>): State 
 }
 
 /**
- * Claude Code's Task tool surfaces as redsun's `task` tool: its input shape
- * (description/subagent_type) matches, and the mirrored child session id in
- * the part metadata is what activates the TUI's subagent renderer.
+ * Claude Code's subagent tool (Task/Agent) surfaces as redsun's `task` tool:
+ * its input shape (description/subagent_type) matches, and the mirrored child
+ * session id in the part metadata is what activates the TUI's subagent
+ * renderer.
  */
-const emittedToolName = (name: string) => (name === "Task" ? "task" : name)
+const emittedToolName = (name: string) => (SUBAGENT_TOOLS.has(name) ? "task" : name)
 
 function taskChildMetadata(child: TaskChild): Record<string, unknown> {
   return {
@@ -200,7 +201,7 @@ function assistantMessage(state: State, content: unknown): LLMEvent[] {
     if (typeof item.id !== "string" || typeof item.name !== "string") continue
     const name = emittedToolName(item.name)
     state.toolNames.set(item.id, name)
-    const child = item.name === "Task" ? state.taskChildren?.get(item.id) : undefined
+    const child = SUBAGENT_TOOLS.has(item.name) ? state.taskChildren?.get(item.id) : undefined
     events.push(
       LLMEvent.toolCall({
         id: item.id,

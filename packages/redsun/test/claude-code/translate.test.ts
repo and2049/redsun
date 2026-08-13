@@ -110,13 +110,13 @@ describe("claude-code translate", () => {
     expect(events).toEqual([])
   })
 
-  test("claude code's Task tool surfaces as redsun's task tool", () => {
+  test.each(["Task", "Agent"])("claude code's %s tool surfaces as redsun's task tool", (name) => {
     const { events } = run([
-      stream({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_t", name: "Task" } }),
+      stream({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_t", name } }),
       stream({ type: "content_block_stop", index: 0 }),
       {
         type: "assistant",
-        message: { content: [{ type: "tool_use", id: "tu_t", name: "Task", input: { description: "Find code" } }] },
+        message: { content: [{ type: "tool_use", id: "tu_t", name, input: { description: "Find code" } }] },
         parent_tool_use_id: null,
         uuid: "u",
         session_id: sid,
