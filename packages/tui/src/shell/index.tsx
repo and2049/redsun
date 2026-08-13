@@ -11,6 +11,7 @@ import { createMemo, Match, Show, Switch } from "solid-js"
 import { PluginRouteMissing } from "../component/plugin-route-missing"
 import { StartupLoading } from "../component/startup-loading"
 import { CommandBar } from "../component/command-bar"
+import { WorkspaceStatus } from "../component/workspace-status"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useClipboard } from "../context/clipboard"
 import { useRoute } from "../context/route"
@@ -78,6 +79,11 @@ export function DenseApp(props: { ready: () => boolean }) {
           <pluginRuntime.Slot name="app_bottom" />
         </box>
         <pluginRuntime.Slot name="app" />
+        {/* Home already prints `directory:branch` in its header, so the row is
+            session-only. */}
+        <Show when={route.data.type === "session"}>
+          <WorkspaceStatus />
+        </Show>
         {/* In flow as the last row of the frame, not floating over content. */}
         <CommandBar variant="dense" />
       </Show>
