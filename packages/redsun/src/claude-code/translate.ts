@@ -1,5 +1,6 @@
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
 import { LLMEvent, Usage } from "@opencode-ai/llm"
+import type { TaskChild } from "./subagents"
 
 /**
  * Pure state machine translating Claude Agent SDK messages into the LLMEvent
@@ -11,8 +12,11 @@ import { LLMEvent, Usage } from "@opencode-ai/llm"
  * Streaming fidelity comes from `stream_event` frames
  * (`includePartialMessages: true`); full `assistant` messages supply the
  * authoritative tool_use inputs and full `user` messages supply tool_results.
- * Subagent-attributed frames (`parent_tool_use_id` set) are dropped — the
- * main-thread Task tool_use/result still marks the subagent boundary.
+ * Subagent-attributed frames (`parent_tool_use_id` set) are dropped from the
+ * parent's event stream — subagents.ts mirrors them into real child sessions.
+ * The main-thread Task tool is emitted as redsun's `task` tool with the
+ * mirrored child's `sessionId` in its metadata, which is exactly the contract
+ * the TUI's native subagent frontend renders.
  */
 
 type OpenBlock =
@@ -28,10 +32,27 @@ export interface State {
   result?: SDKResultMessage
   /** Raw API usage of the turn's most recent main-thread assistant message. */
   lastCallUsage?: Record<string, unknown>
+  /** Mirrored subagent sessions keyed by Task tool_use id (see subagents.ts). */
+  taskChildren?: ReadonlyMap<string, TaskChild>
 }
 
-export function makeState(): State {
-  return { toolNames: new Map(), openBlocks: new Map(), messageId: "claude" }
+export function makeState(taskChildren?: ReadonlyMap<string, TaskChild>): State {
+  return { toolNames: new Map(), openBlocks: new Map(), messageId: "claude", taskChildren }
+}
+
+/**
+ * Claude Code's Task tool surfaces as redsun's `task` tool: its input shape
+ * (description/subagent_type) matches, and the mirrored child session id in
+ * the part metadata is what activates the TUI's subagent renderer.
+ */
+const emittedToolName = (name: string) => (name === "Task" ? "task" : name)
+
+function taskChildMetadata(child: TaskChild): Record<string, unknown> {
+  return {
+    sessionId: child.sessionID,
+    parentSessionId: child.parentSessionID,
+    ...(child.background ? { background: true } : {}),
+  }
 }
 
 function toolResultText(content: unknown): string {
@@ -110,9 +131,10 @@ function contentBlockStart(state: State, index: number, block: Record<string, an
       return [LLMEvent.reasoningStart({ id: blockId })]
     default:
       if (TOOL_USE_TYPES.has(block.type) && typeof block.id === "string" && typeof block.name === "string") {
-        state.toolNames.set(block.id, block.name)
-        state.openBlocks.set(index, { kind: "tool", id: block.id, name: block.name })
-        return [LLMEvent.toolInputStart({ id: block.id, name: block.name })]
+        const name = emittedToolName(block.name)
+        state.toolNames.set(block.id, name)
+        state.openBlocks.set(index, { kind: "tool", id: block.id, name })
+        return [LLMEvent.toolInputStart({ id: block.id, name })]
       }
       state.openBlocks.set(index, { kind: "ignored" })
       return []
@@ -176,20 +198,24 @@ function assistantMessage(state: State, content: unknown): LLMEvent[] {
     const item = block as Record<string, any>
     if (!TOOL_USE_TYPES.has(item.type)) continue
     if (typeof item.id !== "string" || typeof item.name !== "string") continue
-    state.toolNames.set(item.id, item.name)
+    const name = emittedToolName(item.name)
+    state.toolNames.set(item.id, name)
+    const child = item.name === "Task" ? state.taskChildren?.get(item.id) : undefined
     events.push(
       LLMEvent.toolCall({
         id: item.id,
-        name: item.name,
+        name,
         input: item.input ?? {},
         providerExecuted: true,
+        ...(child ? { providerMetadata: { redsun: taskChildMetadata(child) } } : {}),
       }),
     )
   }
   return events
 }
 
-function userMessage(state: State, content: unknown): LLMEvent[] {
+function userMessage(state: State, message: Record<string, any>): LLMEvent[] {
+  const content = message.message?.content
   if (!Array.isArray(content)) return []
   const events: LLMEvent[] = []
   for (const block of content) {
@@ -198,6 +224,41 @@ function userMessage(state: State, content: unknown): LLMEvent[] {
     if (item.type !== "tool_result" || typeof item.tool_use_id !== "string") continue
     const name = state.toolNames.get(item.tool_use_id)
     if (!name) continue
+    const child = state.taskChildren?.get(item.tool_use_id)
+    if (child && !item.is_error) {
+      // Structured completion so the task part's completed state keeps the
+      // child session link (processor's toolResultOutput lifts output/title/
+      // metadata records verbatim). AgentOutput totals ride along when the
+      // SDK attached them.
+      const agentOutput =
+        message.tool_use_result && typeof message.tool_use_result === "object"
+          ? (message.tool_use_result as Record<string, any>)
+          : undefined
+      events.push(
+        LLMEvent.toolResult({
+          id: item.tool_use_id,
+          name,
+          result: {
+            type: "json",
+            value: {
+              output: toolResultText(item.content),
+              title: child.description,
+              metadata: {
+                ...taskChildMetadata(child),
+                ...(agentOutput?.status === "completed" && typeof agentOutput.totalToolUseCount === "number"
+                  ? { toolcalls: agentOutput.totalToolUseCount }
+                  : {}),
+                ...(agentOutput?.status === "completed" && typeof agentOutput.totalDurationMs === "number"
+                  ? { duration: agentOutput.totalDurationMs }
+                  : {}),
+              },
+            },
+          },
+          providerExecuted: true,
+        }),
+      )
+      continue
+    }
     events.push(
       LLMEvent.toolResult({
         id: item.tool_use_id,
@@ -282,7 +343,7 @@ export function translate(state: State, message: SDKMessage): LLMEvent[] {
     }
     case "user":
       if (message.parent_tool_use_id) return []
-      return userMessage(state, (message.message as Record<string, any>)?.content)
+      return userMessage(state, message as unknown as Record<string, any>)
     case "system":
       if ((message as Record<string, any>).subtype === "compact_boundary")
         return compactBoundary(state, message as unknown as Record<string, any>)
