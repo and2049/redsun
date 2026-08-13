@@ -218,21 +218,34 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
                 : workerMode
               : mainMode
 
-        const delta = promptDelta(input.messages)
-        if (!delta) return errorStream("No user prompt to deliver to Claude Code.")
-
-        const agentChanged = data.agents.get(input.sessionID) !== input.agent.name
-        data.agents.set(input.sessionID, input.agent.name)
-        const brief = ClaudeCodeModes.brief({
-          agent: input.agent,
-          isWorker,
-          hasRedsunTask: input.tools["task"] !== undefined,
-          agentChanged,
-        })
-        const prompt = brief ? `${brief}\n\n${delta}` : delta
-
         const cursor = yield* storage.read<Cursor>(cursorKey(input.sessionID)).pipe(Effect.option)
         const resume = cursor._tag === "Some" ? cursor.value.claudeSessionID : undefined
+
+        // Compacting a live delegated session means compacting Claude Code's
+        // own history: send the CLI's /compact command instead of redsun's
+        // summarize prompt (see compaction.ts). No mode brief, and the agent
+        // map entry is dropped so the next turn re-sends its brief into the
+        // compacted history. Without a live session to compact (compaction
+        // routed here from a non-delegated session), fall through and treat
+        // the summarize prompt as a normal turn.
+        const passthroughCompact = input.agent.name === "compaction" && resume !== undefined
+        if (passthroughCompact) data.agents.delete(input.sessionID)
+
+        const delta = passthroughCompact ? "/compact" : promptDelta(input.messages)
+        if (!delta) return errorStream("No user prompt to deliver to Claude Code.")
+
+        let prompt = delta
+        if (!passthroughCompact) {
+          const agentChanged = data.agents.get(input.sessionID) !== input.agent.name
+          data.agents.set(input.sessionID, input.agent.name)
+          const brief = ClaudeCodeModes.brief({
+            agent: input.agent,
+            isWorker,
+            hasRedsunTask: input.tools["task"] !== undefined,
+            agentChanged,
+          })
+          if (brief) prompt = `${brief}\n\n${delta}`
+        }
 
         data.contexts.set(input.sessionID, {
           sessionID,
