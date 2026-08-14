@@ -3,7 +3,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { LLMEvent } from "@opencode-ai/llm"
 import type { ModelMessage } from "ai"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Exit, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { Config } from "@/config/config"
 import { EffectBridge } from "@/effect/bridge"
@@ -57,6 +57,15 @@ interface InstanceData {
   mirror: ClaudeCodeSubagents.Mirror
 }
 
+/** Anthropic content block accepted by the CLI's stream-json input. */
+type PromptBlock = Exclude<SDKUserMessage["message"]["content"], string>[number]
+
+export interface PromptContent {
+  text: string
+  /** Attachment blocks (images/PDFs) sent after the text block. */
+  blocks: PromptBlock[]
+}
+
 function messageText(content: unknown): string {
   if (typeof content === "string") return content
   if (!Array.isArray(content)) return ""
@@ -70,8 +79,50 @@ function messageText(content: unknown): string {
     .join("\n")
 }
 
-/** User text after the last assistant message — the turn's new prompt. */
-export function promptDelta(messages: ModelMessage[]): string {
+function parseDataUrl(url: string): { mediaType: string; data: string } | undefined {
+  const match = /^data:([^;,]+)(?:;[^,]*)*;base64,(.+)$/.exec(url)
+  return match ? { mediaType: match[1]!, data: match[2]! } : undefined
+}
+
+// Exactly Anthropic's Base64ImageSource media_type union; anything else is
+// rejected by the CLI and must degrade to a text placeholder instead.
+const IMAGE_MEDIA = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
+
+/** Attachment blocks for a user message's file parts (images/PDFs). */
+function fileBlocks(content: unknown): PromptBlock[] {
+  if (!Array.isArray(content)) return []
+  const blocks: PromptBlock[] = []
+  for (const part of content) {
+    if (!part || typeof part !== "object" || part.type !== "file" || typeof part.data !== "string") continue
+    const filename = typeof part.filename === "string" ? part.filename : undefined
+    const parsed = parseDataUrl(part.data)
+    if (!parsed) continue
+    if (IMAGE_MEDIA.has(parsed.mediaType)) {
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: parsed.mediaType as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
+          data: parsed.data,
+        },
+      })
+      continue
+    }
+    if (parsed.mediaType === "application/pdf") {
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: parsed.data },
+        ...(filename ? { title: filename } : {}),
+      })
+      continue
+    }
+    blocks.push({ type: "text", text: `[Attached ${parsed.mediaType}: ${filename ?? "file"}]` })
+  }
+  return blocks
+}
+
+/** User content after the last assistant message — the turn's new prompt. */
+export function promptDelta(messages: ModelMessage[]): PromptContent {
   let start = 0
   for (let index = messages.length - 1; index >= 0; index--) {
     if (messages[index]!.role === "assistant") {
@@ -79,25 +130,29 @@ export function promptDelta(messages: ModelMessage[]): string {
       break
     }
   }
-  const parts = messages
-    .slice(start)
-    .filter((message) => message.role === "user")
-    .map((message) => messageText(message.content))
-    .filter(Boolean)
-  if (parts.length) return parts.join("\n\n")
+  const fresh = messages.slice(start).filter((message) => message.role === "user")
+  const texts = fresh.map((message) => messageText(message.content)).filter(Boolean)
+  const blocks = fresh.flatMap((message) => fileBlocks(message.content))
+  if (texts.length || blocks.length) return { text: texts.join("\n\n"), blocks }
   const lastUser = messages.findLast((message) => message.role === "user")
-  return lastUser ? messageText(lastUser.content) : ""
+  return lastUser
+    ? { text: messageText(lastUser.content), blocks: fileBlocks(lastUser.content) }
+    : { text: "", blocks: [] }
 }
 
 /** Role-labeled transcript for one-shot internal calls (judge, title, ...). */
-function flattenTranscript(messages: ModelMessage[]): string {
-  return messages
+function flattenTranscript(messages: ModelMessage[]): PromptContent {
+  const text = messages
     .map((message) => {
-      const text = messageText(message.content)
-      return text ? `${message.role}: ${text}` : ""
+      const line = messageText(message.content)
+      return line ? `${message.role}: ${line}` : ""
     })
     .filter(Boolean)
     .join("\n\n")
+  const blocks = messages
+    .filter((message) => message.role === "user")
+    .flatMap((message) => fileBlocks(message.content))
+  return { text, blocks }
 }
 
 const defaultCreateQuery: CreateQuery = (input) => {
@@ -172,8 +227,26 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
       ) {
         const base = yield* baseOptions(executablePath)
         const state = ClaudeCodeTranslate.makeState()
+        const flattened = flattenTranscript(input.messages)
+        // Attachment blocks need the streaming-input form; keep the plain
+        // string otherwise so the common case is byte-identical to before.
+        const prompt: string | AsyncIterable<SDKUserMessage> = flattened.blocks.length
+          ? (async function* () {
+              yield {
+                type: "user" as const,
+                message: {
+                  role: "user" as const,
+                  content: [
+                    ...(flattened.text ? [{ type: "text" as const, text: flattened.text }] : []),
+                    ...flattened.blocks,
+                  ],
+                },
+                parent_tool_use_id: null,
+              }
+            })()
+          : flattened.text
         const handle = createQuery({
-          prompt: flattenTranscript(input.messages),
+          prompt,
           options: {
             ...base.options,
             model: ClaudeCodeModels.sdkModel(input.model.id),
@@ -186,15 +259,14 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             includePartialMessages: true,
           },
         })
-        const onAbort = () => void handle.interrupt().catch(() => {})
-        input.abort.addEventListener("abort", onAbort, { once: true })
         return Stream.fromAsyncIterable(handle, (error) =>
           error instanceof Error ? error : new Error(String(error)),
         ).pipe(
           Stream.flatMap((message) => Stream.fromIterable(ClaudeCodeTranslate.translate(state, message))),
+          // close() runs on every exit, including fiber interruption, and is
+          // what actually terminates this single-turn process on ctrl+\.
           Stream.ensuring(
             Effect.sync(() => {
-              input.abort.removeEventListener("abort", onAbort)
               try {
                 handle.close()
               } catch {
@@ -245,10 +317,12 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
         const passthroughCompact = input.agent.name === "compaction" && resume !== undefined
         if (passthroughCompact) data.agents.delete(input.sessionID)
 
-        const delta = passthroughCompact ? "/compact" : promptDelta(input.messages)
-        if (!delta) return errorStream("No user prompt to deliver to Claude Code.")
+        const delta: PromptContent = passthroughCompact
+          ? { text: "/compact", blocks: [] }
+          : promptDelta(input.messages)
+        if (!delta.text && !delta.blocks.length) return errorStream("No user prompt to deliver to Claude Code.")
 
-        let prompt = delta
+        let promptText = delta.text
         if (!passthroughCompact) {
           const agentChanged = data.agents.get(input.sessionID) !== input.agent.name
           data.agents.set(input.sessionID, input.agent.name)
@@ -258,8 +332,13 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             hasRedsunTask: input.tools["task"] !== undefined,
             agentChanged,
           })
-          if (brief) prompt = `${brief}\n\n${delta}`
+          if (brief) promptText = delta.text ? `${brief}\n\n${delta.text}` : brief
         }
+        // Plain string when there are no attachments so the common case is
+        // unchanged on the wire; otherwise text block first, attachments after.
+        const prompt: SDKUserMessage["message"]["content"] = delta.blocks.length
+          ? [...(promptText ? [{ type: "text" as const, text: promptText }] : []), ...delta.blocks]
+          : promptText
 
         data.contexts.set(input.sessionID, {
           sessionID,
@@ -312,9 +391,6 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
           catch: (error) => (error instanceof Error ? error : new Error(String(error))),
         })
 
-        const onAbort = () => void data.manager.interrupt(input.sessionID).catch(() => {})
-        input.abort.addEventListener("abort", onAbort, { once: true })
-
         return Stream.make(LLMEvent.stepStart({ index: 0 }) as LLMEvent).pipe(
           Stream.concat(
             Stream.fromAsyncIterable(iterable, (error) =>
@@ -341,9 +417,18 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
               Stream.flatMap((events) => Stream.fromIterable(events)),
             ),
           ),
+          // An abort listener on input.abort cannot work here: the controller
+          // only aborts when the outer stream scope closes (llm.ts), which is
+          // AFTER this stream's own finalizers run. Detect fiber interruption
+          // from the exit instead and send the SDK's interrupt control request
+          // so the CLI ends the turn (its `result` clears the busy state).
+          Stream.onExit((exit) =>
+            Exit.hasInterrupts(exit)
+              ? Effect.sync(() => void data.manager.interrupt(input.sessionID).catch(() => {}))
+              : Effect.void,
+          ),
           Stream.ensuring(
             Effect.sync(() => {
-              input.abort.removeEventListener("abort", onAbort)
               data.contexts.delete(input.sessionID)
             }).pipe(Effect.andThen(data.mirror.turnEnded(sessionID))),
           ),

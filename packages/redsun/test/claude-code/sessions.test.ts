@@ -101,6 +101,17 @@ describe("claude-code session manager", () => {
     expect(record.prompts).toEqual(["first prompt", "second prompt"])
   })
 
+  test("array content (text + image blocks) round-trips through the prompt queue", async () => {
+    const record = { options: [] as Options[], prompts: [] as string[], interrupts: 0, closed: 0 }
+    const manager = new SessionManager(makeFakeQuery(record))
+    const content = [
+      { type: "text" as const, text: "hi" },
+      { type: "image" as const, source: { type: "base64" as const, media_type: "image/png" as const, data: "AAAA" } },
+    ]
+    await collect(await manager.turn("s1", content, OPTS))
+    expect(record.prompts).toEqual([JSON.stringify(content)])
+  })
+
   test("concurrent turn on the same session is rejected", async () => {
     const record = { options: [] as Options[], prompts: [] as string[], interrupts: 0, closed: 0 }
     const manager = new SessionManager(makeFakeQuery(record))
