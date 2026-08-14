@@ -9,6 +9,16 @@ function stream(event: Record<string, unknown>, parent: string | null = null): S
   return { type: "stream_event", event, parent_tool_use_id: parent, uuid: "u", session_id: sid } as never
 }
 
+function usageFrame(usage: Record<string, number>, parent: string | null = null): SDKMessage {
+  return {
+    type: "assistant",
+    message: { content: [], usage },
+    parent_tool_use_id: parent,
+    uuid: "u",
+    session_id: sid,
+  } as never
+}
+
 function run(messages: SDKMessage[], taskChildren?: ReadonlyMap<string, TaskChild>) {
   const state = ClaudeCodeTranslate.makeState(taskChildren)
   return { state, events: messages.flatMap((message) => ClaudeCodeTranslate.translate(state, message)) }
@@ -225,25 +235,28 @@ describe("claude-code translate", () => {
     expect(state.claudeSessionID).toBe(sid)
   })
 
-  test("turn usage reflects the last API call, not the result's cumulative sum", () => {
-    const assistant = (usage: Record<string, number>, parent: string | null = null): SDKMessage =>
-      ({
-        type: "assistant",
-        message: { content: [], usage },
-        parent_tool_use_id: parent,
-        uuid: "u",
-        session_id: sid,
-      }) as never
+  test("without stream events, turn usage falls back to the result's cumulative output", () => {
     const { events } = run([
-      assistant({ input_tokens: 10, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 22_000 }),
-      assistant({ input_tokens: 8, output_tokens: 1, cache_read_input_tokens: 22_000, cache_creation_input_tokens: 300 }),
+      usageFrame({
+        input_tokens: 10,
+        output_tokens: 3,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 22_000,
+      }),
+      usageFrame({
+        input_tokens: 8,
+        output_tokens: 1,
+        cache_read_input_tokens: 22_000,
+        cache_creation_input_tokens: 300,
+      }),
       // A subagent frame after the last main-thread call must not win.
-      assistant({ input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 900_000 }, "parent_tool"),
+      usageFrame({ input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 900_000 }, "parent_tool"),
       {
         type: "result",
         subtype: "success",
         is_error: false,
-        // The SDK sums usage across both calls; only output_tokens is trusted.
+        // The SDK sums usage across both calls; with no message_delta events
+        // the cumulative output_tokens is the best available fallback.
         usage: { input_tokens: 18, output_tokens: 240, cache_read_input_tokens: 22_000, cache_creation_input_tokens: 22_300 },
         session_id: sid,
         uuid: "u",
@@ -256,6 +269,70 @@ describe("claude-code translate", () => {
       cacheReadInputTokens: 22_000,
       cacheWriteInputTokens: 300,
     })
+  })
+
+  test("output tokens come from the last call's message_delta, not the result's cumulative sum", () => {
+    const { events } = run([
+      stream({ type: "message_delta", delta: {}, usage: { output_tokens: 50 } }),
+      usageFrame({
+        input_tokens: 10,
+        output_tokens: 3,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 22_000,
+      }),
+      stream({ type: "message_delta", delta: {}, usage: { output_tokens: 120 } }),
+      usageFrame({
+        input_tokens: 8,
+        output_tokens: 1,
+        cache_read_input_tokens: 22_000,
+        cache_creation_input_tokens: 300,
+      }),
+      // Subagent-attributed frames must not win.
+      stream({ type: "message_delta", delta: {}, usage: { output_tokens: 999_999 } }, "parent_tool"),
+      usageFrame({ input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 900_000 }, "parent_tool"),
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        // Cumulative across both calls — using it would double-count the first
+        // call's output, which the last call's input side already re-counts.
+        usage: { input_tokens: 18, output_tokens: 240, cache_read_input_tokens: 22_000, cache_creation_input_tokens: 22_300 },
+        session_id: sid,
+        uuid: "u",
+      } as never,
+    ])
+    const finish = events.at(-1) as { usage?: Record<string, number> }
+    expect(finish.usage).toMatchObject({
+      inputTokens: 8 + 22_000 + 300,
+      outputTokens: 120,
+      cacheReadInputTokens: 22_000,
+      cacheWriteInputTokens: 300,
+      totalTokens: 8 + 22_000 + 300 + 120,
+    })
+  })
+
+  test("interrupted result keeps the last call's message_delta output", () => {
+    const { events } = run([
+      stream({ type: "message_delta", delta: {}, usage: { output_tokens: 120 } }),
+      usageFrame({
+        input_tokens: 8,
+        output_tokens: 1,
+        cache_read_input_tokens: 22_000,
+        cache_creation_input_tokens: 300,
+      }),
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: false,
+        errors: [],
+        usage: { input_tokens: 18, output_tokens: 240, cache_read_input_tokens: 22_000 },
+        session_id: sid,
+        uuid: "u",
+      } as never,
+    ])
+    expect(events.map((event) => event.type)).toEqual(["step-finish", "finish"])
+    const finish = events.at(-1) as { usage?: Record<string, number> }
+    expect(finish.usage).toMatchObject({ outputTokens: 120 })
   })
 
   test("manual compact boundary renders as a text notice", () => {

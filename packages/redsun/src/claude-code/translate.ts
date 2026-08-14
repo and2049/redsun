@@ -32,6 +32,12 @@ export interface State {
   result?: SDKResultMessage
   /** Raw API usage of the turn's most recent main-thread assistant message. */
   lastCallUsage?: Record<string, unknown>
+  /**
+   * Final output_tokens of the turn's most recent completed main-thread API
+   * call, from its message_delta stream event (assistant frames snapshot
+   * output_tokens before the message finishes streaming).
+   */
+  lastCallOutput?: number
   /** Mirrored subagent sessions keyed by Task tool_use id (see subagents.ts). */
   taskChildren?: ReadonlyMap<string, TaskChild>
 }
@@ -186,6 +192,9 @@ function streamEvent(state: State, event: Record<string, any>): LLMEvent[] {
       return contentBlockDelta(state, event.index, event.delta ?? {})
     case "content_block_stop":
       return contentBlockStop(state, event.index)
+    case "message_delta":
+      if (typeof event.usage?.output_tokens === "number") state.lastCallOutput = event.usage.output_tokens
+      return []
     default:
       return []
   }
@@ -280,8 +289,11 @@ function userMessage(state: State, message: Record<string, any>): LLMEvent[] {
  * API call in the turn, so its cache reads count the whole context once per
  * tool round-trip — a long turn reports millions of "context" tokens. The
  * last main-thread assistant message carries the final call's real input-side
- * usage; only output tokens come from the result, because assistant frames
- * snapshot output_tokens before the message finishes streaming.
+ * usage; output tokens come from that call's message_delta stream event (the
+ * API's final per-call count). `result.usage.output_tokens` is only a
+ * fallback when no stream events arrived — it is cumulative across calls, and
+ * intermediate outputs are already re-counted inside the final call's
+ * input/cache tokens, so using it would double-count them.
  */
 function turnUsage(state: State, result: SDKResultMessage): Usage | undefined {
   const resultUsage =
@@ -289,10 +301,11 @@ function turnUsage(state: State, result: SDKResultMessage): Usage | undefined {
       ? (result.usage as Record<string, unknown>)
       : undefined
   if (!state.lastCallUsage) return mapUsage(resultUsage)
-  const output = resultUsage?.["output_tokens"]
+  const resultOutput = resultUsage?.["output_tokens"]
+  const output = state.lastCallOutput ?? (typeof resultOutput === "number" ? resultOutput : undefined)
   return mapUsage({
     ...state.lastCallUsage,
-    ...(typeof output === "number" ? { output_tokens: output } : {}),
+    ...(output !== undefined ? { output_tokens: output } : {}),
   })
 }
 
