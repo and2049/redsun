@@ -8,7 +8,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import type { Tool as AiTool } from "ai"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Fiber, Layer, Stream } from "effect"
 import { ClaudeCode } from "@/claude-code/runtime"
 import { ClaudeCodeModes } from "@/claude-code/modes"
 import type { CreateQuery, QueryLike } from "@/claude-code/sessions"
@@ -51,6 +51,7 @@ interface Record_ {
   options: Options[]
   prompts: string[]
   modes: string[]
+  interrupts: number
 }
 
 /** Records what the runtime hands to the SDK, then completes each turn. */
@@ -71,11 +72,46 @@ function recorder(record: Record_): CreateQuery {
     })()
     const query: QueryLike = {
       [Symbol.asyncIterator]: () => iterator,
-      interrupt: async () => {},
+      interrupt: async () => {
+        record.interrupts++
+      },
       setModel: async () => {},
       setPermissionMode: async (mode) => {
         record.modes.push(mode)
       },
+      close: () => void iterator.return?.(),
+    }
+    return query
+  }
+}
+
+/**
+ * Records prompts but never completes a turn until `interrupt()` arrives;
+ * `onDeliver` fires once the prompt has reached the fake process.
+ */
+function hangingRecorder(record: Record_, onDeliver: () => void): CreateQuery {
+  return ({ prompt, options }) => {
+    record.options.push(options)
+    let release!: () => void
+    const released = new Promise<void>((resolve) => (release = resolve))
+    const iterator = (async function* (): AsyncGenerator<SDKMessage, void> {
+      if (typeof prompt === "string") return
+      for await (const message of prompt) {
+        const content = message.message.content
+        record.prompts.push(typeof content === "string" ? content : JSON.stringify(content))
+        onDeliver()
+        await released
+        yield result()
+      }
+    })()
+    const query: QueryLike = {
+      [Symbol.asyncIterator]: () => iterator,
+      interrupt: async () => {
+        record.interrupts++
+        release()
+      },
+      setModel: async () => {},
+      setPermissionMode: async () => {},
       close: () => void iterator.return?.(),
     }
     return query
@@ -142,7 +178,8 @@ const model = { id: "sonnet", providerID: "claude-code" }
 
 function request(input: {
   agent: { name: string; mode?: string; prompt?: string }
-  text: string
+  text?: string
+  messages?: unknown[]
   tools?: Record<string, AiTool>
   parentSessionID?: string
   sessionID?: string
@@ -156,7 +193,7 @@ function request(input: {
     agent: { mode: "primary", permission: [], ...input.agent },
     permission: [],
     system: ["redsun system prompt"],
-    messages: [{ role: "user" as const, content: input.text }],
+    messages: input.messages ?? [{ role: "user" as const, content: input.text ?? "" }],
     tools: input.tools ?? {},
     small: input.small,
     abort: new AbortController().signal,
@@ -181,17 +218,18 @@ const withRuntime = <A, E, R>(
     turn: (input: Parameters<typeof request>[0]) => Effect.Effect<void, never, ClaudeCode.Service>
   }) => Effect.Effect<A, E, R>,
   config: (binary: string) => Partial<ConfigV1.Info> = (binary) => ({ claude_code: { binary_path: binary } }),
+  makeQuery: (record: Record_) => CreateQuery = recorder,
 ) =>
   Effect.gen(function* () {
     const instance = yield* TestInstance
     const binary = yield* fakeBinary(instance.directory)
-    const record: Record_ = { options: [], prompts: [], modes: [] }
+    const record: Record_ = { options: [], prompts: [], modes: [], interrupts: 0 }
     const turn = (input: Parameters<typeof request>[0]) =>
       Effect.gen(function* () {
         const claude = yield* ClaudeCode.Service
         yield* Stream.runDrain(claude.stream(request(input))).pipe(Effect.orDie)
       })
-    return yield* body({ record, turn }).pipe(Effect.provide(runtimeLayer(recorder(record), config(binary))))
+    return yield* body({ record, turn }).pipe(Effect.provide(runtimeLayer(makeQuery(record), config(binary))))
   })
 
 describe("claude-code delegated runtime", () => {
@@ -312,4 +350,149 @@ describe("claude-code delegated runtime", () => {
       }),
     ),
   )
+
+  it.instance("image attachments are delivered as base64 image blocks after the text", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({
+          agent: { name: "build" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "see [Image 1]" },
+                { type: "file", mediaType: "image/png", filename: "shot.png", data: "data:image/png;base64,AAAA" },
+              ],
+            },
+          ],
+        })
+        expect(JSON.parse(record.prompts[0]!)).toEqual([
+          { type: "text", text: "see [Image 1]" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+        ])
+      }),
+    ),
+  )
+
+  it.instance("pdf attachments become document blocks titled with the filename", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({
+          agent: { name: "build" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "read [PDF 1]" },
+                { type: "file", mediaType: "application/pdf", filename: "doc.pdf", data: "data:application/pdf;base64,BBBB" },
+              ],
+            },
+          ],
+        })
+        expect(JSON.parse(record.prompts[0]!)).toEqual([
+          { type: "text", text: "read [PDF 1]" },
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: "BBBB" }, title: "doc.pdf" },
+        ])
+      }),
+    ),
+  )
+
+  it.instance("unsupported attachment mimes degrade to a text placeholder instead of failing", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({
+          agent: { name: "build" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "listen" },
+                { type: "file", mediaType: "audio/mpeg", filename: "clip.mp3", data: "data:audio/mpeg;base64,CCCC" },
+              ],
+            },
+          ],
+        })
+        expect(JSON.parse(record.prompts[0]!)).toEqual([
+          { type: "text", text: "listen" },
+          { type: "text", text: "[Attached audio/mpeg: clip.mp3]" },
+        ])
+      }),
+    ),
+  )
+
+  it.instance("attachments behind the last assistant message are not re-sent", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({
+          agent: { name: "build" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "see [Image 1]" },
+                { type: "file", mediaType: "image/png", filename: "shot.png", data: "data:image/png;base64,AAAA" },
+              ],
+            },
+            { role: "assistant", content: "described it" },
+            { role: "user", content: "next" },
+          ],
+        })
+        expect(record.prompts).toEqual(["next"])
+      }),
+    ),
+  )
+
+  it.instance("one-shot internal calls carry attachments via the streaming prompt", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({
+          agent: { name: "build" },
+          small: true,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "judge this" },
+                { type: "file", mediaType: "image/png", filename: "shot.png", data: "data:image/png;base64,AAAA" },
+              ],
+            },
+          ],
+        })
+        expect(JSON.parse(record.prompts[0]!)).toEqual([
+          { type: "text", text: "user: judge this" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+        ])
+      }),
+    ),
+  )
+
+  it.instance("a completed turn never sends an interrupt", () =>
+    withRuntime(({ record, turn }) =>
+      Effect.gen(function* () {
+        yield* turn({ agent: { name: "build" }, text: "quick task" })
+        expect(record.interrupts).toBe(0)
+      }),
+    ),
+  )
+
+  it.instance("fiber interruption sends the SDK interrupt and frees the session for the next turn", () => {
+    let deliver!: () => void
+    const delivered = new Promise<void>((resolve) => (deliver = resolve))
+    return withRuntime(
+      ({ record, turn }) =>
+        Effect.gen(function* () {
+          const fiber = yield* Effect.forkChild(turn({ agent: { name: "build" }, text: "long task" }))
+          yield* Effect.promise(() => delivered)
+          yield* Fiber.interrupt(fiber)
+          expect(record.interrupts).toBe(1)
+          // Give the pump a beat to consume the interrupt's result message and
+          // clear the busy turn before prompting again.
+          yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)))
+          yield* turn({ agent: { name: "build" }, text: "after interrupt" })
+          expect(record.prompts).toEqual(["long task", "after interrupt"])
+        }),
+      undefined,
+      (record) => hangingRecorder(record, () => deliver()),
+    )
+  })
 })

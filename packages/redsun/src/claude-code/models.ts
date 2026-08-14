@@ -27,13 +27,13 @@ function model(input: {
   return {
     name: input.name,
     family: input.family,
-    attachment: false,
+    attachment: true,
     reasoning: true,
     temperature: false,
     tool_call: true,
     cost: ZERO_COST,
     limit: input.limit,
-    modalities: { input: ["text"], output: ["text"] },
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
   }
 }
 

@@ -159,7 +159,11 @@ export class SessionManager {
    * or re-creating it as needed) and return a bounded stream of SDK messages
    * ending at the turn's `result`.
    */
-  async turn(sessionID: string, promptText: string, input: SessionOptions): Promise<AsyncIterable<SDKMessage>> {
+  async turn(
+    sessionID: string,
+    prompt: SDKUserMessage["message"]["content"],
+    input: SessionOptions,
+  ): Promise<AsyncIterable<SDKMessage>> {
     let session = this.sessions.get(sessionID)
     if (session?.dead) {
       this.sessions.delete(sessionID)
@@ -193,7 +197,7 @@ export class SessionManager {
     session.turn = turn
     session.prompt.push({
       type: "user",
-      message: { role: "user", content: promptText },
+      message: { role: "user", content: prompt },
       parent_tool_use_id: null,
     })
     return turn
