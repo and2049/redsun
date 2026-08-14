@@ -125,7 +125,7 @@ export const Definitions = {
   console_org_switch: keybind("none", "Switch console organization"),
   agent_list: keybind("none", "List agents"),
   agent_cycle: keybind("tab", "Next agent"),
-  agent_cycle_reverse: keybind("shift+tab", "Previous agent"),
+  agent_cycle_reverse: keybind("none", "Previous agent"),
   variant_cycle: keybind("ctrl+t", "Cycle model variants"),
   variant_list: keybind("none", "List model variants"),
 
@@ -214,6 +214,7 @@ export const Definitions = {
   "prompt.autocomplete.select": keybind("return", "Select autocomplete item"),
   "prompt.autocomplete.complete": keybind("tab", "Complete autocomplete item"),
   "permission.prompt.fullscreen": keybind("ctrl+f", "Toggle permission prompt fullscreen"),
+  permission_mode_toggle: keybind("shift+tab", "Toggle auto-approve permissions"),
   "plugins.toggle": keybind("space", "Toggle plugin"),
   "dialog.plugins.install": keybind("shift+i", "Install plugin from plugin dialog"),
 
@@ -260,6 +261,7 @@ export const CommandMap = {
   app_toggle_diffwrap: "app.toggle.diffwrap",
   app_toggle_paste_summary: "app.toggle.paste_summary",
   app_toggle_session_directory_filter: "app.toggle.session_directory_filter",
+  permission_mode_toggle: "permission.mode",
   command_list: "command.palette.show",
   help_show: "help.show",
   docs_open: "docs.open",
