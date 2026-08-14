@@ -79,7 +79,7 @@ export function DenseApp(props: { ready: () => boolean }) {
           <pluginRuntime.Slot name="app_bottom" />
         </box>
         <pluginRuntime.Slot name="app" />
-        {/* Home already prints `directory:branch` in its header, so the row is
+        {/* The auto-approve readout is permission state, so the row is
             session-only. */}
         <Show when={route.data.type === "session"}>
           <WorkspaceStatus />
