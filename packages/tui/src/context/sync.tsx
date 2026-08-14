@@ -692,6 +692,25 @@ export const {
           return task
         },
       },
+      permission: {
+        toggle() {
+          permission.toggle()
+          if (permission.mode === "auto") result.permission.approveAllPending()
+        },
+        approveAllPending() {
+          const workspace = project.workspace.current()
+          for (const requests of Object.values(store.permission)) {
+            for (const request of [...requests]) {
+              void sdk.client.permission.reply({
+                requestID: request.id,
+                reply: "once",
+                directory: result.session.get(request.sessionID)?.directory,
+                workspace,
+              })
+            }
+          }
+        },
+      },
       bootstrap,
     }
     return result
