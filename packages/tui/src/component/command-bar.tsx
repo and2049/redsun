@@ -1,4 +1,4 @@
-import { InputRenderable, TextAttributes, type KeyEvent } from "@opentui/core"
+import { InputRenderable, type KeyEvent } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import fuzzysort from "fuzzysort"
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
@@ -8,6 +8,8 @@ import { useOpencodeKeymap, useOpencodeModeStack, useKeymapSelector } from "../k
 import { commandAliases, resolveCommand } from "../vim"
 import { SplitBorder } from "../ui/border"
 import { useRoute } from "../context/route"
+import { useProject } from "../context/project"
+import { useTuiPaths } from "../context/runtime"
 import { useSync } from "../context/sync"
 import { fitSessionUsage, sessionUsage } from "../util/session-usage"
 
@@ -15,8 +17,8 @@ const MAX_SUGGESTIONS = 10
 
 // REDSUN DENSE: `variant="dense"` makes the bar participate in the dock's
 // column layout instead of floating over the last row. Like classic, the idle
-// bar shows the vim mode on the left and the session usage readout on the
-// right. Behaviour, bindings and command resolution are shared.
+// bar shows the workspace (branch) on the left and the session usage readout
+// on the right. Behaviour, bindings and command resolution are shared.
 export function CommandBar(props: { variant?: "dense" } = {}) {
   const vim = useVim()
   const { theme } = useTheme()
@@ -25,6 +27,8 @@ export function CommandBar(props: { variant?: "dense" } = {}) {
   const dimensions = useTerminalDimensions()
   const route = useRoute()
   const sync = useSync()
+  const project = useProject()
+  const paths = useTuiPaths()
   const entries = useKeymapSelector((value) =>
     value.getCommandEntries({
       visibility: "reachable",
@@ -36,7 +40,20 @@ export function CommandBar(props: { variant?: "dense" } = {}) {
   const [selected, setSelected] = createSignal(-1)
   let inputRef: InputRenderable
 
-  const modeLabel = createMemo(() => (vim.tempRemaining() != null ? `normal (${vim.tempRemaining()}s)` : vim.mode))
+  const workspace = createMemo(() => {
+    const current = route.data
+    if (current.type !== "session") return undefined
+    const workspaceID = project.workspace.current()
+    if (workspaceID) return project.workspace.get(workspaceID)?.name
+    const path = project.instance.path()
+    return (path.worktree || path.directory || paths.cwd).split(/[\\/]/).filter(Boolean).at(-1)
+  })
+  const workspaceLabel = createMemo(() => {
+    const name = workspace()
+    if (!name) return undefined
+    const branch = sync.data.vcs?.branch
+    return branch ? `${name} (${branch})` : name
+  })
   const usage = createMemo(() => {
     const current = route.data
     if (current.type !== "session") return undefined
@@ -50,7 +67,7 @@ export function CommandBar(props: { variant?: "dense" } = {}) {
     if (vim.mode === "command") return undefined
     const current = usage()
     if (!current) return undefined
-    return fitSessionUsage(current, Math.max(0, dimensions().width - modeLabel().length - 4))
+    return fitSessionUsage(current, Math.max(0, dimensions().width - (workspaceLabel()?.length ?? 0) - 4))
   })
 
   const commands = createMemo(() => {
@@ -192,9 +209,16 @@ export function CommandBar(props: { variant?: "dense" } = {}) {
         </Match>
         <Match when={true}>
           <box flexDirection="row" flexGrow={1} justifyContent="space-between">
-            <text fg={theme.textMuted} attributes={TextAttributes.BOLD}>
-              {modeLabel()}
-            </text>
+            <Show when={workspace()}>
+              {(value) => (
+                <text wrapMode="none">
+                  <span style={{ fg: theme.text }}>{value()}</span>
+                  <Show when={sync.data.vcs?.branch}>
+                    {(branch) => <span style={{ fg: theme.textMuted }}> ({branch()})</span>}
+                  </Show>
+                </text>
+              )}
+            </Show>
             <Show when={usageLabel()}>
               {(value) => (
                 <text fg={theme.textMuted} wrapMode="none">
