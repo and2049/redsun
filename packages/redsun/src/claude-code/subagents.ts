@@ -235,6 +235,23 @@ export function make(ops: Ops): Mirror {
       }
     }
 
+    // Per-call usage rides on every subagent assistant frame. tokens.input is
+    // non-cached input to match redsun-native semantics (Session.getUsage
+    // subtracts cache from inputTokens); output_tokens is the frame's
+    // snapshot, close enough for the footer's context readout. Only overwrite
+    // when usage is present so a usage-less repeat frame can't zero a real
+    // reading.
+    const usage = asRecord(asRecord(message.message)?.usage)
+    if (usage) {
+      const count = (key: string) => (typeof usage[key] === "number" ? (usage[key] as number) : 0)
+      assistant.info.tokens = {
+        input: count("input_tokens"),
+        output: count("output_tokens"),
+        reasoning: 0,
+        cache: { read: count("cache_read_input_tokens"), write: count("cache_creation_input_tokens") },
+      }
+    }
+
     assistant.info.time.completed = Date.now()
     yield* ops.updateMessage(assistant.info)
   })

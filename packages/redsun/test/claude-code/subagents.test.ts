@@ -48,7 +48,7 @@ const taskCall = (
   parent_tool_use_id: null,
 })
 
-const subAssistant = (id = "sub_m1") => ({
+const subAssistant = (id = "sub_m1", usage?: Record<string, number>) => ({
   type: "assistant",
   message: {
     id,
@@ -57,6 +57,7 @@ const subAssistant = (id = "sub_m1") => ({
       { type: "thinking", thinking: "quietly" },
       { type: "tool_use", id: "sub_t1", name: "Read", input: { file_path: "a.ts" } },
     ],
+    ...(usage ? { usage } : {}),
   },
   parent_tool_use_id: "task_1",
 })
@@ -110,6 +111,24 @@ describe("claude-code subagent mirror", () => {
       callID: "sub_t1",
       state: { status: "completed", output: "file contents", title: "Read" },
     })
+  })
+
+  test("subagent assistant frames carry per-call usage onto the mirrored message", () => {
+    const h = harness()
+    h.on(taskCall())
+    h.on(
+      subAssistant("sub_m1", {
+        input_tokens: 7,
+        output_tokens: 42,
+        cache_read_input_tokens: 1_000,
+        cache_creation_input_tokens: 30,
+      }),
+    )
+    const tokens = { input: 7, output: 42, reasoning: 0, cache: { read: 1000, write: 30 } }
+    expect(h.messages.findLast((msg) => msg.role === "assistant")!.tokens).toEqual(tokens)
+    // A usage-less repeat frame must not zero the reading.
+    h.on(subAssistant("sub_m1"))
+    expect(h.messages.findLast((msg) => msg.role === "assistant")!.tokens).toEqual(tokens)
   })
 
   test("repeated frames sharing a claude message id don't duplicate parts", () => {
