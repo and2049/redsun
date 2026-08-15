@@ -1,3 +1,4 @@
+import type { RGBA } from "@opentui/core"
 import { createMemo, createSignal, onMount, Show } from "solid-js"
 import { useSync } from "../context/sync"
 import { map, pipe, sortBy } from "remeda"
@@ -151,7 +152,7 @@ export function createDialogProviderOptions() {
           description,
           footer: consoleManaged ? sync.data.console_state.activeOrgName : undefined,
           category: provider.category,
-          gutter: connected && onboarded() ? () => <text fg={theme.success}>✓</text> : undefined,
+          gutter: connected && onboarded() ? (fg?: RGBA) => <text fg={fg ?? theme.success}>✓</text> : undefined,
           async onSelect() {
             if (consoleManaged) return
 
