@@ -1,4 +1,4 @@
-import { CliRenderEvents, RGBA, SyntaxStyle, type TerminalColors } from "@opentui/core"
+import { CliRenderEvents, SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import {
   DEFAULT_THEMES,
@@ -6,15 +6,12 @@ import {
   allThemes,
   generateSubtleSyntax,
   generateSyntax,
-  generateSystem,
   hasTheme,
   isTheme,
   resolveTheme,
   selectedForeground,
   setCustomThemes,
-  setSystemTheme,
   subscribeThemes,
-  terminalMode,
   tint,
   upsertTheme,
   type ThemeJson,
@@ -66,12 +63,10 @@ export {
   allThemes,
   generateSubtleSyntax,
   generateSyntax,
-  generateSystem,
   hasTheme,
   isTheme,
   resolveTheme,
   selectedForeground,
-  terminalMode,
   tint,
   upsertTheme,
   type Theme,
@@ -87,7 +82,6 @@ type State = {
   lock: "dark" | "light" | undefined
   active: string
   ready: boolean
-  terminalDefaultBackground: RGBA | null
 }
 
 const [store, setStore] = createStore<State>({
@@ -96,7 +90,6 @@ const [store, setStore] = createStore<State>({
   lock: undefined,
   active: "cursor",
   ready: false,
-  terminalDefaultBackground: null,
 })
 
 subscribeThemes((themes) => setStore("themes", themes))
@@ -146,67 +139,15 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
 
     onMount(() => {
-      void Promise.allSettled([resolveSystemTheme(store.mode), syncCustomThemes()]).finally(() => {
+      void syncCustomThemes().finally(() => {
         setStore("ready", true)
       })
     })
-
-    let systemThemeSignature: string | undefined
-    let systemThemeMode: "dark" | "light" | undefined
-    let hasResolvedSystemTheme = false
-    function resolveSystemTheme(mode: "dark" | "light" = store.mode) {
-      return renderer
-        .getPalette({ size: 16 })
-        .then((colors: TerminalColors) => {
-          if (!colors.palette[0]) {
-            if (hasResolvedSystemTheme) return
-            setSystemTheme(undefined)
-            if (store.active === "system") setStore("active", "cursor")
-            return
-          }
-          const next = store.lock ?? terminalMode(colors) ?? mode
-          if (store.mode !== next) setStore("mode", next)
-          setStore("terminalDefaultBackground", RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!))
-          const signature = JSON.stringify(colors)
-          hasResolvedSystemTheme = true
-          if (store.themes.system && systemThemeSignature === signature && systemThemeMode === next) return
-          systemThemeSignature = signature
-          systemThemeMode = next
-          setSystemTheme(generateSystem(colors, next))
-        })
-        .catch(() => {
-          if (hasResolvedSystemTheme) return
-          setSystemTheme(undefined)
-          if (store.active === "system") setStore("active", "cursor")
-        })
-    }
-
-    let systemRefreshRunning = false
-    let systemRefreshQueued = false
-    let systemRefreshMode = store.mode
-    function refreshSystemTheme(mode: "dark" | "light" = store.mode) {
-      systemRefreshMode = mode
-      if (systemRefreshRunning) {
-        systemRefreshQueued = true
-        return
-      }
-
-      systemRefreshRunning = true
-      const retry = renderer.paletteDetectionStatus === "detecting"
-      renderer.clearPaletteCache()
-      void resolveSystemTheme(mode).finally(() => {
-        systemRefreshRunning = false
-        if (!retry && !systemRefreshQueued) return
-        systemRefreshQueued = false
-        refreshSystemTheme(systemRefreshMode)
-      })
-    }
 
     function apply(mode: "dark" | "light") {
       if (store.lock !== undefined) kv.set("theme_mode", mode)
       if (store.mode === mode) return
       setStore("mode", mode)
-      refreshSystemTheme(mode)
     }
 
     function pin(mode: "dark" | "light" = store.mode) {
@@ -219,7 +160,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       setStore("lock", undefined)
       kv.set("theme_mode_lock", undefined)
       kv.set("theme_mode", undefined)
-      refreshSystemTheme(renderer.themeMode ?? store.mode)
+      apply(renderer.themeMode ?? store.mode)
     }
 
     const handle = (mode: "dark" | "light") => {
@@ -228,19 +169,11 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
     renderer.on(CliRenderEvents.THEME_MODE, handle)
 
-    const handleThemeNotification = (sequence: string) => {
-      if (sequence !== "\x1b[?997;1n" && sequence !== "\x1b[?997;2n") return false
-      queueMicrotask(() => refreshSystemTheme())
-      return false
-    }
-    renderer.prependInputHandler(handleThemeNotification)
-
     let themeRefreshTimeouts: ReturnType<typeof setTimeout>[] = []
     const refresh = () => {
       for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
       themeRefreshTimeouts = THEME_REFRESH_DELAYS.map((delay) =>
         setTimeout(() => {
-          refreshSystemTheme()
           if (delay === THEME_REFRESH_DELAYS[THEME_REFRESH_DELAYS.length - 1]) void syncCustomThemes()
         }, delay),
       )
@@ -250,7 +183,6 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
     onCleanup(() => {
       renderer.off(CliRenderEvents.THEME_MODE, handle)
-      renderer.removeInputHandler(handleThemeNotification)
       unsubscribeRefresh?.()
       for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
       themeRefreshTimeouts.length = 0
@@ -301,9 +233,6 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       },
       get ready() {
         return store.ready
-      },
-      get terminalDefaultBackground() {
-        return store.terminalDefaultBackground
       },
     }
   },

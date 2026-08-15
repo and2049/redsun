@@ -244,7 +244,6 @@ const TIPS: Tip[] = [
   "Run {highlight}redsun github install{/highlight} to set up the GitHub workflow",
   "Comment {highlight}/opencode fix this{/highlight} on issues to auto-create PRs",
   "Comment {highlight}/oc{/highlight} on PR code lines for targeted code reviews",
-  'Use {highlight}"theme": "system"{/highlight} to match your terminal\'s colors',
   "Create JSON theme files in {highlight}.redsun/themes/{/highlight} directory",
   "Themes support dark/light variants for both modes",
   "Use numeric xterm color codes 0-255 in custom theme JSON",

@@ -24,8 +24,8 @@
       "light": "#db704b"
     },
     "success": {
-      "dark": "#3fa266",
-      "light": "#1f8a65"
+      "dark": "#6DAB4D",
+      "light": "#418143"
     },
     "info": {
       "dark": "#ee9a62",
@@ -48,7 +48,7 @@
       "light": "#cfc7bc"
     },
     "backgroundElement": {
-      "dark": "#262626",
+      "dark": "#292929",
       "light": "#e6e3df"
     },
     "border": {

@@ -12,13 +12,10 @@ const LOGO = [
 ]
 
 export function Logo() {
-  const { theme, terminalDefaultBackground } = useTheme()
+  const { theme } = useTheme()
   const logoWidth = LOGO[0].length
 
-  const actualBg = () =>
-    theme.background.a === 0
-      ? (terminalDefaultBackground ?? theme.background)
-      : theme.background
+  const actualBg = () => theme.background
 
   return (
     <box>
