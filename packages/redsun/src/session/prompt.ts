@@ -812,6 +812,25 @@ const layer = Layer.effect(
         })
       }
 
+      if (input.workerModel) {
+        const workerVariant = input.workerModel.variant === "default" ? undefined : input.workerModel.variant
+        if (
+          current.workerModel?.providerID !== input.workerModel.providerID ||
+          current.workerModel?.id !== input.workerModel.modelID ||
+          (current.workerModel?.variant === "default" ? undefined : current.workerModel?.variant) !== workerVariant
+        ) {
+          yield* sessions.setWorkerModel({
+            sessionID: input.sessionID,
+            workerModel: {
+              id: input.workerModel.modelID,
+              providerID: input.workerModel.providerID,
+              variant: input.workerModel.variant ?? "default",
+            },
+            time: info.time.created,
+          })
+        }
+      }
+
       yield* Effect.addFinalizer(() => instruction.clear(info.id))
 
       type Draft<T> = T extends SessionV1.Part ? Omit<T, "id"> & { id?: string } : never
@@ -1743,6 +1762,7 @@ const layer = Layer.effect(
         agent: userAgent,
         parts,
         variant: input.variant,
+        workerModel: input.workerModel,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -1782,6 +1802,13 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(SessionV1.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  workerModel: Schema.optional(
+    Schema.Struct({
+      providerID: ProviderV2.ID,
+      modelID: ModelV2.ID,
+      variant: Schema.optional(Schema.String),
+    }),
+  ),
   parts: Schema.Array(
     Schema.Union([
       SessionV1.TextPartInput,
@@ -1814,6 +1841,13 @@ export const CommandInput = Schema.Struct({
   arguments: Schema.String,
   command: Schema.String,
   variant: Schema.optional(Schema.String),
+  workerModel: Schema.optional(
+    Schema.Struct({
+      providerID: ProviderV2.ID,
+      modelID: ModelV2.ID,
+      variant: Schema.optional(Schema.String),
+    }),
+  ),
   // Inlined (no identifier annotation) to keep the original SDK output — the
   // PromptInput call site below references FilePartInput by ref via the
   // Schema export in message-v2.ts.

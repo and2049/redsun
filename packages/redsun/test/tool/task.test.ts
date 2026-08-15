@@ -549,6 +549,153 @@ describe("tool.task", () => {
   )
 
   routed.instance(
+    "session worker model takes precedence over the task router route",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        yield* sessions.setWorkerModel({
+          sessionID: chat.id,
+          workerModel: { id: ref.modelID, providerID: ref.providerID, variant: "low" },
+          time: Date.now(),
+        })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "compose",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
+        expect(seen?.variant).toBe("low")
+      }),
+    { config: { task_router: { worker: "other/missing", worker_variant: "xhigh" } } },
+  )
+
+  routed.instance("session worker model with the default variant applies no variant", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      yield* sessions.setWorkerModel({
+        sessionID: chat.id,
+        workerModel: { id: ref.modelID, providerID: ref.providerID, variant: "default" },
+        time: Date.now(),
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let seen: SessionPrompt.PromptInput | undefined
+
+      yield* def.execute(
+        { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "compose",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(seen?.model).toEqual(ref)
+      expect(seen?.variant).toBeUndefined()
+    }),
+  )
+
+  routed.instance(
+    "an unavailable session worker model falls back to the task router route",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        yield* sessions.setWorkerModel({
+          sessionID: chat.id,
+          workerModel: { id: ModelV2.ID.make("missing"), providerID: ProviderV2.ID.make("other"), variant: "low" },
+          time: Date.now(),
+        })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          { description: "implement fix", prompt: "make the change", subagent_type: "worker" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "compose",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
+        expect(seen?.variant).toBe("xhigh")
+      }),
+    { config: { task_router: { worker: "test/test-model", worker_variant: "xhigh" } } },
+  )
+
+  routed.instance("a resumed worker keeps its pinned model over the session worker model", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      yield* sessions.setWorkerModel({
+        sessionID: chat.id,
+        workerModel: { id: ref.modelID, providerID: ref.providerID, variant: "xhigh" },
+        time: Date.now(),
+      })
+      const child = yield* sessions.create({
+        parentID: chat.id,
+        agent: "worker",
+        model: { id: ref.modelID, providerID: ref.providerID, variant: "low" },
+      })
+      yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: child.id,
+        agent: "worker",
+        model: { ...ref, variant: "low" },
+        time: { created: Date.now() },
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let seen: SessionPrompt.PromptInput | undefined
+
+      yield* def.execute(
+        { description: "continue fix", prompt: "verify the change", subagent_type: "worker", task_id: child.id },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "compose",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(seen?.model).toEqual(ref)
+      expect(seen?.variant).toBe("low")
+    }),
+  )
+
+  routed.instance(
     "an unavailable explicit route fails without creating a worker session",
     () =>
       Effect.gen(function* () {

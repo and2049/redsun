@@ -1,6 +1,5 @@
 import { useDialog } from "../ui/dialog"
-import { useProject } from "../context/project"
-import { useSDK } from "../context/sdk"
+import { useLocal } from "../context/local"
 import { useSync } from "../context/sync"
 import { useToast } from "../ui/toast"
 import { DialogModel } from "./dialog-model"
@@ -35,14 +34,15 @@ export function workerVariantDisplay(route: string | undefined, variant: string 
 
 export function useWorkerVariantDialog() {
   const dialog = useDialog()
-  const project = useProject()
-  const sdk = useSDK()
+  const local = useLocal()
   const sync = useSync()
   const toast = useToast()
 
-  return (route = sync.data.config.task_router?.worker) => {
-    const variants = workerModelVariants(route, sync.data.provider)
-    if (!route) {
+  return (route?: string) => {
+    const resolved = local.model.worker.current()
+    const effective = route ?? (resolved ? `${resolved.providerID}/${resolved.modelID}` : undefined)
+    const variants = workerModelVariants(effective, sync.data.provider)
+    if (!effective) {
       toast.show({ message: "Select a worker model first", variant: "warning" })
       return
     }
@@ -52,24 +52,11 @@ export function useWorkerVariantDialog() {
     }
     dialog.replace(() => (
       <DialogVariant
-        title="Select worker model variant (project)"
+        title="Select worker model variant"
         variants={variants}
-        selected={sync.data.config.task_router?.worker_variant ?? "default"}
-        onSelect={async (variant) => {
-          const worker_variant = variant ?? "default"
-          try {
-            await sdk.client.config.update(
-              { workspace: project.workspace.current(), config: { task_router: { worker_variant } } },
-              { throwOnError: true },
-            )
-            sync.set("config", {
-              ...sync.data.config,
-              task_router: { ...sync.data.config.task_router, worker_variant },
-            })
-          } catch (error) {
-            toast.error(error)
-            throw error
-          }
+        selected={resolved?.variant ?? "default"}
+        onSelect={(variant) => {
+          local.model.worker.setVariant(variant)
         }}
       />
     ))
@@ -78,33 +65,21 @@ export function useWorkerVariantDialog() {
 
 export function useWorkerModelDialog() {
   const dialog = useDialog()
-  const project = useProject()
-  const sdk = useSDK()
+  const local = useLocal()
   const sync = useSync()
   const toast = useToast()
   const openVariant = useWorkerVariantDialog()
 
   return () => {
-    const fallback = sync.data.agent.find((agent) => agent.name === "worker")?.model
-    const current =
-      sync.data.config.task_router?.worker ?? (fallback ? `${fallback.providerID}/${fallback.modelID}` : undefined)
-    const [providerID, ...rest] = current?.split("/") ?? []
+    const current = local.model.worker.current()
     dialog.replace(() => (
       <DialogModel
-        title="Select worker model (project)"
-        current={providerID && rest.length ? { providerID, modelID: rest.join("/") } : undefined}
+        title="Select worker model"
+        current={current ? { providerID: current.providerID, modelID: current.modelID } : undefined}
         closeOnSelect={false}
-        onSelect={async (model, context) => {
+        onSelect={(model, context) => {
+          local.model.worker.set({ providerID: model.providerID, modelID: model.modelID })
           const worker = `${model.providerID}/${model.modelID}`
-          const worker_variant = "default"
-          await sdk.client.config.update(
-            { workspace: project.workspace.current(), config: { task_router: { worker, worker_variant } } },
-            { throwOnError: true },
-          )
-          sync.set("config", {
-            ...sync.data.config,
-            task_router: { ...sync.data.config.task_router, worker, worker_variant },
-          })
           if (!context.active()) return
           if (workerModelVariants(worker, sync.data.provider).length) openVariant(worker)
           else dialog.clear()

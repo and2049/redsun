@@ -167,7 +167,7 @@ export function makeCanUseTool(getContext: () => TurnContext | undefined): CanUs
     if (SUBAGENT_TOOLS.has(toolName) && ctx.agentName === "compose" && ctx.taskTool)
       return {
         behavior: "deny",
-        message: `Use the ${TASK_TOOL} tool (subagent_type: "worker" or "explore") in this session — the built-in Task tool bypasses redsun's task_router.`,
+        message: `Use the ${TASK_TOOL} tool (subagent_type: "worker" or "explore") in this session — the built-in Task tool bypasses redsun's worker routing.`,
       }
 
     const mapped = mapPermission(toolName, input, ctx)

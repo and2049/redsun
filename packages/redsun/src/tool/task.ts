@@ -173,33 +173,53 @@ export const TaskTool = Tool.define(
         : Option.none()
       const route = cfg.task_router?.[next.name as keyof NonNullable<typeof cfg.task_router>]
       const routed = route ? Provider.parseModel(route) : undefined
+      const sessionWorkerRoute = next.name === "worker" ? parent.workerModel : undefined
+      const sessionWorker = sessionWorkerRoute
+        ? yield* provider
+            .getModel(sessionWorkerRoute.providerID, sessionWorkerRoute.id)
+            .pipe(
+              Effect.as({ providerID: sessionWorkerRoute.providerID, modelID: sessionWorkerRoute.id }),
+              Effect.catchCause(() =>
+                Effect.logWarning(
+                  `Session worker model is unavailable, falling back: ${sessionWorkerRoute.providerID}/${sessionWorkerRoute.id}`,
+                ).pipe(Effect.as(undefined)),
+              ),
+            )
+        : undefined
       const model = Option.isSome(pinned) && pinned.value.info.role === "user" && pinned.value.info.model
         ? pinned.value.info.model
-        : routed
-          ? yield* provider
-              .getModel(routed.providerID, routed.modelID)
-              .pipe(
-                Effect.as(routed),
-                Effect.catchCause(() =>
-                  Effect.fail(new Error(`Configured task_router.${next.name} model is unavailable: ${route}`)),
-                ),
-              )
-          : next.model ??
-            (next.name === "worker"
-              ? yield* Effect.fail(
-                  new Error('Configure task_router.worker or agent.worker.model before using the worker subagent'),
+        : (sessionWorker ??
+          (routed
+            ? yield* provider
+                .getModel(routed.providerID, routed.modelID)
+                .pipe(
+                  Effect.as(routed),
+                  Effect.catchCause(() =>
+                    Effect.fail(new Error(`Configured task_router.${next.name} model is unavailable: ${route}`)),
+                  ),
                 )
-              : parentModel)
+            : next.model ??
+              (next.name === "worker"
+                ? yield* Effect.fail(
+                    new Error(
+                      "Select a worker model first (worker model selector), or configure task_router.worker or agent.worker.model",
+                    ),
+                  )
+                : parentModel)))
       const variant =
         Option.isSome(pinned) && pinned.value.info.role === "user"
           ? session?.model?.variant
-          : route || next.model
-            ? next.model && !route
-              ? next.variant
-              : next.name === "worker" && cfg.task_router?.worker_variant !== "default"
-                ? cfg.task_router?.worker_variant
-                : undefined
-            : parentVariant
+          : sessionWorker
+            ? sessionWorkerRoute?.variant === "default"
+              ? undefined
+              : sessionWorkerRoute?.variant
+            : route || next.model
+              ? next.model && !route
+                ? next.variant
+                : next.name === "worker" && cfg.task_router?.worker_variant !== "default"
+                  ? cfg.task_router?.worker_variant
+                  : undefined
+              : parentVariant
       const nextSession =
         session ??
         (yield* sessions.create({

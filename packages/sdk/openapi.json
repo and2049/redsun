@@ -6478,6 +6478,22 @@
                   "variant": {
                     "type": "string"
                   },
+                  "workerModel": {
+                    "type": "object",
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      },
+                      "variant": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["providerID", "modelID"],
+                    "additionalProperties": false
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
@@ -7360,6 +7376,22 @@
                   "variant": {
                     "type": "string"
                   },
+                  "workerModel": {
+                    "type": "object",
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      },
+                      "variant": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["providerID", "modelID"],
+                    "additionalProperties": false
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
@@ -7502,6 +7534,22 @@
                   },
                   "variant": {
                     "type": "string"
+                  },
+                  "workerModel": {
+                    "type": "object",
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      },
+                      "variant": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["providerID", "modelID"],
+                    "additionalProperties": false
                   },
                   "parts": {
                     "type": "array",
@@ -16347,6 +16395,22 @@
             "required": ["id", "providerID"],
             "additionalProperties": false
           },
+          "workerModel": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "providerID": {
+                "type": "string"
+              },
+              "variant": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "providerID"],
+            "additionalProperties": false
+          },
           "version": {
             "type": "string"
           },
@@ -23061,6 +23125,22 @@
             "type": "string"
           },
           "model": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "providerID": {
+                "type": "string"
+              },
+              "variant": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "providerID"],
+            "additionalProperties": false
+          },
+          "workerModel": {
             "type": "object",
             "properties": {
               "id": {

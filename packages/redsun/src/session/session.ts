@@ -92,6 +92,13 @@ export function fromRow(row: SessionRow): Info {
           variant: row.model.variant,
         }
       : undefined,
+    workerModel: row.worker_model
+      ? {
+          id: ModelV2.ID.make(row.worker_model.id),
+          providerID: ProviderV2.ID.make(row.worker_model.providerID),
+          variant: row.worker_model.variant,
+        }
+      : undefined,
     version: row.version,
     summary,
     cost: row.cost,
@@ -129,6 +136,7 @@ export function toRow(info: Info) {
     title: info.title,
     agent: info.agent,
     model: info.model,
+    worker_model: info.workerModel,
     version: info.version,
     share_url: info.share?.url,
     summary_additions: info.summary?.additions,
@@ -236,6 +244,7 @@ export const Info = Schema.Struct({
   title: Schema.String,
   agent: optional(Schema.String),
   model: optional(Model),
+  workerModel: optional(Model),
   version: Schema.String,
   metadata: optional(Metadata),
   time: Time,
@@ -434,6 +443,11 @@ export interface Interface {
     sessionID: SessionID
     agent: string
     model: NonNullable<Info["model"]>
+    time: number
+  }) => Effect.Effect<void>
+  readonly setWorkerModel: (input: {
+    sessionID: SessionID
+    workerModel: NonNullable<Info["workerModel"]>
     time: number
   }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: PermissionV1.Ruleset }) => Effect.Effect<void>
@@ -777,6 +791,17 @@ const layer: Layer.Layer<
       }).pipe(Effect.orDie)
     })
 
+    const setWorkerModel = Effect.fn("Session.setWorkerModel")(function* (input: {
+      sessionID: SessionID
+      workerModel: NonNullable<Info["workerModel"]>
+      time: number
+    }) {
+      yield* patch(input.sessionID, {
+        workerModel: input.workerModel,
+        time: { updated: input.time },
+      }).pipe(Effect.orDie)
+    })
+
     const setPermission = Effect.fn("Session.setPermission")(function* (input: {
       sessionID: SessionID
       permission: PermissionV1.Ruleset
@@ -916,6 +941,7 @@ const layer: Layer.Layer<
       setArchived,
       setMetadata,
       setAgentModel,
+      setWorkerModel,
       setPermission,
       setRevert,
       clearRevert,
