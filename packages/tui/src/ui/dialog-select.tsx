@@ -66,7 +66,8 @@ export interface DialogSelectOption<T = any> {
   categoryView?: JSX.Element
   disabled?: boolean
   bg?: RGBA
-  gutter?: () => JSX.Element
+  /** Receives the selected-row foreground when the row is highlighted, otherwise undefined. */
+  gutter?: (fg?: RGBA) => JSX.Element
   margin?: JSX.Element
   onSelect?: (ctx: DialogContext) => void
 }
@@ -745,7 +746,7 @@ function Option(props: {
   footer?: JSX.Element | string
   titleWidth?: number
   truncateTitle?: boolean | "left"
-  gutter?: () => JSX.Element
+  gutter?: (fg?: RGBA) => JSX.Element
   onMouseOver?: () => void
 }) {
   const { theme } = useTheme()
@@ -766,7 +767,7 @@ function Option(props: {
       </Show>
       <Show when={props.gutter}>
         <box flexShrink={0} marginRight={0}>
-          {props.gutter?.()}
+          {props.gutter?.(props.active && !props.muted ? text() : undefined)}
         </box>
       </Show>
       <text
