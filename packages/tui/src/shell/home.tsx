@@ -91,7 +91,7 @@ export function DenseHome() {
         {/* Content-sized so the column's alignItems="center" centres it
             under the logo, like the logo itself. */}
         <box height={1} flexShrink={0} marginTop={1}>
-          <text fg={theme.textMuted}>/ commands · ! shell · esc vim</text>
+          <text fg={theme.textMuted}>/ commands · ! shell · @ files</text>
         </box>
         <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>

@@ -14,14 +14,24 @@ function Directory(props: { api: TuiPluginApi }) {
   const dir = createMemo(() => {
     const selected = destination?.destination()
     if (!selected || selected.type === "new") return
-    const out = abbreviateHome(selected.directory, paths.home)
+    const name = abbreviateHome(selected.directory, paths.home).split(/[\\/]/).filter(Boolean).at(-1)
     const branch =
       selected.directory === (props.api.state.path.directory || paths.cwd) ? props.api.state.vcs?.branch : undefined
-    if (branch) return out + ":" + branch
-    return out
+    return branch ? { name, branch } : { name }
   })
 
-  return <Show when={dir()}>{(value) => <text fg={theme().textMuted}>{value()}</text>}</Show>
+  return (
+    <Show when={dir()}>
+      {(value) => (
+        <text wrapMode="none">
+          <span style={{ fg: theme().text }}>{value().name}</span>
+          <Show when={value().branch}>
+            {(branch) => <span style={{ fg: theme().textMuted }}> ({branch()})</span>}
+          </Show>
+        </text>
+      )}
+    </Show>
+  )
 }
 
 function Mcp(props: { api: TuiPluginApi }) {
