@@ -1,5 +1,6 @@
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
 import { LLMEvent, Usage } from "@opencode-ai/llm"
+import { nativeResultMetadata, nativeToolInput, nativeToolName } from "./native-tools"
 import { SUBAGENT_TOOLS, taskChildMetadata, type TaskChild } from "./subagents"
 
 /**
@@ -25,7 +26,8 @@ type OpenBlock =
   | { kind: "ignored" }
 
 export interface State {
-  toolNames: Map<string, string>
+  /** Emitted (native) tool name and mapped input, keyed by tool_use id. */
+  toolCalls: Map<string, { name: string; input: Record<string, unknown> }>
   openBlocks: Map<number, OpenBlock>
   messageId: string
   claudeSessionID?: string
@@ -43,16 +45,17 @@ export interface State {
 }
 
 export function makeState(taskChildren?: ReadonlyMap<string, TaskChild>): State {
-  return { toolNames: new Map(), openBlocks: new Map(), messageId: "claude", taskChildren }
+  return { toolCalls: new Map(), openBlocks: new Map(), messageId: "claude", taskChildren }
 }
 
 /**
  * Claude Code's subagent tool (Task/Agent) surfaces as redsun's `task` tool:
  * its input shape (description/subagent_type) matches, and the mirrored child
  * session id in the part metadata is what activates the TUI's subagent
- * renderer.
+ * renderer. Other built-ins map onto their native redsun names so the TUI's
+ * native tool frontends render them (see native-tools.ts).
  */
-const emittedToolName = (name: string) => (SUBAGENT_TOOLS.has(name) ? "task" : name)
+const emittedToolName = (name: string) => (SUBAGENT_TOOLS.has(name) ? "task" : nativeToolName(name))
 
 function toolResultText(content: unknown): string {
   if (typeof content === "string") return content
@@ -131,7 +134,7 @@ function contentBlockStart(state: State, index: number, block: Record<string, an
     default:
       if (TOOL_USE_TYPES.has(block.type) && typeof block.id === "string" && typeof block.name === "string") {
         const name = emittedToolName(block.name)
-        state.toolNames.set(block.id, name)
+        state.toolCalls.set(block.id, { name, input: {} })
         state.openBlocks.set(index, { kind: "tool", id: block.id, name })
         return [LLMEvent.toolInputStart({ id: block.id, name })]
       }
@@ -201,13 +204,15 @@ function assistantMessage(state: State, content: unknown): LLMEvent[] {
     if (!TOOL_USE_TYPES.has(item.type)) continue
     if (typeof item.id !== "string" || typeof item.name !== "string") continue
     const name = emittedToolName(item.name)
-    state.toolNames.set(item.id, name)
+    const rawInput = item.input && typeof item.input === "object" ? (item.input as Record<string, unknown>) : {}
+    const input = nativeToolInput(item.name, rawInput)
+    state.toolCalls.set(item.id, { name, input })
     const child = SUBAGENT_TOOLS.has(item.name) ? state.taskChildren?.get(item.id) : undefined
     events.push(
       LLMEvent.toolCall({
         id: item.id,
         name,
-        input: item.input ?? {},
+        input,
         providerExecuted: true,
         ...(child ? { providerMetadata: { redsun: taskChildMetadata(child) } } : {}),
       }),
@@ -224,8 +229,9 @@ function userMessage(state: State, message: Record<string, any>): LLMEvent[] {
     if (!block || typeof block !== "object") continue
     const item = block as Record<string, any>
     if (item.type !== "tool_result" || typeof item.tool_use_id !== "string") continue
-    const name = state.toolNames.get(item.tool_use_id)
-    if (!name) continue
+    const call = state.toolCalls.get(item.tool_use_id)
+    if (!call) continue
+    const name = call.name
     const child = state.taskChildren?.get(item.tool_use_id)
     if (child && !item.is_error) {
       // Structured completion so the task part's completed state keeps the
@@ -261,14 +267,21 @@ function userMessage(state: State, message: Record<string, any>): LLMEvent[] {
       )
       continue
     }
+    const text = toolResultText(item.content)
+    // Native-mapped tools whose TUI renderer keys off completed-state
+    // metadata (shell output block, todo checklist, edit diff) get it
+    // synthesized here; the processor lifts json-result metadata into the
+    // completed part.
+    const metadata = item.is_error
+      ? undefined
+      : nativeResultMetadata(name, call.input, text, message.tool_use_result)
     events.push(
       LLMEvent.toolResult({
         id: item.tool_use_id,
         name,
-        result: {
-          type: item.is_error ? "error" : "text",
-          value: toolResultText(item.content),
-        },
+        result: metadata
+          ? { type: "json", value: { output: text, metadata } }
+          : { type: item.is_error ? "error" : "text", value: text },
         providerExecuted: true,
       }),
     )

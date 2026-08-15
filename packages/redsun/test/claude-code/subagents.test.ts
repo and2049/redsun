@@ -108,12 +108,43 @@ describe("claude-code subagent mirror", () => {
     const childParts = h.parts.filter((part) => part.messageID === assistant!.id)
     expect(childParts.map((part) => part.type)).toEqual(["text", "reasoning", "tool", "tool"])
     expect(childParts[0]).toMatchObject({ text: "working on it" })
-    expect(childParts[2]).toMatchObject({ callID: "sub_t1", tool: "Read", state: { status: "running" } })
+    // Built-in tools mirror under their native redsun name and input shape.
+    expect(childParts[2]).toMatchObject({
+      callID: "sub_t1",
+      tool: "read",
+      state: { status: "running", input: { filePath: "a.ts" } },
+    })
     const completed = h.parts.at(-1)!
     expect(completed).toMatchObject({
       callID: "sub_t1",
-      state: { status: "completed", output: "file contents", title: "Read" },
+      state: { status: "completed", output: "file contents", title: "read" },
     })
+  })
+
+  test("a mirrored Edit result carries metadata.diff from its structuredPatch", () => {
+    const h = harness()
+    h.on(taskCall())
+    h.on({
+      type: "assistant",
+      message: {
+        id: "sub_m2",
+        content: [{ type: "tool_use", id: "sub_e1", name: "Edit", input: { file_path: "a.ts", old_string: "b", new_string: "B" } }],
+      },
+      parent_tool_use_id: "task_1",
+    })
+    h.on({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "sub_e1", content: "Edited a.ts" }] },
+      parent_tool_use_id: "task_1",
+      tool_use_result: {
+        filePath: "a.ts",
+        structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-b", "+B"] }],
+      },
+    })
+    const completed = h.parts.at(-1)!
+    expect(completed).toMatchObject({ callID: "sub_e1", tool: "edit", state: { status: "completed" } })
+    expect((completed.state as { metadata: { diff: string } }).metadata.diff).toContain("@@ -1,1 +1,1 @@")
+    expect((completed.state as { metadata: { diff: string } }).metadata.diff).toContain("-b\n+B")
   })
 
   test("subagent assistant frames carry per-call usage onto the mirrored message", () => {
