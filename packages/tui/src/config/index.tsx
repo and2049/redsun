@@ -25,10 +25,6 @@ export const ScrollAcceleration = Schema.Struct({
 export const DiffStyle = Schema.Literals(["auto", "stacked"]).annotate({
   description: "Control diff rendering style: 'auto' adapts to terminal width, 'stacked' always shows single column",
 })
-export const Ui = Schema.Literals(["dense", "classic"]).annotate({
-  description:
-    "Interface style: 'dense' streams the transcript into native terminal scrollback, 'classic' is the fullscreen interface (default: dense)",
-})
 
 export const Cursor = Schema.Struct({
   style: Schema.optional(Schema.Literals(["block", "underline", "line", "default"])).annotate({
@@ -70,12 +66,11 @@ export const Info = Schema.Struct({
   scroll_acceleration: Schema.optional(ScrollAcceleration),
   diff_style: Schema.optional(DiffStyle),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
-  ui: Schema.optional(Ui),
   cursor: Schema.optional(Cursor),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
-export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "ui" | "cursor"> & {
+export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "cursor"> & {
   attention: {
     enabled: boolean
     notifications: boolean
@@ -86,7 +81,6 @@ export type Resolved = Omit<Info, "attention" | "keybinds" | "mouse" | "ui" | "c
   }
   keybinds: TuiKeybind.BindingLookupView
   mouse: boolean
-  ui: Schema.Schema.Type<typeof Ui>
   cursor?: {
     style: "block" | "underline" | "line" | "default"
     blinking: boolean
@@ -125,7 +119,6 @@ export function resolve(input: Info, options: ResolveOptions): Resolved {
       bindingDefaults: TuiKeybind.bindingDefaults(),
     }),
     mouse: input.mouse ?? true,
-    ui: input.ui ?? "dense",
     cursor: input.cursor
       ? {
           style: input.cursor.style ?? "block",

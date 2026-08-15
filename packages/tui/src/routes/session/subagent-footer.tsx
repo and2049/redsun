@@ -1,9 +1,7 @@
 import { createMemo, createSignal, Show } from "solid-js"
-import { useTuiConfig } from "../../config"
 import { useRouteData } from "../../context/route"
 import { useSync } from "../../context/sync"
 import { useTheme } from "../../context/theme"
-import { SplitBorder } from "../../ui/border"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "../../util/locale"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -56,27 +54,16 @@ export function SubagentFooter() {
   })
 
   const { theme } = useTheme()
-  const tuiConfig = useTuiConfig()
   // Dense UI draws the footer in the chat box's rounded shape. A fill would
   // paint the full rectangle behind the rounded corners (terminal cells can't
-  // clip), so like the prompt box it stays on the plain background; classic
-  // keeps the original filled left-bar block.
-  const dense = createMemo(() => tuiConfig.ui !== "classic")
-  const shape = createMemo(() =>
-    dense()
-      ? { border: true as const, borderStyle: "rounded" as const, paddingLeft: 1, paddingRight: 1 }
-      : {
-          ...SplitBorder,
-          border: ["left" as const],
-          paddingTop: 1,
-          paddingBottom: 1,
-          paddingLeft: 2,
-          paddingRight: 1,
-          backgroundColor: theme.backgroundPanel,
-        },
-  )
-  const buttonBackground = (active: boolean) =>
-    active ? theme.backgroundElement : dense() ? undefined : theme.backgroundPanel
+  // clip), so like the prompt box it stays on the plain background.
+  const shape = {
+    border: true as const,
+    borderStyle: "rounded" as const,
+    paddingLeft: 1,
+    paddingRight: 1,
+  }
+  const buttonBackground = (active: boolean) => (active ? theme.backgroundElement : undefined)
   const keymap = useOpencodeKeymap()
   const parentShortcut = useCommandShortcut("session.parent")
   const previousShortcut = useCommandShortcut("session.child.previous")
@@ -86,7 +73,7 @@ export function SubagentFooter() {
 
   return (
     <box flexShrink={0}>
-      <box {...shape()} borderColor={theme.border} flexShrink={0}>
+      <box {...shape} borderColor={theme.border} flexShrink={0}>
         <box flexDirection="row" justifyContent="space-between" gap={1}>
           <box flexDirection="row" gap={1}>
             <text fg={theme.text}>

@@ -1,4 +1,4 @@
-import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { render, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { registerOpencodeSpinner } from "./component/register-spinner"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { Deferred, Effect } from "effect"
@@ -9,11 +9,9 @@ import { ClipboardProvider, useClipboard } from "./context/clipboard"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
 import * as Selection from "./util/selection"
-import { createCliRenderer, MouseButton } from "@opentui/core"
+import { createCliRenderer } from "@opentui/core"
 import { RouteProvider, useRoute } from "./context/route"
 import {
-  Switch,
-  Match,
   createEffect,
   createMemo,
   ErrorBoundary,
@@ -21,19 +19,16 @@ import {
   onMount,
   onCleanup,
   batch,
-  Show,
   on,
 } from "solid-js"
-import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider, useTuiStartup } from "./context/runtime"
+import { TuiPathsProvider, TuiStartupProvider, TuiTerminalEnvironmentProvider } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { DialogProvider as DialogProviderList } from "./component/dialog-provider"
 import { ErrorComponent } from "./component/error-component"
-import { PluginRouteMissing } from "./component/plugin-route-missing"
 import { ProjectProvider, useProject } from "./context/project"
 import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
 import { SDKProvider, useSDK } from "./context/sdk"
-import { StartupLoading } from "./component/startup-loading"
 import { SyncProvider, useSync } from "./context/sync"
 import { DataProvider } from "./context/data"
 import { LocationProvider } from "./context/location"
@@ -52,8 +47,6 @@ import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogWorkspaceList } from "./component/dialog-workspace-list"
 import { DialogConsoleOrg } from "./component/dialog-console-org"
 import { ThemeProvider, useTheme } from "./context/theme"
-import { Home } from "./routes/home"
-import { Session } from "./routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
@@ -72,7 +65,6 @@ import { createTuiApiAdapters } from "./plugin/adapters"
 import { createTuiApi } from "./plugin/api"
 import { createPluginRuntime, PluginRuntimeProvider, usePluginRuntime, type TuiPluginHost } from "./plugin/runtime"
 import { CommandPaletteDialog } from "./component/command-palette"
-import { CommandBar } from "./component/command-bar"
 import {
   COMMAND_PALETTE_COMMAND,
   OPENCODE_BASE_MODE,
@@ -89,7 +81,7 @@ import * as TuiAudio from "./audio"
 import { win32DisableProcessedInput, win32FlushInputBuffer } from "./terminal-win32"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
-// REDSUN DENSE: dense fullscreen shell (see src/shell/). Classic stays behind config `ui: "classic"`.
+// REDSUN DENSE: the dense shell is the only UI (see src/shell/).
 import { DenseApp } from "./shell"
 
 registerOpencodeSpinner()
@@ -193,8 +185,6 @@ function isVersionGreater(left: string, right: string) {
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const global = yield* Global.Service
   const exit = { epilogue: undefined as string | undefined, reason: undefined as unknown }
-  // REDSUN DENSE: both interfaces run the same fullscreen renderer; `ui`
-  // only selects which tree mounts (DenseApp vs the classic layout below).
   const teardown = destroyRenderer
   const result = yield* Effect.scoped(
     Effect.gen(function* () {
@@ -377,7 +367,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
 })
 
 function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPluginHost }) {
-  const startup = useTuiStartup()
   const tuiConfig = useTuiConfig()
   const route = useRoute()
   const dimensions = useTerminalDimensions()
@@ -1109,66 +1098,5 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
     void exit()
   })
 
-  const plugin = createMemo(() => {
-    if (!ready()) return
-    if (route.data.type !== "plugin") return
-    const render = pluginRuntime.routes.get(route.data.id)
-    if (!render) return <PluginRouteMissing id={route.data.id} onHome={() => route.navigate({ type: "home" })} />
-    return render({ params: route.data.data })
-  })
-
-  // REDSUN DENSE: the dense (default) UI renders the shell tree — the same
-  // fullscreen architecture as the classic layout below, restyled. Classic
-  // stays untouched for `ui: "classic"`.
-  if (tuiConfig.ui !== "classic") return <DenseApp ready={ready} />
-
-  return (
-    <box
-      width={dimensions().width}
-      height={dimensions().height}
-      flexDirection="column"
-      backgroundColor={theme.background}
-      paddingBottom={1}
-      onMouseDown={(evt) => {
-        if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
-        if (evt.button !== MouseButton.RIGHT) return
-
-        if (!Selection.copy(renderer, toast, clipboard)) return
-        evt.preventDefault()
-        evt.stopPropagation()
-      }}
-      onMouseUp={
-        !Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT
-          ? () => Selection.copy(renderer, toast, clipboard)
-          : undefined
-      }
-    >
-      <Show when={Flag.OPENCODE_SHOW_TTFD}>
-        <TimeToFirstDraw />
-      </Show>
-      <Show when={ready()}>
-        <box flexGrow={1} minHeight={0} flexDirection="column">
-          <Switch>
-            <Match when={route.data.type === "home"}>
-              <Home />
-            </Match>
-            <Match when={route.data.type === "session"}>
-              <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
-                {(_) => <Session />}
-              </Show>
-            </Match>
-          </Switch>
-          {plugin()}
-        </box>
-        <box flexShrink={0}>
-          <pluginRuntime.Slot name="app_bottom" />
-        </box>
-        <pluginRuntime.Slot name="app" />
-        <CommandBar />
-      </Show>
-      <Show when={!startup.skipInitialLoading}>
-        <StartupLoading ready={ready} />
-      </Show>
-    </box>
-  )
+  return <DenseApp ready={ready} />
 }
