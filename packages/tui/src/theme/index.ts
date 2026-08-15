@@ -9,6 +9,8 @@ import kanagawa from "./assets/kanagawa.json" with { type: "json" }
 import lotus from "./assets/lotus.json" with { type: "json" }
 import rosepine from "./assets/rosepine.json" with { type: "json" }
 import petal from "./assets/petal.json" with { type: "json" }
+import cloud from "./assets/cloud.json" with { type: "json" }
+import wave from "./assets/wave.json" with { type: "json" }
 
 export type Theme = {
   readonly logoGradientStart: RGBA
@@ -125,6 +127,8 @@ export const DEFAULT_THEMES: Record<string, ThemeJson> = {
   lotus: lotus as ThemeJson,
   rosepine: rosepine as ThemeJson,
   petal: petal as ThemeJson,
+  cloud: cloud as ThemeJson,
+  wave: wave as ThemeJson,
 }
 
 const pluginThemes: Record<string, ThemeJson> = {}
