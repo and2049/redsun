@@ -377,6 +377,8 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
 
         const turnInfo: ClaudeCodeSubagents.TurnInfo = {
           sessionID,
+          agent: input.agent.name,
+          userMessageID: input.user?.id,
           model: { providerID: input.model.providerID, modelID: input.model.id },
           path: { cwd: base.instance.directory, root: base.instance.worktree },
         }
@@ -386,6 +388,16 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             data.manager.turn(input.sessionID, prompt, {
               model: ClaudeCodeModels.sdkModel(input.model.id),
               permissionMode,
+              // Every frame — including the ones that arrive BETWEEN turn
+              // windows once the CLI async-launches subagents — runs through
+              // the mirror from the session pump, awaited before the frame
+              // reaches the turn stream. That keeps the mirror-before-
+              // translate ordering (the assistant frame announcing a Task
+              // tool_use mints its child session before the toolCall event
+              // needs the sessionId) and keeps child transcripts, task
+              // notifications, and main-thread auto-continuations flowing
+              // after the turn's result.
+              observer: (message, inTurn) => bridge.promise(data.mirror.onMessage(turnInfo, message, inTurn)),
               options,
             }),
           catch: (error) => (error instanceof Error ? error : new Error(String(error))),
@@ -398,10 +410,6 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
             ).pipe(
               Stream.mapEffect((message) =>
                 Effect.gen(function* () {
-                  // Mirror before translate: the same assistant frame that
-                  // announces a Task tool_use must first mint its child
-                  // session so the toolCall event can carry the sessionId.
-                  yield* data.mirror.onMessage(turnInfo, message)
                   const events = ClaudeCodeTranslate.translate(translateState, message)
                   if (message.type === "result" && translateState.claudeSessionID) {
                     yield* storage
@@ -427,11 +435,12 @@ export function layerWith(createQuery: CreateQuery): Layer.Layer<
               ? Effect.sync(() => void data.manager.interrupt(input.sessionID).catch(() => {}))
               : Effect.void,
           ),
-          Stream.ensuring(
-            Effect.sync(() => {
-              data.contexts.delete(input.sessionID)
-            }).pipe(Effect.andThen(data.mirror.turnEnded(sessionID))),
-          ),
+          // The TurnContext deliberately survives the turn: async-launched
+          // subagents and main-thread auto-continuations keep calling tools
+          // between turn windows, and canUseTool must still be able to ask
+          // permissions for them instead of blanket-denying. The next turn
+          // replaces it; instance disposal drops it.
+          Stream.ensuring(data.mirror.turnEnded(sessionID)),
         )
       })
 

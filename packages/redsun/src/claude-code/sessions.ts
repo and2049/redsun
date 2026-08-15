@@ -70,6 +70,16 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 export interface SessionOptions {
   readonly model: string
   readonly permissionMode: PermissionMode
+  /**
+   * Called for every SDK message the process emits, in stream order, before
+   * the message is (maybe) delivered to the turn queue. `inTurn` is false for
+   * frames that arrive between turn windows — async-launched subagent
+   * activity, task notifications, and main-thread auto-continuations — which
+   * the turn queue would otherwise drop on the floor. The callback persists
+   * across turns (each turn() call replaces it) and is awaited so downstream
+   * turn consumers always observe its effects; failures are swallowed.
+   */
+  readonly observer?: (message: SDKMessage, inTurn: boolean) => Promise<void> | void
   readonly options: Omit<
     Options,
     "model" | "permissionMode" | "allowDangerouslySkipPermissions" | "includePartialMessages" | "forwardSubagentText"
@@ -84,6 +94,7 @@ interface LiveSession {
   bypassAllowed: boolean
   prompt: AsyncQueue<SDKUserMessage>
   turn?: AsyncQueue<SDKMessage>
+  observer?: SessionOptions["observer"]
   dead: boolean
   pump: Promise<void>
 }
@@ -116,16 +127,27 @@ export class SessionManager {
       permissionMode: input.permissionMode,
       bypassAllowed: input.permissionMode === "bypassPermissions",
       prompt,
+      observer: input.observer,
       dead: false,
       pump: Promise.resolve(),
     }
     session.pump = (async () => {
       try {
         for await (const message of query) {
-          session.turn?.push(message)
+          // Snapshot the turn before the (async) observer runs so a turn that
+          // starts mid-await cannot receive frames that predate its prompt.
+          const turn = session.turn
+          if (session.observer) {
+            try {
+              await session.observer(message, turn !== undefined)
+            } catch {
+              // Observer failures must never stall or kill the pump.
+            }
+          }
+          turn?.push(message)
           if (message.type === "result") {
-            session.turn?.end()
-            session.turn = undefined
+            turn?.end()
+            if (session.turn === turn) session.turn = undefined
           }
         }
         session.dead = true
@@ -183,6 +205,7 @@ export class SessionManager {
       // Refresh LRU position.
       this.sessions.delete(sessionID)
       this.sessions.set(sessionID, session)
+      session.observer = input.observer
       if (session.model !== input.model) {
         await session.query.setModel(input.model)
         session.model = input.model

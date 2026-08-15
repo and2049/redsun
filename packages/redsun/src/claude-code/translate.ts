@@ -1,6 +1,6 @@
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
 import { LLMEvent, Usage } from "@opencode-ai/llm"
-import { SUBAGENT_TOOLS, type TaskChild } from "./subagents"
+import { SUBAGENT_TOOLS, taskChildMetadata, type TaskChild } from "./subagents"
 
 /**
  * Pure state machine translating Claude Agent SDK messages into the LLMEvent
@@ -53,14 +53,6 @@ export function makeState(taskChildren?: ReadonlyMap<string, TaskChild>): State 
  * renderer.
  */
 const emittedToolName = (name: string) => (SUBAGENT_TOOLS.has(name) ? "task" : name)
-
-function taskChildMetadata(child: TaskChild): Record<string, unknown> {
-  return {
-    sessionId: child.sessionID,
-    parentSessionId: child.parentSessionID,
-    ...(child.background ? { background: true } : {}),
-  }
-}
 
 function toolResultText(content: unknown): string {
   if (typeof content === "string") return content
