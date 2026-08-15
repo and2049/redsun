@@ -31,10 +31,13 @@ function harness() {
   })
   const turn: TurnInfo = {
     sessionID: "ses_parent" as never,
+    agent: "build",
+    userMessageID: "msg_user_0" as never,
     model: { providerID: "claude-code" as never, modelID: "fable" as never },
     path: { cwd: "/repo", root: "/repo" },
   }
-  const on = (message: Record<string, unknown>) => Effect.runSync(mirror.onMessage(turn, message as never))
+  const on = (message: Record<string, unknown>, inTurn = true) =>
+    Effect.runSync(mirror.onMessage(turn, message as never, inTurn))
   const sweep = () => Effect.runSync(mirror.turnEnded(turn.sessionID))
   return { mirror, created, touched, messages, parts, statuses, on, sweep }
 }
@@ -227,5 +230,113 @@ describe("claude-code subagent mirror", () => {
     expect(errored).toMatchObject({ callID: "sub_t1", state: { status: "error", error: "Task interrupted" } })
     expect(h.statuses.at(-1)).toEqual({ sessionID: "ses_child_1", status: { type: "idle" } })
     expect(h.mirror.children.has("task_1")).toBe(false)
+  })
+
+  test("between-turn child frames keep mirroring after the parent turn ends", () => {
+    // Async-launched tasks do most of their work after the main turn's
+    // result; those frames must still land in the child transcript.
+    const h = harness()
+    h.on(taskCall())
+    h.on(mainResult({ tool_use_result: { status: "async_launched" } }))
+    h.sweep()
+    h.on(subAssistant(), false)
+    h.on(subToolResult, false)
+    const assistant = h.messages.find((msg) => msg.role === "assistant" && msg.sessionID === "ses_child_1")
+    expect(assistant).toBeDefined()
+    expect(h.parts.at(-1)).toMatchObject({
+      callID: "sub_t1",
+      sessionID: "ses_child_1",
+      state: { status: "completed", output: "file contents" },
+    })
+  })
+
+  test("a between-turn notification settles the child", () => {
+    const h = harness()
+    h.on(taskCall())
+    h.on(mainResult({ tool_use_result: { status: "async_launched" } }))
+    h.sweep()
+    h.on(subAssistant(), false)
+    h.on(
+      { type: "system", subtype: "task_notification", tool_use_id: "task_1", status: "completed", summary: "done" },
+      false,
+    )
+    expect(h.statuses.at(-1)).toEqual({ sessionID: "ses_child_1", status: { type: "idle" } })
+  })
+
+  test("between-turn main-thread frames author an auto-continuation into the parent", () => {
+    const h = harness()
+    h.on(
+      {
+        type: "assistant",
+        message: { id: "cont_m1", content: [{ type: "text", text: "Here is what the subagents found." }] },
+        parent_tool_use_id: null,
+      },
+      false,
+    )
+    const assistant = h.messages.find((msg) => msg.role === "assistant" && msg.sessionID === "ses_parent")
+    expect(assistant).toMatchObject({ agent: "build", parentID: "msg_user_0" })
+    expect(h.parts.at(-1)).toMatchObject({
+      type: "text",
+      text: "Here is what the subagents found.",
+      sessionID: "ses_parent",
+    })
+  })
+
+  test("in-turn main-thread frames are left to translate, never authored", () => {
+    const h = harness()
+    h.on({
+      type: "assistant",
+      message: { id: "m1", content: [{ type: "text", text: "normal turn text" }] },
+      parent_tool_use_id: null,
+    })
+    expect(h.messages.filter((msg) => msg.sessionID === "ses_parent")).toHaveLength(0)
+  })
+
+  test("a continuation Task call mints the child and a linked task part", () => {
+    const h = harness()
+    h.on(taskCall(), false)
+    expect(h.created).toHaveLength(1)
+    const taskPart = h.parts.find((part) => part.type === "tool" && part.sessionID === "ses_parent")
+    expect(taskPart).toMatchObject({
+      tool: "task",
+      state: {
+        status: "running",
+        metadata: { sessionId: "ses_child_1", parentSessionId: "ses_parent" },
+      },
+    })
+  })
+
+  test("a continuation task part settles on its notification", () => {
+    const h = harness()
+    h.on(taskCall(), false)
+    h.on(mainResult({ tool_use_result: { status: "async_launched" } }), false)
+    const running = h.parts.findLast((part) => part.type === "tool" && part.sessionID === "ses_parent")!
+    expect(running.state).toMatchObject({ status: "running", metadata: { background: true } })
+    h.on(
+      { type: "system", subtype: "task_notification", tool_use_id: "task_1", status: "completed", summary: "found it" },
+      false,
+    )
+    const settled = h.parts.findLast((part) => part.type === "tool" && part.sessionID === "ses_parent")!
+    expect(settled.state).toMatchObject({
+      status: "completed",
+      output: "found it",
+      metadata: { sessionId: "ses_child_1" },
+    })
+  })
+
+  test("a between-turn result closes the continuation; the next one starts fresh", () => {
+    const h = harness()
+    const frame = (id: string, text: string) => ({
+      type: "assistant",
+      message: { id, content: [{ type: "text", text }] },
+      parent_tool_use_id: null,
+    })
+    h.on(frame("cont_m1", "first"), false)
+    h.on({ type: "result", subtype: "success" }, false)
+    h.on(frame("cont_m2", "second"), false)
+    const parentAssistants = new Set(
+      h.messages.filter((msg) => msg.role === "assistant" && msg.sessionID === "ses_parent").map((msg) => msg.id),
+    )
+    expect(parentAssistants.size).toBe(2)
   })
 })

@@ -242,14 +242,12 @@ export function Session() {
         )
       : [],
   )
-  const permissions = createMemo(() => {
-    if (session()?.parentID) return []
-    return children().flatMap((x) => sync.data.permission[x.id] ?? [])
-  })
-  const questions = createMemo(() => {
-    if (session()?.parentID) return []
-    return children().flatMap((x) => sync.data.question[x.id] ?? [])
-  })
+  // children() resolves the family from either side (parent or child view),
+  // so pending approvals surface while watching a subagent too — claude-code
+  // attributes subagent tool permissions to the parent session, and hiding
+  // them here made a permission-blocked subagent look identical to a hang.
+  const permissions = createMemo(() => children().flatMap((x) => sync.data.permission[x.id] ?? []))
+  const questions = createMemo(() => children().flatMap((x) => sync.data.question[x.id] ?? []))
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 

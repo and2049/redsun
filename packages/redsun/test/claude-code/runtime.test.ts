@@ -85,6 +85,35 @@ function recorder(record: Record_): CreateQuery {
   }
 }
 
+/** Replays a fixed frame script per prompt — including frames past the turn's result. */
+function scripted(script: SDKMessage[], record: Record_): CreateQuery {
+  return ({ prompt, options }) => {
+    record.options.push(options)
+    const iterator = (async function* (): AsyncGenerator<SDKMessage, void> {
+      if (typeof prompt === "string") {
+        record.prompts.push(prompt)
+        yield* script
+        return
+      }
+      for await (const message of prompt) {
+        const content = message.message.content
+        record.prompts.push(typeof content === "string" ? content : JSON.stringify(content))
+        yield* script
+      }
+    })()
+    const query: QueryLike = {
+      [Symbol.asyncIterator]: () => iterator,
+      interrupt: async () => {
+        record.interrupts++
+      },
+      setModel: async () => {},
+      setPermissionMode: async () => {},
+      close: () => void iterator.return?.(),
+    }
+    return query
+  }
+}
+
 /**
  * Records prompts but never completes a turn until `interrupt()` arrives;
  * `onDeliver` fires once the prompt has reached the fake process.
@@ -143,20 +172,39 @@ const questionLayer = Layer.succeed(Question.Service, {
   list: () => Effect.succeed([]),
 } as never)
 
-const sessionLayer = Layer.succeed(Session.Service, {
-  create: () => Effect.succeed({ id: "ses_subagent_child" }),
-  touch: () => Effect.void,
-  updateMessage: (msg: unknown) => Effect.succeed(msg),
-  updatePart: (part: unknown) => Effect.succeed(part),
-} as never)
+/** Everything the runtime authored through Session/SessionStatus. */
+interface MirrorSink {
+  messages: Record<string, any>[]
+  parts: Record<string, any>[]
+  statuses: { sessionID: string; status: { type: string } }[]
+}
 
-const sessionStatusLayer = Layer.succeed(SessionStatus.Service, {
-  get: () => Effect.succeed({ type: "idle" }),
-  list: () => Effect.succeed(new Map()),
-  set: () => Effect.void,
-} as never)
+function sessionLayer(sink?: MirrorSink) {
+  return Layer.succeed(Session.Service, {
+    create: () => Effect.succeed({ id: "ses_subagent_child" }),
+    touch: () => Effect.void,
+    updateMessage: (msg: Record<string, any>) =>
+      Effect.sync(() => {
+        sink?.messages.push(structuredClone(msg))
+        return msg
+      }),
+    updatePart: (part: Record<string, any>) =>
+      Effect.sync(() => {
+        sink?.parts.push(structuredClone(part))
+        return part
+      }),
+  } as never)
+}
 
-function runtimeLayer(createQuery: CreateQuery, config: Partial<ConfigV1.Info>) {
+function sessionStatusLayer(sink?: MirrorSink) {
+  return Layer.succeed(SessionStatus.Service, {
+    get: () => Effect.succeed({ type: "idle" }),
+    list: () => Effect.succeed(new Map()),
+    set: (sessionID: string, status: { type: string }) => Effect.sync(() => void sink?.statuses.push({ sessionID, status })),
+  } as never)
+}
+
+function runtimeLayer(createQuery: CreateQuery, config: Partial<ConfigV1.Info>, sink?: MirrorSink) {
   return AppNodeBuilder.build(
     LayerNode.make({
       service: ClaudeCode.Service,
@@ -168,8 +216,8 @@ function runtimeLayer(createQuery: CreateQuery, config: Partial<ConfigV1.Info>) 
       [Storage.node, storageLayer()],
       [Permission.node, permissionLayer],
       [Question.node, questionLayer],
-      [Session.node, sessionLayer],
-      [SessionStatus.node, sessionStatusLayer],
+      [Session.node, sessionLayer(sink)],
+      [SessionStatus.node, sessionStatusLayer(sink)],
     ],
   )
 }
@@ -186,7 +234,7 @@ function request(input: {
   small?: boolean
 }) {
   return {
-    user: {},
+    user: { id: "msg_parent_user" },
     sessionID: input.sessionID ?? "ses_modes",
     parentSessionID: input.parentSessionID,
     model,
@@ -219,6 +267,7 @@ const withRuntime = <A, E, R>(
   }) => Effect.Effect<A, E, R>,
   config: (binary: string) => Partial<ConfigV1.Info> = (binary) => ({ claude_code: { binary_path: binary } }),
   makeQuery: (record: Record_) => CreateQuery = recorder,
+  sink?: MirrorSink,
 ) =>
   Effect.gen(function* () {
     const instance = yield* TestInstance
@@ -229,7 +278,7 @@ const withRuntime = <A, E, R>(
         const claude = yield* ClaudeCode.Service
         yield* Stream.runDrain(claude.stream(request(input))).pipe(Effect.orDie)
       })
-    return yield* body({ record, turn }).pipe(Effect.provide(runtimeLayer(makeQuery(record), config(binary))))
+    return yield* body({ record, turn }).pipe(Effect.provide(runtimeLayer(makeQuery(record), config(binary), sink)))
   })
 
 describe("claude-code delegated runtime", () => {
@@ -474,6 +523,88 @@ describe("claude-code delegated runtime", () => {
       }),
     ),
   )
+
+  it.instance("frames after the turn's result still reach the subagent mirror", () => {
+    // Async-launched subagents: the CLI ends the main turn immediately and
+    // everything else — child frames, the settling notification, the main
+    // thread's auto-continuation — arrives between turn windows. The pump's
+    // observer must deliver all of it to the mirror instead of dropping it.
+    const sink: MirrorSink = { messages: [], parts: [], statuses: [] }
+    const script = [
+      {
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            {
+              type: "tool_use",
+              id: "task_1",
+              name: "Task",
+              input: { description: "Scan", prompt: "go", subagent_type: "Explore" },
+            },
+          ],
+        },
+        parent_tool_use_id: null,
+      },
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "task_1", content: "launched" }] },
+        parent_tool_use_id: null,
+        tool_use_result: { status: "async_launched" },
+      },
+      result(),
+      {
+        type: "assistant",
+        message: { id: "sub_m1", content: [{ type: "text", text: "child working" }] },
+        parent_tool_use_id: "task_1",
+      },
+      { type: "system", subtype: "task_notification", tool_use_id: "task_1", status: "completed", summary: "found it" },
+      {
+        type: "assistant",
+        message: { id: "cont_m1", content: [{ type: "text", text: "the findings" }] },
+        parent_tool_use_id: null,
+      },
+      result(),
+    ] as SDKMessage[]
+    return withRuntime(
+      ({ turn }) =>
+        Effect.gen(function* () {
+          yield* turn({ agent: { name: "build" }, text: "kick off" })
+          // The turn stream ended at the first result; the rest flows through
+          // the pump between turns. Wait for it to land.
+          yield* Effect.promise(async () => {
+            const deadline = Date.now() + 2_000
+            while (Date.now() < deadline) {
+              const idle = sink.statuses.some(
+                (entry) => entry.sessionID === "ses_subagent_child" && entry.status.type === "idle",
+              )
+              const childText = sink.parts.some(
+                (part) => part.sessionID === "ses_subagent_child" && part.text === "child working",
+              )
+              const continuation = sink.parts.some(
+                (part) => part.sessionID === "ses_modes" && part.text === "the findings",
+              )
+              if (idle && childText && continuation) return
+              await new Promise((resolve) => setTimeout(resolve, 10))
+            }
+            throw new Error(
+              `between-turn frames were dropped: ${JSON.stringify({
+                statuses: sink.statuses,
+                parts: sink.parts.map((part) => ({ type: part.type, sessionID: part.sessionID, text: part.text })),
+              })}`,
+            )
+          })
+          // The authored continuation is anchored to the turn's user message.
+          const continuation = sink.messages.find(
+            (msg) => msg.role === "assistant" && msg.sessionID === "ses_modes",
+          )
+          expect(continuation).toMatchObject({ parentID: "msg_parent_user", agent: "build" })
+        }),
+      undefined,
+      (record) => scripted(script, record),
+      sink,
+    )
+  })
 
   it.instance("fiber interruption sends the SDK interrupt and frees the session for the next turn", () => {
     let deliver!: () => void
