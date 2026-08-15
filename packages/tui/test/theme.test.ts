@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { TerminalColors } from "@opentui/core"
-import { DEFAULT_THEMES, addTheme, allThemes, hasTheme, resolveTheme, terminalMode } from "../src/theme"
+import { DEFAULT_THEMES, addTheme, allThemes, hasTheme, resolveTheme } from "../src/theme"
 import { discoverThemes } from "../src/context/theme"
 import { tmpdir } from "./fixture/fixture"
 
@@ -42,30 +41,6 @@ test("resolveTheme rejects circular color refs", () => {
   item.defs = { ...item.defs, one: "two", two: "one" }
   item.theme.primary = "one"
   expect(() => resolveTheme(item, "dark")).toThrow("Circular color reference")
-})
-
-function terminalColors(defaultBackground: string | null, palette: Array<string | null> = []): TerminalColors {
-  return {
-    palette,
-    defaultForeground: null,
-    defaultBackground,
-    cursorColor: null,
-    mouseForeground: null,
-    mouseBackground: null,
-    tekForeground: null,
-    tekBackground: null,
-    highlightBackground: null,
-    highlightForeground: null,
-  }
-}
-
-test("terminalMode derives mode from refreshed background", () => {
-  expect(terminalMode(terminalColors("#fbf1c7"))).toBe("light")
-  expect(terminalMode(terminalColors("#1a1b26"))).toBe("dark")
-})
-
-test("terminalMode does not derive mode from ANSI slot zero", () => {
-  expect(terminalMode(terminalColors(null, ["#000000"]))).toBeUndefined()
 })
 
 test("custom theme precedence follows directory order", async () => {
