@@ -1,6 +1,6 @@
 const EXPAND_HINT = " (click to expand)"
-/** InlineTool row overhead: box paddingLeft (3) + icon column (2). */
-const ROW_PREFIX = 5
+/** InlineTool row overhead: transcript gutters (1 each side) + icon column (2). */
+const ROW_PREFIX = 4
 
 /**
  * Collapse decision for a generic tool row. Foreign tools (e.g. Claude

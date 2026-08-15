@@ -106,6 +106,12 @@ const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 
 export const alwaysSeparate = new WeakSet<BoxRenderable>()
 
+// REDSUN DENSE: Cline-style flush transcript. The scroll area itself carries no
+// horizontal padding, so the user-prompt highlight bleeds to both terminal
+// edges; every transcript row instead indents itself by this one-column gutter,
+// which lines assistant text, thinking and tool rows up with the `❯`.
+export const TRANSCRIPT_GUTTER = 1
+
 type RetryAction = Extract<SessionStatus, { type: "retry" }>["action"]
 
 function goUpsellKeys(action: RetryAction) {
@@ -1204,7 +1210,7 @@ export function Session() {
         <box flexDirection="row" flexGrow={1} minHeight={0}>
           {/* REDSUN DENSE: no bottom padding — the workspace row and the command
               bar close out the dock, so a blank row here just floats the prompt. */}
-          <box flexGrow={1} minHeight={0} paddingLeft={2} paddingRight={2} gap={1}>
+          <box flexGrow={1} minHeight={0} gap={1}>
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}
@@ -1259,7 +1265,8 @@ export function Session() {
                               <box
                                 paddingTop={1}
                                 paddingBottom={1}
-                                paddingLeft={2}
+                                paddingLeft={1}
+                                paddingRight={1}
                                 backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
                               >
                                 <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
@@ -1322,7 +1329,8 @@ export function Session() {
                   )}
                 </For>
               </scrollbox>
-              <box flexShrink={0}>
+              {/* The dock keeps its own inset — only the transcript goes flush. */}
+              <box flexShrink={0} paddingLeft={1} paddingRight={1}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt
                     request={permissions()[0]}
@@ -1340,7 +1348,7 @@ export function Session() {
                 </Show>
                 <Show when={goal()?.condition}>
                   {(condition) => (
-                    <box paddingLeft={1} paddingRight={1} paddingBottom={1} flexShrink={0}>
+                    <box paddingBottom={1} flexShrink={0}>
                       <text fg={theme.warning} wrapMode="word">
                         Goal: {condition()}
                       </text>
@@ -1542,7 +1550,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
         )}
       </Index>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
-        <box paddingTop={1} paddingLeft={3}>
+        <box paddingTop={1} paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
           <text fg={theme.text}>
             {childShortcut()}
             <span style={{ fg: theme.textMuted }}> view subagents</span>
@@ -1571,7 +1579,8 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           border={["left"]}
           paddingTop={1}
           paddingBottom={1}
-          paddingLeft={2}
+          paddingLeft={1}
+          paddingRight={1}
           marginTop={1}
           backgroundColor={theme.backgroundPanel}
           customBorderChars={SplitBorder.customBorderChars}
@@ -1582,7 +1591,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Show>
       <Show when={goalVerdict()}>
         {(verdict) => (
-          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1}>
+          <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER} marginTop={1}>
             <text
               fg={
                 verdict().ok
@@ -1609,7 +1618,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           bar, and the duration is not worth a transcript row. Aborted turns
           keep a marker because that state has no other home. */}
       <Show when={props.message.error?.name === "MessageAbortedError"}>
-        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3}>
+        <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
           <text marginTop={1} fg={theme.textMuted}>
             ⊘ interrupted
           </text>
@@ -1695,7 +1704,8 @@ function ToolRun(props: { parts: ToolPart[]; message: AssistantMessage }) {
         fallback={<ToolPart last={false} part={props.parts[0]} message={props.message} />}
       >
         <box
-          paddingLeft={3}
+          paddingLeft={TRANSCRIPT_GUTTER}
+          paddingRight={TRANSCRIPT_GUTTER}
           ref={(el: BoxRenderable) => {
             setPreLayoutSiblingMargin(el, (previous) =>
               previous instanceof BoxRenderable && (previous.height > 1 || alwaysSeparate.has(previous)) ? 1 : 0,
@@ -1708,11 +1718,18 @@ function ToolRun(props: { parts: ToolPart[]; message: AssistantMessage }) {
             setExpanded((value) => !value)
           }}
         >
-          <text fg={hover() ? theme.text : theme.textMuted}>
-            {expanded() ? "− " : ""}
-            {summary()}
-            {expanded() ? "" : " (click to expand)"}
-          </text>
+          {/* A collapsed run has no per-tool icon of its own, so it borrows the
+              same accented marker + name treatment as a single tool row: `*`
+              in the icon column, the summary accented, the hint left grey. */}
+          <box flexDirection="row">
+            <text width={INLINE_TOOL_ICON_WIDTH} fg={theme.accent}>
+              {expanded() ? "−" : "*"}
+            </text>
+            <text flexGrow={1} fg={hover() ? theme.text : theme.textMuted}>
+              <span style={{ fg: theme.accent, bold: true }}>{summary()}</span>
+              {expanded() ? "" : " (click to expand)"}
+            </text>
+          </box>
         </box>
         <Show when={expanded()}>
           <For each={props.parts}>{(part) => <ToolPart last={false} part={part} message={props.message} />}</For>
@@ -1760,7 +1777,8 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     <Show when={content()}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-        paddingLeft={3}
+        paddingLeft={TRANSCRIPT_GUTTER}
+        paddingRight={TRANSCRIPT_GUTTER}
         marginTop={1}
         flexDirection="column"
         flexShrink={0}
@@ -1826,7 +1844,8 @@ function CompactionSummary(props: { parts: Part[] }) {
     <Show when={content()}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-        paddingLeft={3}
+        paddingLeft={TRANSCRIPT_GUTTER}
+        paddingRight={TRANSCRIPT_GUTTER}
         marginTop={1}
         flexDirection="column"
         flexShrink={0}
@@ -1861,7 +1880,8 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
       <box
         id={props.part.id}
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
-        paddingLeft={3}
+        paddingLeft={TRANSCRIPT_GUTTER}
+        paddingRight={TRANSCRIPT_GUTTER}
         marginTop={1}
         flexShrink={0}
       >
@@ -1977,28 +1997,36 @@ function GenericTool(props: ToolProps) {
   const [expanded, setExpanded] = createSignal(false)
 
   const output = createMemo(() => (ctx.showGenericToolOutput() && props.output ? props.output.trim() : ""))
-  const detail = createMemo(() => `${Locale.titlecase(props.tool)} ${input(props.input)}`.trim())
+  const name = createMemo(() => Locale.titlecase(props.tool))
+  const args = createMemo(() => input(props.input))
+  const detail = createMemo(() => `${name()} ${args()}`.trim())
 
   // Same disclosure as thinking: long calls collapse to a one-row teaser by
   // default, and clicking reveals the full args and output.
   const collapse = createMemo(() => toolTeaser({ detail: detail(), output: output(), width: ctx.width }))
+  // The name renders separately (accented), so the teaser only truncates the
+  // args — with the name's width reserved so the row still fits.
+  const teaser = createMemo(
+    () => toolTeaser({ detail: args(), output: output(), width: ctx.width - name().length - 1 }).teaser,
+  )
 
   return (
     <Switch>
       <Match when={!collapse().collapsible}>
-        <InlineTool icon="→" pending="Writing command..." complete={true} part={props.part}>
-          {detail()}
+        <InlineTool icon="→" name={name()} pending="Writing command..." complete={true} part={props.part}>
+          {args()}
         </InlineTool>
       </Match>
       <Match when={!expanded()}>
         <InlineTool
           icon="→"
+          name={name()}
           pending="Writing command..."
           complete={true}
           part={props.part}
           onClick={() => setExpanded(true)}
         >
-          {collapse().teaser} (click to expand)
+          {teaser()} (click to expand)
         </InlineTool>
       </Match>
       <Match when={output()}>
@@ -2012,12 +2040,13 @@ function GenericTool(props: ToolProps) {
       <Match when={true}>
         <InlineTool
           icon="→"
+          name={name()}
           pending="Writing command..."
           complete={true}
           part={props.part}
           onClick={() => setExpanded(false)}
         >
-          {detail()} (click to collapse)
+          {args()} (click to collapse)
         </InlineTool>
       </Match>
     </Switch>
@@ -2027,6 +2056,7 @@ function GenericTool(props: ToolProps) {
 function InlineTool(props: {
   icon: string
   iconColor?: RGBA
+  name?: string
   color?: RGBA
   complete: unknown
   pending: string
@@ -2070,11 +2100,23 @@ function InlineTool(props: {
     if (props.complete) return theme.textMuted
     return theme.text
   })
+  // Cline-style accent: the icon and the tool name carry the theme accent so a
+  // tool row reads as a call, not as more grey prose. State colours still win —
+  // a pending permission, a failure or an explicit override paints the row.
+  const accent = createMemo(() => {
+    if (props.color) return props.color
+    if (permission()) return theme.warning
+    if (failed()) return theme.error
+    if (denied()) return theme.textMuted
+    return theme.accent
+  })
 
   return (
     <InlineToolRow
       icon={props.icon}
-      iconColor={props.iconColor}
+      iconColor={props.iconColor ?? accent()}
+      name={props.name}
+      nameColor={accent()}
       color={fg()}
       errorColor={theme.error}
       failed={failed()}
@@ -2102,9 +2144,23 @@ function InlineTool(props: {
   )
 }
 
+// The tool name that leads an inline row, in bold accent. Cline renders calls
+// as `toolName(args)` with the name accented and the arguments left grey; we
+// keep redsun's `Name args` shape and colour only the name, so the row reads as
+// a call instead of another line of muted prose.
+function ToolName(props: { name?: string; color?: RGBA }) {
+  return (
+    <Show when={props.name}>
+      <span style={{ fg: props.color, bold: true }}>{props.name}</span>{" "}
+    </Show>
+  )
+}
+
 export function InlineToolRow(props: {
   icon: string
   iconColor?: RGBA
+  name?: string
+  nameColor?: RGBA
   color?: RGBA
   errorColor?: RGBA
   failed?: boolean
@@ -2123,7 +2179,8 @@ export function InlineToolRow(props: {
 }) {
   return (
     <box
-      paddingLeft={3}
+      paddingLeft={TRANSCRIPT_GUTTER}
+      paddingRight={TRANSCRIPT_GUTTER}
       onMouseOver={props.onMouseOver}
       onMouseOut={props.onMouseOut}
       onMouseUp={props.onMouseUp}
@@ -2139,7 +2196,10 @@ export function InlineToolRow(props: {
     >
       <Switch>
         <Match when={props.spinner}>
-          <Spinner color={props.color} children={props.children} />
+          <Spinner color={props.color}>
+            <ToolName name={props.name} color={props.failed ? props.errorColor : (props.nameColor ?? props.color)} />
+            {props.children}
+          </Spinner>
         </Match>
         <Match when={true}>
           <Show
@@ -2167,6 +2227,10 @@ export function InlineToolRow(props: {
                 fg={props.failed ? props.errorColor : props.color}
                 attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
               >
+                <ToolName
+                  name={props.name}
+                  color={props.failed ? props.errorColor : (props.nameColor ?? props.color)}
+                />
                 {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
               </text>
             </box>
@@ -2197,7 +2261,8 @@ function BlockTool(props: {
     <box
       ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
       border={["left"]}
-      paddingLeft={2}
+      paddingLeft={1}
+      paddingRight={1}
       marginTop={1}
       backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
       customBorderChars={SplitBorder.customBorderChars}
@@ -2326,11 +2391,12 @@ function Write(props: ToolProps) {
       <Match when={true}>
         <InlineTool
           icon="←"
+          name="Write"
           pending="Preparing write..."
           complete={stringValue(props.input.filePath)}
           part={props.part}
         >
-          Write {pathFormatter.format(stringValue(props.input.filePath))}
+          {pathFormatter.format(stringValue(props.input.filePath))}
         </InlineTool>
       </Match>
     </Switch>
@@ -2340,8 +2406,14 @@ function Write(props: ToolProps) {
 function Glob(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Finding files..." complete={stringValue(props.input.pattern)} part={props.part}>
-      Glob "{stringValue(props.input.pattern)}"{" "}
+    <InlineTool
+      icon="✱"
+      name="Glob"
+      pending="Finding files..."
+      complete={stringValue(props.input.pattern)}
+      part={props.part}
+    >
+      "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.count)}>
         ({numberValue(props.metadata.count)} {numberValue(props.metadata.count) === 1 ? "match" : "matches"})
@@ -2365,16 +2437,17 @@ function Read(props: ToolProps) {
     <>
       <InlineTool
         icon="→"
+        name="Read"
         pending="Reading file..."
         complete={stringValue(props.input.filePath)}
         spinner={isRunning()}
         part={props.part}
       >
-        Read {pathFormatter.format(stringValue(props.input.filePath))} {input(props.input, ["filePath"])}
+        {pathFormatter.format(stringValue(props.input.filePath))} {input(props.input, ["filePath"])}
       </InlineTool>
       <For each={loaded()}>
         {(filepath) => (
-          <box paddingLeft={3}>
+          <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
             <text paddingLeft={3} fg={theme.textMuted}>
               ↳ Loaded {pathFormatter.format(filepath)}
             </text>
@@ -2388,8 +2461,14 @@ function Read(props: ToolProps) {
 function Grep(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Searching content..." complete={stringValue(props.input.pattern)} part={props.part}>
-      Grep "{stringValue(props.input.pattern)}"{" "}
+    <InlineTool
+      icon="✱"
+      name="Grep"
+      pending="Searching content..."
+      complete={stringValue(props.input.pattern)}
+      part={props.part}
+    >
+      "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.matches)}>
         ({numberValue(props.metadata.matches)} {numberValue(props.metadata.matches) === 1 ? "match" : "matches"})
@@ -2400,16 +2479,28 @@ function Grep(props: ToolProps) {
 
 function WebFetch(props: ToolProps) {
   return (
-    <InlineTool icon="%" pending="Fetching from the web..." complete={stringValue(props.input.url)} part={props.part}>
-      WebFetch {stringValue(props.input.url)}
+    <InlineTool
+      icon="%"
+      name="WebFetch"
+      pending="Fetching from the web..."
+      complete={stringValue(props.input.url)}
+      part={props.part}
+    >
+      {stringValue(props.input.url)}
     </InlineTool>
   )
 }
 
 function WebSearch(props: ToolProps) {
   return (
-    <InlineTool icon="◈" pending="Searching web..." complete={stringValue(props.input.query)} part={props.part}>
-      {webSearchProviderLabel(props.metadata.provider)} "{stringValue(props.input.query)}"{" "}
+    <InlineTool
+      icon="◈"
+      name={webSearchProviderLabel(props.metadata.provider)}
+      pending="Searching web..."
+      complete={stringValue(props.input.query)}
+      part={props.part}
+    >
+      "{stringValue(props.input.query)}"{" "}
       <Show when={numberValue(props.metadata.numResults)}>({numberValue(props.metadata.numResults)} results)</Show>
     </InlineTool>
   )
@@ -2553,19 +2644,22 @@ function Execute(props: ToolProps) {
   const hasRuntimeError = createMemo(() => props.metadata.error === true)
   const outputPreview = createMemo(() => collapseToolOutput(output(), 4, 4 * Math.max(20, ctx.width - 6)).output)
   const showOutput = createMemo(() => output() && hasRuntimeError())
+  // The `execute` name leads the row (accented by InlineTool); the child calls
+  // hang under it on their own lines.
   const content = createMemo(() => {
-    const lines = ["execute"]
+    const lines: string[] = []
     for (const call of calls()) {
       const args = input(call.input ?? {})
       lines.push(`↳ ${call.tool}${args ? ` ${args}` : ""}${call.status === "error" ? " (failed)" : ""}`)
     }
-    return lines.join("\n")
+    return lines.length ? "\n" + lines.join("\n") : ""
   })
 
   return (
     <>
       <InlineTool
         icon={hasRuntimeError() ? "✗" : props.part.state.status === "completed" ? "✓" : "│"}
+        name="execute"
         color={hasRuntimeError() ? theme.error : undefined}
         spinner={isLoading()}
         pending="execute"
@@ -2575,7 +2669,7 @@ function Execute(props: ToolProps) {
         {content()}
       </InlineTool>
       <Show when={showOutput()}>
-        <box paddingLeft={3}>
+        <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
           <For each={outputPreview().split("\n")}>
             {(line, index) => (
               <text paddingLeft={3} fg={theme.error}>
@@ -2635,8 +2729,14 @@ function Edit(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="←" pending="Preparing edit..." complete={stringValue(props.input.filePath)} part={props.part}>
-          Edit {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
+        <InlineTool
+          icon="←"
+          name="Edit"
+          pending="Preparing edit..."
+          complete={stringValue(props.input.filePath)}
+          part={props.part}
+        >
+          {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
     </Switch>
@@ -2711,6 +2811,8 @@ function ApplyPatch(props: ToolProps) {
         </For>
       </Match>
       <Match when={true}>
+        {/* Only ever renders in the failed state, where `failure` replaces the
+            children — so a separate accented name would just duplicate it. */}
         <InlineTool icon="%" pending="Preparing patch..." failure="Patch failed" complete={false} part={props.part}>
           Patch
         </InlineTool>
@@ -2783,8 +2885,14 @@ function Question(props: ToolProps) {
 
 function Skill(props: ToolProps) {
   return (
-    <InlineTool icon="→" pending="Loading skill..." complete={stringValue(props.input.name)} part={props.part}>
-      Skill "{stringValue(props.input.name)}"
+    <InlineTool
+      icon="→"
+      name="Skill"
+      pending="Loading skill..."
+      complete={stringValue(props.input.name)}
+      part={props.part}
+    >
+      "{stringValue(props.input.name)}"
     </InlineTool>
   )
 }

@@ -21,8 +21,8 @@ describe("toolTeaser", () => {
     const result = toolTeaser({ detail, output: "", width: 80 })
     expect(result.collapsible).toBe(true)
     expect(result.teaser.endsWith("…")).toBe(true)
-    // One row: prefix (5) + teaser + " (click to expand)" (18) fits width 80.
-    expect(result.teaser.length).toBeLessThanOrEqual(80 - 5 - 18 + 1)
+    // One row: prefix (4) + teaser + " (click to expand)" (18) fits width 80.
+    expect(result.teaser.length).toBeLessThanOrEqual(80 - 4 - 18 + 1)
   })
 
   test("any output makes the call collapsible and joins the teaser", () => {
