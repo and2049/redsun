@@ -3851,6 +3851,11 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      workerModel?: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -3871,6 +3876,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "workerModel" },
             { in: "body", key: "parts" },
           ],
         },
@@ -4204,6 +4210,11 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      workerModel?: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -4224,6 +4235,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "workerModel" },
             { in: "body", key: "parts" },
           ],
         },
@@ -4257,6 +4269,11 @@ export class Session2 extends HeyApiClient {
       arguments?: string
       command?: string
       variant?: string
+      workerModel?: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
       parts?: Array<{
         id?: string
         type: "file"
@@ -4282,6 +4299,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "arguments" },
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
+            { in: "body", key: "workerModel" },
             { in: "body", key: "parts" },
           ],
         },

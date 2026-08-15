@@ -946,6 +946,55 @@ it.instance("legacy prompt emits message events without session.next events", ()
   }),
 )
 
+it.instance("prompt persists the worker model onto the session and keeps it when omitted", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      noReply: true,
+      workerModel: { providerID: ref.providerID, modelID: ref.modelID, variant: "low" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    expect((yield* sessions.get(chat.id)).workerModel).toEqual({
+      id: ref.modelID,
+      providerID: ref.providerID,
+      variant: "low",
+    })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      noReply: true,
+      parts: [{ type: "text", text: "again" }],
+    })
+    expect((yield* sessions.get(chat.id)).workerModel).toEqual({
+      id: ref.modelID,
+      providerID: ref.providerID,
+      variant: "low",
+    })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      noReply: true,
+      workerModel: { providerID: ref.providerID, modelID: ref.modelID },
+      parts: [{ type: "text", text: "reset variant" }],
+    })
+    expect((yield* sessions.get(chat.id)).workerModel).toEqual({
+      id: ref.modelID,
+      providerID: ref.providerID,
+      variant: "default",
+    })
+  }),
+)
+
 it.instance("loop surfaces content-filter finishes as session errors", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

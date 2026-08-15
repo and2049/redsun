@@ -153,12 +153,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           modelID: string
         }[]
         variant: Record<string, string | undefined>
+        worker: {
+          current?: {
+            providerID: string
+            modelID: string
+            variant?: string
+          }
+          last?: {
+            providerID: string
+            modelID: string
+            variant?: string
+          }
+        }
       }>({
         ready: false,
         model: {},
         recent: [],
         favorite: [],
         variant: {},
+        worker: {},
       })
 
       const filePath = path.join(paths.state, "model.json")
@@ -176,6 +189,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           recent: modelStore.recent,
           favorite: modelStore.favorite,
           variant: modelStore.variant,
+          worker: modelStore.worker.last,
         })
       }
 
@@ -187,6 +201,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (Array.isArray(value.favorite)) setModelStore("favorite", value.favorite)
           if (typeof value.variant === "object" && value.variant !== null)
             setModelStore("variant", value.variant as Record<string, string | undefined>)
+          const worker = value.worker as Record<string, unknown> | undefined
+          if (worker && typeof worker === "object" && typeof worker.providerID === "string" && typeof worker.modelID === "string")
+            setModelStore("worker", "last", {
+              providerID: worker.providerID,
+              modelID: worker.modelID,
+              variant: typeof worker.variant === "string" ? worker.variant : undefined,
+            })
         })
         .catch(() => {})
         .finally(() => {
@@ -242,6 +263,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             fallbackModel,
           ) ?? undefined
         )
+      })
+
+      // Worker model resolution: in-memory session value, then the globally
+      // remembered selection, then any explicit task_router config, then the
+      // worker agent's own configured model.
+      const workerModel = createMemo(() => {
+        const selection = [modelStore.worker.current, modelStore.worker.last].find((item) => item && isModelValid(item))
+        if (selection) return { ...selection }
+        const route = sync.data.config.task_router?.worker
+        if (route) {
+          const { providerID, modelID } = parseModel(route)
+          const variant = sync.data.config.task_router?.worker_variant
+          return { providerID, modelID, variant: variant === "default" ? undefined : variant }
+        }
+        const fallback = sync.data.agent.find((item) => item.name === "worker")?.model
+        if (fallback) return { providerID: fallback.providerID, modelID: fallback.modelID, variant: undefined }
+        return undefined
       })
 
       return {
@@ -358,6 +396,38 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             )
             save()
           })
+        },
+        worker: {
+          current: workerModel,
+          set(model: { providerID: string; modelID: string; variant?: string }) {
+            batch(() => {
+              if (!isModelValid(model)) {
+                toast.show({
+                  message: `Model ${model.providerID}/${model.modelID} is not valid`,
+                  variant: "warning",
+                  duration: 3000,
+                })
+                return
+              }
+              const next = { providerID: model.providerID, modelID: model.modelID, variant: model.variant }
+              setModelStore("worker", "current", next)
+              setModelStore("worker", "last", next)
+              save()
+            })
+          },
+          setVariant(variant: string | undefined) {
+            const resolved = workerModel()
+            if (!resolved) return
+            const next = { providerID: resolved.providerID, modelID: resolved.modelID, variant }
+            batch(() => {
+              setModelStore("worker", "current", next)
+              setModelStore("worker", "last", next)
+              save()
+            })
+          },
+          restore(model: { providerID: string; modelID: string; variant?: string } | undefined) {
+            setModelStore("worker", "current", model)
+          },
         },
         variant: {
           selected() {

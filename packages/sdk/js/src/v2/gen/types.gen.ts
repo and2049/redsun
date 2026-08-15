@@ -207,6 +207,11 @@ export type Session = {
     providerID: string
     variant?: string
   }
+  workerModel?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
   version: string
   metadata?: {
     [key: string]: unknown
@@ -2344,6 +2349,11 @@ export type GlobalSession = {
   title: string
   agent?: string
   model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  workerModel?: {
     id: string
     providerID: string
     variant?: string
@@ -10352,6 +10362,11 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    workerModel?: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -10699,6 +10714,11 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    workerModel?: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -10741,6 +10761,11 @@ export type SessionCommandData = {
     arguments: string
     command: string
     variant?: string
+    workerModel?: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
     parts?: Array<{
       id?: string
       type: "file"

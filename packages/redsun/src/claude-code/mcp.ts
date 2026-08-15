@@ -21,7 +21,7 @@ export interface TaskToolAccess {
 
 const DESCRIPTION = [
   "Delegate a scoped task to one of redsun's configured subagents (worker, explore, general).",
-  "Workers run on the model configured by redsun's task_router — use this to route implementation or research",
+  "Workers run on the worker model configured in redsun — use this to route implementation or research",
   "work to non-Anthropic models the host has configured. Returns the subagent's final report as",
   '<task id="..." state="...">; pass a prior task_id to resume the same subagent session.',
 ].join(" ")

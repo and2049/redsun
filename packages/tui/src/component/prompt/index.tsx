@@ -162,18 +162,14 @@ export function Prompt(props: PromptProps) {
   const route = useRoute()
   const project = useProject()
   const sync = useSync()
+  const workerResolved = createMemo(() => local.model.worker.current())
   const workerRoute = createMemo(() => {
-    if (sync.data.config.task_router?.worker) return sync.data.config.task_router.worker
-    const model = sync.data.agent.find((agent) => agent.name === "worker")?.model
-    return model ? `${model.providerID}/${model.modelID}` : undefined
+    const worker = workerResolved()
+    return worker ? `${worker.providerID}/${worker.modelID}` : undefined
   })
   const workerDisplay = createMemo(() => workerModelDisplay(workerRoute(), sync.data.provider))
   const workerVariant = createMemo(() =>
-    workerVariantDisplay(
-      sync.data.config.task_router?.worker,
-      sync.data.config.task_router?.worker_variant,
-      sync.data.provider,
-    ),
+    workerVariantDisplay(workerRoute(), workerResolved()?.variant, sync.data.provider),
   )
   const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
@@ -313,12 +309,31 @@ export function Prompt(props: PromptProps) {
 
   // Initialize agent/model/variant from last user message when session changes
   let syncedSessionID: string | undefined
+  let workerSyncedSessionID: string | undefined
   createEffect(() => {
     const sessionID = props.sessionID
     const msg = lastUserMessage()
 
     if (sessionID !== syncedSessionID) {
-      if (!sessionID || !msg) return
+      if (!sessionID) return
+
+      // Restore the worker model this session last used; sessions without one
+      // fall back to the globally remembered selection.
+      if (sessionID !== workerSyncedSessionID) {
+        workerSyncedSessionID = sessionID
+        const session = sync.session.get(sessionID)
+        local.model.worker.restore(
+          session?.workerModel
+            ? {
+                providerID: session.workerModel.providerID,
+                modelID: session.workerModel.id,
+                variant: session.workerModel.variant === "default" ? undefined : session.workerModel.variant,
+              }
+            : undefined,
+        )
+      }
+
+      if (!msg) return
 
       syncedSessionID = sessionID
 
@@ -990,6 +1005,10 @@ export function Prompt(props: PromptProps) {
     }
 
     const variant = local.model.variant.current()
+    const worker = agent.name === "compose" ? workerResolved() : undefined
+    const workerModel = worker
+      ? { providerID: worker.providerID, modelID: worker.modelID, variant: worker.variant }
+      : undefined
     let sessionID = props.sessionID
     let finishMoveProgress = false
     if (sessionID == null) {
@@ -1090,6 +1109,7 @@ export function Prompt(props: PromptProps) {
         agent: agent.name,
         model: `${selectedModel.providerID}/${selectedModel.modelID}`,
         variant,
+        workerModel,
         parts: nonTextParts.filter((x) => x.type === "file"),
       })
     } else {
@@ -1102,6 +1122,7 @@ export function Prompt(props: PromptProps) {
             agent: agent.name,
             model: selectedModel,
             variant,
+            workerModel,
             parts: [
               ...editorParts,
               {

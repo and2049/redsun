@@ -29,7 +29,7 @@ export const TASK_TOOL = "mcp__redsun__task"
 const COMPOSE = [
   `[redsun compose mode] Delegate implementation and verification work with the \`${TASK_TOOL}\` tool:`,
   `use subagent_type "worker" for scoped implementation and "explore" for read-only discovery (the tool`,
-  "description lists every available type). Workers run on whichever model redsun's task_router assigns,",
+  "description lists every available type). Workers run on whichever model redsun's worker routing assigns,",
   "which is often a different provider entirely — that routing is the point of compose mode. Reuse a",
   "task_id to continue work on the same unit. Your built-in Task tool is blocked in this session because",
   "it would run subagents inside Claude Code and bypass that routing.",

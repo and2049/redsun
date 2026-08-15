@@ -19,7 +19,7 @@ describe("claude-code mode brief", () => {
     expect(brief).toContain(ClaudeCodeModes.TASK_TOOL)
     expect(brief).toContain("worker")
     expect(brief).toContain("explore")
-    expect(brief).toContain("task_router")
+    expect(brief).toContain("worker routing")
     expect(brief).toContain("built-in Task tool is blocked")
   })
 
