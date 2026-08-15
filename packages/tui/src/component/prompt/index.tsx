@@ -228,6 +228,7 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const hasRightContent = createMemo(() => Boolean(props.right) || editorContextLabelState() !== "none")
+  const [metaLabelsWidth, setMetaLabelsWidth] = createSignal(0)
 
   function promptModelWarning() {
     toast.show({
@@ -1324,6 +1325,47 @@ export function Prompt(props: PromptProps) {
     return !!current
   })
 
+  // REDSUN DENSE: the meta row is a flex row of separate <text> items, so an
+  // overflow doesn't truncate — every item shrinks and wraps, which both shards
+  // the labels into 3-character columns and pushes the row to two lines, and a
+  // two-line row shifts the whole centred home column up. Terminal width can't
+  // predict it either: home caps the prompt at prompt.max_width and the session
+  // route shares its row with the sidebar. So measure the left group (which
+  // flexGrows into whatever the right group leaves, so its width is exactly the
+  // budget) and drop the provider names — the least load-bearing labels — when
+  // the full line won't fit. Compose is the case that needs it: two
+  // model + provider pairs on one row.
+  const metaItems = createMemo(() => {
+    const agent = local.agent.current()
+    if (!agent) return []
+    const items = [store.mode === "shell" ? "Shell" : Locale.titlecase(agent.name)]
+    if (store.mode !== "normal") return items
+    items.push("·", local.model.parsed().model, currentProviderLabel())
+    if (showVariant()) items.push("·", local.model.variant.current() ?? "")
+    if (agent.name === "compose" && dimensions().width >= 90) {
+      items.push("·")
+      const worker = workerDisplay()
+      if (!worker) return items.concat("worker model not configured")
+      items.push(worker.model, worker.provider)
+      const variant = workerVariant()
+      if (variant) items.push("·", variant)
+    }
+    return items
+  })
+  const showProviderLabels = createMemo(() => {
+    // The new-session page runs the prompt at prompt.max_width, narrow enough
+    // that compose's two model + provider pairs truncate more often than not,
+    // so the providers come off there unconditionally. A session prompt has the
+    // full row and keeps them until they genuinely don't fit.
+    if (props.sessionID == null) return false
+    // Yoga floors an unmeasured box at 1; treat that as "not measured yet".
+    const available = metaLabelsWidth()
+    if (available <= 1) return true
+    const items = metaItems()
+    // gap={1} sits between every rendered item
+    return items.reduce((sum, item) => sum + item.length, items.length - 1) <= available
+  })
+
   const agentMetaAlpha = createFadeIn(() => !!local.agent.current(), animationsEnabled)
   const modelMetaAlpha = createFadeIn(() => !!local.agent.current() && store.mode === "normal", animationsEnabled)
   const variantMetaAlpha = createFadeIn(
@@ -1513,10 +1555,20 @@ const next = transition(vim.mode, e)
             <box
               flexDirection="row"
               flexShrink={0}
+              height={1}
+              overflow="hidden"
               gap={1}
               justifyContent="space-between"
             >
-              <box flexDirection="row" gap={1}>
+              <box
+                ref={(el: BoxRenderable) => {
+                  // Read before Yoga runs so the width matches the frame we lay out.
+                  el.onLifecyclePass = () => setMetaLabelsWidth(el.width)
+                }}
+                flexDirection="row"
+                flexGrow={1}
+                gap={1}
+              >
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
                     <>
@@ -1532,7 +1584,9 @@ const next = transition(vim.mode, e)
                           >
                             {local.model.parsed().model}
                           </text>
-                          <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+                          <Show when={showProviderLabels()}>
+                            <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
+                          </Show>
                           <Show when={showVariant()}>
                             <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
                             <text>
@@ -1557,7 +1611,9 @@ const next = transition(vim.mode, e)
                                   >
                                     {worker().model}
                                   </text>
-                                  <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{worker().provider}</text>
+                                  <Show when={showProviderLabels()}>
+                                    <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{worker().provider}</text>
+                                  </Show>
                                   <Show when={workerVariant()}>
                                     <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
                                     <text>
@@ -1577,7 +1633,9 @@ const next = transition(vim.mode, e)
                 </Show>
               </box>
               <Show when={hasRightContent() || status().type !== "idle"}>
-                <box flexDirection="row" gap={1} alignItems="center">
+                {/* Never shrinks, so the left box's measured width is the true
+                    budget the meta labels have to fit into. */}
+                <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
                   <Show when={status().type !== "idle"}>
                     <box flexDirection="row" gap={1} alignItems="center">
                       <Show when={animationsEnabled()} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
