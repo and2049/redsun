@@ -73,13 +73,167 @@ describe("claude-code translate", () => {
       "tool-call",
       "tool-result",
     ])
-    expect(events[3]).toMatchObject({ id: "tu_1", name: "Bash", input: { command: "ls" }, providerExecuted: true })
+    expect(events[3]).toMatchObject({ id: "tu_1", name: "bash", input: { command: "ls" }, providerExecuted: true })
+    // Bash maps to the native shell tool; metadata.output drives the TUI's
+    // shell output block, so the result is lifted to the structured shape.
     expect(events[4]).toMatchObject({
       id: "tu_1",
-      name: "Bash",
+      name: "bash",
       providerExecuted: true,
-      result: { type: "text", value: "file.txt" },
+      result: { type: "json", value: { output: "file.txt", metadata: { output: "file.txt" } } },
     })
+  })
+
+  test("built-in tools map onto native redsun names and input keys", () => {
+    const { events } = run([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "tu_e",
+              name: "Edit",
+              input: { file_path: "a.ts", old_string: "x", new_string: "y", replace_all: true },
+            },
+            { type: "tool_use", id: "tu_r", name: "Read", input: { file_path: "b.ts", offset: 5, limit: 60 } },
+            { type: "tool_use", id: "tu_g", name: "Grep", input: { pattern: "foo", glob: "*.ts" } },
+          ],
+        },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events[0]).toMatchObject({
+      name: "edit",
+      input: { filePath: "a.ts", oldString: "x", newString: "y", replaceAll: true },
+    })
+    expect(events[1]).toMatchObject({ name: "read", input: { filePath: "b.ts", offset: 5, limit: 60 } })
+    expect(events[2]).toMatchObject({ name: "grep", input: { pattern: "foo", include: "*.ts" } })
+  })
+
+  test("TodoWrite completes with metadata.todos so the TUI checklist renders", () => {
+    const todos = [{ content: "a", status: "pending", activeForm: "doing a" }]
+    const { events } = run([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_td", name: "TodoWrite", input: { todos } }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_td", content: "ok" }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events[0]).toMatchObject({ name: "todowrite", input: { todos } })
+    expect(events[1]).toMatchObject({
+      name: "todowrite",
+      result: { type: "json", value: { output: "ok", metadata: { todos } } },
+    })
+  })
+
+  test("Edit completes with metadata.diff built from the result's structuredPatch", () => {
+    const { events } = run([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "tu_e", name: "Edit", input: { file_path: "a.ts", old_string: "b", new_string: "B" } },
+          ],
+        },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_e", content: "Edited a.ts" }] },
+        parent_tool_use_id: null,
+        tool_use_result: {
+          filePath: "a.ts",
+          structuredPatch: [{ oldStart: 1, oldLines: 3, newStart: 1, newLines: 3, lines: [" a", "-b", "+B", " c"] }],
+        },
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events[1]).toMatchObject({
+      name: "edit",
+      result: {
+        type: "json",
+        value: {
+          output: "Edited a.ts",
+          metadata: {
+            // Identical to the native edit tool's trimDiff(createTwoFilesPatch(...)) output.
+            diff: [
+              "Index: a.ts",
+              "===================================================================",
+              "--- a.ts",
+              "+++ a.ts",
+              "@@ -1,3 +1,3 @@",
+              " a",
+              "-b",
+              "+B",
+              " c",
+              "",
+            ].join("\n"),
+          },
+        },
+      },
+    })
+  })
+
+  test("an Edit result whose tool_use_result targets another file stays a plain text result", () => {
+    const { events } = run([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_e2", name: "Edit", input: { file_path: "a.ts" } }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_e2", content: "Edited" }] },
+        parent_tool_use_id: null,
+        tool_use_result: {
+          filePath: "other.ts",
+          structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-x", "+y"] }],
+        },
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events[1]).toMatchObject({ name: "edit", result: { type: "text", value: "Edited" } })
+  })
+
+  test("unmapped tools keep their raw name, input, and text result", () => {
+    const { events } = run([
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "tu_n", name: "NotebookEdit", input: { notebook_path: "n.ipynb" } }],
+        },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_n", content: "done" }] },
+        parent_tool_use_id: null,
+        uuid: "u",
+        session_id: sid,
+      } as never,
+    ])
+    expect(events[0]).toMatchObject({ name: "NotebookEdit", input: { notebook_path: "n.ipynb" } })
+    expect(events[1]).toMatchObject({ name: "NotebookEdit", result: { type: "text", value: "done" } })
   })
 
   test("error tool results map to error result values", () => {

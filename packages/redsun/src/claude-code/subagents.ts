@@ -3,6 +3,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Effect } from "effect"
 import { SessionID, MessageID, PartID } from "@/session/schema"
 import type { SessionStatus } from "@/session/status"
+import { nativeResultMetadata, nativeToolInput, nativeToolName } from "./native-tools"
 
 /**
  * Mirrors Claude Code's built-in Task subagents into real redsun child
@@ -254,7 +255,7 @@ export function make(ops: Ops): Mirror {
         case "tool_use": {
           if (typeof block.id !== "string" || typeof block.name !== "string") break
           if (transcript.toolParts.has(block.id)) break
-          const info = toolInfo?.(block) ?? { tool: block.name }
+          const info = toolInfo?.(block) ?? { tool: nativeToolName(block.name) }
           const part: SessionV1.ToolPart = yield* ops.updatePart({
             id: PartID.ascending(),
             messageID: assistant.info.id,
@@ -264,7 +265,7 @@ export function make(ops: Ops): Mirror {
             tool: info.tool,
             state: {
               status: "running",
-              input: asRecord(block.input) ?? {},
+              input: nativeToolInput(block.name, asRecord(block.input) ?? {}),
               ...(info.metadata ? { metadata: info.metadata } : {}),
               time: { start: Date.now() },
             },
@@ -319,21 +320,26 @@ export function make(ops: Ops): Mirror {
         transcript.toolParts.set(block.tool_use_id, updated)
         continue
       }
+      const output = flattenText(block.content)
       const updated: SessionV1.ToolPart = yield* ops.updatePart({
         ...part,
         state: block.is_error
           ? {
               status: "error",
               input: part.state.input,
-              error: flattenText(block.content) || "Tool failed",
+              error: output || "Tool failed",
               time: { start: part.state.time.start, end: Date.now() },
             }
           : {
               status: "completed",
               input: part.state.input,
-              output: flattenText(block.content),
+              output,
               title: part.state.title ?? part.tool,
-              metadata: part.state.metadata ?? {},
+              metadata: {
+                ...(part.state.metadata ?? {}),
+                ...(nativeResultMetadata(part.tool, asRecord(part.state.input) ?? {}, output, message.tool_use_result) ??
+                  {}),
+              },
               time: { start: part.state.time.start, end: Date.now() },
             },
       })
@@ -394,7 +400,7 @@ export function make(ops: Ops): Mirror {
 
   /** Continuation Task blocks author redsun's `task` part with the child link. */
   const continuationToolInfo: ToolInfo = (block) => {
-    if (!SUBAGENT_TOOLS.has(block.name)) return { tool: block.name }
+    if (!SUBAGENT_TOOLS.has(block.name)) return { tool: nativeToolName(block.name) }
     const child = typeof block.id === "string" ? children.get(block.id) : undefined
     return { tool: "task", ...(child ? { metadata: taskChildMetadata(child) } : {}) }
   }
