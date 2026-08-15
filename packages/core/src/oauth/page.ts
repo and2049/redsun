@@ -143,7 +143,7 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;")
 }
 
-// Curated subset of OC-2 tokens (packages/ui/src/styles/theme.css). Default is
+// Curated subset of OC-2 tokens from the upstream opencode web theme. Default is
 // light; dark applies via prefers-color-scheme. The [data-theme] selectors let a
 // host force a scheme without changing the default.
 const LIGHT_VARS = `
