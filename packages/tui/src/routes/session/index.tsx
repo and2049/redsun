@@ -90,6 +90,7 @@ import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
+import { conversationTargetIds, resolveJump } from "../../util/message-jump"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
@@ -368,7 +369,7 @@ export function Session() {
 
   useKeyboard((event: KeyEvent) => {
     if (vim.mode !== "normal") return
-    if (event.ctrl || event.meta) return
+    if (event.ctrl || event.meta || event.option) return
     if (dialog.stack.length > 0) return
     if (!scroll || scroll.isDestroyed) return
     const name = event.name
@@ -378,20 +379,18 @@ export function Session() {
       vim.clearTemp()
       vim.setMode("insert")
     }
-    if (name === "j") {
+    if (name === "j" || name === "k") {
       event.preventDefault()
-      scroll.scrollBy(1)
-      endTemp()
-      return
-    }
-    if (name === "k") {
-      event.preventDefault()
-      scroll.scrollBy(-1)
+      const direction = name === "j" ? "down" : "up"
+      const count = vim.takeCount()
+      if (event.shift) jumpMessages(direction, count)
+      else scroll.scrollBy(direction === "down" ? count : -count)
       endTemp()
       return
     }
     if (name === "g") {
       event.preventDefault()
+      vim.clearCount()
       scroll.scrollTo(event.shift ? scroll.scrollHeight : 0)
       endTemp()
       return
@@ -418,50 +417,28 @@ export function Session() {
     })
   })
 
-  // Helper: Find next visible message boundary in direction
-  const findNextVisibleMessage = (direction: "next" | "prev"): string | null => {
+  // Content-space offsets of conversation-turn renderables (user message boxes
+  // and first assistant text-part boxes), sorted top to bottom. Targets whose
+  // box has not mounted yet (streaming) are skipped.
+  const targetOffsets = (): number[] => {
+    const ids = conversationTargetIds(messagesBeforeRevert(), (id) => sync.data.part[id])
     const children = scroll.getChildren()
-    const messagesList = messages()
-    const scrollTop = scroll.y
-
-    // Get visible messages sorted by position, filtering for valid non-synthetic, non-ignored content
-    const visibleMessages = children
-      .filter((c) => {
-        if (!c.id) return false
-        const message = messagesList.find((m) => m.id === c.id)
-        if (!message) return false
-
-        // Check if message has valid non-synthetic, non-ignored text parts
-        const parts = sync.data.part[message.id]
-        if (!parts || !Array.isArray(parts)) return false
-
-        return parts.some((part) => part && part.type === "text" && !part.synthetic && !part.ignored)
-      })
-      .sort((a, b) => a.y - b.y)
-
-    if (visibleMessages.length === 0) return null
-
-    if (direction === "next") {
-      // Find first message below current position
-      return visibleMessages.find((c) => c.y > scrollTop + 10)?.id ?? null
+    const out: number[] = []
+    for (const id of ids) {
+      const child = children.find((c) => c.id === id)
+      if (!child) continue
+      out.push(scroll.scrollTop + child.y - scroll.viewport.y)
     }
-    // Find last message above current position
-    return [...visibleMessages].reverse().find((c) => c.y < scrollTop - 10)?.id ?? null
+    return out.sort((a, b) => a - b)
   }
 
-  // Helper: Scroll to message in direction or fallback to page scroll
-  const scrollToMessage = (direction: "next" | "prev", dialog: ReturnType<typeof useDialog>) => {
-    const targetID = findNextVisibleMessage(direction)
-
-    if (!targetID) {
-      scroll.scrollBy(direction === "next" ? scroll.height : -scroll.height)
-      dialog.clear()
+  const jumpMessages = (direction: "down" | "up", count: number) => {
+    const dest = resolveJump(targetOffsets(), scroll.scrollTop, direction, count)
+    if (dest === undefined) {
+      scroll.scrollTo(direction === "down" ? scroll.scrollHeight : 0)
       return
     }
-
-    const child = scroll.getChildren().find((c) => c.id === targetID)
-    if (child) scroll.scrollBy(child.y - scroll.y - 1)
-    dialog.clear()
+    scroll.scrollTo(Math.max(0, dest - 1))
   }
 
   function toBottom() {
@@ -908,14 +885,20 @@ export function Session() {
       value: "session.message.next",
       category: "Session",
       hidden: true,
-      run: () => scrollToMessage("next", dialog),
+      run: () => {
+        jumpMessages("down", 1)
+        dialog.clear()
+      },
     },
     {
       title: "Previous message",
       value: "session.message.previous",
       category: "Session",
       hidden: true,
-      run: () => scrollToMessage("prev", dialog),
+      run: () => {
+        jumpMessages("up", 1)
+        dialog.clear()
+      },
     },
     {
       title: "Copy last assistant message",
@@ -1875,7 +1858,13 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const { theme, syntax } = useTheme()
   return (
     <Show when={props.part.text.trim()}>
-      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
+      <box
+        id={props.part.id}
+        ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+        paddingLeft={3}
+        marginTop={1}
+        flexShrink={0}
+      >
         <markdown
           syntaxStyle={syntax()}
           streaming={true}

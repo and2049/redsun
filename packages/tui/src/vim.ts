@@ -74,3 +74,12 @@ export function transition(mode: VimMode, event: Pick<KeyEvent, "name" | "ctrl" 
   if (mode === "normal" && event.name === ":") return "command"
   if (mode === "command" && (event.name === "escape" || event.name === "return")) return "normal"
 }
+
+export const COUNT_MAX = 999
+
+// null = no pending count. A leading 0 stays inert so 0 can keep its literal
+// meaning; it only appends to an existing count (vim's 10j, not 0j).
+export function pushCount(current: number | null, digit: number): number | null {
+  if (digit === 0 && current === null) return null
+  return Math.min(COUNT_MAX, (current ?? 0) * 10 + digit)
+}

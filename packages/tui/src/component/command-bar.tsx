@@ -217,13 +217,22 @@ export function CommandBar() {
                 </text>
               )}
             </Show>
-            <Show when={usageLabel()}>
-              {(value) => (
-                <text fg={theme.textMuted} wrapMode="none">
-                  {value()}
-                </text>
-              )}
-            </Show>
+            <box flexDirection="row" flexShrink={0}>
+              <Show when={vim.pendingCount()}>
+                {(count) => (
+                  <text fg={theme.text} wrapMode="none">
+                    {count()}{" "}
+                  </text>
+                )}
+              </Show>
+              <Show when={usageLabel()}>
+                {(value) => (
+                  <text fg={theme.textMuted} wrapMode="none">
+                    {value()}
+                  </text>
+                )}
+              </Show>
+            </box>
           </box>
         </Match>
       </Switch>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { resolveCommand, transition } from "../src/vim"
+import { COUNT_MAX, pushCount, resolveCommand, transition } from "../src/vim"
 
 describe("vim prompt mode", () => {
   test("supports insert, normal, and command transitions", () => {
@@ -13,5 +13,14 @@ describe("vim prompt mode", () => {
     expect(resolveCommand("new")).toBe("session.new")
     expect(resolveCommand("q")).toBe("app.exit")
     expect(resolveCommand("session.compact")).toBe("session.compact")
+  })
+
+  test("accumulates count prefixes", () => {
+    expect(pushCount(null, 5)).toBe(5)
+    expect(pushCount(5, 0)).toBe(50)
+    expect(pushCount(1, 2)).toBe(12)
+    expect(pushCount(null, 0)).toBeNull()
+    expect(pushCount(999, 9)).toBe(COUNT_MAX)
+    expect(pushCount(120, 7)).toBe(COUNT_MAX)
   })
 })

@@ -1,7 +1,7 @@
 import { createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { createSimpleContext } from "./helper"
-import { transition, type VimMode } from "../vim"
+import { pushCount, transition, type VimMode } from "../vim"
 import { useOpencodeKeymap } from "../keymap"
 import { useDialog } from "../ui/dialog"
 import type { KeyEvent } from "@opentui/core"
@@ -16,6 +16,10 @@ type VimContext = {
   tempRemaining: () => number | null
   enterTempNormal: (ms?: number) => void
   clearTemp: () => void
+  pendingCount: () => number | null
+  pushCountDigit: (digit: number) => void
+  takeCount: () => number
+  clearCount: () => void
 }
 
 export const { use: useVim, provider: VimProvider } = createSimpleContext({
@@ -23,9 +27,20 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
   init: () => {
     const [mode, setMode] = createSignal<VimMode>("insert")
     const [tempRemaining, setTempRemaining] = createSignal<number | null>(null)
+    const [pendingCount, setPendingCount] = createSignal<number | null>(null)
     let tempEndAt = 0
     let tempTimer: ReturnType<typeof setTimeout> | null = null
     let tempTick: ReturnType<typeof setInterval> | null = null
+
+    function clearCount() {
+      setPendingCount(null)
+    }
+
+    function takeCount() {
+      const count = pendingCount() ?? 1
+      setPendingCount(null)
+      return count
+    }
 
     function clearTemp() {
       if (tempTimer) {
@@ -42,6 +57,7 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
 
     function enterTempNormal(ms: number = TEMP_DURATION_MS) {
       clearTemp()
+      clearCount()
       setMode("normal")
       tempEndAt = Date.now() + ms
       setTempRemaining(Math.ceil(ms / 1000))
@@ -51,12 +67,14 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       }, TICK_INTERVAL_MS)
       tempTimer = setTimeout(() => {
         clearTemp()
+        clearCount()
         setMode("insert")
       }, ms)
     }
 
     function requestMode(next: VimMode) {
       clearTemp()
+      clearCount()
       setMode(next)
     }
 
@@ -69,6 +87,10 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       tempRemaining,
       enterTempNormal,
       clearTemp,
+      pendingCount,
+      pushCountDigit: (digit: number) => setPendingCount((current) => pushCount(current, digit)),
+      takeCount,
+      clearCount,
     } satisfies VimContext
   },
 })
@@ -125,6 +147,7 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
     if (vim.mode === "normal" && vim.tempRemaining() != null && event.name === "escape") {
       event.preventDefault()
       vim.clearTemp()
+      vim.clearCount()
       vim.setMode("insert")
       return
     }
@@ -135,6 +158,20 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
       return
     }
     if (vim.mode !== "normal") return
+    // Count prefix: digits accumulate for the next motion (5j, 12k, 3J). A
+    // digit never ends temp-normal; only the consuming motion does.
+    if (/^[0-9]$/.test(event.name)) {
+      if (event.option || event.shift) return
+      if (event.name === "0" && vim.pendingCount() === null) return
+      event.preventDefault()
+      vim.pushCountDigit(Number(event.name))
+      return
+    }
+    if (event.name === "escape" && vim.pendingCount() !== null && dialog.stack.length === 0) {
+      event.preventDefault()
+      vim.clearCount()
+      return
+    }
     if (event.shift) return
     const command = NORMAL_LETTER_COMMANDS[event.name]
     if (!command) return
@@ -142,6 +179,7 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
     event.preventDefault()
     const wasTemp = vim.tempRemaining() != null
     keymap.dispatchCommand(command)
+    vim.clearCount()
     if (wasTemp) {
       vim.clearTemp()
       vim.setMode("insert")
