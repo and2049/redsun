@@ -1,207 +1,58 @@
 {
   "$schema": "https://opencode.ai/theme.json",
+  "mode": "dark",
   "theme": {
     "logoGradientStart": "#c6dba4",
     "logoGradientEnd": "#A7C080",
-    "primary": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "secondary": {
-      "dark": "#7fbbb3",
-      "light": "#3a94c5"
-    },
-    "accent": {
-      "dark": "#d699b6",
-      "light": "#df69ba"
-    },
-    "error": {
-      "dark": "#e67e80",
-      "light": "#f85552"
-    },
-    "warning": {
-      "dark": "#e69875",
-      "light": "#f57d26"
-    },
-    "success": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "info": {
-      "dark": "#83c092",
-      "light": "#35a77c"
-    },
-    "text": {
-      "dark": "#d3c6aa",
-      "light": "#5c6a72"
-    },
-    "textMuted": {
-      "dark": "#7a8478",
-      "light": "#a6b0a0"
-    },
-    "background": {
-      "dark": "#2d353b",
-      "light": "#fdf6e3"
-    },
-    "backgroundPanel": {
-      "dark": "#333c43",
-      "light": "#efebd4"
-    },
-    "backgroundElement": {
-      "dark": "#343f44",
-      "light": "#f4f0d9"
-    },
-    "border": {
-      "dark": "#859289",
-      "light": "#939f91"
-    },
-    "borderActive": {
-      "dark": "#9da9a0",
-      "light": "#829181"
-    },
-    "borderSubtle": {
-      "dark": "#7a8478",
-      "light": "#a6b0a0"
-    },
-    "diffAdded": {
-      "dark": "#4fd6be",
-      "light": "#1e725c"
-    },
-    "diffRemoved": {
-      "dark": "#c53b53",
-      "light": "#c53b53"
-    },
-    "diffContext": {
-      "dark": "#828bb8",
-      "light": "#7086b5"
-    },
-    "diffHunkHeader": {
-      "dark": "#828bb8",
-      "light": "#7086b5"
-    },
-    "diffHighlightAdded": {
-      "dark": "#b8db87",
-      "light": "#4db380"
-    },
-    "diffHighlightRemoved": {
-      "dark": "#e26a75",
-      "light": "#f52a65"
-    },
-    "diffAddedBg": {
-      "dark": "#20303b",
-      "light": "#d5e5d5"
-    },
-    "diffRemovedBg": {
-      "dark": "#37222c",
-      "light": "#f7d8db"
-    },
-    "diffContextBg": {
-      "dark": "#333c43",
-      "light": "#efebd4"
-    },
-    "diffLineNumber": {
-      "dark": "#343f44",
-      "light": "#f4f0d9"
-    },
-    "diffAddedLineNumberBg": {
-      "dark": "#1b2b34",
-      "light": "#c5d5c5"
-    },
-    "diffRemovedLineNumberBg": {
-      "dark": "#2d1f26",
-      "light": "#e7c8cb"
-    },
-    "markdownText": {
-      "dark": "#d3c6aa",
-      "light": "#5c6a72"
-    },
-    "markdownHeading": {
-      "dark": "#d699b6",
-      "light": "#df69ba"
-    },
-    "markdownLink": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "markdownLinkText": {
-      "dark": "#83c092",
-      "light": "#35a77c"
-    },
-    "markdownCode": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "markdownBlockQuote": {
-      "dark": "#dbbc7f",
-      "light": "#dfa000"
-    },
-    "markdownEmph": {
-      "dark": "#dbbc7f",
-      "light": "#dfa000"
-    },
-    "markdownStrong": {
-      "dark": "#e69875",
-      "light": "#f57d26"
-    },
-    "markdownHorizontalRule": {
-      "dark": "#7a8478",
-      "light": "#a6b0a0"
-    },
-    "markdownListItem": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "markdownListEnumeration": {
-      "dark": "#83c092",
-      "light": "#35a77c"
-    },
-    "markdownImage": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "markdownImageText": {
-      "dark": "#83c092",
-      "light": "#35a77c"
-    },
-    "markdownCodeBlock": {
-      "dark": "#d3c6aa",
-      "light": "#5c6a72"
-    },
-    "syntaxComment": {
-      "dark": "#7a8478",
-      "light": "#a6b0a0"
-    },
-    "syntaxKeyword": {
-      "dark": "#d699b6",
-      "light": "#df69ba"
-    },
-    "syntaxFunction": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "syntaxVariable": {
-      "dark": "#e67e80",
-      "light": "#f85552"
-    },
-    "syntaxString": {
-      "dark": "#a7c080",
-      "light": "#8da101"
-    },
-    "syntaxNumber": {
-      "dark": "#e69875",
-      "light": "#f57d26"
-    },
-    "syntaxType": {
-      "dark": "#dbbc7f",
-      "light": "#dfa000"
-    },
-    "syntaxOperator": {
-      "dark": "#83c092",
-      "light": "#35a77c"
-    },
-    "syntaxPunctuation": {
-      "dark": "#d3c6aa",
-      "light": "#5c6a72"
-    }
+    "primary": "#a7c080",
+    "secondary": "#7fbbb3",
+    "accent": "#d699b6",
+    "error": "#e67e80",
+    "warning": "#e69875",
+    "success": "#a7c080",
+    "info": "#83c092",
+    "text": "#d3c6aa",
+    "textMuted": "#7a8478",
+    "background": "#2d353b",
+    "backgroundPanel": "#333c43",
+    "backgroundElement": "#343f44",
+    "border": "#859289",
+    "borderActive": "#9da9a0",
+    "borderSubtle": "#7a8478",
+    "diffAdded": "#4fd6be",
+    "diffRemoved": "#c53b53",
+    "diffContext": "#828bb8",
+    "diffHunkHeader": "#828bb8",
+    "diffHighlightAdded": "#b8db87",
+    "diffHighlightRemoved": "#e26a75",
+    "diffAddedBg": "#20303b",
+    "diffRemovedBg": "#37222c",
+    "diffContextBg": "#333c43",
+    "diffLineNumber": "#343f44",
+    "diffAddedLineNumberBg": "#1b2b34",
+    "diffRemovedLineNumberBg": "#2d1f26",
+    "markdownText": "#d3c6aa",
+    "markdownHeading": "#d699b6",
+    "markdownLink": "#a7c080",
+    "markdownLinkText": "#83c092",
+    "markdownCode": "#a7c080",
+    "markdownBlockQuote": "#dbbc7f",
+    "markdownEmph": "#dbbc7f",
+    "markdownStrong": "#e69875",
+    "markdownHorizontalRule": "#7a8478",
+    "markdownListItem": "#a7c080",
+    "markdownListEnumeration": "#83c092",
+    "markdownImage": "#a7c080",
+    "markdownImageText": "#83c092",
+    "markdownCodeBlock": "#d3c6aa",
+    "syntaxComment": "#7a8478",
+    "syntaxKeyword": "#d699b6",
+    "syntaxFunction": "#a7c080",
+    "syntaxVariable": "#e67e80",
+    "syntaxString": "#a7c080",
+    "syntaxNumber": "#e69875",
+    "syntaxType": "#dbbc7f",
+    "syntaxOperator": "#83c092",
+    "syntaxPunctuation": "#d3c6aa"
   }
 }

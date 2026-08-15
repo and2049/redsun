@@ -543,7 +543,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     const item = action.item
     const active = createMemo(() => isActionFocused(item))
     const disabled = createMemo(() => isActionDisabled(item))
-    const fg = selectedForeground(theme)
+    // Recompute per render so live theme previews (e.g. the theme picker) stay in contrast.
+    const fg = createMemo(() => selectedForeground(theme))
     return (
       <box
         flexDirection="row"
@@ -551,12 +552,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         onMouseUp={() => triggerAction(item)}
       >
         <text
-          fg={disabled() ? theme.textMuted : active() ? fg : theme.text}
+          fg={disabled() ? theme.textMuted : active() ? fg() : theme.text}
           attributes={active() ? TextAttributes.BOLD : undefined}
         >
           {item.title}
         </text>
-        <text fg={disabled() ? theme.textMuted : active() ? fg : theme.textMuted}> {item.label}</text>
+        <text fg={disabled() ? theme.textMuted : active() ? fg() : theme.textMuted}> {item.label}</text>
       </box>
     )
   }
@@ -750,9 +751,10 @@ function Option(props: {
   onMouseOver?: () => void
 }) {
   const { theme } = useTheme()
-  const fg = selectedForeground(theme)
+  // Recompute per render so live theme previews (e.g. the theme picker) stay in contrast.
+  const fg = createMemo(() => selectedForeground(theme))
   const text = createMemo(() => {
-    if (props.active && !props.muted) return fg
+    if (props.active && !props.muted) return fg()
     if (props.muted && (props.active || props.current)) return theme.textMuted
     if (props.current) return theme.primary
     return theme.text
@@ -785,12 +787,12 @@ function Option(props: {
               ? Locale.truncateLeft(props.title, props.titleWidth ?? 61)
               : Locale.truncate(props.title, props.titleWidth ?? 61))}
         <Show when={props.description}>
-          <span style={{ fg: props.active && !props.muted ? fg : theme.textMuted }}> {props.description}</span>
+          <span style={{ fg: props.active && !props.muted ? fg() : theme.textMuted }}> {props.description}</span>
         </Show>
       </text>
       <Show when={props.footer}>
         <box flexShrink={0}>
-          <text fg={props.active && !props.muted ? fg : theme.textMuted}>{props.footer}</text>
+          <text fg={props.active && !props.muted ? fg() : theme.textMuted}>{props.footer}</text>
         </box>
       </Show>
     </>

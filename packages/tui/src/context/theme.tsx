@@ -1,4 +1,4 @@
-import { CliRenderEvents, SyntaxStyle } from "@opentui/core"
+import { SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import {
   DEFAULT_THEMES,
@@ -12,6 +12,7 @@ import {
   selectedForeground,
   setCustomThemes,
   subscribeThemes,
+  themeMode,
   tint,
   upsertTheme,
   type ThemeJson,
@@ -67,28 +68,48 @@ export {
   isTheme,
   resolveTheme,
   selectedForeground,
+  themeMode,
   tint,
   upsertTheme,
   type Theme,
   type ThemeJson,
+  type ThemeMode,
   type SyntaxStyleOverrides,
 } from "../theme"
 
 const THEME_REFRESH_DELAYS = [250, 1000] as const
 
+// Themes used to be dark/light pairs selected by a separate mode setting.
+// Maps a saved pre-split name to its standalone dark and light successors.
+const LEGACY_THEMES: Record<string, { dark: string; light: string } | undefined> = {
+  cursor: { dark: "dusk", light: "dawn" },
+  everforest: { dark: "everforest", light: "glade" },
+  gruvbox: { dark: "gruvbox", light: "parchment" },
+  kanagawa: { dark: "kanagawa", light: "lotus" },
+  rosepine: { dark: "rosepine", light: "petal" },
+}
+
+// Interim names from when split themes carried -dark/-light suffixes.
+const RENAMED_THEMES: Record<string, string | undefined> = {
+  "everforest-dark": "everforest",
+  "everforest-light": "glade",
+  "gruvbox-dark": "gruvbox",
+  "gruvbox-light": "parchment",
+  "kanagawa-dark": "kanagawa",
+  "kanagawa-light": "lotus",
+  "rosepine-dark": "rosepine",
+  "rosepine-light": "petal",
+}
+
 type State = {
   themes: Record<string, ThemeJson>
-  mode: "dark" | "light"
-  lock: "dark" | "light" | undefined
   active: string
   ready: boolean
 }
 
 const [store, setStore] = createStore<State>({
   themes: allThemes(),
-  mode: "dark",
-  lock: undefined,
-  active: "cursor",
+  active: "dusk",
   ready: false,
 })
 
@@ -106,22 +127,28 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       return
     }
 
+    // Resolve which half of a legacy dark/light pair a saved name should map to
+    // using the mode that was in effect before modes were removed.
+    const legacyMode =
+      pick(kv.get("theme_mode_lock")) ?? pick(kv.get("theme_mode")) ?? pick(renderer.themeMode) ?? props.mode
+    const migrate = (name: string) => RENAMED_THEMES[name] ?? LEGACY_THEMES[name]?.[legacyMode] ?? name
+
     setStore(
       produce((draft) => {
-        const lock = pick(kv.get("theme_mode_lock"))
-        const mode = lock ?? pick(renderer.themeMode) ?? props.mode
-        if (!lock && pick(kv.get("theme_mode")) !== undefined) kv.set("theme_mode", undefined)
-        draft.mode = mode
-        draft.lock = lock
-        const active = config.theme ?? kv.get("theme", "cursor")
-        draft.active = typeof active === "string" ? active : "cursor"
+        if (kv.get("theme_mode") !== undefined) kv.set("theme_mode", undefined)
+        if (kv.get("theme_mode_lock") !== undefined) kv.set("theme_mode_lock", undefined)
+        const saved = kv.get("theme")
+        const stored = typeof saved === "string" ? saved : undefined
+        const fallback = legacyMode === "light" ? "dawn" : "dusk"
+        if (stored && !config.theme && migrate(stored) !== stored) kv.set("theme", migrate(stored))
+        draft.active = migrate(config.theme ?? stored ?? fallback)
         draft.ready = false
       }),
     )
 
     createEffect(() => {
       const theme = config.theme
-      if (theme) setStore("active", theme)
+      if (theme) setStore("active", migrate(theme))
     })
 
     function syncCustomThemes() {
@@ -135,7 +162,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             }, {}),
           )
         })
-        .catch(() => setStore("active", "cursor"))
+        .catch(() => setStore("active", "dusk"))
     }
 
     onMount(() => {
@@ -143,31 +170,6 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         setStore("ready", true)
       })
     })
-
-    function apply(mode: "dark" | "light") {
-      if (store.lock !== undefined) kv.set("theme_mode", mode)
-      if (store.mode === mode) return
-      setStore("mode", mode)
-    }
-
-    function pin(mode: "dark" | "light" = store.mode) {
-      setStore("lock", mode)
-      kv.set("theme_mode_lock", mode)
-      apply(mode)
-    }
-
-    function free() {
-      setStore("lock", undefined)
-      kv.set("theme_mode_lock", undefined)
-      kv.set("theme_mode", undefined)
-      apply(renderer.themeMode ?? store.mode)
-    }
-
-    const handle = (mode: "dark" | "light") => {
-      if (store.lock) return
-      apply(mode)
-    }
-    renderer.on(CliRenderEvents.THEME_MODE, handle)
 
     let themeRefreshTimeouts: ReturnType<typeof setTimeout>[] = []
     const refresh = () => {
@@ -182,24 +184,25 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     unsubscribeRefresh = themes.subscribeRefresh?.(refresh)
 
     onCleanup(() => {
-      renderer.off(CliRenderEvents.THEME_MODE, handle)
       unsubscribeRefresh?.()
       for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
       themeRefreshTimeouts.length = 0
     })
 
-    const values = createMemo(() => {
+    const current = createMemo(() => {
       const active = store.themes[store.active]
-      if (active) return resolveTheme(active, store.mode)
+      if (active) return active
 
       const saved = kv.get("theme")
       if (typeof saved === "string") {
-        const theme = store.themes[saved]
-        if (theme) return resolveTheme(theme, store.mode)
+        const theme = store.themes[migrate(saved)]
+        if (theme) return theme
       }
 
-      return resolveTheme(store.themes.cursor, store.mode)
+      return store.themes.dusk
     })
+
+    const values = createMemo(() => resolveTheme(current()))
 
     createEffect(() => renderer.setBackgroundColor(values().background))
 
@@ -220,11 +223,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       has: hasTheme,
       syntax,
       subtleSyntax,
-      mode: () => store.mode,
-      locked: () => store.lock !== undefined,
-      lock: () => pin(store.mode),
-      unlock: free,
-      setMode: pin,
+      mode: () => themeMode(current()),
       set(theme: string) {
         if (!hasTheme(theme)) return false
         setStore("active", theme)

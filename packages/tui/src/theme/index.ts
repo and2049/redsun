@@ -1,9 +1,14 @@
 import { SyntaxStyle, RGBA } from "@opentui/core"
-import cursor from "./assets/cursor.json" with { type: "json" }
+import dusk from "./assets/dusk.json" with { type: "json" }
+import dawn from "./assets/dawn.json" with { type: "json" }
 import everforest from "./assets/everforest.json" with { type: "json" }
+import glade from "./assets/glade.json" with { type: "json" }
 import gruvbox from "./assets/gruvbox.json" with { type: "json" }
+import parchment from "./assets/parchment.json" with { type: "json" }
 import kanagawa from "./assets/kanagawa.json" with { type: "json" }
+import lotus from "./assets/lotus.json" with { type: "json" }
 import rosepine from "./assets/rosepine.json" with { type: "json" }
+import petal from "./assets/petal.json" with { type: "json" }
 
 export type Theme = {
   readonly logoGradientStart: RGBA
@@ -86,13 +91,16 @@ export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
 
 type HexColor = `#${string}`
 type RefName = string
+/** Legacy value shape from before themes were split into separate dark and light files. */
 type Variant = {
   dark: HexColor | RefName
   light: HexColor | RefName
 }
 type ColorValue = HexColor | RefName | Variant | RGBA
+export type ThemeMode = "dark" | "light"
 export type ThemeJson = {
   $schema?: string
+  mode?: ThemeMode
   defs?: Record<string, HexColor | RefName>
   theme: Omit<
     Record<ThemeColor, ColorValue>,
@@ -107,11 +115,16 @@ export type ThemeJson = {
 }
 
 export const DEFAULT_THEMES: Record<string, ThemeJson> = {
-  cursor,
-  everforest,
-  gruvbox,
-  kanagawa,
-  rosepine,
+  dusk: dusk as ThemeJson,
+  dawn: dawn as ThemeJson,
+  everforest: everforest as ThemeJson,
+  glade: glade as ThemeJson,
+  gruvbox: gruvbox as ThemeJson,
+  parchment: parchment as ThemeJson,
+  kanagawa: kanagawa as ThemeJson,
+  lotus: lotus as ThemeJson,
+  rosepine: rosepine as ThemeJson,
+  petal: petal as ThemeJson,
 }
 
 const pluginThemes: Record<string, ThemeJson> = {}
@@ -178,7 +191,9 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
-export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
+export function resolveTheme(theme: ThemeJson) {
+  // Legacy {dark, light} variant values resolve against the theme's own mode.
+  const mode = theme.mode ?? "dark"
   const defs = theme.defs ?? {}
   function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
     if (c instanceof RGBA) return c
@@ -239,6 +254,33 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
     _hasSelectedListItemText: hasSelectedListItemText,
     thinkingOpacity,
   } as Theme
+}
+
+export function themeMode(theme: ThemeJson): ThemeMode {
+  if (theme.mode === "dark" || theme.mode === "light") return theme.mode
+  // Themes without a declared mode (older custom themes) are classified by
+  // background luminance; unresolvable backgrounds fall back to dark.
+  const defs = theme.defs ?? {}
+  let value: unknown = theme.theme?.background
+  const seen = new Set<string>()
+  while (typeof value === "string" && !value.startsWith("#")) {
+    if (seen.has(value)) return "dark"
+    seen.add(value)
+    value = defs[value] ?? theme.theme[value as ThemeColor]
+  }
+  if (typeof value === "object" && value !== null && !(value instanceof RGBA)) {
+    // Legacy variant values act as their dark half everywhere else, so classify as dark.
+    return "dark"
+  }
+  const rgba = (() => {
+    if (value instanceof RGBA) return value
+    if (typeof value === "number") return ansiToRgba(value)
+    if (typeof value === "string" && value.startsWith("#")) return RGBA.fromHex(value)
+    return
+  })()
+  if (!rgba || rgba.a === 0) return "dark"
+  const luminance = 0.299 * rgba.r + 0.587 * rgba.g + 0.114 * rgba.b
+  return luminance > 0.5 ? "light" : "dark"
 }
 
 function ansiToRgba(code: number): RGBA {
