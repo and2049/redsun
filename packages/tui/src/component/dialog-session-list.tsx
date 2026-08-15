@@ -1,3 +1,4 @@
+import type { RGBA } from "@opentui/core"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect } from "../ui/dialog-select"
 import { useRoute } from "../context/route"
@@ -240,7 +241,7 @@ export function DialogSessionList() {
       const gutter = isWorking
         ? () => <Spinner />
         : slot !== undefined
-          ? () => <text fg={theme.accent}>{slot}</text>
+          ? (fg?: RGBA) => <text fg={fg ?? theme.accent}>{slot}</text>
           : undefined
       return {
         title: isDeleting ? `Press ${deleteHint()} again to confirm` : x.title,
