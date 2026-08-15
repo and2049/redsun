@@ -72,8 +72,6 @@ export const Definitions = {
 
   editor_open: keybind("none", "Open external editor"),
   theme_list: keybind("none", "List available themes"),
-  theme_switch_mode: keybind("none", "Switch between light and dark theme mode"),
-  theme_mode_lock: keybind("none", "Lock or unlock theme mode"),
   sidebar_toggle: keybind("none", "Toggle sidebar"),
   scrollbar_toggle: keybind("none", "Toggle session scrollbar"),
   status_view: keybind("none", "View status"),
@@ -239,6 +237,8 @@ export const Definitions = {
 
 type KeybindName = keyof typeof Definitions
 const KeybindNames = new Set<string>(Object.keys(Definitions))
+// Keybinds that existed in older releases; ignored instead of rejected so stale configs keep working.
+const RemovedKeybinds = new Set<string>(["theme_switch_mode", "theme_mode_lock"])
 
 export const KeybindOverrides = Schema.Struct(
   Object.fromEntries(
@@ -283,8 +283,6 @@ export const CommandMap = {
   diff_help: "diff.help",
   editor_open: "prompt.editor",
   theme_list: "theme.switch",
-  theme_switch_mode: "theme.switch_mode",
-  theme_mode_lock: "theme.mode.lock",
   sidebar_toggle: "session.sidebar.toggle",
   scrollbar_toggle: "session.toggle.scrollbar",
   status_view: "opencode.status",
@@ -460,7 +458,7 @@ export function parse(keybinds: KeybindOverrides): Keybinds {
 export const Keybinds = { parse }
 
 export function unknownKeys(input: object) {
-  return Object.keys(input).filter((key) => !KeybindNames.has(key))
+  return Object.keys(input).filter((key) => !KeybindNames.has(key) && !RemovedKeybinds.has(key))
 }
 
 export function bindingDefaults(): BindingDefaults<Renderable, KeyEvent> {
