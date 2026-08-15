@@ -85,7 +85,7 @@ export function DenseApp(props: { ready: () => boolean }) {
           <WorkspaceStatus />
         </Show>
         {/* In flow as the last row of the frame, not floating over content. */}
-        <CommandBar variant="dense" />
+        <CommandBar />
       </Show>
       <Show when={!startup.skipInitialLoading}>
         <StartupLoading ready={props.ready} />

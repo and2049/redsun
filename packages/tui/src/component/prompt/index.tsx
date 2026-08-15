@@ -15,8 +15,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { tint, useTheme } from "../../context/theme"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
+import { useTheme } from "../../context/theme"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -31,7 +30,7 @@ import { useExit } from "../../context/exit"
 import { promptOffsetWidth } from "../../prompt/display"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "../../prompt/history"
-import { computePromptTraits, shouldShowDenseInterrupt } from "../../prompt/traits"
+import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
 import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
@@ -178,10 +177,6 @@ export function Prompt(props: PromptProps) {
   )
   const openWorkerModelDialog = useWorkerModelDialog()
   const tuiConfig = useTuiConfig()
-  // REDSUN DENSE: chrome-only variant for the bottom dock — no panel
-  // background, no wide padding, a leading `❯`/`!` sigil and a thin rule
-  // instead of the left border rail. All prompt logic is shared.
-  const dense = tuiConfig.ui !== "classic"
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
@@ -1314,9 +1309,6 @@ export function Prompt(props: PromptProps) {
     () => !!local.agent.current() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
-  const borderHighlight = createMemo(() =>
-    vim.mode === "insert" ? tint(theme.border, highlight(), agentMetaAlpha()) : theme.border,
-  )
   // REDSUN DENSE: the arrow takes the agent color and greys outside insert
   // mode — the classic left bar's affordance, moved onto the chrome dense
   // actually draws. Shell mode keeps its warning color. The rounded border
@@ -1380,46 +1372,36 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box
-          width="100%"
-          border={dense ? undefined : ["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
-        >
+        {/* REDSUN DENSE: the outer chat box must not receive any border
+            props — opentui force-enables a full border when
+            borderColor/customBorderChars are set (see ui/dialog.tsx), which
+            renders SplitBorder's "?" verticals as two rails flanking the
+            chat box. The inner input row draws its own rounded border. */}
+        <box width="100%">
           <box
-            paddingLeft={dense ? 0 : 2}
-            paddingRight={dense ? 0 : 2}
-            paddingTop={dense ? 0 : 1}
             flexShrink={0}
-            backgroundColor={dense ? undefined : theme.backgroundElement}
             flexGrow={1}
             width="100%"
           >
             {/* REDSUN DENSE: the input row draws its own rounded border so
-                the chat box reads as a distinct element without the classic
-                background fill. The border greys with vim mode but never
-                takes the agent tint — the arrow carries that signal. */}
+                the chat box reads as a distinct element without a background
+                fill. The border greys with vim mode but never takes the agent
+                tint — the arrow carries that signal. */}
             <box
               flexDirection="row"
               width="100%"
               flexShrink={0}
-              border={dense ? true : undefined}
+              border
               borderStyle="rounded"
               borderColor={denseBorderColor()}
-              paddingLeft={dense ? 1 : 0}
-              paddingRight={dense ? 1 : 0}
+              paddingLeft={1}
+              paddingRight={1}
             >
-            <Show when={dense}>
               <text flexShrink={0} fg={densePrefixColor()}>
                 {store.mode === "shell" ? "! " : "❯ "}
               </text>
-            </Show>
-            <textarea
-              width={dense ? undefined : "100%"}
-              flexGrow={dense ? 1 : undefined}
+              <textarea
+                flexGrow={1}
               placeholder={placeholderText()}
               placeholderColor={theme.textMuted}
               textColor={vim.mode !== "insert" ? theme.textMuted : theme.text}
@@ -1491,11 +1473,7 @@ const next = transition(vim.mode, e)
                   // setTimeout is a workaround and needs to be addressed properly
                   if (!input || input.isDestroyed) return
                   input.cursorColor =
-                    props.disabled || vim.mode !== "insert"
-                      ? dense
-                        ? theme.background
-                        : theme.backgroundElement
-                      : theme.text
+                    props.disabled || vim.mode !== "insert" ? theme.background : theme.text
                   if (tuiConfig.cursor) input.cursorStyle = tuiConfig.cursor
                 }, 0)
               }}
@@ -1504,13 +1482,8 @@ const next = transition(vim.mode, e)
               // chromeless, so the focused background would read as a stray
               // grey bar. The hidden-cursor colour has to match whatever the
               // row behind it actually is.
-              focusedBackgroundColor={dense ? undefined : theme.backgroundElement}
               cursorColor={
-                props.disabled || vim.mode !== "insert"
-                  ? dense
-                    ? theme.background
-                    : theme.backgroundElement
-                  : theme.text
+                props.disabled || vim.mode !== "insert" ? theme.background : theme.text
               }
               cursorStyle={tuiConfig.cursor}
               syntaxStyle={syntax()}
@@ -1519,7 +1492,6 @@ const next = transition(vim.mode, e)
             <box
               flexDirection="row"
               flexShrink={0}
-              paddingTop={dense ? 0 : 1}
               gap={1}
               justifyContent="space-between"
             >
@@ -1583,9 +1555,9 @@ const next = transition(vim.mode, e)
                   )}
                 </Show>
               </box>
-              <Show when={hasRightContent() || shouldShowDenseInterrupt(dense, status().type)}>
+              <Show when={hasRightContent() || status().type !== "idle"}>
                 <box flexDirection="row" gap={1} alignItems="center">
-                  <Show when={shouldShowDenseInterrupt(dense, status().type)}>
+                  <Show when={status().type !== "idle"}>
                     <box flexDirection="row" gap={1} alignItems="center">
                       <Show when={animationsEnabled()} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
                         <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
@@ -1609,38 +1581,10 @@ const next = transition(vim.mode, e)
             </box>
           </box>
         </box>
-        <Show when={!dense}>
-          <box
-            height={1}
-            border={["left"]}
-            borderColor={borderHighlight()}
-            customBorderChars={{
-              ...EmptyBorder,
-              vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-            }}
-          >
-            <box
-              height={1}
-              border={["bottom"]}
-              borderColor={theme.backgroundElement}
-              customBorderChars={
-                theme.backgroundElement.a !== 0
-                  ? {
-                      ...EmptyBorder,
-                      horizontal: "▀",
-                    }
-                  : {
-                      ...EmptyBorder,
-                      horizontal: " ",
-                    }
-              }
-            />
-          </box>
-        </Show>
         {/* REDSUN DENSE: in a dense session the dock draws its own status row
             above the prompt, so this footer would double it and pad the dock
-            out a row — it stays home-only there. Classic keeps it always. */}
-        <Show when={footerVisible() && (!dense || !props.sessionID)}>
+            out a row — it stays home-only. */}
+        <Show when={footerVisible() && !props.sessionID}>
           <box width="100%" flexDirection="row" justifyContent="space-between">
             <Switch>
             <Match when={status().type !== "idle"}>
@@ -1778,9 +1722,7 @@ const next = transition(vim.mode, e)
             {/* REDSUN DENSE: hold the left slot so the home hints sit at the
                 right edge — the Switch above renders nothing on an idle home,
                 which would let space-between pull them left. */}
-            <Show when={dense}>
-              <box flexGrow={1} />
-            </Show>
+            <box flexGrow={1} />
             <Show when={!props.sessionID}>
               <box gap={2} flexDirection="row">
                 <Switch>

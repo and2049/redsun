@@ -15,11 +15,11 @@ import { fitSessionUsage, sessionUsage } from "../util/session-usage"
 
 const MAX_SUGGESTIONS = 10
 
-// REDSUN DENSE: `variant="dense"` makes the bar participate in the dock's
-// column layout instead of floating over the last row. Like classic, the idle
-// bar shows the workspace (branch) on the left and the session usage readout
-// on the right. Behaviour, bindings and command resolution are shared.
-export function CommandBar(props: { variant?: "dense" } = {}) {
+// REDSUN DENSE: the bar participates in the dock's column layout instead of
+// floating over the last row. The idle bar shows the workspace (branch) on
+// the left and the session usage readout on the right. Behaviour, bindings
+// and command resolution are shared.
+export function CommandBar() {
   const vim = useVim()
   const { theme } = useTheme()
   const keymap = useOpencodeKeymap()
@@ -151,10 +151,8 @@ export function CommandBar(props: { variant?: "dense" } = {}) {
 
   return (
     <box
-      position={props.variant === "dense" ? "relative" : "absolute"}
-      bottom={props.variant === "dense" ? undefined : 0}
-      left={props.variant === "dense" ? undefined : 0}
-      width={props.variant === "dense" ? "100%" : dimensions().width}
+      position="relative"
+      width="100%"
       flexShrink={0}
       height={1}
       zIndex={1000}
