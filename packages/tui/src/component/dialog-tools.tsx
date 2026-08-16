@@ -80,40 +80,34 @@ export function DialogTools() {
     }))
   })
 
-  const actions = createMemo(() => [
-    {
-      command: "dialog.tools.toggle",
-      title: "toggle",
-      onTrigger: async (option: DialogSelectOption<string>) => {
-        if (loading() !== null) return
-        const group = TOOL_GROUPS.find((item) => item.value === option.value)
-        if (!group) return
+  const toggle = async (option: DialogSelectOption<string>) => {
+    if (loading() !== null) return
+    const group = TOOL_GROUPS.find((item) => item.value === option.value)
+    if (!group) return
 
-        setLoading(group.value)
-        try {
-          const next = !isEnabled(group.keys)
-          await sdk.client.config.update({
-            config: { tools: Object.fromEntries(group.keys.map((key) => [key, next])) },
-          })
-          const config = await sdk.client.config.get()
-          if (config.data) sync.set("config", config.data)
-        } catch (error) {
-          console.error("Failed to toggle tool:", error)
-        } finally {
-          setLoading(null)
-        }
-      },
-    },
-  ])
+    setLoading(group.value)
+    try {
+      const next = !isEnabled(group.keys)
+      await sdk.client.config.update({
+        config: { tools: Object.fromEntries(group.keys.map((key) => [key, next])) },
+      })
+      const config = await sdk.client.config.get()
+      if (config.data) sync.set("config", config.data)
+    } catch (error) {
+      console.error("Failed to toggle tool:", error)
+    } finally {
+      setLoading(null)
+    }
+  }
 
   return (
     <DialogSelect
       ref={setRef}
       title="Tools"
       options={options()}
-      actions={actions()}
-      onSelect={(_option) => {
-        // Don't close on select, only on escape
+      onSelect={(option) => {
+        // Enter toggles in place; the dialog closes only on escape.
+        void toggle(option)
       }}
     />
   )

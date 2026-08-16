@@ -47,39 +47,33 @@ export function DialogReminders() {
     }))
   })
 
-  const actions = createMemo(() => [
-    {
-      command: "dialog.reminders.toggle",
-      title: "toggle",
-      onTrigger: async (option: DialogSelectOption<string>) => {
-        if (loading() !== null) return
-        const item = REMINDERS.find((entry) => entry.value === option.value)
-        if (!item) return
+  const toggle = async (option: DialogSelectOption<string>) => {
+    if (loading() !== null) return
+    const item = REMINDERS.find((entry) => entry.value === option.value)
+    if (!item) return
 
-        setLoading(item.value)
-        try {
-          await sdk.client.config.update({
-            config: { reminders: { [item.value]: !isEnabled(item.value) } },
-          })
-          const config = await sdk.client.config.get()
-          if (config.data) sync.set("config", config.data)
-        } catch (error) {
-          console.error("Failed to toggle reminder:", error)
-        } finally {
-          setLoading(null)
-        }
-      },
-    },
-  ])
+    setLoading(item.value)
+    try {
+      await sdk.client.config.update({
+        config: { reminders: { [item.value]: !isEnabled(item.value) } },
+      })
+      const config = await sdk.client.config.get()
+      if (config.data) sync.set("config", config.data)
+    } catch (error) {
+      console.error("Failed to toggle reminder:", error)
+    } finally {
+      setLoading(null)
+    }
+  }
 
   return (
     <DialogSelect
       ref={setRef}
       title="Reminders"
       options={options()}
-      actions={actions()}
-      onSelect={(_option) => {
-        // Don't close on select, only on escape
+      onSelect={(option) => {
+        // Enter toggles in place; the dialog closes only on escape.
+        void toggle(option)
       }}
     />
   )
