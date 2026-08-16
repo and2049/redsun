@@ -84,7 +84,7 @@ function pickOption<Value>(item: SelectOption<Value>): TuiDialogSelectOption<Val
     title: item.title,
     value: item.value,
     description: item.description,
-    footer: item.footer,
+    footer: typeof item.footer === "function" ? undefined : item.footer,
     category: item.category,
     disabled: item.disabled,
   }

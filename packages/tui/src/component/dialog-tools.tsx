@@ -2,7 +2,7 @@ import { createMemo, createSignal } from "solid-js"
 import { useSync } from "../context/sync"
 import { DialogSelect, type DialogSelectRef, type DialogSelectOption } from "../ui/dialog-select"
 import { useTheme } from "../context/theme"
-import { TextAttributes } from "@opentui/core"
+import type { RGBA } from "@opentui/core"
 import { useSDK } from "../context/sdk"
 import { useDialog } from "../ui/dialog"
 
@@ -44,18 +44,18 @@ const TOOL_GROUPS: {
   { value: "question", title: "question", description: "ask the user questions", keys: ["question"] },
 ]
 
-function Status(props: { enabled: boolean; loading: boolean; warn?: boolean }) {
+function Status(props: { enabled: boolean; loading: boolean; warn?: boolean; fg?: RGBA }) {
   const { theme } = useTheme()
   if (props.loading) {
-    return <span style={{ fg: theme.textMuted }}>⋯ Saving</span>
+    return <span style={{ fg: props.fg ?? theme.textMuted }}>⋯ Saving</span>
   }
   if (props.enabled) {
-    return <span style={{ fg: theme.success, attributes: TextAttributes.BOLD }}>✓ Enabled</span>
+    return <span style={{ fg: props.fg ?? theme.success }}>✓</span>
   }
   if (props.warn) {
-    return <span style={{ fg: theme.warning }}>○ Disabled (core tool)</span>
+    return <span style={{ fg: props.fg ?? theme.warning }}>○</span>
   }
-  return <span style={{ fg: theme.textMuted }}>○ Disabled</span>
+  return <span style={{ fg: props.fg ?? theme.textMuted }}>○</span>
 }
 
 export function DialogTools() {
@@ -78,7 +78,7 @@ export function DialogTools() {
       value: group.value,
       title: group.title,
       description: group.description,
-      footer: <Status enabled={isEnabled(group.keys)} loading={current === group.value} warn={group.warn} />,
+      footer: (fg?: RGBA) => <Status enabled={isEnabled(group.keys)} loading={current === group.value} warn={group.warn} fg={fg} />,
       category: undefined,
     }))
   })

@@ -2,8 +2,9 @@ import { createMemo, createSignal } from "solid-js"
 import { useSync } from "../context/sync"
 import { DialogSelect, type DialogSelectRef, type DialogSelectOption } from "../ui/dialog-select"
 import { useTheme } from "../context/theme"
-import { TextAttributes } from "@opentui/core"
+import type { RGBA } from "@opentui/core"
 import { useSDK } from "../context/sdk"
+import { useDialog } from "../ui/dialog"
 
 // REDSUN: toggles for the synthetic per-turn reminder messages appended for
 // specific agents (see packages/redsun/src/session/reminders.ts).
@@ -14,18 +15,20 @@ const REMINDERS: { value: "plan" | "compose" | "worker" | "build_switch"; title:
   { value: "build_switch", title: "build switch", description: "notice on the first build turn after plan mode" },
 ]
 
-function Status(props: { enabled: boolean; loading: boolean }) {
+function Status(props: { enabled: boolean; loading: boolean; fg?: RGBA }) {
   const { theme } = useTheme()
   if (props.loading) {
-    return <span style={{ fg: theme.textMuted }}>⋯ Saving</span>
+    return <span style={{ fg: props.fg ?? theme.textMuted }}>⋯ Saving</span>
   }
   if (props.enabled) {
-    return <span style={{ fg: theme.success, attributes: TextAttributes.BOLD }}>✓ Enabled</span>
+    return <span style={{ fg: props.fg ?? theme.success }}>✓</span>
   }
-  return <span style={{ fg: theme.textMuted }}>○ Disabled</span>
+  return <span style={{ fg: props.fg ?? theme.textMuted }}>○</span>
 }
 
 export function DialogReminders() {
+  const dialog = useDialog()
+  dialog.setPlacement("bottom")
   const sync = useSync()
   const sdk = useSDK()
   const [, setRef] = createSignal<DialogSelectRef<unknown>>()
@@ -42,7 +45,7 @@ export function DialogReminders() {
       value: item.value,
       title: item.title,
       description: item.description,
-      footer: <Status enabled={isEnabled(item.value)} loading={current === item.value} />,
+      footer: (fg?: RGBA) => <Status enabled={isEnabled(item.value)} loading={current === item.value} fg={fg} />,
       category: undefined,
     }))
   })
