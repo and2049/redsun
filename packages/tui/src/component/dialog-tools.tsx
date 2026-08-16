@@ -4,6 +4,7 @@ import { DialogSelect, type DialogSelectRef, type DialogSelectOption } from "../
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
 import { useSDK } from "../context/sdk"
+import { useDialog } from "../ui/dialog"
 
 // REDSUN: user-facing tool enable/disable. Rows mirror the builtin registry;
 // the edit family (edit/write/apply_patch collapse to the `edit` permission,
@@ -58,6 +59,8 @@ function Status(props: { enabled: boolean; loading: boolean; warn?: boolean }) {
 }
 
 export function DialogTools() {
+  const dialog = useDialog()
+  dialog.setPlacement("bottom")
   const sync = useSync()
   const sdk = useSDK()
   const [, setRef] = createSignal<DialogSelectRef<unknown>>()
