@@ -2315,8 +2315,7 @@ unix(
 
       expect(tool.state.metadata.truncated).toBe(true)
       expect(typeof tool.state.metadata.outputPath).toBe("string")
-      expect(tool.state.output).toMatch(/\.\.\.output truncated\.\.\./)
-      expect(tool.state.output).toMatch(/Full output saved to:\s+\S+/)
+      expect(tool.state.output).toMatch(/\[Showing lines \d+-\d+ of \d+\. Full output: \S+\]/)
       expect(tool.state.output).not.toContain("Tool execution aborted")
     }),
   { git: true },
