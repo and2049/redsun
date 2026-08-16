@@ -82,13 +82,8 @@ const layer = Layer.effect(
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
-          [
-            "<goal_feature>",
-            "The /goal <condition> command sets a persistent stop condition for this session.",
-            "When active, an independent judge checks the transcript before the session may stop.",
-            "Use /goal with no condition to clear it.",
-            "</goal_feature>",
-          ].join("\n"),
+          // REDSUN: the <goal_feature> block moved to prompt assembly and is only
+          // injected while a goal is active (see GoalShared.GOAL_FEATURE_PROMPT).
           PROJECT_MEMORY_POLICY,
           references.length === 0
             ? undefined

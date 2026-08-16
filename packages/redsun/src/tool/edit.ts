@@ -285,6 +285,54 @@ export const LineTrimmedReplacer: Replacer = function* (content, find) {
   }
 }
 
+// REDSUN: normalization ported from pi's normalizeForFuzzyMatch (edit-diff.ts):
+// NFKC, per-line trailing-whitespace trim, smart quotes to ASCII, Unicode dashes
+// to "-", and special spaces to " ". Lets an ASCII oldString match content that
+// drifted through editors/LLMs emitting typographic characters, and vice versa.
+export function normalizeUnicode(line: string): string {
+  return line
+    .normalize("NFKC")
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ")
+    .trimEnd()
+}
+
+export const UnicodeNormalizedReplacer: Replacer = function* (content, find) {
+  const originalLines = content.split("\n")
+  const searchLines = find.split("\n")
+
+  if (searchLines[searchLines.length - 1] === "") {
+    searchLines.pop()
+  }
+
+  const normalizedSearch = searchLines.map(normalizeUnicode)
+  for (let i = 0; i <= originalLines.length - searchLines.length; i++) {
+    let matches = true
+    for (let j = 0; j < searchLines.length; j++) {
+      if (normalizeUnicode(originalLines[i + j]) !== normalizedSearch[j]) {
+        matches = false
+        break
+      }
+    }
+    if (!matches) continue
+
+    let matchStartIndex = 0
+    for (let k = 0; k < i; k++) {
+      matchStartIndex += originalLines[k].length + 1
+    }
+    let matchEndIndex = matchStartIndex
+    for (let k = 0; k < searchLines.length; k++) {
+      matchEndIndex += originalLines[i + k].length
+      if (k < searchLines.length - 1) {
+        matchEndIndex += 1
+      }
+    }
+    yield content.substring(matchStartIndex, matchEndIndex)
+  }
+}
+
 export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const originalLines = content.split("\n")
   const searchLines = find.split("\n")
@@ -690,10 +738,12 @@ export function replace(content: string, oldString: string, newString: string, r
   }
 
   let notFound = true
+  let ambiguous: { count: number } | undefined
 
   for (const replacer of [
     SimpleReplacer,
     LineTrimmedReplacer,
+    UnicodeNormalizedReplacer,
     BlockAnchorReplacer,
     WhitespaceNormalizedReplacer,
     IndentationFlexibleReplacer,
@@ -715,7 +765,16 @@ export function replace(content: string, oldString: string, newString: string, r
         return content.replaceAll(search, newString)
       }
       const lastIndex = content.lastIndexOf(search)
-      if (index !== lastIndex) continue
+      if (index !== lastIndex) {
+        // REDSUN: remember how many occurrences the first ambiguous candidate had
+        // so the error can report a concrete count.
+        if (!ambiguous) {
+          let count = 0
+          for (let at = index; at !== -1; at = content.indexOf(search, at + search.length)) count++
+          ambiguous = { count }
+        }
+        continue
+      }
       return content.substring(0, index) + newString + content.substring(index + search.length)
     }
   }
@@ -725,7 +784,9 @@ export function replace(content: string, oldString: string, newString: string, r
       "Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.",
     )
   }
-  throw new Error("Found multiple matches for oldString. Provide more surrounding context to make the match unique.")
+  throw new Error(
+    `Found ${ambiguous ? `${ambiguous.count} occurrences` : "multiple matches"} of oldString. Each oldString must match a unique location. Provide more surrounding context to make the match unique.`,
+  )
 }
 
 function isDisproportionateMatch(search: string, oldString: string) {

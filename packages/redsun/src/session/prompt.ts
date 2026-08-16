@@ -57,7 +57,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Goal } from "./goal"
-import { continuationText, REACT_CAP } from "./goal-shared"
+import { continuationText, GOAL_FEATURE_PROMPT, REACT_CAP } from "./goal-shared"
 import { ClaudeCodeModels } from "@/claude-code/models"
 import { ContextOptimizer } from "./context-optimizer"
 import { ExtensionRuntime } from "@/extension/runtime"
@@ -1335,9 +1335,10 @@ const layer = Layer.effect(
           }
           const maxSteps = agent.steps ?? Infinity
           const isLastStep = step >= maxSteps
+          const loopCfg = yield* config.get()
           // REDSUN CLAUDE-CODE: `model` lets reminders skip redsun's plan-mode
           // text for delegated sessions, which use Claude Code's own plan mode.
-          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session, model }).pipe(
+          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session, model, reminders: loopCfg.reminders }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(FSUtil.Service, fsys),
             Effect.provideService(Session.Service, sessions),
@@ -1383,6 +1384,10 @@ const layer = Layer.effect(
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
 
+            // REDSUN: per-request flag shared between the llm stream middleware
+            // (sets it on finishReason "length") and the tool execute wrappers
+            // (refuse possibly-truncated calls). Fresh each iteration.
+            const lengthGuard = { hit: false }
             const tools = yield* SessionTools.resolve({
               agent,
               session,
@@ -1391,6 +1396,7 @@ const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              lengthGuard,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -1414,19 +1420,36 @@ const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
+            const [skills, env, instructions, mcpInstructions, modelMsgs, activeGoal] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
+              // REDSUN: the goal feature brief is only injected while a goal is
+              // active; setting/clearing a goal breaks the cached system prefix
+              // once, which is accepted.
+              goal.get(sessionID),
             ])
             const [volatileEnvironment, ...stableEnvironment] = env
+            // REDSUN: standing agent-mode briefs (plan/compose/worker) live in
+            // the cached stable prefix; an agent switch already rewrites the
+            // prefix because the tool set changes with agent permissions.
+            const modeBrief = SessionReminders.systemBrief({
+              agentName: agent.name,
+              delegated: ClaudeCodeModels.isDelegated(model),
+              experimentalPlanMode: flags.experimentalPlanMode,
+              reminders: loopCfg.reminders,
+            })
             const system = [
               ...stableEnvironment.map((value, index) =>
                 ContextOptimizer.boundText(`environment context ${index + 1}`, value),
               ),
-              ...instructions.map((value, index) => ContextOptimizer.boundText(`instruction ${index + 1}`, value)),
+              ...(activeGoal ? [GOAL_FEATURE_PROMPT] : []),
+              ...(modeBrief ? [modeBrief] : []),
+              ...instructions.map((item) =>
+                ContextOptimizer.boundInstruction(item.filepath, item.content, loopCfg.instruction_max_chars),
+              ),
               ...(mcpInstructions ? [ContextOptimizer.boundText("MCP instructions", mcpInstructions)] : []),
               ...(skills ? [ContextOptimizer.boundText("skill summary", skills)] : []),
             ]
@@ -1482,6 +1505,7 @@ const layer = Layer.effect(
               tools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
+              lengthGuard,
             })
 
             if (structured !== undefined) {

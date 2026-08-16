@@ -34,7 +34,7 @@ function extract(messages: SessionV1.WithParts[]) {
 export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, FSUtil.Error>
-  readonly system: () => Effect.Effect<string[], FSUtil.Error>
+  readonly system: () => Effect.Effect<{ filepath: string; content: string }[], FSUtil.Error>
   readonly find: (dir: string) => Effect.Effect<string | undefined, FSUtil.Error>
   readonly resolve: (
     messages: SessionV1.WithParts[],
@@ -168,13 +168,12 @@ const layer: Layer.Layer<
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
+      // REDSUN: raw content per source file; the single truncation cut happens in
+      // ContextOptimizer.boundInstruction so the model sees where the text stops
+      // and how to read the rest.
       return [
-        ...Array.from(paths).flatMap((item, i) =>
-          files[i]
-            ? [`Instructions from: ${item}\n${files[i].length > 64_000 ? `${files[i].slice(0, 64_000)}\n[truncated by redsun]` : files[i]}`]
-            : [],
-        ),
-        ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
+        ...Array.from(paths).flatMap((item, i) => (files[i] ? [{ filepath: item, content: files[i] }] : [])),
+        ...urls.flatMap((item, i) => (remote[i] ? [{ filepath: item, content: remote[i] }] : [])),
       ]
     })
 

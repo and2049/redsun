@@ -360,7 +360,8 @@ const layer = Layer.effect(
       const active = ExtensionRuntime.activeToolIDs(ctx.directory)
       const filtered = (yield* all()).filter((tool) => {
         if (active?.size && !active.has(tool.id)) return false
-        if (tool.id === WebSearchTool.id) {
+        // REDSUN: codesearch wraps websearch, so it must obey the same provider gate
+        if (tool.id === WebSearchTool.id || tool.id === CodeSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
 
@@ -368,6 +369,8 @@ const layer = Layer.effect(
           input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
         if (tool.id === ApplyPatchTool.id) return usePatch
         if (tool.id === EditTool.id || tool.id === WriteTool.id) return !usePatch
+        // REDSUN: multiedit wraps EditTool; exposing it would bypass the apply_patch swap
+        if (tool.id === MultiEditTool.id) return !usePatch
 
         return true
       })

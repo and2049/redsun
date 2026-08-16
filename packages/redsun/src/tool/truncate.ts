@@ -121,20 +121,25 @@ const layer = Layer.effect(
         }
       }
 
-      const removed = hitBytes ? totalBytes - bytes : lines.length - out.length
-      const unit = hitBytes ? "bytes" : "lines"
       const preview = out.join("\n")
       const file = yield* write(text)
 
+      // REDSUN: pi-style banner naming the exact shown line range, total size,
+      // and the file holding the full output, so the model can continue
+      // precisely instead of guessing what was dropped.
+      const total = lines.length
+      const shown = out.length
+      const range = direction === "head" ? `lines 1-${shown}` : `lines ${total - shown + 1}-${total}`
+      const limitNote = hitBytes ? ` (${(maxBytes / 1024).toFixed(1)}KB limit)` : ""
+      const banner = `[Showing ${range} of ${total}${limitNote}. Full output: ${file}]`
+
       const hint = hasTaskTool(agent)
-        ? `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
-        : `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
+        ? `Use the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
+        : `Use Grep to search the full content or Read with offset/limit to view specific sections.`
 
       return {
         content:
-          direction === "head"
-            ? `${preview}\n\n...${removed} ${unit} truncated...\n\n${hint}`
-            : `...${removed} ${unit} truncated...\n\n${hint}\n\n${preview}`,
+          direction === "head" ? `${preview}\n\n${banner}\n${hint}` : `${banner}\n${hint}\n\n${preview}`,
         truncated: true,
         outputPath: file,
       } as const

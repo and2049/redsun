@@ -6,7 +6,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import { asSchema, streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
@@ -29,6 +29,8 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { repairToolInput } from "./llm/tool-repair"
+import { lengthGuardMiddleware } from "./llm/length-guard"
 import { ContextOptimizer } from "./context-optimizer"
 import { Storage } from "@/storage/storage"
 import { ClaudeCode } from "@/claude-code/runtime"
@@ -51,6 +53,9 @@ export type StreamInput = {
   toolChoice?: "auto" | "required" | "none"
   assistantMessageID?: string
   internal?: boolean
+  // REDSUN: shared per-turn flag set when the response ends with finishReason
+  // "length"; tool execute wrappers check it and refuse truncated calls.
+  lengthGuard?: { hit: boolean }
 }
 
 export type StreamRequest = StreamInput & {
@@ -333,6 +338,19 @@ const live: Layer.Layer<
                 toolName: lower,
               }
             }
+            // REDSUN: repair double-encoded array/object arguments and legacy
+            // edit shapes before giving up on the call (see llm/tool-repair.ts).
+            const tool = prepared.tools[failed.toolCall.toolName]
+            if (tool?.inputSchema) {
+              const schema = await Promise.resolve(asSchema(tool.inputSchema).jsonSchema).catch(() => undefined)
+              const repaired = repairToolInput(failed.toolCall.input, schema as never)
+              if (repaired !== undefined) {
+                return {
+                  ...failed.toolCall,
+                  input: repaired,
+                }
+              }
+            }
             return {
               ...failed.toolCall,
               input: JSON.stringify({
@@ -371,6 +389,9 @@ const live: Layer.Layer<
                   return args.params
                 },
               },
+              // REDSUN: refuse tool calls from length-truncated responses
+              // (see llm/length-guard.ts and the checks in session/tools.ts).
+              lengthGuardMiddleware(input.lengthGuard),
             ],
           }),
           experimental_telemetry: {

@@ -572,3 +572,41 @@ describe("tool.edit", () => {
     )
   })
 })
+
+// REDSUN: pure replace() coverage for the pi-ported Unicode fuzzy matching and
+// the occurrence-count ambiguity error.
+import { test } from "bun:test"
+import { normalizeUnicode, replace } from "../../src/tool/edit"
+
+describe("tool.edit unicode fuzzy matching", () => {
+  test("normalizeUnicode folds smart quotes, dashes, special spaces, and trailing whitespace", () => {
+    expect(normalizeUnicode("it’s “fine” — ok now  ")).toBe(`it's "fine" - ok now`)
+  })
+
+  test("ASCII oldString matches content containing typographic characters", () => {
+    const content = "const label = “hello” — world\nconst other = 1\n"
+    const result = replace(content, 'const label = "hello" - world', 'const label = "hi"')
+    expect(result).toBe("const label = \"hi\"\nconst other = 1\n")
+  })
+
+  test("typographic oldString matches ASCII content", () => {
+    const content = 'const label = "hello" - world\nconst other = 1\n'
+    const result = replace(content, "const label = “hello” — world", "const done = true")
+    expect(result).toBe("const done = true\nconst other = 1\n")
+  })
+
+  test("NBSP-only drift still matches", () => {
+    const content = "value\u00a0=\u00a01\n"
+    expect(replace(content, "value = 1", "value = 2")).toBe("value = 2\n")
+  })
+
+  test("trailing-whitespace-only mismatch matches via trimEnd", () => {
+    const content = "line one   \nline two\n"
+    expect(replace(content, "line one\nline two", "replaced")).toBe("replaced\n")
+  })
+
+  test("ambiguous matches report the occurrence count", () => {
+    const content = "dup()\nother\ndup()\n"
+    expect(() => replace(content, "dup()", "x")).toThrow(/Found 2 occurrences/)
+  })
+})

@@ -227,9 +227,15 @@ describe("Instruction.system", () => {
 
         const rules = yield* svc.system()
         expect(rules).toHaveLength(3)
-        expect(rules[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
-        expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, ".redsun", "memory.md")}\n# Project Memory`)
-        expect(rules[2]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
+        expect(rules[0]).toEqual({ filepath: path.join(globalTmp, "AGENTS.md"), content: "# Global Instructions" })
+        expect(rules[1]).toEqual({
+          filepath: path.join(projectTmp, ".redsun", "memory.md"),
+          content: "# Project Memory",
+        })
+        expect(rules[2]).toEqual({
+          filepath: path.join(projectTmp, "AGENTS.md"),
+          content: "# Project Instructions",
+        })
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
   )

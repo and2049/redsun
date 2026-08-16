@@ -10,6 +10,7 @@ import { SystemPrompt } from "../../src/session/system"
 import { MCP } from "../../src/mcp"
 import { testEffect } from "../lib/effect"
 import { PROJECT_MEMORY_POLICY } from "@opencode-ai/core/project-memory"
+import { GOAL_FEATURE_PROMPT } from "../../src/session/goal-shared"
 
 const skills: Skill.Info[] = [
   {
@@ -116,6 +117,21 @@ describe("session.system", () => {
     expect(SystemPrompt.provider({ api: { id: "gpt-4.1" } } as Provider.Model)[0]).not.toContain(
       ".github/instructions/memory.instruction.md",
     )
+  })
+
+  test("fallback and per-provider prompts identify as redsun, never opencode", () => {
+    for (const id of ["glm-5", "qwen3-coder", "deepseek-v4", "gpt-4.1", "k3", "gpt-5.2"]) {
+      const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]
+      expect(prompt.toLowerCase()).not.toContain("opencode")
+    }
+    expect(SystemPrompt.provider({ api: { id: "glm-5" } } as Provider.Model)[0]).toContain("You are redsun")
+  })
+
+  test("goal feature brief lives in goal-shared and is injected only while a goal is active", () => {
+    // The <goal_feature> brief moved out of SystemPrompt.environment() and into
+    // prompt assembly, gated on an active goal (see prompt.ts).
+    expect(GOAL_FEATURE_PROMPT).toContain("<goal_feature>")
+    expect(GOAL_FEATURE_PROMPT).toContain("/goal <condition>")
   })
 
   it.effect("skills output is sorted by name and stable across calls", () =>

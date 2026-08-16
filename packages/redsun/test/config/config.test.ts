@@ -982,6 +982,23 @@ it.instance("parses the claude_code delegated-agent section", () =>
   }),
 )
 
+it.instance("parses the reminders and instruction_max_chars sections", () =>
+  Effect.gen(function* () {
+    const parsed = ConfigParse.schema(
+      ConfigV1.Info,
+      {
+        reminders: { plan: false, compose: true, worker: false, build_switch: false },
+        instruction_max_chars: 48_000,
+      },
+      "test:config",
+    )
+    expect(parsed.reminders).toEqual({ plan: false, compose: true, worker: false, build_switch: false })
+    expect(parsed.instruction_max_chars).toBe(48_000)
+
+    expect(() => ConfigParse.schema(ConfigV1.Info, { instruction_max_chars: -1 }, "test:config")).toThrow()
+  }),
+)
+
 it.instance("gets config directories", () =>
   Effect.gen(function* () {
     const dirs = yield* Config.use.directories()

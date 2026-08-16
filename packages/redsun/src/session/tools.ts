@@ -46,7 +46,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
+  // REDSUN: set by the llm stream middleware when the response hit the output
+  // token limit; tool calls from such a response may have truncated arguments.
+  lengthGuard?: { hit: boolean }
 }) {
+  const refuseTruncatedCall = (name: string) => {
+    if (!input.lengthGuard?.hit) return
+    throw new Error(
+      `Tool call "${name}" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`,
+    )
+  }
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
@@ -102,6 +111,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
+            refuseTruncatedCall(item.id)
             const ctx = context(args, options)
             yield* plugin.trigger(
               "tool.execute.before",
@@ -398,6 +408,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
+          refuseTruncatedCall(key)
           const ctx = context(args, opts)
           yield* plugin.trigger(
             "tool.execute.before",

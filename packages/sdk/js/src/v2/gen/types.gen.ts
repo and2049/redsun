@@ -2133,6 +2133,13 @@ export type Config = {
     max_lines?: number
     max_bytes?: number
   }
+  reminders?: {
+    plan?: boolean
+    compose?: boolean
+    worker?: boolean
+    build_switch?: boolean
+  }
+  instruction_max_chars?: number
   compaction?: {
     auto?: boolean
     prune?: boolean
