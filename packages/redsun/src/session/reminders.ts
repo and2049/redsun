@@ -15,12 +15,47 @@ import PLAN_MODE from "./prompt/plan-mode.txt"
 import COMPOSE_MODE from "./prompt/compose-mode.txt"
 import WORKER_MODE from "./prompt/worker-mode.txt"
 
+export type Toggles = { plan?: boolean; compose?: boolean; worker?: boolean; build_switch?: boolean }
+
+function toggles(input?: Toggles) {
+  return {
+    plan: input?.plan !== false,
+    compose: input?.compose !== false,
+    worker: input?.worker !== false,
+    build_switch: input?.build_switch !== false,
+  }
+}
+
+// REDSUN: standing agent-mode briefs (plan/compose/worker) are stable system
+// fragments for non-delegated sessions — injected once per request in the
+// cached system prefix instead of as an ephemeral message part whose
+// disappearance from replay broke the provider cache prefix every turn.
+// Delegated Claude Code turns receive no system prompt, so their briefs stay
+// message parts (see apply below and claude-code/modes.ts). The experimental
+// plan mode keeps its own persisted plan-file machinery in apply.
+export function systemBrief(input: {
+  agentName: string
+  delegated: boolean
+  experimentalPlanMode: boolean
+  reminders?: Toggles
+}): string | undefined {
+  if (input.delegated) return undefined
+  const enabled = toggles(input.reminders)
+  if (input.agentName === "compose" && enabled.compose) return COMPOSE_MODE
+  if (input.agentName === "worker" && enabled.worker) return WORKER_MODE
+  if (input.agentName === "plan" && enabled.plan && !input.experimentalPlanMode) return PROMPT_PLAN
+  return undefined
+}
+
 export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   messages: SessionV1.WithParts[]
   agent: Agent.Info
   session: Session.Info
   model: { providerID: string }
+  // REDSUN: per-reminder config toggles; every reminder defaults to enabled.
+  reminders?: Toggles
 }) {
+  const enabled = toggles(input.reminders)
   // REDSUN CLAUDE-CODE: delegated sessions run Claude Code's own plan mode,
   // which owns read-only enforcement and its own plan file. Redsun's plan
   // reminders name a plan path the CLI will not write, so they are skipped;
@@ -32,7 +67,16 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   const userMessage = input.messages.findLast((msg) => msg.info.role === "user")
   if (!userMessage) return input.messages
 
-  const reminder = input.agent.name === "compose" ? COMPOSE_MODE : input.agent.name === "worker" ? WORKER_MODE : undefined
+  // REDSUN: compose/worker briefs stay message parts only for delegated
+  // sessions (Claude Code interactive turns have no system prompt); everyone
+  // else gets them through systemBrief in the stable system prefix.
+  const reminder = delegated
+    ? input.agent.name === "compose" && enabled.compose
+      ? COMPOSE_MODE
+      : input.agent.name === "worker" && enabled.worker
+        ? WORKER_MODE
+        : undefined
+    : undefined
   if (reminder) {
     userMessage.parts.push({
       id: PartID.ascending(),
@@ -45,19 +89,14 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   }
 
   if (!flags.experimentalPlanMode) {
-    if (input.agent.name === "plan" && !delegated) {
-      userMessage.parts.push({
-        id: PartID.ascending(),
-        messageID: userMessage.info.id,
-        sessionID: userMessage.info.sessionID,
-        type: "text",
-        text: PROMPT_PLAN,
-        synthetic: true,
-      })
-    }
-    const wasPlan = input.messages.some((msg) => msg.info.role === "assistant" && msg.info.agent === "plan")
-    if (wasPlan && input.agent.name === "build") {
-      userMessage.parts.push({
+    // REDSUN: the switch notice fires only when the most recent assistant turn
+    // came from the plan agent, so it appears once per plan->build switch
+    // instead of on every turn for the rest of the session. It is persisted so
+    // replay on later turns matches the request that carried it (cache-stable).
+    const lastAssistant = input.messages.findLast((msg) => msg.info.role === "assistant")
+    const wasPlan = lastAssistant?.info.agent === "plan"
+    if (wasPlan && input.agent.name === "build" && enabled.build_switch) {
+      const part = yield* sessions.updatePart({
         id: PartID.ascending(),
         messageID: userMessage.info.id,
         sessionID: userMessage.info.sessionID,
@@ -65,12 +104,13 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
         text: BUILD_SWITCH,
         synthetic: true,
       })
+      userMessage.parts.push(part)
     }
     return input.messages
   }
 
   const assistantMessage = input.messages.findLast((msg) => msg.info.role === "assistant")
-  if (input.agent.name !== "plan" && assistantMessage?.info.agent === "plan") {
+  if (input.agent.name !== "plan" && assistantMessage?.info.agent === "plan" && enabled.build_switch) {
     const ctx = yield* InstanceState.context
     const plan = Session.plan(input.session, ctx)
     const exists = !delegated && (yield* fsys.existsSafe(plan))
@@ -88,7 +128,8 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
     return input.messages
   }
 
-  if (input.agent.name !== "plan" || assistantMessage?.info.agent === "plan" || delegated) return input.messages
+  if (input.agent.name !== "plan" || assistantMessage?.info.agent === "plan" || delegated || !enabled.plan)
+    return input.messages
 
   const ctx = yield* InstanceState.context
   const plan = Session.plan(input.session, ctx)

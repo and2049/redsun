@@ -31,6 +31,31 @@ export namespace ContextOptimizer {
     return boundText(label, text, VOLATILE_MAX_CHARS)
   }
 
+  // REDSUN: instruction files (AGENTS.md, .redsun/memory.md, ...) are truncated at a
+  // line boundary with a visible marker naming the source and how to read the rest,
+  // instead of boundText's silent mid-sentence cut.
+  export function boundInstruction(filepath: string, text: string, maxChars = FRAGMENT_MAX_CHARS) {
+    const header = `Instructions from: ${filepath}\n`
+    if (header.length + text.length <= maxChars) return `${header}${text}`
+
+    const isUrl = filepath.startsWith("http://") || filepath.startsWith("https://")
+    const totalLines = text.split("\n").length
+    const marker = (line: number) =>
+      isUrl
+        ? `\n[redsun: instructions truncated at line ${line} of ${totalLines} (${maxChars} char limit). Full content: ${filepath}]`
+        : `\n[redsun: instructions truncated at line ${line} of ${totalLines} (${maxChars} char limit). Read the remainder with the read tool: ${filepath} offset=${line + 1}.]`
+
+    // Reserve space for the worst-case marker (line == totalLines has the most digits).
+    const budget = maxChars - header.length - marker(totalLines).length
+    if (budget <= 0) return boundText(`instructions from ${filepath}`, `${header}${text}`, maxChars)
+
+    const slice = text.slice(0, budget)
+    const cut = slice.lastIndexOf("\n")
+    const kept = cut > 0 ? slice.slice(0, cut) : slice
+    const keptLines = kept.split("\n").length
+    return `${header}${kept}${marker(keptLines)}`
+  }
+
   function isToolResult(part: unknown): part is Record<string, unknown> & { type: "tool-result" } {
     return !!part && typeof part === "object" && (part as { type?: string }).type === "tool-result"
   }
@@ -80,8 +105,19 @@ export namespace ContextOptimizer {
       .toReversed()
   }
 
+  // REDSUN: optimizeModelMessages runs both in prompt assembly and again inside
+  // LLM.Service.run (which also serves the goal judge and other direct callers).
+  // The second call receives a new array (request prep prepends system messages),
+  // so memoize per message object: when every replayable message already came out
+  // of a prior pass, return the input unchanged instead of re-walking and
+  // re-serializing the whole transcript.
+  const optimized = new WeakSet<object>()
+
   export function optimizeModelMessages(messages: ModelMessage[]) {
-    return limitToolResultReplay(messages)
+    if (messages.every((message) => !Array.isArray(message.content) || optimized.has(message))) return messages
+    const result = limitToolResultReplay(messages)
+    for (const message of result) if (Array.isArray(message.content)) optimized.add(message)
+    return result
   }
 
   function textOf(part: unknown) {

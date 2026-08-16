@@ -8,6 +8,19 @@ import { Schema } from "effect"
 
 export const REACT_CAP = 12
 
+/**
+ * Model-visible description of the goal feature. Only injected into the system
+ * prompt while a goal is active for the session, so the feature costs no
+ * context when unused (set/clear breaks the cached system prefix once).
+ */
+export const GOAL_FEATURE_PROMPT = [
+  "<goal_feature>",
+  "The /goal <condition> command sets a persistent stop condition for this session.",
+  "When active, an independent judge checks the transcript before the session may stop.",
+  "Use /goal with no condition to clear it.",
+  "</goal_feature>",
+].join("\n")
+
 export const Verdict = Schema.Struct({
   ok: Schema.Boolean,
   impossible: Schema.optional(Schema.Boolean),

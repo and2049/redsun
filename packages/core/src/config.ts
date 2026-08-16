@@ -114,6 +114,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   tool_output: ConfigToolOutput.Info.pipe(Schema.optional).annotate({
     description: "Tool output truncation thresholds",
   }),
+  // REDSUN: per-turn reminder toggles and instruction truncation cap (compatibility metadata; V1 runtime only)
+  reminders: Schema.Struct({
+    plan: Schema.Boolean.pipe(Schema.optional),
+    compose: Schema.Boolean.pipe(Schema.optional),
+    worker: Schema.Boolean.pipe(Schema.optional),
+    build_switch: Schema.Boolean.pipe(Schema.optional),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description: "Enable or disable the synthetic per-turn reminder messages appended for specific agents",
+    }),
+  instruction_max_chars: Schema.Number.pipe(Schema.optional).annotate({
+    description: "Maximum characters of each instruction file included in the system prompt before truncation",
+  }),
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",
   }),

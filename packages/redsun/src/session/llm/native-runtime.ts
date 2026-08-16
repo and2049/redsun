@@ -19,6 +19,11 @@ import {
 import type { LLMClientShape } from "@opencode-ai/llm/route"
 import { LLMNative } from "./native-request"
 
+// REDSUN TODO: the length guard (llm/length-guard.ts) is inert on this
+// experimental native runtime — nothing sets lengthGuard.hit here, so tool
+// calls from a length-truncated native response still execute. The execute-side
+// check in session/tools.ts activates automatically once this runtime's stream
+// assembly sets the flag on a "length" finish.
 export type RuntimeStatus =
   | { readonly type: "supported"; readonly apiKey: string; readonly baseURL?: string }
   | { readonly type: "unsupported"; readonly reason: string }

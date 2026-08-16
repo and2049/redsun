@@ -38,6 +38,8 @@ import { DialogModel } from "./component/dialog-model"
 import { useWorkerModelDialog, useWorkerVariantDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
+import { DialogTools } from "./component/dialog-tools"
+import { DialogReminders } from "./component/dialog-reminders"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
@@ -706,6 +708,24 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "mcps",
         run: () => {
           dialog.replace(() => <DialogMcp />)
+        },
+      },
+      {
+        name: "tools.list",
+        title: "Toggle tools",
+        category: "Agent",
+        slashName: "tools",
+        run: () => {
+          dialog.replace(() => <DialogTools />)
+        },
+      },
+      {
+        name: "reminders.list",
+        title: "Toggle reminders",
+        category: "Agent",
+        slashName: "reminders",
+        run: () => {
+          dialog.replace(() => <DialogReminders />)
         },
       },
       {

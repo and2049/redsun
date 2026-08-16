@@ -228,6 +228,8 @@ function tail(text: string, maxLines: number, maxBytes: number) {
     return {
       text,
       cut: false,
+      shown: lines.length,
+      total: lines.length,
     }
   }
 
@@ -251,6 +253,8 @@ function tail(text: string, maxLines: number, maxBytes: number) {
   return {
     text: out.join("\n"),
     cut: true,
+    shown: out.length,
+    total: lines.length,
   }
 }
 
@@ -576,7 +580,11 @@ export const ShellTool = Tool.define(
       if (!output) output = "(no output)"
 
       if (cut && file) {
-        output = `...output truncated...\n\nFull output saved to: ${file}\n\n` + output
+        // REDSUN: pi-style banner with the exact shown range and the file
+        // holding the full output.
+        output =
+          `[Showing lines ${end.total - end.shown + 1}-${end.total} of ${end.total}. Full output: ${file}]\n\n` +
+          output
       }
 
       if (meta.length > 0) {

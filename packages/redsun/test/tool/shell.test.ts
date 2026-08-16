@@ -1141,8 +1141,7 @@ describe("tool.shell truncation", () => {
           command: fill("lines", lineCount),
         })
         mustTruncate(result)
-        expect(result.output).toMatch(/\.\.\.output truncated\.\.\./)
-        expect(result.output).toMatch(/Full output saved to:\s+\S+/)
+        expect(result.output).toMatch(/\[Showing lines \d+-\d+ of \d+\. Full output: \S+\]/)
       }),
     ),
   )
@@ -1156,8 +1155,7 @@ describe("tool.shell truncation", () => {
           command: fill("bytes", byteCount),
         })
         mustTruncate(result)
-        expect(result.output).toMatch(/\.\.\.output truncated\.\.\./)
-        expect(result.output).toMatch(/Full output saved to:\s+\S+/)
+        expect(result.output).toMatch(/\[Showing lines \d+-\d+ of \d+\. Full output: \S+\]/)
       }),
     ),
   )

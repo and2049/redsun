@@ -186,6 +186,29 @@ export const Info = Schema.Struct({
     description:
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
   }),
+  // REDSUN: per-turn reminder toggles and instruction truncation cap
+  reminders: Schema.optional(
+    Schema.Struct({
+      plan: Schema.optional(Schema.Boolean).annotate({
+        description: "Inject the plan-mode reminder each plan-agent turn (default: true)",
+      }),
+      compose: Schema.optional(Schema.Boolean).annotate({
+        description: "Inject the compose-mode brief each compose-agent turn (default: true)",
+      }),
+      worker: Schema.optional(Schema.Boolean).annotate({
+        description: "Inject the worker-mode brief each worker-agent turn (default: true)",
+      }),
+      build_switch: Schema.optional(Schema.Boolean).annotate({
+        description: "Inject the plan-to-build switch notice after leaving plan mode (default: true)",
+      }),
+    }),
+  ).annotate({
+    description: "Enable or disable the synthetic per-turn reminder messages redsun appends for specific agents.",
+  }),
+  instruction_max_chars: Schema.optional(PositiveInt).annotate({
+    description:
+      "Maximum characters of each instruction file (AGENTS.md, .redsun/memory.md, ...) included in the system prompt before truncation (default: 24000)",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({

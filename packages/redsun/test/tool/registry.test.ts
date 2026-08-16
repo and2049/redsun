@@ -164,6 +164,57 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("hides codesearch alongside websearch when web search is unavailable for the provider", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const agent = yield* agents.defaultInfo()
+
+      const anthropic = (yield* registry.tools({
+        providerID: ProviderV2.ID.make("anthropic"),
+        modelID: ModelV2.ID.make("claude-sonnet-4"),
+        agent,
+      })).map((tool) => tool.id)
+      expect(anthropic).not.toContain("websearch")
+      expect(anthropic).not.toContain("codesearch")
+
+      const opencode = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent,
+      })).map((tool) => tool.id)
+      expect(opencode).toContain("websearch")
+      expect(opencode).toContain("codesearch")
+    }),
+  )
+
+  it.instance("hides multiedit when apply_patch replaces the edit tools for gpt-5-family models", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const agent = yield* agents.defaultInfo()
+
+      const gpt5 = (yield* registry.tools({
+        providerID: ProviderV2.ID.make("openai"),
+        modelID: ModelV2.ID.make("gpt-5.2"),
+        agent,
+      })).map((tool) => tool.id)
+      expect(gpt5).toContain("apply_patch")
+      expect(gpt5).not.toContain("edit")
+      expect(gpt5).not.toContain("write")
+      expect(gpt5).not.toContain("multiedit")
+
+      const other = (yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent,
+      })).map((tool) => tool.id)
+      expect(other).toContain("edit")
+      expect(other).toContain("multiedit")
+      expect(other).not.toContain("apply_patch")
+    }),
+  )
+
   it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

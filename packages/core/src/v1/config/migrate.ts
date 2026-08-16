@@ -53,6 +53,9 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     lsp: info.lsp,
     attachments: info.attachment,
     tool_output: info.tool_output,
+    // REDSUN: reminder toggles + instruction cap passthrough
+    reminders: info.reminders,
+    instruction_max_chars: info.instruction_max_chars,
     mcp: mcp(info),
     compaction: info.compaction && {
       auto: info.compaction.auto,
