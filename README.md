@@ -26,4 +26,4 @@ irm https://github.com/and2049/redsun/releases/latest/download/install.ps1 | iex
 
 ## Acknowledgements
 
-Forked from [OpenCode](https://github.com/anthropics/opencode) under the MIT license.
+Forked from [OpenCode](https://github.com/anomalyco/opencode/) under the MIT license.
