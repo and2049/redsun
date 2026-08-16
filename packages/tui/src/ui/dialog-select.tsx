@@ -59,7 +59,7 @@ export interface DialogSelectOption<T = any> {
   value: T
   description?: string
   details?: string[]
-  footer?: JSX.Element | string
+  footer?: JSX.Element | string | ((fg?: RGBA) => JSX.Element)
   titleWidth?: number
   truncateTitle?: boolean | "left"
   category?: string
@@ -744,7 +744,7 @@ function Option(props: {
   active?: boolean
   current?: boolean
   muted?: boolean
-  footer?: JSX.Element | string
+  footer?: JSX.Element | string | ((fg?: RGBA) => JSX.Element)
   titleWidth?: number
   truncateTitle?: boolean | "left"
   gutter?: (fg?: RGBA) => JSX.Element
@@ -792,7 +792,11 @@ function Option(props: {
       </text>
       <Show when={props.footer}>
         <box flexShrink={0}>
-          <text fg={props.active && !props.muted ? fg() : theme.textMuted}>{props.footer}</text>
+          <text fg={props.active && !props.muted ? fg() : theme.textMuted}>
+            {typeof props.footer === "function"
+              ? props.footer(props.active && !props.muted ? fg() : undefined)
+              : props.footer}
+          </text>
         </box>
       </Show>
     </>
