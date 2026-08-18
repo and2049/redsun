@@ -8,6 +8,7 @@ import { ConfigAgent } from "./config/agent.js"
 import { ConfigMedia } from "./config/media.js"
 import { ConfigCompaction } from "./config/compaction.js"
 import { ConfigCommand } from "./config/command.js"
+import { ConfigClaudeCode } from "./config/claude-code.js"
 import { ConfigExperimental } from "./config/experimental.js"
 import { ConfigFormatter } from "./config/formatter.js"
 import { ConfigLSP } from "./config/lsp.js"
@@ -105,6 +106,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(optional),
   experimental: ConfigExperimental.Info.pipe(optional),
+  // REDSUN: delegated Claude Code provider settings.
+  claude_code: ConfigClaudeCode.Info.pipe(optional).annotate({
+    description: "Delegated Claude Code provider settings",
+  }),
 }) {}
 
 export class Document extends Schema.Class<Document>("Config.Document")({
