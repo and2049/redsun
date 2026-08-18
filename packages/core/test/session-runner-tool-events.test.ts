@@ -410,3 +410,49 @@ test("content-filter finish preserves partial streamed text and never ends the s
     error: { type: "provider.content-filter" },
   })
 })
+
+// REDSUN: the display-metadata envelope for provider-executed tools. Without it
+// a foreign tool surfaced through a provider facade can reach a part's content
+// but never its `state.metadata`, which is the only channel the per-tool
+// renderers read.
+const hosted = (value: unknown) =>
+  LLMEvent.toolResult({ id: "call-edit", name: "edit", result: { type: "json", value }, providerExecuted: true })
+
+const editCall = LLMEvent.toolCall({ id: "call-edit", name: "edit", input: { path: "a.ts" }, providerExecuted: true })
+
+test("hosted tool result carries display metadata onto the part", async () => {
+  const { published, publisher } = capture()
+  await Effect.runPromise(publisher.publish(editCall))
+  await Effect.runPromise(
+    publisher.publish(hosted({ output: "Edited a.ts", metadata: { files: [{ file: "a.ts", patch: "@@" }] } })),
+  )
+
+  const success = published.find((event) => event.type === "session.tool.success.2")
+  expect(success?.data).toMatchObject({
+    content: [{ type: "text", text: "Edited a.ts" }],
+    metadata: { files: [{ file: "a.ts", patch: "@@" }] },
+    executed: true,
+  })
+})
+
+test("hosted tool result without the envelope keeps its JSON content and sets no metadata", async () => {
+  const { published, publisher } = capture()
+  await Effect.runPromise(publisher.publish(editCall))
+  await Effect.runPromise(publisher.publish(hosted({ output: "Edited a.ts", replacements: 1 })))
+
+  const success = published.find((event) => event.type === "session.tool.success.2")
+  // An ordinary JSON result is any shape but the envelope, so it must round-trip
+  // through `hostedContent` exactly as it did before the envelope existed.
+  expect(success?.data).toMatchObject({ content: [{ type: "text", text: '{"output":"Edited a.ts","replacements":1}' }] })
+  expect(success?.data).not.toHaveProperty("metadata")
+})
+
+test("hosted envelope requires metadata to be a plain object", async () => {
+  const { published, publisher } = capture()
+  await Effect.runPromise(publisher.publish(editCall))
+  await Effect.runPromise(publisher.publish(hosted({ output: "done", metadata: ["files"] })))
+
+  const success = published.find((event) => event.type === "session.tool.success.2")
+  expect(success?.data).not.toHaveProperty("metadata")
+  expect(success?.data).toMatchObject({ content: [{ type: "text", text: '{"output":"done","metadata":["files"]}' }] })
+})

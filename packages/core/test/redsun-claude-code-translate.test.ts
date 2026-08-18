@@ -111,18 +111,82 @@ describe("ClaudeCodeTranslate", () => {
       ],
       children,
     )
-    expect(parts[0]).toMatchObject({
-      toolName: "subagent",
-      providerMetadata: { redsun: { sessionID: "ses_child", parentSessionID: "ses_parent" } },
-    })
+    expect(parts[0]).toMatchObject({ toolName: "subagent" })
+    // The link rides the result, not the call: `providerMetadata` lands in the
+    // part's `providerState`, and the renderers read `state.metadata`.
+    expect(parts[0]).not.toHaveProperty("providerMetadata")
     expect(parts[1]).toMatchObject({
       toolName: "subagent",
       result: {
         output: "done",
-        title: "review docs",
-        metadata: { sessionID: "ses_child", toolcalls: 4, duration: 1200 },
+        metadata: { sessionID: "ses_child", parentSessionID: "ses_parent", toolcalls: 4, duration: 1200 },
       },
     })
+  })
+
+  it("carries an edit's re-derived diff onto the completed part", () => {
+    const { parts } = run([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "tu_edit",
+              name: "Edit",
+              input: { file_path: "/a.ts", old_string: "one", new_string: "two" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        tool_use_result: {
+          filePath: "/a.ts",
+          oldString: "one",
+          newString: "two",
+          originalFile: "one\n",
+          replaceAll: false,
+        },
+        message: { content: [{ type: "tool_result", tool_use_id: "tu_edit", content: "Applied 1 edit" }] },
+      },
+    ])
+    expect(parts[0]).toMatchObject({ toolName: "edit", input: JSON.stringify({ path: "/a.ts", oldString: "one", newString: "two" }) })
+    expect(parts[1]).toMatchObject({
+      toolName: "edit",
+      result: { output: "Applied 1 edit", metadata: { files: [{ file: "/a.ts", status: "modified" }] } },
+    })
+  })
+
+  it("leaves a plain result plain, and never attaches a diff to a failed edit", () => {
+    const editCall = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "tu_e", name: "Edit", input: { file_path: "/a.ts", old_string: "x", new_string: "y" } },
+        ],
+      },
+    }
+    const failed = run([
+      editCall,
+      {
+        type: "user",
+        tool_use_result: { filePath: "/a.ts", oldString: "x", newString: "y", originalFile: "x\n" },
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "tu_e", content: "String not found", is_error: true }],
+        },
+      },
+    ])
+    expect(failed.parts[1]).toMatchObject({ result: "String not found", isError: true })
+
+    const read = run([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_r", name: "Read", input: { file_path: "/a.ts" } }] },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_r", content: "1|one" }] } },
+    ])
+    expect(read.parts[1]).toMatchObject({ toolName: "read", result: "1|one" })
   })
 
   it("reads the mirror's live map, which fills in after the state is made", () => {
@@ -141,9 +205,7 @@ describe("ClaudeCodeTranslate", () => {
         message: { content: [{ type: "tool_use", id: "tu_late", name: "Agent", input: {} }] },
       }),
     )
-    expect(call[0]).toMatchObject({
-      providerMetadata: { redsun: { sessionID: "ses_late", parentSessionID: "ses_parent" } },
-    })
+    expect(call[0]).toMatchObject({ toolName: "subagent", toolCallId: "tu_late" })
 
     // The parent tool_result arrives after task_notification for a foreground
     // task, so the entry must still be present here.
@@ -151,7 +213,7 @@ describe("ClaudeCodeTranslate", () => {
       state,
       msg({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_late", content: "ok" }] } }),
     )
-    expect(result[0]).toMatchObject({ result: { title: "late child", metadata: { sessionID: "ses_late" } } })
+    expect(result[0]).toMatchObject({ result: { output: "ok", metadata: { sessionID: "ses_late" } } })
   })
 
   it("takes usage from the last main-thread call, not the cumulative result total", () => {

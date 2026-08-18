@@ -70,6 +70,31 @@ const hostedContent = (result: ToolResultValue): NonEmptyContent => {
 }
 
 /**
+ * REDSUN: display metadata for a provider-executed tool.
+ *
+ * `toolExecution` forwards a locally executed tool's `metadata` onto the part,
+ * and `state.metadata` is the only channel the per-tool renderers read. The
+ * hosted path had no equivalent, so a foreign tool surfaced through a provider
+ * facade -- Claude Code's Edit, Write, Agent -- could never reach a native
+ * renderer: an edit drew a bare path row with no diff, and a subagent had no
+ * session to click through to.
+ *
+ * A hosted result shaped `{ output, metadata }` is unwrapped into the same
+ * content/metadata pair `toolExecution` publishes. Both keys are required and
+ * `metadata` must be a plain object, so an ordinary JSON result -- which is any
+ * other shape -- keeps going through `hostedContent` untouched.
+ */
+const hostedDisplay = (result: ToolResultValue) => {
+  if (result.type !== "json") return undefined
+  const value = result.value
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  const { output, metadata } = value as Record<string, unknown>
+  if (typeof output !== "string") return undefined
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return undefined
+  return { output, metadata: metadata as Tool.Metadata }
+}
+
+/**
  * Persist one step without executing tools or starting a continuation step.
  *
  * Concurrency invariant: the provider loop and each owned tool fiber call these methods
@@ -483,11 +508,15 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           })
           return
         }
+        // REDSUN: see `hostedDisplay` -- an unwrapped envelope publishes the
+        // same content/metadata pair a locally executed tool does.
+        const display = hostedDisplay(event.result)
         yield* bus.publish(SessionEvent.Tool.Success, {
           sessionID: input.sessionID,
           assistantMessageID: tool.assistantMessageID,
           id: event.id,
-          content: hostedContent(event.result),
+          content: display === undefined ? hostedContent(event.result) : [{ type: "text", text: display.output }],
+          ...(display === undefined ? {} : { metadata: display.metadata }),
           executed,
           resultState,
         })

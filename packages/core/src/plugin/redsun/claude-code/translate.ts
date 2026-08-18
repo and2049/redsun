@@ -189,14 +189,19 @@ const assistantMessage = (state: State, content: unknown): LanguageModelV3Stream
     const raw = item.input && typeof item.input === "object" ? (item.input as Record<string, unknown>) : {}
     const input = ClaudeCodeNativeTools.toolInput(item.name, raw)
     state.toolCalls.set(item.id, { name, input })
-    const child = ClaudeCodeNativeTools.SUBAGENT_TOOLS.has(item.name) ? state.taskChildren?.get(item.id) : undefined
+    // The child link rides the *result*, not the call: `providerMetadata` is
+    // keyed by the provider's own metadata key and lands in the part's
+    // `providerState` (a provider round-trip channel), while the renderers read
+    // `state.metadata` -- and `session.tool.called` hardcodes that to `{}` for
+    // the running state regardless. So a delegated subagent becomes clickable
+    // when it settles; until then the child session is already listed in its
+    // own right, minted by the mirror at `task_started`.
     parts.push({
       type: "tool-call",
       toolCallId: item.id,
       toolName: name,
       input: JSON.stringify(input),
       providerExecuted: true,
-      ...(child ? { providerMetadata: { redsun: taskChildMetadata(child) } } : {}),
     })
   }
   return parts
@@ -216,8 +221,10 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
     const text = toolResultText(item.content)
 
     if (child && !item.is_error) {
-      // Structured result so the completed part keeps the child-session link.
-      // AgentOutput totals ride along when the SDK attached them.
+      // `{ output, metadata }` is the envelope `publish-llm-event.ts` unwraps
+      // into a part's content and `state.metadata`, which is where the subagent
+      // renderer reads `sessionID` to make the row clickable. AgentOutput totals
+      // ride along when the SDK attached them.
       const output =
         message.tool_use_result && typeof message.tool_use_result === "object"
           ? (message.tool_use_result as Record<string, any>)
@@ -231,7 +238,6 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
         // the flag when it lowers this into an LLMEvent.
         result: {
           output: text,
-          title: child.description,
           metadata: {
             ...taskChildMetadata(child),
             ...(completed && typeof output?.totalToolUseCount === "number"
@@ -244,11 +250,16 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
       continue
     }
 
+    // Same envelope for a native tool whose result carries something a renderer
+    // needs -- today, an edit's or write's diff.
+    const metadata = item.is_error
+      ? undefined
+      : ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result)
     parts.push({
       type: "tool-result",
       toolCallId: item.tool_use_id,
       toolName: call.name,
-      result: text,
+      result: metadata === undefined ? text : { output: text, metadata },
       ...(item.is_error ? { isError: true } : {}),
     })
   }
