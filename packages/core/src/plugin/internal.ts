@@ -47,6 +47,8 @@ import { Skill } from "../skill.js"
 import { SkillDiscovery } from "../skill/discovery.js"
 import { Watcher } from "../filesystem/watcher.js"
 import { PatchTool } from "../tool/plugin/patch.js"
+// REDSUN: redsun-owned internal plugins.
+import { RedsunComposePlugin } from "./redsun/compose.js"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
 import { GrepTool } from "../tool/plugin/grep.js"
@@ -237,6 +239,8 @@ const post = [
   ConfigWebSearchPlugin.Plugin,
   VariantPlugin.Plugin,
   ConfigPolicyPlugin.Plugin,
+  // REDSUN: registered after ConfigAgentPlugin so user config still wins.
+  RedsunComposePlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 export const list = Effect.fn("PluginInternal.list")(function* () {
