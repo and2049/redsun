@@ -64,6 +64,8 @@ import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer"
 import { scrollAnchor, setScrollAnchor } from "./scroll-anchor"
 import { childSessions as familyChildren, nextChild } from "./child-navigation"
+import { useVim } from "../../context/vim"
+import { useKeyboard } from "@opentui/solid"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
@@ -232,6 +234,7 @@ export function Session() {
   })
 
   const dimensions = useTerminalDimensions()
+  const vim = useVim()
   const sidebar = createMemo(() => config.session?.sidebar ?? "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
   const thinkingMode = createMemo<ThinkingMode>(() => config.session?.thinking ?? "hide")
@@ -641,6 +644,41 @@ export function Session() {
     dialog.clear()
   }
 
+  useKeyboard((event) => {
+    if (vim.mode !== "normal") return
+    if (event.ctrl || event.meta || event.option) return
+    if (dialog.stack.length > 0) return
+    if (!scroll || scroll.isDestroyed) return
+
+    // A borrowed normal mode ends on the command it was borrowed for.
+    const borrowed = vim.tempRemaining() !== null
+    const release = () => {
+      if (!borrowed) return
+      vim.clearTemp()
+      vim.setMode("insert")
+    }
+
+    if (event.name === "j" || event.name === "k") {
+      event.preventDefault()
+      const down = event.name === "j"
+      const count = vim.takeCount()
+      // Shift jumps a whole turn; the bare letter scrolls a line. Repeating the
+      // jump has to advance one turn at a time, which is what scrollToMessage
+      // already guarantees, so a count is repeated steps rather than an offset.
+      if (event.shift) for (let step = 0; step < count; step++) scrollToMessage(down ? "next" : "prev", dialog)
+      else moveTranscript(down ? count : -count)
+      release()
+      return
+    }
+    if (event.name === "g") {
+      event.preventDefault()
+      vim.clearCount()
+      scroll.scrollTo(event.shift ? scroll.scrollHeight : 0)
+      updateAwayFromBottom()
+      release()
+    }
+  })
+
   const globalCommands = [
     {
       id: "session.page.up",
@@ -917,6 +955,21 @@ export function Session() {
             break
           }
         }
+      },
+    },
+    {
+      // REDSUN: the worker model lives in a session-scoped override the plugin
+      // owns, and a plugin can add neither an HTTP nor a KV route -- which is
+      // why the picker is a Form behind the `/worker-model` command rather than
+      // a dialog with its own write path. This is the keyboard way in: it
+      // submits that command, and the Form renders in the dock like any other.
+      title: "Choose the worker model",
+      id: "worker.model",
+      group: "Agent",
+      run: () => {
+        dialog.clear()
+        promptRef.current?.set({ text: "/worker-model", files: [], agents: [], pasted: [] })
+        promptRef.current?.submit()
       },
     },
     {
