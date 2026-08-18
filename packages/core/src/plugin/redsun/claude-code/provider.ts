@@ -12,8 +12,11 @@ import { Config } from "../../../config.js"
 import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
 import { Permission } from "../../../permission.js"
+import { PluginRuntime } from "../../runtime.js"
+import { Tool } from "../../../tool.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
+import { ClaudeCodeMcp } from "./mcp.js"
 import { ClaudeCodeModels } from "./models.js"
 import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuery } from "./query.js"
@@ -59,6 +62,8 @@ export const Plugin = define({
     const location = yield* Location.Service
     const kv = yield* KV.Service
     const permission = yield* Permission.Service
+    const tools = yield* Tool.Service
+    const runtime = yield* PluginRuntime.Service
 
     // Resume cursors are read synchronously inside doStream, so keep a mirror of
     // the durable KV values in memory and write through on change.
@@ -117,6 +122,48 @@ export const Plugin = define({
         return { behavior: "allow" as const, updatedInput: input }
       }
 
+    /**
+     * Delegation for a Claude Code coordinator. Executes the upstream subagent
+     * tool through the ordinary snapshot so permission asserts, depth limits and
+     * worker-model resolution are reused. The permission layer does the gating,
+     * so a worker (which denies `subagent`) gets a refusal rather than a missing
+     * tool.
+     */
+    const delegate =
+      (sessionID: string): ClaudeCodeMcp.Delegate =>
+      async (args) => {
+        const agent = agents.get(sessionID)
+        if (!agent) throw new Error("Task delegation is not available for this session.")
+        return Effect.runPromise(
+          Effect.gen(function* () {
+            const snapshot = yield* tools.snapshot()
+            // The permission request is attributed to the session's newest
+            // message, matching how an ordinary tool call would appear.
+            const messages = yield* runtime.session.messages({ sessionID: sessionID as never, order: "desc", limit: 1 })
+            const messageID = messages[0]?.id
+            if (!messageID) return yield* Effect.fail(new Error("Session has no message to attribute the task to."))
+            const result = yield* snapshot.execute({
+              sessionID: sessionID as never,
+              agent: agent as never,
+              messageID,
+              call: {
+                type: "tool-call",
+                id: `claude-code-subagent-${Date.now().toString(36)}`,
+                name: "subagent",
+                input: args,
+              } as never,
+            })
+            return result.content
+              .flatMap((part) => (part.type === "text" ? [part.text] : []))
+              .join("\n")
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.fail(error instanceof Error ? error : new Error(String((error as { message?: string })?.message ?? error))),
+            ),
+          ),
+        )
+      }
+
     yield* ctx.aisdk.hook(
       "language",
       Effect.fn(function* (event) {
@@ -135,6 +182,9 @@ export const Plugin = define({
           createQuery: ClaudeCodeQuery.defaultCreateQuery,
           hooks: {
             canUseTool,
+            turnOptions: (sessionID) => ({
+              mcpServers: { redsun: ClaudeCodeMcp.makeSubagentServer(delegate(sessionID)) },
+            }),
             isOneShot: (sessionID) => ONE_SHOT_AGENTS.has(agents.get(sessionID) ?? ""),
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {
