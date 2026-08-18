@@ -93,6 +93,7 @@ import {
   cacheReuseDrop,
   createSessionRows,
   messageBoundaryIDs,
+  explorationSummary,
   resolvePart,
   turnDuration,
   type CacheUsage,
@@ -1692,8 +1693,10 @@ function SessionReasoningGroupView(props: {
         fallback={<For each={props.refs}>{(ref) => <SessionPartView partRef={ref} message={props.message} />}</For>}
       >
         <box flexDirection="column" flexShrink={0}>
+          {/* REDSUN DENSE: a disclosure chevron, the way v0.3.0 drew it -- a
+              `+` reads as "add", not "there is more of this below". */}
           <InlineToolRow
-            icon={expanded() ? "-" : "+"}
+            icon={expanded() ? "▼" : "▶"}
             color={
               !props.completed
                 ? theme.text.default
@@ -1792,18 +1795,7 @@ function SessionGroupView(props: {
     })
   const grouped = createMemo(() => parts(props.refs))
   const pending = createMemo(() => parts(props.pending))
-  const label = createMemo(() => {
-    const counts = grouped().reduce<Record<string, number>>((result, part) => {
-      const tool = toolDisplay(part.name)
-      const name = tool === "grep" || tool === "glob" ? "search" : tool
-      result[name] = (result[name] ?? 0) + 1
-      return result
-    }, {})
-    const tools = Object.entries(counts).map(
-      ([name, count]) => `${count} ${count === 1 ? name : name === "search" ? "searches" : `${name}s`}`,
-    )
-    return `${props.completed ? "Explored" : "Exploring"} — ${tools.join(", ")}`
-  })
+  const label = createMemo(() => explorationSummary(grouped().map((part) => toolDisplay(part.name))))
   return (
     <Show when={grouped().length > 0 || pending().length > 0}>
       <Show
@@ -1811,8 +1803,12 @@ function SessionGroupView(props: {
         fallback={<For each={[...grouped(), ...pending()]}>{(part) => <ToolPart part={part} />}</For>}
       >
         <Show when={grouped().length > 0}>
+          {/* A collapsed run has no per-tool icon of its own, so it borrows the
+              accented marker and name treatment of a single tool row: `*` in
+              the icon column, the summary accented, the hint left grey. */}
           <InlineToolRow
-            icon={props.completed ? "→" : "✱"}
+            icon={expanded() ? "−" : "✱"}
+            iconColor={theme.hue.accent[500]}
             color={hover() ? theme.text.default : theme.text.subdued}
             complete={props.completed}
             pending={label()}
@@ -1824,7 +1820,8 @@ function SessionGroupView(props: {
               setExpanded((value) => !value)
             }}
           >
-            {label()}
+            <span style={{ fg: theme.hue.accent[500], bold: true }}>{label()}</span>
+            {expanded() ? "" : " (click to expand)"}
           </InlineToolRow>
         </Show>
         <Show when={expanded() && grouped().length > 0}>

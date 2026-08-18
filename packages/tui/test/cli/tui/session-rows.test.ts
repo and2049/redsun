@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode-ai/client"
-import { cacheReuseDrop, messageBoundaryIDs, reduceSessionRows, turnDuration } from "../../../src/routes/session/rows"
+import {
+  cacheReuseDrop,
+  explorationSummary,
+  messageBoundaryIDs,
+  reduceSessionRows,
+  turnDuration,
+} from "../../../src/routes/session/rows"
 
 test("measures turn duration from the user prompt across assistant steps", () => {
   const first = assistant("assistant-1", [])
@@ -408,3 +414,45 @@ function assistant(id: string, content: SessionMessageAssistant["content"]): Ses
 function pending() {
   return { status: "streaming" as const, input: "" }
 }
+
+test("collapses every read-only tool into one run", () => {
+  // Upstream stops at read/glob/grep. A directory listing, a page fetch and a
+  // web search produce exactly the same kind of row, and reading twenty of them
+  // one per line is what the collapse exists to avoid.
+  const messages: SessionMessageInfo[] = [
+    assistant("assistant-1", [
+      { type: "tool", id: "read-1", name: "read", state: pending(), time: { created: 1 } },
+      { type: "tool", id: "list-1", name: "list", state: pending(), time: { created: 2 } },
+      { type: "tool", id: "fetch-1", name: "webfetch", state: pending(), time: { created: 3 } },
+      { type: "tool", id: "web-1", name: "websearch", state: pending(), time: { created: 4 } },
+    ]),
+  ]
+
+  expect(reduceSessionRows(messages)).toEqual([
+    {
+      type: "group",
+      kind: "exploration",
+      pending: [],
+      completed: false,
+      refs: [
+        { messageID: "assistant-1", partID: "read-1" },
+        { messageID: "assistant-1", partID: "list-1" },
+        { messageID: "assistant-1", partID: "fetch-1" },
+        { messageID: "assistant-1", partID: "web-1" },
+      ],
+    },
+  ])
+})
+
+test("summarizes a run as what it did", () => {
+  expect(explorationSummary(["read", "read", "read", "grep", "glob"])).toBe("Read 3 files, searched for 2 patterns")
+  expect(explorationSummary(["read"])).toBe("Read 1 file")
+  expect(explorationSummary(["grep"])).toBe("Searched for 1 pattern")
+  expect(explorationSummary(["list", "list"])).toBe("Listed 2 directories")
+  expect(explorationSummary(["webfetch", "websearch"])).toBe("Fetched 1 page, ran 1 web search")
+  // Phrase order is fixed, not first-seen, so the same mix always reads the same.
+  expect(explorationSummary(["websearch", "read"])).toBe("Read 1 file, ran 1 web search")
+  // An unrecognized tool still counts rather than vanishing from the tally.
+  expect(explorationSummary(["lsp"])).toBe("Listed 1 directory")
+  expect(explorationSummary([])).toBe("")
+})
