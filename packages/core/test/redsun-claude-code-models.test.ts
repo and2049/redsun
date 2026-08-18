@@ -42,6 +42,28 @@ describe("ClaudeCodeModels", () => {
     expect(ClaudeCodeModels.isDelegated({ providerID: "claude-code" })).toBe(true)
     expect(ClaudeCodeModels.isDelegated({ providerID: "anthropic" })).toBe(false)
   })
+
+  it("covers every sentinel-bearing model with the delegated predicate", () => {
+    // The sentinel is never installed because the aisdk `language` hook answers
+    // these models before package resolution, and `isDelegated` is the predicate
+    // that hook and the compaction guards key on. So the set of models carrying
+    // the sentinel and the set the predicate claims must be the same set.
+    // (This asserts the predicate's coverage, not the hook's ordering, which
+    // only a live aisdk resolution would prove.)
+    const provider = ClaudeCodeModels.providerInfo()
+    expect(provider.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
+    for (const model of ClaudeCodeModels.MODELS) {
+      expect(model.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
+      expect(ClaudeCodeModels.isDelegated(model)).toBe(true)
+    }
+  })
+
+  it("stays visible without a connection", () => {
+    // catalog.ts hides an `auto` provider that has an integration with no
+    // connections, and auth.ts registers one. Autodetection is the contract:
+    // the plugin only registers anything once the binary resolves.
+    expect(ClaudeCodeModels.providerInfo().activation).toBe("enabled")
+  })
 })
 
 describe("ClaudeCodeExecutable", () => {
@@ -65,6 +87,57 @@ describe("ClaudeCodeExecutable", () => {
         filesystem: fs([shimDir + "\\claude.cmd", entry]),
       }),
     ).toEqual({ path: entry })
+  })
+
+  it("follows a .bat shim as well as a .cmd one", () => {
+    const shimDir = "C:\\npm"
+    const entry = shimDir + "\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"
+    expect(
+      ClaudeCodeExecutable.resolveWith({
+        env: { PATH: shimDir, PATHEXT: ".EXE;.BAT" },
+        platform: "win32",
+        filesystem: fs([shimDir + "\\claude.bat", entry]),
+      }),
+    ).toEqual({ path: entry })
+  })
+
+  it("falls back to cli.js when the shim has no packaged exe", () => {
+    const shimDir = "C:\\npm"
+    const entry = shimDir + "\\node_modules\\@anthropic-ai\\claude-code\\cli.js"
+    expect(
+      ClaudeCodeExecutable.resolveWith({
+        env: { PATH: shimDir, PATHEXT: ".EXE;.CMD" },
+        platform: "win32",
+        filesystem: fs([shimDir + "\\claude.cmd", entry]),
+      }),
+    ).toEqual({ path: entry })
+  })
+
+  it("follows a configured path that is itself a shim", () => {
+    const shimDir = "C:\\npm"
+    const shim = shimDir + "\\claude.ps1"
+    const entry = shimDir + "\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"
+    expect(
+      ClaudeCodeExecutable.resolveWith({
+        binaryPath: shim,
+        env: {},
+        platform: "win32",
+        filesystem: fs([shim, entry]),
+      }),
+    ).toEqual({ path: entry })
+  })
+
+  it("rejects a configured shim with nothing behind it", () => {
+    // The SDK spawns without a shell, so handing it a launcher shim fails with
+    // `spawn EINVAL` at the first turn instead of here.
+    const shim = "C:\\npm\\claude.ps1"
+    const result = ClaudeCodeExecutable.resolveWith({
+      binaryPath: shim,
+      env: {},
+      platform: "win32",
+      filesystem: fs([shim]),
+    })
+    expect("error" in result && result.error).toContain("launcher shim")
   })
 
   it("reports an actionable error when the CLI is absent", () => {

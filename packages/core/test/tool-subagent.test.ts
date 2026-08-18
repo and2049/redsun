@@ -38,7 +38,14 @@ import { executeTool, registerToolPlugin, toolIdentity } from "./lib/tool"
 const childText = "child final response"
 const completedOutput = (sessionID: Session.ID) =>
   `<subagent sessionID="${sessionID}" state="completed">\n${childText}\n</subagent>`
-const childModel = Model.Ref.make({ id: Model.ID.make("child"), providerID: Provider.ID.make("test") })
+// REDSUN: the variant rides inside Model.Ref, so pinning one here makes every
+// assertion below also assert that a resumed or agent-switched child keeps the
+// variant it was created with — v1 tracked this separately as worker_variant.
+const childModel = Model.Ref.make({
+  id: Model.ID.make("child"),
+  providerID: Provider.ID.make("test"),
+  variant: Model.VariantID.make("high"),
+})
 const parentModel = Model.Ref.make({ id: Model.ID.make("parent"), providerID: Provider.ID.make("test") })
 const tokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 

@@ -25,6 +25,7 @@ import { ClaudeCodeLanguageModel } from "./language-model.js"
 import { ClaudeCodeMcp } from "./mcp.js"
 import { ClaudeCodeModes } from "./modes.js"
 import { ClaudeCodeModels } from "./models.js"
+import { ClaudeCodePermissionBridge } from "./permission-bridge.js"
 import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuery } from "./query.js"
 import { ClaudeCodeQuestions } from "./questions.js"
@@ -162,73 +163,31 @@ export const Plugin = define({
       })
     }
 
-    /**
-     * Claude Code executes its own tools, so its approvals arrive here rather
-     * than through v2's tool layer. Bridging them onto Permission.Service is
-     * what makes a user's existing rules apply to delegated sessions.
-     */
-    const canUseTool =
-      (sessionID: string) =>
-      async (toolName: string, input: Record<string, unknown>, options: { signal: AbortSignal }) => {
-        const worktree = location.directory
-        const agent = agents.get(sessionID)
-        const ask = (action: string, resource: string) =>
+    /** Bridges the SDK's approvals onto Permission.Service. See permission-bridge.ts. */
+    const canUseTool = (sessionID: string) =>
+      ClaudeCodePermissionBridge.make({
+        worktree: location.directory,
+        agent: () => agents.get(sessionID),
+        ask: (action, resource) =>
           Effect.runPromise(
             permission.ask({
               action,
               resources: [resource],
               save: [resource],
               sessionID: sessionID as never,
-              ...(agent ? { agent: agent as never } : {}),
+              ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
             }),
-          ).catch(() => ({ effect: "deny" as const }))
-
-        if (ClaudeCodePermissions.isReadOnly(toolName)) return { behavior: "allow" as const, updatedInput: input }
-        if (options.signal.aborted) return { behavior: "deny" as const, message: "Interrupted" }
-
-        // A granted question still needs somewhere to be answered: Claude Code
-        // has no terminal here, so an allow without answers stalls the turn.
-        if (toolName === ClaudeCodeQuestions.TOOL_NAME) {
-          const questions = ClaudeCodeQuestions.parse(input)
-          if (questions) {
-            const outcome = await ask("question", "*")
-            if (outcome.effect === "deny") return { behavior: "deny" as const, message: "Permission denied: question" }
-            const state = await Effect.runPromise(
-              forms.ask({
-                sessionID,
-                title: "Questions",
-                metadata: { kind: "question", source: "claude-code" },
-                fields: ClaudeCodeQuestions.fields(questions) as never,
-              }),
-            ).catch(() => undefined)
-            if (!state || state.status === "cancelled" || options.signal.aborted)
-              return { behavior: "deny" as const, message: "The user dismissed this question." }
-            return {
-              behavior: "allow" as const,
-              updatedInput: { ...input, answers: ClaudeCodeQuestions.answers(questions, state.answer) },
-            }
-          }
-        }
-
-        // External directories are asked first, mirroring v2's own file tools.
-        const external = ClaudeCodePermissions.externalDirectory({ toolName, input, worktree })
-        if (external) {
-          const outcome = await ask("external_directory", external)
-          if (outcome.effect === "deny")
-            return { behavior: "deny" as const, message: `Access to ${external} was denied` }
-        }
-
-        const mapped = ClaudeCodePermissions.mapPermission({ toolName, input, worktree })
-        const outcome = await ask(mapped.action, mapped.resource)
-        if (outcome.effect === "deny") {
-          // Compose denies the native subagent tool by design, so point the
-          // model at the routed one rather than leaving it at a dead end.
-          if (mapped.action === "subagent" && agent === "compose")
-            return { behavior: "deny" as const, message: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT }
-          return { behavior: "deny" as const, message: `Permission denied: ${mapped.action} ${mapped.resource}` }
-        }
-        return { behavior: "allow" as const, updatedInput: input }
-      }
+          ).catch(() => ({ effect: "deny" as const })),
+        form: (fields) =>
+          Effect.runPromise(
+            forms.ask({
+              sessionID,
+              title: "Questions",
+              metadata: { kind: "question", source: "claude-code" },
+              fields: fields as never,
+            }),
+          ).catch(() => undefined),
+      })
 
     /**
      * Delegation for a Claude Code coordinator. Executes the upstream subagent
