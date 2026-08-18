@@ -110,7 +110,7 @@ export const layer = (options?: Options) =>
       const bus = yield* Bus.Service
       const credentials = yield* Credential.Service
       const wellknown = yield* WellKnown.Service
-      const names = ["opencode.json", "opencode.jsonc"]
+      const names = ["redsun.json", "redsun.jsonc"]
       const reloadLock = Semaphore.makeUnsafe(1)
       const fileTargets = new Set<AbsolutePath>()
       const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
@@ -217,7 +217,7 @@ export const layer = (options?: Options) =>
             ? []
             : yield* fs
                 .up({
-                  targets: [".opencode", ".claude", ".agents", ...names.toReversed()],
+                  targets: [".redsun", ".claude", ".agents", ...names.toReversed()],
                   start: location.directory,
                 })
                 .pipe(Effect.orDie)
@@ -239,12 +239,12 @@ export const layer = (options?: Options) =>
         const directories = [
           globalDirectory,
           ...discovered
-            .filter((item) => path.basename(item) === ".opencode")
+            .filter((item) => path.basename(item) === ".redsun")
             .toReversed()
             .map((directory) => AbsolutePath.make(directory)),
         ]
         const directPaths = discovered
-          .filter((item) => ![".agents", ".claude", ".opencode"].includes(path.basename(item)))
+          .filter((item) => ![".agents", ".claude", ".redsun"].includes(path.basename(item)))
           .toReversed()
         fileTargets.clear()
         directPaths.forEach((filepath) => fileTargets.add(AbsolutePath.make(filepath)))

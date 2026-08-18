@@ -77,14 +77,14 @@ async function publishDistribution(input: { root: string; name: string; binary: 
 await publishDistribution({
   root: "./dist",
   name: pkg.name,
-  binary: "opencode2",
+  binary: "redsun",
   packagePrefix: "@opencode-ai/cli-",
 })
 if (existsSync("./dist/node")) {
   await publishDistribution({
     root: "./dist/node",
     name: "opencode-node",
-    binary: "opencode2-node",
+    binary: "redsun-node",
     packagePrefix: "@opencode-ai/cli-node-",
   })
 }

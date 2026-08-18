@@ -26,7 +26,7 @@ title/body for the user.
 
 Collect these values when possible:
 
-- opencode version: run `opencode --version` or `opencode2 --version`,
+- opencode version: run `opencode --version` or `redsun --version`,
   depending on the executable in use.
 - Operating system: run `uname -a` on Unix-like systems, or `ver` on Windows.
 - Terminal: inspect `$TERM`, `$TERM_PROGRAM`, `$COLORTERM`, and any obvious

@@ -12,7 +12,7 @@ declare const OPENCODE_CLI_NAME: string | undefined
 type Method = "npm" | "pnpm" | "bun" | "yarn" | "curl"
 
 const packageName =
-  typeof OPENCODE_CLI_NAME === "string" && OPENCODE_CLI_NAME === "opencode2-node"
+  typeof OPENCODE_CLI_NAME === "string" && OPENCODE_CLI_NAME === "redsun-node"
     ? OPENCODE_CLI_NAME
     : "@opencode-ai/cli"
 
@@ -70,9 +70,9 @@ export const layer = Layer.effect(
     const method = Effect.fnUntraced(function* () {
       const binary = path.join(
         global.home,
-        ".opencode",
+        ".redsun",
         "bin",
-        process.platform === "win32" ? "opencode2.exe" : "opencode2",
+        process.platform === "win32" ? "redsun.exe" : "redsun",
       )
       if (path.resolve(process.execPath) === path.resolve(binary)) return "curl"
 
