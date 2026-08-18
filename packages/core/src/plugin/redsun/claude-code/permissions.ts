@@ -54,6 +54,21 @@ export const mapPermission = (input: {
 }
 
 /**
+ * Refusal text for a compose coordinator reaching for Claude Code's own
+ * subagent tool.
+ *
+ * Under compose the native tool is denied on purpose (see
+ * plugin/redsun/compose.ts): delegating inside the CLI would bypass redsun's
+ * worker-model resolution, depth limits, and route validation entirely. A bare
+ * "permission denied" reads as a dead end, so name the tool that does work —
+ * mcp.ts attaches it to every turn precisely for this.
+ */
+export const COMPOSE_SUBAGENT_REDIRECT =
+  "Use the `mcp__redsun__subagent` tool instead of the native subagent tool. " +
+  "Compose delegates through redsun so worker model selection, depth limits, " +
+  "and background runs apply."
+
+/**
  * The external-directory pattern for a file tool reaching outside the worktree,
  * or undefined when the path is inside it. Asked before the tool's own
  * permission, mirroring how v2 gates external directories.

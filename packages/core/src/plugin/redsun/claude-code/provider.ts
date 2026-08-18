@@ -12,6 +12,7 @@ import { Model } from "@opencode-ai/schema/model"
 import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
 import { Config } from "../../../config.js"
+import { Form } from "../../../form.js"
 import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
 import { Permission } from "../../../permission.js"
@@ -25,6 +26,7 @@ import { ClaudeCodeModes } from "./modes.js"
 import { ClaudeCodeModels } from "./models.js"
 import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuery } from "./query.js"
+import { ClaudeCodeQuestions } from "./questions.js"
 import { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
@@ -69,6 +71,7 @@ export const Plugin = define({
     const location = yield* Location.Service
     const kv = yield* KV.Service
     const permission = yield* Permission.Service
+    const forms = yield* Form.Service
     const tools = yield* Tool.Service
     const runtime = yield* PluginRuntime.Service
     const bus = yield* Bus.Service
@@ -168,6 +171,30 @@ export const Plugin = define({
         if (ClaudeCodePermissions.isReadOnly(toolName)) return { behavior: "allow" as const, updatedInput: input }
         if (options.signal.aborted) return { behavior: "deny" as const, message: "Interrupted" }
 
+        // A granted question still needs somewhere to be answered: Claude Code
+        // has no terminal here, so an allow without answers stalls the turn.
+        if (toolName === ClaudeCodeQuestions.TOOL_NAME) {
+          const questions = ClaudeCodeQuestions.parse(input)
+          if (questions) {
+            const outcome = await ask("question", "*")
+            if (outcome.effect === "deny") return { behavior: "deny" as const, message: "Permission denied: question" }
+            const state = await Effect.runPromise(
+              forms.ask({
+                sessionID,
+                title: "Questions",
+                metadata: { kind: "question", source: "claude-code" },
+                fields: ClaudeCodeQuestions.fields(questions) as never,
+              }),
+            ).catch(() => undefined)
+            if (!state || state.status === "cancelled" || options.signal.aborted)
+              return { behavior: "deny" as const, message: "The user dismissed this question." }
+            return {
+              behavior: "allow" as const,
+              updatedInput: { ...input, answers: ClaudeCodeQuestions.answers(questions, state.answer) },
+            }
+          }
+        }
+
         // External directories are asked first, mirroring v2's own file tools.
         const external = ClaudeCodePermissions.externalDirectory({ toolName, input, worktree })
         if (external) {
@@ -178,8 +205,13 @@ export const Plugin = define({
 
         const mapped = ClaudeCodePermissions.mapPermission({ toolName, input, worktree })
         const outcome = await ask(mapped.action, mapped.resource)
-        if (outcome.effect === "deny")
+        if (outcome.effect === "deny") {
+          // Compose denies the native subagent tool by design, so point the
+          // model at the routed one rather than leaving it at a dead end.
+          if (mapped.action === "subagent" && agent === "compose")
+            return { behavior: "deny" as const, message: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT }
           return { behavior: "deny" as const, message: `Permission denied: ${mapped.action} ${mapped.resource}` }
+        }
         return { behavior: "allow" as const, updatedInput: input }
       }
 
