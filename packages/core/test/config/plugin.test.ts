@@ -215,8 +215,8 @@ describe("PluginSupervisor config", () => {
       }),
       false,
       async (directory) => {
-        await fs.mkdir(path.join(directory, ".opencode"), { recursive: true })
-        await fs.writeFile(path.join(directory, ".opencode", "escape.js"), discoveredPlugin("escaped-entrypoint"))
+        await fs.mkdir(path.join(directory, ".redsun"), { recursive: true })
+        await fs.writeFile(path.join(directory, ".redsun", "escape.js"), discoveredPlugin("escaped-entrypoint"))
         await writeDiscoveredPackage(
           directory,
           "contained",
@@ -230,8 +230,8 @@ describe("PluginSupervisor config", () => {
           { "index.js": "symlink-fallback" },
         )
         await fs.symlink(
-          path.join(directory, ".opencode", "escape.js"),
-          path.join(directory, ".opencode", "plugins", "symlink", "entry.js"),
+          path.join(directory, ".redsun", "escape.js"),
+          path.join(directory, ".redsun", "plugins", "symlink", "entry.js"),
         )
       },
     ),
@@ -269,7 +269,7 @@ describe("PluginSupervisor config", () => {
         const bus = yield* Bus.Service
         const location = yield* Location.Service
         const plugins = yield* Plugin.Service
-        const file = path.join(location.directory, ".opencode", "plugin", "mutable.ts")
+        const file = path.join(location.directory, ".redsun", "plugin", "mutable.ts")
         const first = (yield* plugins.list()).find((plugin) => plugin.id === "mutable-plugin")?.id
 
         expect(first).toBeDefined()
@@ -291,7 +291,7 @@ describe("PluginSupervisor config", () => {
       }),
       false,
       async (directory) => {
-        const plugin = path.join(directory, ".opencode", "plugin")
+        const plugin = path.join(directory, ".redsun", "plugin")
         await fs.mkdir(plugin, { recursive: true })
         await fs.writeFile(path.join(plugin, "mutable.ts"), mutablePlugin("first"))
       },
@@ -416,7 +416,7 @@ function withLocation<A, E, R>(
       Effect.promise(async () => {
         await prepare?.(tmp.path)
         if (fixtures) {
-          const directory = path.join(tmp.path, ".opencode")
+          const directory = path.join(tmp.path, ".redsun")
           await fs.mkdir(directory, { recursive: true })
           await Promise.all(
             ["plugin", "plugins"].map((name) =>
@@ -425,9 +425,9 @@ function withLocation<A, E, R>(
           )
         }
         if (config !== undefined) {
-          const directory = fixtures ? path.join(tmp.path, ".opencode") : tmp.path
+          const directory = fixtures ? path.join(tmp.path, ".redsun") : tmp.path
           await fs.mkdir(directory, { recursive: true })
-          await fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify(config))
+          await fs.writeFile(path.join(directory, "redsun.json"), JSON.stringify(config))
         }
       }),
     ),
@@ -469,7 +469,7 @@ async function writeDiscoveredPackage(
   manifest: Record<string, unknown> | undefined,
   files: Record<string, string>,
 ) {
-  const plugin = path.join(directory, ".opencode", "plugins", name)
+  const plugin = path.join(directory, ".redsun", "plugins", name)
   await fs.mkdir(plugin, { recursive: true })
   await Promise.all([
     ...(manifest ? [fs.writeFile(path.join(plugin, "package.json"), JSON.stringify(manifest))] : []),

@@ -89,7 +89,7 @@ export async function createAcpFixture(options: { readonly skill?: string } = {}
     },
   })
   await Bun.write(
-    path.join(config, "opencode.json"),
+    path.join(config, "redsun.json"),
     JSON.stringify(verifierConfig(`http://127.0.0.1:${llm.port}/v1`, options.skill ? skills : undefined)),
   )
 

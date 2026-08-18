@@ -24,7 +24,7 @@ import { PluginTestLayer } from "../plugin/fixture"
 
 const it = testEffect(PluginTestLayer)
 const decode = Schema.decodeUnknownSync(Info)
-const document = path.join(import.meta.dir, "opencode.json")
+const document = path.join(import.meta.dir, "redsun.json")
 
 describe("config plugin reloads", () => {
   it.live("reloads config-backed domains without reloading external plugins", () =>

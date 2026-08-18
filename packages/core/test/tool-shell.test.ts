@@ -553,7 +553,7 @@ describe("ShellTool", () => {
           denyAction = "external_directory"
           yield* Effect.promise(() =>
             Bun.write(
-              path.join(tmp.path, "opencode.json"),
+              path.join(tmp.path, "redsun.json"),
               JSON.stringify({ experimental: { portable_shell_scanner: true } }),
             ),
           )
@@ -632,7 +632,7 @@ describe("ShellTool", () => {
         return Effect.gen(function* () {
           yield* Effect.promise(() =>
             Bun.write(
-              path.join(tmp.path, "opencode.json"),
+              path.join(tmp.path, "redsun.json"),
               JSON.stringify({ tool_output: { max_lines: 2, max_bytes: 1_000 } }),
             ),
           )

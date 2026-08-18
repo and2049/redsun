@@ -41,7 +41,7 @@ export const layer = Layer.effect(
     const channel = OPENCODE_CHANNEL.replace(/[^a-zA-Z0-9._-]/g, "-")
 
     const readPolicy = Effect.fnUntraced(function* () {
-      const values = yield* Effect.forEach(["config.json", "opencode.json", "opencode.jsonc"], (name) =>
+      const values = yield* Effect.forEach(["config.json", "redsun.json", "redsun.jsonc"], (name) =>
         fs.readFileString(path.join(global.config, name)).pipe(
           Effect.map(decodePolicy),
           Effect.catch(() => Effect.succeed(undefined)),

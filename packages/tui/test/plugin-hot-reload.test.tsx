@@ -80,7 +80,7 @@ test("discovers an ancestor TUI plugin directory created after startup", async (
   await mkdir(path.join(tmp.path, "repo", ".git"))
   const ready = path.join(tmp.path, "ready.txt")
   const marker = path.join(tmp.path, "marker.txt")
-  const initial = path.join(cwd, ".opencode", "plugins", "tui")
+  const initial = path.join(cwd, ".redsun", "plugins", "tui")
   await mkdir(initial, { recursive: true })
   await writeFile(path.join(initial, "ready.ts"), lifecycleSource(ready, "test.ready", "ready"))
 
@@ -91,7 +91,7 @@ test("discovers an ancestor TUI plugin directory created after startup", async (
       (value) => value === "ready:setup\n",
     ),
   ).toBe("ready:setup\n")
-  const directory = path.join(tmp.path, "repo", ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, "repo", ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   await writeFile(path.join(directory, "hot.ts"), lifecycleSource(marker, "test.hot", "v1"))
 
@@ -108,7 +108,7 @@ test("discovers an ancestor TUI plugin directory created after startup", async (
 
 test("editing a discovered TUI plugin hot-reloads its fresh module", async () => {
   await using tmp = await tmpdir()
-  const directory = path.join(tmp.path, ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   const marker = path.join(tmp.path, "marker.txt")
   const source = path.join(directory, "hot.ts")
@@ -127,7 +127,7 @@ test("editing a discovered TUI plugin hot-reloads its fresh module", async () =>
 
 test("a plugin whose slot render throws does not take down the TUI", async () => {
   await using tmp = await tmpdir()
-  const directory = path.join(tmp.path, ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   const markerA = path.join(tmp.path, "a.txt")
   const markerCrash = path.join(tmp.path, "crash.txt")
@@ -178,7 +178,7 @@ export default {
 
 test("editing one plugin leaves others untouched and a broken save keeps the last good version", async () => {
   await using tmp = await tmpdir()
-  const directory = path.join(tmp.path, ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   const markerA = path.join(tmp.path, "a.txt")
   const markerB = path.join(tmp.path, "b.txt")
@@ -219,7 +219,7 @@ test("editing one plugin leaves others untouched and a broken save keeps the las
 
 test("a save whose setup throws restores the previous version", async () => {
   await using tmp = await tmpdir()
-  const directory = path.join(tmp.path, ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   const marker = path.join(tmp.path, "a.txt")
   const source = path.join(directory, "a.ts")
@@ -258,7 +258,7 @@ export default {
 
 test("editing a symlinked plugin's target hot-reloads it", async () => {
   await using tmp = await tmpdir()
-  const directory = path.join(tmp.path, ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   const marker = path.join(tmp.path, "a.txt")
   // The real source lives outside the discovery directory; only a symlink
@@ -282,7 +282,7 @@ test("editing a symlinked plugin's target hot-reloads it", async () => {
 
 test("memory storage survives hot reload while disk storage persists", async () => {
   await using tmp = await tmpdir()
-  const directory = path.join(tmp.path, ".opencode", "plugins", "tui")
+  const directory = path.join(tmp.path, ".redsun", "plugins", "tui")
   await mkdir(directory, { recursive: true })
   const marker = path.join(tmp.path, "counter.txt")
   const source = path.join(directory, "counter.ts")

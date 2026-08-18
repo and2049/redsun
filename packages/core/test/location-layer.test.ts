@@ -176,7 +176,7 @@ describe("LocationServiceMap", () => {
       Effect.flatMap((dir) =>
         Effect.gen(function* () {
           const activations = { count: 0 }
-          const file = path.join(dir.path, "opencode.json")
+          const file = path.join(dir.path, "redsun.json")
           yield* Effect.promise(() => fs.writeFile(file, "{}"))
           const firstStarted = yield* Deferred.make<void>()
           const releaseFirst = yield* Deferred.make<void>()
@@ -377,7 +377,7 @@ describe("LocationServiceMap", () => {
       Effect.flatMap((dir) =>
         Effect.gen(function* () {
           yield* Effect.promise(() =>
-            fs.writeFile(path.join(dir.path, "opencode.json"), JSON.stringify({ plugins: ["-*", "opencode.agent"] })),
+            fs.writeFile(path.join(dir.path, "redsun.json"), JSON.stringify({ plugins: ["-*", "opencode.agent"] })),
           )
           const plugins = yield* Effect.gen(function* () {
             const plugins = yield* Plugin.Service
@@ -403,7 +403,7 @@ describe("LocationServiceMap", () => {
     ).pipe(
       Effect.flatMap((dir) =>
         Effect.gen(function* () {
-          const file = path.join(dir.path, "opencode.json")
+          const file = path.join(dir.path, "redsun.json")
           yield* Effect.promise(() => fs.writeFile(file, JSON.stringify({ plugins: ["-*", "opencode.agent"] })))
           yield* Effect.gen(function* () {
             const registry = yield* Plugin.Service
@@ -641,7 +641,7 @@ describe("LocationServiceMap", () => {
           const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(dir.path, "opencode.json"),
+              path.join(dir.path, "redsun.json"),
               JSON.stringify({
                 providers: {
                   unavailable: {
@@ -821,7 +821,7 @@ describe("LocationServiceMap", () => {
           const url = "https://example.com/mcp"
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(dir.path, "opencode.json"),
+              path.join(dir.path, "redsun.json"),
               JSON.stringify({ mcp: { servers: { example: { type: "remote", url, disabled: true } } } }),
             ),
           )

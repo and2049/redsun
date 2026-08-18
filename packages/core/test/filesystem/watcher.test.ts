@@ -292,7 +292,7 @@ describeNative("LocationWatcher", () => {
       Effect.gen(function* () {
         const fs = yield* FSUtil.Service
         const watcher = yield* Watcher.Service
-        const target = path.join(directory, "opencode.json")
+        const target = path.join(directory, "redsun.json")
         const sibling = path.join(directory, "other.json")
         const updates = yield* watcher.subscribe({ path: target, type: "file" })
         const update = yield* updates.pipe(

@@ -8,6 +8,9 @@ import { Config } from "../../config.js"
 import { PluginRuntime } from "../../plugin/runtime.js"
 import { Permission } from "../../permission.js"
 import { SessionSchema } from "../../session/schema.js"
+import { RedsunWorkerModel } from "../../plugin/redsun/worker-model.js"
+import { Catalog } from "../../catalog.js"
+import { KV } from "../../kv.js"
 
 export const name = "subagent"
 
@@ -55,6 +58,12 @@ export const Plugin = {
     const config = yield* Config.Service
     const permission = yield* Permission.Service
     const scope = yield* Scope.Scope
+    // REDSUN: worker-model resolution needs these; a tool execute effect must carry
+    // `never` requirements, so they are bound here at plugin scope.
+    const redsunWorkerModel: RedsunWorkerModel.Services = {
+      kv: yield* KV.Service,
+      catalog: yield* Catalog.Service,
+    }
     // One completion observer per job generation. Keyed by child plus start time so a fresh
     // continuation job is observable even while a settled generation's observer is finalizing.
     const notifications = new Set<string>()
@@ -208,7 +217,18 @@ export const Plugin = {
               }
 
               // Model selection is policy/config/session state, not an LLM-facing tool argument.
-              const model = agent.model ?? parent.model
+              // REDSUN: a session-scoped override outranks the agent's configured model, and a
+              // fail-closed agent refuses rather than inheriting the parent's. See
+              // plugin/redsun/worker-model.ts.
+              const model = yield* RedsunWorkerModel.resolve({
+                services: redsunWorkerModel,
+                agentID: agent.id,
+                agentModel: agent.model,
+                parentModel: parent.model,
+                sessionID: context.sessionID,
+              })
+              if (model === undefined)
+                return yield* new ToolFailure({ message: RedsunWorkerModel.unconfigured(agent.id) })
               const child =
                 existing ??
                 (yield* runtime.session

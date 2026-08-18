@@ -80,8 +80,8 @@ describe("Config", () => {
       Effect.flatMap((tmp) => {
         const global = path.join(tmp.path, "global")
         const project = path.join(tmp.path, "project")
-        const globalFile = path.join(global, "opencode.jsonc")
-        const projectFile = path.join(project, "opencode.json")
+        const globalFile = path.join(global, "redsun.jsonc")
+        const projectFile = path.join(project, "redsun.json")
         return Effect.promise(async () => {
           await Promise.all([fs.mkdir(global, { recursive: true }), fs.mkdir(project, { recursive: true })])
           await Promise.all([
@@ -131,9 +131,9 @@ describe("Config", () => {
         return Effect.promise(async () => {
           await fs.mkdir(global, { recursive: true })
           await fs.mkdir(project, { recursive: true })
-          await fs.writeFile(path.join(global, "opencode.json"), JSON.stringify({ shell: "global" }))
+          await fs.writeFile(path.join(global, "redsun.json"), JSON.stringify({ shell: "global" }))
           await fs.writeFile(explicit, JSON.stringify({ shell: "explicit" }))
-          await fs.writeFile(path.join(project, "opencode.json"), JSON.stringify({ shell: "project" }))
+          await fs.writeFile(path.join(project, "redsun.json"), JSON.stringify({ shell: "project" }))
         }).pipe(
           Effect.andThen(
             Effect.gen(function* () {
@@ -168,8 +168,8 @@ describe("Config", () => {
         return Effect.promise(async () => {
           await fs.mkdir(global, { recursive: true })
           await fs.mkdir(project, { recursive: true })
-          await fs.writeFile(path.join(global, "opencode.json"), JSON.stringify({ shell: "global" }))
-          await fs.writeFile(path.join(project, "opencode.json"), JSON.stringify({ shell: "project" }))
+          await fs.writeFile(path.join(global, "redsun.json"), JSON.stringify({ shell: "global" }))
+          await fs.writeFile(path.join(project, "redsun.json"), JSON.stringify({ shell: "project" }))
         }).pipe(
           Effect.andThen(
             Effect.gen(function* () {
@@ -197,7 +197,7 @@ describe("Config", () => {
         Effect.gen(function* () {
           const global = path.join(tmp.path, "global")
           const project = path.join(tmp.path, "project")
-          const file = path.join(global, "opencode.json")
+          const file = path.join(global, "redsun.json")
           yield* Effect.promise(async () => {
             await fs.mkdir(global, { recursive: true })
             await fs.mkdir(project, { recursive: true })
@@ -268,7 +268,7 @@ describe("Config", () => {
         Effect.gen(function* () {
           const global = path.join(tmp.path, "global")
           const project = path.join(tmp.path, "project")
-          const file = path.join(project, "opencode.json")
+          const file = path.join(project, "redsun.json")
           yield* Effect.promise(async () => {
             await fs.mkdir(global, { recursive: true })
             await fs.mkdir(project, { recursive: true })
@@ -364,8 +364,8 @@ describe("Config", () => {
           yield* Effect.promise(async () => {
             await fs.mkdir(global, { recursive: true })
             await fs.mkdir(project, { recursive: true })
-            await fs.writeFile(path.join(global, "opencode.json"), JSON.stringify({ shell: "global" }))
-            await fs.writeFile(path.join(project, "opencode.json"), JSON.stringify({ shell: "project" }))
+            await fs.writeFile(path.join(global, "redsun.json"), JSON.stringify({ shell: "global" }))
+            await fs.writeFile(path.join(project, "redsun.json"), JSON.stringify({ shell: "project" }))
           })
 
           const integrationID = Integration.ID.make("https://example.com")
@@ -464,8 +464,8 @@ describe("Config", () => {
           yield* Effect.promise(async () => {
             await fs.mkdir(global, { recursive: true })
             await fs.mkdir(project, { recursive: true })
-            await fs.writeFile(path.join(global, "opencode.json"), "null")
-            await fs.writeFile(path.join(project, "opencode.json"), "")
+            await fs.writeFile(path.join(global, "redsun.json"), "null")
+            await fs.writeFile(path.join(project, "redsun.json"), "")
             await fs.writeFile(malformed, '{ "credential": "file-secret"')
           })
           const integrationID = Integration.ID.make("https://invalid.example.com")
@@ -525,8 +525,8 @@ describe("Config", () => {
 
           expect(output.map((item) => `${item.source}:${item.path}:${item.kind}`).toSorted()).toEqual(
             [
-              `${path.join(global, "opencode.json")}:$:invalid`,
-              `${path.join(project, "opencode.json")}:$:invalid`,
+              `${path.join(global, "redsun.json")}:$:invalid`,
+              `${path.join(project, "redsun.json")}:$:invalid`,
               `${malformed}:$:invalid`,
               "https://invalid.example.com:$:invalid",
               "OPENCODE_CONFIG_CONTENT:$:invalid",
@@ -884,11 +884,11 @@ describe("Config", () => {
           yield* Effect.promise(() =>
             Promise.all([
               fs.writeFile(
-                path.join(tmp.path, "opencode.json"),
+                path.join(tmp.path, "redsun.json"),
                 JSON.stringify({ $schema: "base", providers: { base: provider } }),
               ),
               fs.writeFile(
-                path.join(tmp.path, "opencode.jsonc"),
+                path.join(tmp.path, "redsun.jsonc"),
                 `{
                   // Later global files override scalar fields while retaining providers.
                   "$schema": "last",
@@ -905,11 +905,11 @@ describe("Config", () => {
             expect(documents.map((document) => document.type)).toEqual(["document", "document"])
             expect(documents.map((document) => document.info.$schema)).toEqual(["base", "last"])
             expect(documents[0]).toBeInstanceOf(Document)
-            expect(documents[0]?.path).toBe(AbsolutePath.make(path.join(tmp.path, "opencode.json")))
+            expect(documents[0]?.path).toBe(AbsolutePath.make(path.join(tmp.path, "redsun.json")))
             expect(documents[1]?.info.providers?.last).toBeInstanceOf(ConfigProvider.Info)
 
             yield* Effect.promise(() =>
-              fs.writeFile(path.join(tmp.path, "opencode.jsonc"), JSON.stringify({ $schema: "changed" })),
+              fs.writeFile(path.join(tmp.path, "redsun.jsonc"), JSON.stringify({ $schema: "changed" })),
             )
             expect(
               (yield* config.entries())
@@ -942,7 +942,7 @@ describe("Config", () => {
                 Promise.all([
                   fs.writeFile(path.join(tmp.path, "token.txt"), 'file\n"token"\n'),
                   fs.writeFile(
-                    path.join(tmp.path, "opencode.jsonc"),
+                    path.join(tmp.path, "redsun.jsonc"),
                     `{
                       // Ignored reference: {file:missing.txt}
                       "username": "user-{env:OPENCODE_TEST_MISSING}",
@@ -1017,7 +1017,7 @@ describe("Config", () => {
     ).pipe(
       Effect.flatMap((tmp) =>
         Effect.gen(function* () {
-          const file = path.join(tmp.path, "opencode.json")
+          const file = path.join(tmp.path, "redsun.json")
           const contents = JSON.stringify({
             shell: "/bin/zsh",
             providers: { local: provider },
@@ -1046,7 +1046,7 @@ describe("Config", () => {
         Effect.gen(function* () {
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(tmp.path, "opencode.json"),
+              path.join(tmp.path, "redsun.json"),
               JSON.stringify({
                 shell: "/bin/bash",
                 model: "anthropic/claude",
@@ -1235,7 +1235,7 @@ describe("Config", () => {
         Effect.gen(function* () {
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(tmp.path, "opencode.json"),
+              path.join(tmp.path, "redsun.json"),
               JSON.stringify({
                 reference: {
                   local: { path: "../library" },
@@ -1271,7 +1271,7 @@ describe("Config", () => {
         Effect.gen(function* () {
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(tmp.path, "opencode.json"),
+              path.join(tmp.path, "redsun.json"),
               JSON.stringify({
                 shell: "/bin/zsh",
                 default_agent: "reviewer",
@@ -1446,8 +1446,8 @@ describe("Config", () => {
         Effect.gen(function* () {
           yield* Effect.promise(() =>
             Promise.all([
-              fs.writeFile(path.join(tmp.path, "opencode.json"), JSON.stringify({ $schema: "base" })),
-              fs.writeFile(path.join(tmp.path, "opencode.jsonc"), "{ invalid"),
+              fs.writeFile(path.join(tmp.path, "redsun.json"), JSON.stringify({ $schema: "base" })),
+              fs.writeFile(path.join(tmp.path, "redsun.jsonc"), "{ invalid"),
             ]),
           )
           return yield* Effect.gen(function* () {
@@ -1457,7 +1457,7 @@ describe("Config", () => {
 
             expect(documents.map((document) => document.info.$schema)).toEqual(["base"])
             expect(yield* watcher.subscriptions()).toContainEqual({
-              path: path.join(tmp.path, "opencode.jsonc"),
+              path: path.join(tmp.path, "redsun.jsonc"),
               type: "file",
             })
           }).pipe(Effect.provide(testLayer(tmp.path)))
@@ -1486,19 +1486,19 @@ describe("Config", () => {
             await fs.mkdir(directory, { recursive: true })
             await fs.mkdir(path.join(root, ".agents"), { recursive: true })
             await fs.mkdir(path.join(root, ".claude"), { recursive: true })
-            await fs.mkdir(path.join(root, ".opencode"), { recursive: true })
+            await fs.mkdir(path.join(root, ".redsun"), { recursive: true })
             await fs.mkdir(path.join(directory, ".agents"), { recursive: true })
             await fs.mkdir(path.join(directory, ".claude"), { recursive: true })
-            await fs.mkdir(path.join(directory, ".opencode"), { recursive: true })
+            await fs.mkdir(path.join(directory, ".redsun"), { recursive: true })
             await Promise.all([
-              fs.writeFile(path.join(tmp.path, "opencode.json"), JSON.stringify({ $schema: "outside" })),
-              fs.writeFile(path.join(global, "opencode.json"), JSON.stringify({ $schema: "global" })),
-              fs.writeFile(path.join(root, "opencode.json"), JSON.stringify({ $schema: "root" })),
-              fs.writeFile(path.join(parent, "opencode.jsonc"), JSON.stringify({ $schema: "parent" })),
-              fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ $schema: "directory" })),
-              fs.writeFile(path.join(root, ".opencode", "opencode.json"), JSON.stringify({ $schema: "root-dot" })),
+              fs.writeFile(path.join(tmp.path, "redsun.json"), JSON.stringify({ $schema: "outside" })),
+              fs.writeFile(path.join(global, "redsun.json"), JSON.stringify({ $schema: "global" })),
+              fs.writeFile(path.join(root, "redsun.json"), JSON.stringify({ $schema: "root" })),
+              fs.writeFile(path.join(parent, "redsun.jsonc"), JSON.stringify({ $schema: "parent" })),
+              fs.writeFile(path.join(directory, "redsun.json"), JSON.stringify({ $schema: "directory" })),
+              fs.writeFile(path.join(root, ".redsun", "redsun.json"), JSON.stringify({ $schema: "root-dot" })),
               fs.writeFile(
-                path.join(directory, ".opencode", "opencode.jsonc"),
+                path.join(directory, ".redsun", "redsun.jsonc"),
                 JSON.stringify({ $schema: "directory-dot" }),
               ),
             ])
@@ -1511,8 +1511,8 @@ describe("Config", () => {
 
             expect(entries.filter((entry) => entry.type === "directory").map((entry) => entry.path)).toEqual([
               AbsolutePath.make(global),
-              AbsolutePath.make(path.join(root, ".opencode")),
-              AbsolutePath.make(path.join(directory, ".opencode")),
+              AbsolutePath.make(path.join(root, ".redsun")),
+              AbsolutePath.make(path.join(directory, ".redsun")),
             ])
             expect(entries.filter((entry) => entry.type === "agents").map((entry) => entry.path)).toEqual([
               AbsolutePath.make(globalAgents),
@@ -1547,9 +1547,9 @@ describe("Config", () => {
               "parent",
               "directory",
               "root-dot",
-              AbsolutePath.make(path.join(root, ".opencode")),
+              AbsolutePath.make(path.join(root, ".redsun")),
               "directory-dot",
-              AbsolutePath.make(path.join(directory, ".opencode")),
+              AbsolutePath.make(path.join(directory, ".redsun")),
             ])
           }).pipe(
             Effect.provide(

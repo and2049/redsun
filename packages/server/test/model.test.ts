@@ -14,7 +14,7 @@ it.live("waits for plugin initialization before listing models", () =>
       Effect.gen(function* () {
         yield* Effect.promise(() =>
           fs.writeFile(
-            path.join(tmp.path, "opencode.json"),
+            path.join(tmp.path, "redsun.json"),
             JSON.stringify({
               providers: {
                 custom: {
