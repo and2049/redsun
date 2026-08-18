@@ -1631,6 +1631,15 @@ export type ConfigEntry =
           subagent_depth?: number
           policies?: Array<{ action: "provider.use"; resource: string; effect: "allow" | "deny" }>
         }
+        claude_code?: {
+          enabled?: boolean
+          binary_path?: string
+          config_dir?: string
+          permission_mode?: string
+          worker_permission_mode?: string
+          extra_args?: Array<string>
+          env?: { [x: string]: string }
+        }
       }
     }
   | { type: "directory"; path: string }
