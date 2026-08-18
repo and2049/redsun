@@ -1,12 +1,43 @@
 import { Schema } from "effect"
 import { migrateV1, resolveThemeDocument, ThemeDocument, themeDecodeError } from "@opencode-ai/theme/tui"
 import { resolveThemeColors } from "./resolve"
-import { DEFAULT_THEMES, type Theme, type ThemeV1Json } from "./v1"
+import { type Theme, type ThemeV1Json } from "./v1"
+import cloud from "./assets/cloud.json" with { type: "json" }
+import dawn from "./assets/dawn.json" with { type: "json" }
+import dusk from "./assets/dusk.json" with { type: "json" }
+import everforest from "./assets/everforest.json" with { type: "json" }
+import glade from "./assets/glade.json" with { type: "json" }
+import gruvbox from "./assets/gruvbox.json" with { type: "json" }
+import kanagawa from "./assets/kanagawa.json" with { type: "json" }
+import lotus from "./assets/lotus.json" with { type: "json" }
+import parchment from "./assets/parchment.json" with { type: "json" }
+import petal from "./assets/petal.json" with { type: "json" }
+import rosepine from "./assets/rosepine.json" with { type: "json" }
+import wave from "./assets/wave.json" with { type: "json" }
 
-export { DEFAULT_THEMES, generateSyntax, selectedForeground, type Theme, type ThemeV1Json } from "./v1"
+export { generateSyntax, selectedForeground, type Theme, type ThemeV1Json } from "./v1"
 export { resolveThemeDocument, type ThemeDocument }
 
 export type ThemeDocumentSource = Record<string, unknown>
+
+// REDSUN: the twelve themes redsun ships, as native v2 documents. Each is
+// standalone and single-mode: v0.3.0 deliberately split dark/light pairs into
+// separate themes rather than pairing modes inside one document, and the
+// picker is built around that. `dusk` is the default, `dawn` its light twin.
+export const DEFAULT_THEMES: Record<string, ThemeDocumentSource> = {
+  cloud,
+  dawn,
+  dusk,
+  everforest,
+  glade,
+  gruvbox,
+  kanagawa,
+  lotus,
+  parchment,
+  petal,
+  rosepine,
+  wave,
+}
 
 const pluginThemes: Record<string, ThemeDocumentSource> = {}
 let customThemes: Record<string, ThemeDocumentSource> = {}

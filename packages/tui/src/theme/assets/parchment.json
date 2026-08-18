@@ -1,0 +1,249 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "version": 2,
+  "standalone": true,
+  "light": {
+    "hue": {
+      "gray": {
+        "100": "#ffffff",
+        "200": "#fbf1c7",
+        "300": "#ebdbb2",
+        "400": "#d5c4a1",
+        "500": "#a99882",
+        "600": "#7c6f64",
+        "700": "#5b534d",
+        "800": "#3c3836",
+        "900": "#1f1f1f"
+      },
+      "red": {
+        "100": "#fef2f0",
+        "200": "#fecfc8",
+        "300": "#faada2",
+        "400": "#f18a7d",
+        "500": "#dd6e61",
+        "600": "#c85246",
+        "700": "#b3332a",
+        "800": "#9d0006",
+        "900": "#760a09"
+      },
+      "orange": {
+        "100": "#fff2ee",
+        "200": "#fed5c8",
+        "300": "#fbb8a2",
+        "400": "#f59b7d",
+        "500": "#e48463",
+        "600": "#d26c49",
+        "700": "#c1542d",
+        "800": "#af3a03",
+        "900": "#912f03"
+      },
+      "yellow": {
+        "100": "#f9f8cd",
+        "200": "#e6e5b3",
+        "300": "#d3d19a",
+        "400": "#c0be81",
+        "500": "#aeab68",
+        "600": "#9c984f",
+        "700": "#8a8633",
+        "800": "#79740e",
+        "900": "#666210"
+      },
+      "green": {
+        "100": "#e0fee9",
+        "200": "#c9ead3",
+        "300": "#b2d7be",
+        "400": "#9bc4a8",
+        "500": "#84b194",
+        "600": "#6e9f7f",
+        "700": "#588d6b",
+        "800": "#427b58",
+        "900": "#2b6a45"
+      },
+      "cyan": {
+        "100": "#e6f9ff",
+        "200": "#bce6f1",
+        "300": "#a0d0dc",
+        "400": "#85bac7",
+        "500": "#6aa4b3",
+        "600": "#4f8f9f",
+        "700": "#327a8b",
+        "800": "#076678",
+        "900": "#12505d"
+      },
+      "blue": "$hue.gray",
+      "purple": {
+        "100": "#fef1f8",
+        "200": "#fecee9",
+        "300": "#efb4d5",
+        "400": "#db9cc0",
+        "500": "#c884ac",
+        "600": "#b56d98",
+        "700": "#a25684",
+        "800": "#8f3f71",
+        "900": "#7c275e"
+      },
+      "accent": "$hue.green",
+      "interactive": "$hue.cyan",
+      "neutral": "$hue.gray"
+    },
+    "categorical": [
+      "purple",
+      "green",
+      "yellow",
+      "orange",
+      "cyan",
+      "red"
+    ],
+    "text": {
+      "default": "$hue.neutral.800",
+      "subdued": "$hue.neutral.600",
+      "action": {
+        "primary": {
+          "default": "$text.default",
+          "$disabled": "$hue.neutral.600",
+          "$focused": "$hue.neutral.200",
+          "$selected": "$hue.interactive.800"
+        },
+        "destructive": {
+          "default": "$hue.neutral.200",
+          "$disabled": "$hue.neutral.600"
+        }
+      },
+      "formfield": {
+        "default": "$hue.neutral.800",
+        "$hovered": "$hue.interactive.800",
+        "$focused": "$hue.interactive.800",
+        "$pressed": "$hue.interactive.800",
+        "$disabled": "$hue.neutral.600",
+        "$selected": "$hue.interactive.800"
+      },
+      "feedback": {
+        "error": {
+          "default": "$hue.red.800"
+        },
+        "warning": {
+          "default": "$hue.orange.800"
+        },
+        "success": {
+          "default": "$hue.yellow.800"
+        },
+        "info": {
+          "default": "#b57614"
+        }
+      }
+    },
+    "background": {
+      "default": "$hue.neutral.200",
+      "surface": {
+        "offset": "$hue.neutral.300",
+        "overlay": "$hue.neutral.400"
+      },
+      "action": {
+        "primary": {
+          "default": "transparent",
+          "$hovered": "$hue.neutral.300",
+          "$focused": "$hue.interactive.800",
+          "$selected": "transparent"
+        },
+        "destructive": {
+          "default": "$hue.red.800"
+        }
+      },
+      "formfield": {
+        "default": "$background.default"
+      },
+      "feedback": {
+        "error": {
+          "default": "$background.default"
+        },
+        "warning": {
+          "default": "$background.default"
+        },
+        "success": {
+          "default": "$background.default"
+        },
+        "info": {
+          "default": "$background.default"
+        }
+      }
+    },
+    "border": {
+      "default": "#bdae93"
+    },
+    "scrollbar": {
+      "default": "$hue.neutral.800"
+    },
+    "diff": {
+      "text": {
+        "added": "$hue.yellow.800",
+        "removed": "$hue.red.800",
+        "context": "$hue.neutral.600",
+        "hunkHeader": "$hue.accent.800"
+      },
+      "background": {
+        "added": "#e2e0b5",
+        "removed": "#e9d8d5",
+        "context": "$hue.neutral.300"
+      },
+      "highlight": {
+        "added": "$hue.yellow.800",
+        "removed": "$hue.red.800"
+      },
+      "lineNumber": {
+        "text": "#bdae93",
+        "background": {
+          "added": "#d4d2a9",
+          "removed": "#d8cbc8"
+        }
+      }
+    },
+    "syntax": {
+      "comment": "$hue.neutral.600",
+      "keyword": "$hue.red.800",
+      "function": "$hue.yellow.800",
+      "variable": "$hue.interactive.800",
+      "string": "#b57614",
+      "number": "$hue.purple.800",
+      "type": "$hue.accent.800",
+      "operator": "$hue.orange.800",
+      "punctuation": "$hue.neutral.800"
+    },
+    "markdown": {
+      "text": "$hue.neutral.800",
+      "heading": "$hue.interactive.800",
+      "link": "$hue.accent.800",
+      "linkText": "$hue.yellow.800",
+      "code": "#b57614",
+      "blockQuote": "$hue.neutral.600",
+      "emphasis": "$hue.purple.800",
+      "strong": "$hue.orange.800",
+      "horizontalRule": "$hue.neutral.600",
+      "listItem": "$hue.interactive.800",
+      "listEnumeration": "$hue.accent.800",
+      "image": "$hue.accent.800",
+      "imageText": "$hue.yellow.800",
+      "codeBlock": "$hue.neutral.800"
+    },
+    "@context:elevated": {
+      "background": {
+        "default": "$background.surface.offset",
+        "action": {
+          "primary": {
+            "$hovered": "$background.surface.overlay"
+          }
+        }
+      }
+    },
+    "@context:overlay": {
+      "background": {
+        "default": "$background.surface.overlay"
+      }
+    },
+    "logo": {
+      "gradient": {
+        "start": "#72a1a3",
+        "end": "#458588"
+      }
+    }
+  }
+}

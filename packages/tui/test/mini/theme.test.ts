@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { RGBA, type CliRenderer, type TerminalColors } from "@opentui/core"
 import { RUN_THEME_MONO, RUN_THEME_FALLBACK, generateSystem, resolveRunTheme, resolveTheme } from "../../src/mini/theme"
-import { DEFAULT_THEMES } from "../../src/theme"
+import { v1Theme } from "../fixture/fixture"
 
 const palette = ["#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5"] as const
 
@@ -81,7 +81,7 @@ test("falls back when palette lookup fails", async () => {
 })
 
 test("resolveTheme preserves Mini indexed color and result shape semantics", () => {
-  const item = structuredClone(DEFAULT_THEMES.opencode)
+  const item = v1Theme()
   item.theme.primary = 6
   delete item.theme.selectedListItemText
 

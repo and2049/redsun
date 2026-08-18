@@ -3,7 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { TerminalColors } from "@opentui/core"
 import {
-  DEFAULT_THEMES,
   addTheme,
   allThemes,
   hasTheme,
@@ -15,18 +14,21 @@ import {
 import { discoverThemes } from "../src/theme/discovery"
 import { configDirectories } from "../src/util/config-directories"
 import { terminalMode } from "../src/theme/system"
-import { tmpdir } from "./fixture/fixture"
+import { tmpdir, v1Theme } from "./fixture/fixture"
+import { resolveThemeDocument } from "@opencode-ai/theme/tui"
+import { DEFAULT_THEMES } from "../src/theme"
 
 test("addTheme writes into module theme store", () => {
   const name = `plugin-theme-${Date.now()}`
-  expect(addTheme(name, DEFAULT_THEMES.opencode)).toBe(true)
-  expect(allThemes()[name]).toBe(DEFAULT_THEMES.opencode)
+  const theme = v1Theme()
+  expect(addTheme(name, theme)).toBe(true)
+  expect(allThemes()[name]).toBe(theme)
 })
 
 test("addTheme keeps first theme for duplicate names", () => {
   const name = `plugin-theme-keep-${Date.now()}`
-  const one = structuredClone(DEFAULT_THEMES.opencode)
-  const two = structuredClone(DEFAULT_THEMES.opencode)
+  const one = v1Theme()
+  const two = v1Theme()
   one.theme.primary = "#101010"
   two.theme.primary = "#fefefe"
 
@@ -54,8 +56,8 @@ test("parseTheme delegates malformed V1 sources and rejects unknown versions", (
 })
 
 test("parses unversioned and explicit V1 themes lazily once", () => {
-  const unversioned = structuredClone(DEFAULT_THEMES.opencode)
-  const explicit = { ...structuredClone(DEFAULT_THEMES.opencode), version: 1 }
+  const unversioned = v1Theme()
+  const explicit = { ...v1Theme(), version: 1 }
   const first = parseTheme(unversioned, "unversioned")
   const second = parseTheme(explicit, "explicit")
 
@@ -84,7 +86,7 @@ test("defers invalid V2 errors until parsing", () => {
 
 test("defers invalid V1 errors until parsing", () => {
   const name = `plugin-theme-invalid-v1-${Date.now()}`
-  const source = structuredClone(DEFAULT_THEMES.opencode)
+  const source = v1Theme()
   source.defs = { ...source.defs, one: "two", two: "one" }
   source.theme.primary = "one"
 
@@ -94,8 +96,8 @@ test("defers invalid V1 errors until parsing", () => {
 
 test("replacement sources receive independent parse caches", () => {
   const name = `plugin-theme-replace-${Date.now()}`
-  const first = structuredClone(DEFAULT_THEMES.opencode)
-  const second = structuredClone(DEFAULT_THEMES.opencode)
+  const first = v1Theme()
+  const second = v1Theme()
   second.theme.primary = "#123456"
 
   expect(addTheme(name, first)).toBe(true)
@@ -108,8 +110,8 @@ test("replacement sources receive independent parse caches", () => {
 
 test("custom themes retain precedence over plugin themes", () => {
   const name = `plugin-theme-precedence-${Date.now()}`
-  const plugin = structuredClone(DEFAULT_THEMES.opencode)
-  const custom = structuredClone(DEFAULT_THEMES.opencode)
+  const plugin = v1Theme()
+  const custom = v1Theme()
 
   expect(addTheme(name, plugin)).toBe(true)
   setCustomThemes({ [name]: custom })
@@ -121,19 +123,19 @@ test("custom themes retain precedence over plugin themes", () => {
 test("hasTheme checks theme presence", () => {
   const name = `plugin-theme-has-${Date.now()}`
   expect(hasTheme(name)).toBe(false)
-  expect(addTheme(name, DEFAULT_THEMES.opencode)).toBe(true)
+  expect(addTheme(name, v1Theme())).toBe(true)
   expect(hasTheme(name)).toBe(true)
 })
 
 test("resolveTheme rejects circular color refs", () => {
-  const item = structuredClone(DEFAULT_THEMES.opencode)
+  const item = v1Theme()
   item.defs = { ...item.defs, one: "two", two: "one" }
   item.theme.primary = "one"
   expect(() => resolveTheme(item, "dark")).toThrow("Circular color reference")
 })
 
 test("resolveTheme preserves full theme numeric color and marker semantics", () => {
-  const item = structuredClone(DEFAULT_THEMES.opencode)
+  const item = v1Theme()
   item.theme.primary = 6
   delete item.theme.selectedListItemText
 
@@ -192,4 +194,38 @@ test("theme directories include global config before project directories", async
     global: { source: "global" },
     project: { source: "project" },
   })
+})
+
+test("ships the twelve redsun themes, each resolving in the mode it declares", () => {
+  // v0.3.0 split dark/light pairs into standalone single-mode themes rather
+  // than pairing modes inside one document, and the picker is built around
+  // that. Each is a native v2 document, so this also catches a malformed one.
+  expect(Object.keys(DEFAULT_THEMES).toSorted()).toEqual([
+    "cloud",
+    "dawn",
+    "dusk",
+    "everforest",
+    "glade",
+    "gruvbox",
+    "kanagawa",
+    "lotus",
+    "parchment",
+    "petal",
+    "rosepine",
+    "wave",
+  ])
+
+  for (const [name, source] of Object.entries(DEFAULT_THEMES)) {
+    const document = parseTheme(source, name)
+    expect(document.version, name).toBe(2)
+    expect(document.standalone, name).toBe(true)
+    const modes = [document.light ? "light" : undefined, document.dark ? "dark" : undefined].filter(Boolean)
+    expect(modes.length, name).toBe(1)
+    const resolved = resolveThemeDocument(document, modes[0] as "light" | "dark")
+    expect(resolved.text.default, name).toBeDefined()
+    // Every theme names its own wordmark gradient; without it the home screen
+    // falls back to the generic default and the theme reads as unfinished.
+    expect(resolved.logo.gradient.start, name).toBeDefined()
+    expect(resolved.logo.gradient.end, name).toBeDefined()
+  }
 })

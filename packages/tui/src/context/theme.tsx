@@ -126,11 +126,14 @@ type ThemeContextValue = {
   readonly ready: boolean
 }
 
+/** Last-resort theme: the one redsun ships as its default. */
+const FALLBACK_THEME = "dusk"
+
 const [store, setStore] = createStore<State>({
   themes: allThemes(),
   mode: "dark",
   lock: undefined,
-  active: "opencode",
+  active: FALLBACK_THEME,
   ready: false,
 })
 
@@ -154,8 +157,8 @@ const themeContext = createSimpleContext({
         const mode = lock ?? pick(renderer.themeMode) ?? props.mode
         draft.mode = mode
         draft.lock = lock
-        const active = config.theme?.name ?? "opencode"
-        draft.active = typeof active === "string" ? active : "opencode"
+        const active = config.theme?.name ?? FALLBACK_THEME
+        draft.active = typeof active === "string" ? active : FALLBACK_THEME
         draft.ready = false
       }),
     )
@@ -180,7 +183,7 @@ const themeContext = createSimpleContext({
         .then((themes) => {
           setCustomThemes(themes)
         })
-        .catch(() => setStore("active", "opencode"))
+        .catch(() => setStore("active", FALLBACK_THEME))
     }
 
     onMount(() => {
@@ -200,7 +203,7 @@ const themeContext = createSimpleContext({
           if (!colors.palette[0]) {
             if (hasResolvedSystemTheme) return
             setSystemTheme(undefined)
-            if (store.active === "system") setStore("active", "opencode")
+            if (store.active === "system") setStore("active", FALLBACK_THEME)
             return
           }
           const next = store.lock ?? terminalMode(colors) ?? mode
@@ -215,7 +218,7 @@ const themeContext = createSimpleContext({
         .catch(() => {
           if (hasResolvedSystemTheme) return
           setSystemTheme(undefined)
-          if (store.active === "system") setStore("active", "opencode")
+          if (store.active === "system") setStore("active", FALLBACK_THEME)
         })
     }
 
@@ -304,14 +307,14 @@ const themeContext = createSimpleContext({
 
     const initStarted = performance.now()
     const selected = createMemo(() => {
-      const name = store.themes[store.active] ? store.active : "opencode"
+      const name = store.themes[store.active] ? store.active : FALLBACK_THEME
       try {
         return loadTheme(store.themes[name], name, store.mode)
       } catch (error) {
-        if (name === "opencode") throw error
+        if (name === FALLBACK_THEME) throw error
         themeErrors.emit(name, error)
-        setStore("active", "opencode")
-        return loadTheme(store.themes.opencode, "opencode", store.mode)
+        setStore("active", FALLBACK_THEME)
+        return loadTheme(store.themes[FALLBACK_THEME], FALLBACK_THEME, store.mode)
       }
     })
     const modes = () => selected().modes

@@ -4,7 +4,7 @@ import { expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { DEFAULT_THEME, selectTheme } from "@opencode-ai/theme/tui"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
-import { DEFAULT_THEMES } from "../../../src/theme"
+import { v1Theme } from "../../fixture/fixture"
 import { ConfigProvider } from "../../../src/config"
 import { ThemeContextProvider, ThemeProvider, type ThemeError, useTheme, useThemes } from "../../../src/context/theme"
 
@@ -17,13 +17,13 @@ async function wait(fn: () => boolean) {
 }
 
 test("uses an available mode while retaining the pinned preference", async () => {
-  const lightOnly = structuredClone(DEFAULT_THEMES.opencode)
+  const lightOnly = v1Theme()
   lightOnly.theme.background = "#eeeeee"
   lightOnly.theme.text = "#111111"
-  const dual = structuredClone(DEFAULT_THEMES.opencode)
+  const dual = v1Theme()
   dual.theme.background = { light: "#eeeeee", dark: "#111111" }
   dual.theme.text = { light: "#111111", dark: "#eeeeee" }
-  const darkOnly = structuredClone(DEFAULT_THEMES.opencode)
+  const darkOnly = v1Theme()
   darkOnly.theme.background = "#111111"
   darkOnly.theme.text = "#eeeeee"
   const native = { version: 2, dark: { text: { default: "#abcdef" } } } as const
@@ -82,7 +82,7 @@ test.each([
   ["schema", { version: 2, light: { categorical: [] } }],
   ["mode merging", { version: 2, light: { mergeMode: true } }],
   ["token reference", { version: 2, light: { text: { default: "$missing" } } }],
-] as const)("falls back to OpenCode when configured V2 theme %s is invalid", async (_label, source) => {
+] as const)("falls back to the default theme when configured V2 theme %s is invalid", async (_label, source) => {
   let themes: ReturnType<typeof useThemes> | undefined
   let failure: ThemeError | undefined
   let unsubscribe: (() => void) | undefined
@@ -110,7 +110,7 @@ test.each([
 
   try {
     await wait(() => themes?.ready === true)
-    expect(themes?.selected).toBe("opencode")
+    expect(themes?.selected).toBe("dusk")
     expect(failure?.name).toBe("invalid")
     expect(failure?.error).toBeInstanceOf(Error)
     expect(failure?.error.message.length).toBeGreaterThan(0)
