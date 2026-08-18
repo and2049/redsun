@@ -18,7 +18,13 @@ import type {
   LanguageModelV3Prompt,
   LanguageModelV3StreamPart,
 } from "@ai-sdk/provider"
-import type { CanUseTool, Options, PermissionResult, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type {
+  CanUseTool,
+  Options,
+  PermissionMode,
+  PermissionResult,
+  SDKMessage,
+} from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeTranslate } from "./translate.js"
@@ -92,6 +98,11 @@ export interface Hooks {
   readonly isOneShot?: (sessionID: string) => boolean
   /** Turn window closed: the subagent mirror finalizes anything still open. */
   readonly onTurnEnd?: (sessionID: string) => Promise<void> | void
+  /**
+   * Permission mode for this turn. Async because it resolves the driving
+   * agent, which is what lets `plan` override config unweakenably.
+   */
+  readonly permissionMode?: (sessionID: string) => Promise<PermissionMode>
 }
 
 export interface Config {
@@ -168,9 +179,13 @@ export const make = (input: {
     }
 
     const resume = hooks?.resumeCursor?.(sessionID)
+    // Config is only the fallback: the hook is what makes the plan agent's
+    // read-only mode impossible to weaken from redsun.json.
+    const permissionMode =
+      (await hooks?.permissionMode?.(sessionID)) ?? ((config.permissionMode ?? "default") as PermissionMode)
     const turn = await manager.turn(sessionID, [{ type: "text", text }], {
       model: ClaudeCodeModels.cliModel(modelID),
-      permissionMode: (config.permissionMode ?? "default") as never,
+      permissionMode,
       observer: hooks?.observer ? (message, inTurn) => hooks.observer!(sessionID, message, inTurn) : undefined,
       options: {
         ...baseOptions(config),

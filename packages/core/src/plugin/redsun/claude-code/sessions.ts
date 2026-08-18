@@ -199,11 +199,15 @@ export class SessionManager {
       session = undefined
     }
     if (session?.turn) throw new Error("Claude Code session is already processing a turn")
-    // `allowDangerouslySkipPermissions` is a spawn-time flag, so a live process
-    // that was not started with it can never be raised to bypassPermissions by
-    // control request. Restart instead; `input.options.resume` carries the
-    // conversation across.
-    if (session && input.permissionMode === "bypassPermissions" && !session.bypassAllowed) {
+    // `allowDangerouslySkipPermissions` is a spawn-time flag, so it can be
+    // neither raised nor lowered by control request. Raising matters for the
+    // obvious reason; lowering matters because `setPermissionMode("plan")` on a
+    // process that still carries the skip flag leaves permissions bypassed —
+    // which would make plan mode weakenable in practice, exactly what modes.ts
+    // refuses to allow. Restart in both directions; `input.options.resume`
+    // carries the conversation across.
+    const bypassing = input.permissionMode === "bypassPermissions"
+    if (session && bypassing !== session.bypassAllowed) {
       this.stop(sessionID)
       session = undefined
     }

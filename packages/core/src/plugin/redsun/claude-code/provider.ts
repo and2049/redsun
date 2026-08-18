@@ -8,8 +8,8 @@ export * as ClaudeCodeProviderPlugin from "./provider.js"
 
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Effect } from "effect"
-import { Agent } from "@opencode-ai/schema/agent"
 import { Model } from "@opencode-ai/schema/model"
+import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
 import { Config } from "../../../config.js"
 import { KV } from "../../../kv.js"
@@ -21,6 +21,7 @@ import { Tool } from "../../../tool.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
 import { ClaudeCodeMcp } from "./mcp.js"
+import { ClaudeCodeModes } from "./modes.js"
 import { ClaudeCodeModels } from "./models.js"
 import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuery } from "./query.js"
@@ -71,6 +72,7 @@ export const Plugin = define({
     const tools = yield* Tool.Service
     const runtime = yield* PluginRuntime.Service
     const bus = yield* Bus.Service
+    const agentRegistry = yield* Agent.Service
 
     // Resume cursors are read synchronously inside doStream, so keep a mirror of
     // the durable KV values in memory and write through on change.
@@ -123,6 +125,24 @@ export const Plugin = define({
         if (typeof stored === "string" && stored) cursors.set(event.sessionID, stored)
       }),
     )
+
+    /**
+     * Claude Code owns its own read-only mode, so redsun's plan agent maps onto
+     * the SDK's `plan` mode rather than being rebuilt out of tool denies. The
+     * agent's own `mode` is what selects `worker_permission_mode`, so a worker
+     * routed to a Claude Code model can be held to a tighter policy than the
+     * primary session.
+     */
+    const permissionMode = async (sessionID: string) => {
+      const agentID = agents.get(sessionID)
+      const info = agentID ? await Effect.runPromise(agentRegistry.resolve(agentID)).catch(() => undefined) : undefined
+      return ClaudeCodeModes.permissionMode({
+        agentID,
+        agentMode: info?.mode,
+        configured: settings?.permission_mode,
+        worker: settings?.worker_permission_mode,
+      })
+    }
 
     /**
      * Claude Code executes its own tools, so its approvals arrive here rather
@@ -237,6 +257,7 @@ export const Plugin = define({
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
             observer: (sessionID, message) => mirrorFor(sessionID, modelRef).observe(message),
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
+            permissionMode,
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {
               if (cursors.get(sessionID) === claudeSessionID) return

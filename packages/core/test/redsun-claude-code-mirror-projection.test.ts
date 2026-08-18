@@ -93,7 +93,7 @@ describe("ClaudeCodeSubagentEvents", () => {
       const assistant = messages[0]
       if (assistant?.type !== "assistant") return yield* Effect.die("expected an assistant message")
 
-      expect(assistant.agent).toBe("explore")
+      expect(String(assistant.agent)).toBe("explore")
       expect(assistant.model).toMatchObject({ providerID: "claude-code", id: "sonnet" })
       expect(assistant.finish).toBe("stop")
       expect(assistant.time.completed).toBeDefined()
