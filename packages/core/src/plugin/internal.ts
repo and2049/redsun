@@ -49,6 +49,7 @@ import { Watcher } from "../filesystem/watcher.js"
 import { PatchTool } from "../tool/plugin/patch.js"
 // REDSUN: redsun-owned internal plugins.
 import { RedsunComposePlugin } from "./redsun/compose.js"
+import { RedsunProjectMemory } from "./redsun/project-memory.js"
 import { ClaudeCodeProviderPlugin } from "./redsun/claude-code/provider.js"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
@@ -242,6 +243,7 @@ const post = [
   ConfigPolicyPlugin.Plugin,
   // REDSUN: registered after ConfigAgentPlugin so user config still wins.
   RedsunComposePlugin.Plugin,
+  RedsunProjectMemory.Plugin,
   ClaudeCodeProviderPlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
