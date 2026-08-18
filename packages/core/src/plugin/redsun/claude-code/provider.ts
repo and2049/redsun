@@ -11,9 +11,11 @@ import { Effect } from "effect"
 import { Config } from "../../../config.js"
 import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
+import { Permission } from "../../../permission.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
 import { ClaudeCodeModels } from "./models.js"
+import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuery } from "./query.js"
 import { ClaudeCodeSessions } from "./sessions.js"
 
@@ -56,6 +58,7 @@ export const Plugin = define({
 
     const location = yield* Location.Service
     const kv = yield* KV.Service
+    const permission = yield* Permission.Service
 
     // Resume cursors are read synchronously inside doStream, so keep a mirror of
     // the durable KV values in memory and write through on change.
@@ -75,6 +78,45 @@ export const Plugin = define({
       }),
     )
 
+    /**
+     * Claude Code executes its own tools, so its approvals arrive here rather
+     * than through v2's tool layer. Bridging them onto Permission.Service is
+     * what makes a user's existing rules apply to delegated sessions.
+     */
+    const canUseTool =
+      (sessionID: string) =>
+      async (toolName: string, input: Record<string, unknown>, options: { signal: AbortSignal }) => {
+        const worktree = location.directory
+        const agent = agents.get(sessionID)
+        const ask = (action: string, resource: string) =>
+          Effect.runPromise(
+            permission.ask({
+              action,
+              resources: [resource],
+              save: [resource],
+              sessionID: sessionID as never,
+              ...(agent ? { agent: agent as never } : {}),
+            }),
+          ).catch(() => ({ effect: "deny" as const }))
+
+        if (ClaudeCodePermissions.isReadOnly(toolName)) return { behavior: "allow" as const, updatedInput: input }
+        if (options.signal.aborted) return { behavior: "deny" as const, message: "Interrupted" }
+
+        // External directories are asked first, mirroring v2's own file tools.
+        const external = ClaudeCodePermissions.externalDirectory({ toolName, input, worktree })
+        if (external) {
+          const outcome = await ask("external_directory", external)
+          if (outcome.effect === "deny")
+            return { behavior: "deny" as const, message: `Access to ${external} was denied` }
+        }
+
+        const mapped = ClaudeCodePermissions.mapPermission({ toolName, input, worktree })
+        const outcome = await ask(mapped.action, mapped.resource)
+        if (outcome.effect === "deny")
+          return { behavior: "deny" as const, message: `Permission denied: ${mapped.action} ${mapped.resource}` }
+        return { behavior: "allow" as const, updatedInput: input }
+      }
+
     yield* ctx.aisdk.hook(
       "language",
       Effect.fn(function* (event) {
@@ -92,6 +134,7 @@ export const Plugin = define({
           manager,
           createQuery: ClaudeCodeQuery.defaultCreateQuery,
           hooks: {
+            canUseTool,
             isOneShot: (sessionID) => ONE_SHOT_AGENTS.has(agents.get(sessionID) ?? ""),
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {
