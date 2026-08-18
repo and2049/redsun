@@ -30,6 +30,7 @@ import {
   formSetMultiselectCustom,
   formTextual,
   formToggleMultiselect,
+  formRequestOptions as requestOptions,
   formValidateValue,
   isFormAnswerField,
 } from "../../util/form"
@@ -39,16 +40,6 @@ export const FORM_MODE = "form"
 
 function truncate(label: string, max: number) {
   return label.length > max ? label.slice(0, max - 1).trimEnd() + "…" : label
-}
-
-function requestOptions(form: FormWithLocation) {
-  if (form.sessionID !== "global" || !form.location) return undefined
-  return {
-    headers: {
-      "x-opencode-directory": encodeURIComponent(form.location.directory),
-      ...(form.location.workspaceID ? { "x-opencode-workspace": form.location.workspaceID } : {}),
-    },
-  }
 }
 
 export function FormPrompt(props: {

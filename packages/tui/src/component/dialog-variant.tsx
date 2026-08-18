@@ -6,6 +6,9 @@ import { useDialog } from "../ui/dialog"
 export function DialogVariant() {
   const local = useLocal()
   const dialog = useDialog()
+  // The variant picker is the model picker's second step, so it rises from the
+  // same edge rather than jumping to the middle of the screen between them.
+  dialog.setPlacement("bottom")
 
   const options = createMemo(() =>
     local.model.variant.list().map((variant) => ({

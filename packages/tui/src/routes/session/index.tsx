@@ -78,6 +78,8 @@ import { useEpilogue } from "../../context/epilogue"
 import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { FormPrompt } from "./form"
+import { DialogWorkerModel, isWorkerModelForm } from "../../component/dialog-worker-model"
+import { formRequestOptions } from "../../util/form"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { DialogExportResult } from "../../ui/dialog-export-result"
 import { sessionEpilogue } from "../../util/presentation"
@@ -222,6 +224,35 @@ export function Session() {
   const queuedPrompts = createMemo(() =>
     pendingUsers().flatMap((item) => (item.delivery === "queue" ? [{ id: item.id, text: item.payload.text }] : [])),
   )
+  // REDSUN: the worker model form is answered by the model menu rather than the
+  // generic dock form, so it leaves the dock's rotation. It still counts as an
+  // open form for `disabled` -- the prompt is not usable while it is up either
+  // way.
+  const workerModelForm = createMemo(() => forms().find(isWorkerModelForm))
+  const dockForms = createMemo(() => forms().filter((form) => !isWorkerModelForm(form)))
+  createEffect(() => {
+    const form = workerModelForm()
+    const key = form ? `worker-model:${form.id}` : undefined
+    if (!form) {
+      // Answered or withdrawn elsewhere: take the menu down with it.
+      if (typeof dialog.key === "string" && dialog.key.startsWith("worker-model:")) dialog.clear()
+      return
+    }
+    if (dialog.key === key) return
+    let replied = false
+    dialog.replace(
+      () => <DialogWorkerModel form={form} onReplied={() => (replied = true)} />,
+      () => {
+        // Escaping the menu has to withdraw the ask, or the tool waits forever
+        // on a form with nothing left on screen to answer it.
+        if (replied) return
+        void client.api.form
+          .cancel({ sessionID: form.sessionID, formID: form.id }, formRequestOptions(form))
+          .catch(() => {})
+      },
+      { key },
+    )
+  })
   const disabled = createMemo(() => promptedPermissions().length > 0 || forms().length > 0)
   // The prompt belongs to the session that owns the turn. A child session is a
   // read-only view of a subagent, so its dock carries the subagent footer
@@ -1325,10 +1356,10 @@ export function Session() {
                     }}
                   </Show>
                 </Match>
-                <Match when={forms().length > 0}>
-                  <Show when={forms()[0]?.id} keyed>
+                <Match when={dockForms().length > 0}>
+                  <Show when={dockForms()[0]?.id} keyed>
                     {(_) => {
-                      const form = forms()[0]
+                      const form = dockForms()[0]
                       return form ? <FormPrompt form={form} /> : null
                     }}
                   </Show>

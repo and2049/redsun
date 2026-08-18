@@ -110,6 +110,8 @@ function fadeColor(color: RGBA, alpha: number) {
 export function PromptInterruptStatus(props: {
   armed: boolean
   animations?: boolean
+  /** Formatted binding for `session.interrupt`; omitted when it has none. */
+  shortcut?: string
   text: RGBA
   subdued: RGBA
   warning: RGBA
@@ -138,7 +140,8 @@ export function PromptInterruptStatus(props: {
 
   return (
     <text fg={props.armed ? armedColor() : props.text} wrapMode="none" truncate flexShrink={1}>
-      esc{" "}
+      {props.shortcut ?? ""}
+      {props.shortcut ? " " : ""}
       <span style={{ fg: props.armed ? armedColor() : props.subdued }}>
         {props.armed ? "again to interrupt" : "interrupt"}
       </span>
@@ -215,6 +218,7 @@ export function Prompt(props: PromptProps) {
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = Keymap.use()
+  const shortcuts = Keymap.useShortcuts()
   const renderer = useRenderer()
   const exit = useExit()
   const dimensions = useTerminalDimensions()
@@ -308,6 +312,7 @@ export function Prompt(props: PromptProps) {
   }))
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
+  const interruptShortcut = createMemo(() => shortcuts.get("session.interrupt"))
   const connected = useConnected()
   const hasRightContent = createMemo(() => Boolean(props.right))
 
@@ -513,7 +518,10 @@ export function Prompt(props: PromptProps) {
         enabled: status() === "running",
         run: () => {
           if (auto()?.visible) return
-          if (!input.focused) return
+          // The focus check asks "does this prompt own the keyboard" -- but
+          // outside insert mode nothing is focused by design, and the interrupt
+          // chord has to keep working while reading the transcript.
+          if (!input.focused && vim.mode === "insert") return
           // TODO: this should be its own command
           if (store.mode === "shell") {
             setStore("mode", "normal")
@@ -1868,6 +1876,7 @@ export function Prompt(props: PromptProps) {
                       <PromptInterruptStatus
                         armed={store.interrupt > 0}
                         animations={animationsEnabled()}
+                        shortcut={interruptShortcut()}
                         text={theme.text.default}
                         subdued={theme.text.subdued}
                         warning={theme.text.feedback.warning.default}
@@ -1912,6 +1921,7 @@ export function Prompt(props: PromptProps) {
                         <PromptInterruptStatus
                           armed={store.interrupt > 0}
                           animations={animationsEnabled()}
+                          shortcut={interruptShortcut()}
                           text={theme.text.default}
                           subdued={theme.text.subdued}
                           warning={theme.text.feedback.warning.default}

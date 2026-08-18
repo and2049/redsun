@@ -7,8 +7,20 @@ import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
 import { useConfig } from "../config"
+import { SplitBorder } from "./border"
 
 export type DialogSize = "medium" | "large" | "xlarge"
+
+/**
+ * REDSUN DENSE: `bottom` is the picker shape -- full terminal width, flush with
+ * the last row, no dimming behind it.
+ *
+ * A model list is something you read against the transcript you were just
+ * looking at, not a modal that replaces it, and the full width is what lets a
+ * provider's models sit in one column instead of wrapping. It rises out of the
+ * same edge the prompt lives on, so the eye does not have to travel.
+ */
+export type DialogPlacement = "default" | "bottom"
 
 export function dialogWidth(size: DialogSize) {
   if (size === "xlarge") return 116
@@ -20,12 +32,14 @@ export function Dialog(
   props: ParentProps<{
     size?: DialogSize
     centered?: boolean
+    placement?: DialogPlacement
     onClose: () => void
   }>,
 ) {
   const dimensions = useTerminalDimensions()
   const theme = useTheme("elevated")
   const renderer = useRenderer()
+  const bottom = () => props.placement === "bottom"
 
   let dismiss = false
   return (
@@ -42,14 +56,14 @@ export function Dialog(
       }}
       width={dimensions().width}
       height={dimensions().height}
-      alignItems="center"
-      justifyContent={props.centered ? "center" : undefined}
+      alignItems={bottom() ? "stretch" : "center"}
+      justifyContent={bottom() ? "flex-end" : props.centered ? "center" : undefined}
       position="absolute"
       zIndex={3000}
-      paddingTop={props.centered ? 0 : dimensions().height / 4}
+      paddingTop={bottom() || props.centered ? 0 : dimensions().height / 4}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      backgroundColor={bottom() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -59,12 +73,19 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={dialogWidth(props.size ?? "medium")}
-        maxWidth={dimensions().width - 2}
+        width={bottom() ? "100%" : dialogWidth(props.size ?? "medium")}
+        maxWidth={bottom() ? dimensions().width : dimensions().width - 2}
+        border={bottom() ? SplitBorder.border : false}
+        customBorderChars={bottom() ? SplitBorder.customBorderChars : undefined}
+        borderColor={bottom() ? theme.border.default : undefined}
         backgroundColor={theme.background.default}
-        paddingTop={1}
       >
-        {props.children}
+        {/* The menu runs to the terminal's last row, over the command bar, so it
+            needs a base of its own -- the bar and the transcript would otherwise
+            read through the translucent overlay colour. */}
+        <box backgroundColor={bottom() ? theme.background.surface.overlay : undefined} paddingTop={1}>
+          {props.children}
+        </box>
       </box>
     </box>
   )
@@ -79,6 +100,7 @@ function init() {
     }[],
     size: "medium" as DialogSize,
     centered: false,
+    placement: "default" as DialogPlacement,
   })
 
   const renderer = useRenderer()
@@ -152,6 +174,7 @@ function init() {
       batch(() => {
         setStore("size", "medium")
         setStore("centered", false)
+        setStore("placement", "default")
         setStore("stack", [])
       })
       refocus()
@@ -167,6 +190,7 @@ function init() {
       batch(() => {
         setStore("size", options?.size ?? "medium")
         setStore("centered", false)
+        setStore("placement", "default")
         setStore("stack", [
           {
             element: input,
@@ -193,6 +217,12 @@ function init() {
     },
     setCentered(centered: boolean) {
       setStore("centered", centered)
+    },
+    get placement() {
+      return store.placement
+    },
+    setPlacement(placement: DialogPlacement) {
+      setStore("placement", placement)
     },
   }
 }
@@ -238,7 +268,7 @@ export function DialogProvider(props: ParentProps) {
         onMouseUp={copyOnSelectEnabled() ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size} centered={value.centered}>
+          <Dialog onClose={() => value.clear()} size={value.size} centered={value.centered} placement={value.placement}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

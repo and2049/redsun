@@ -9,14 +9,26 @@ import { useConnected } from "./use-connected"
 import { useData } from "../context/data"
 import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
+import { groupByProvider, providerRowDescription, providerRowTitle } from "../util/provider-menu"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const data = useData()
   const dialog = useDialog()
   const location = useLocation()
+  dialog.setPlacement("bottom")
   const [query, setQuery] = createSignal("")
+  const [expanded, setExpanded] = createSignal(new Set<string>())
   const favoritePriority = new Set(local.model.favorite().map(modelPreferenceKey))
+
+  function toggleProvider(providerID: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(providerID)) next.delete(providerID)
+      else next.add(providerID)
+      return next
+    })
+  }
 
   const connected = useConnected()
   const providers = createMemo(
@@ -108,7 +120,33 @@ export function DialogModel(props: { providerID?: string }) {
       )
     }
 
-    return [...favoriteOptions, ...recentOptions, ...modelOptions]
+    // A single provider's list, or a disconnected one, is short enough to read
+    // whole -- there is nothing to collapse it against.
+    if (!showSections) return [...favoriteOptions, ...recentOptions, ...modelOptions]
+
+    // REDSUN DENSE: browsing with providers connected, each provider is one row
+    // until you open it. Connect four providers and the flat list is hundreds of
+    // models deep, which makes the menu something to scroll rather than
+    // something to read. Typing still searches across every provider regardless
+    // of what is open, so collapsing costs nothing to anyone who knows the name
+    // of the model they want.
+    const groups = groupByProvider(modelOptions, (option) => option.providerID)
+
+    const providerSections = Array.from(groups, ([providerID, items]) => {
+      const open = expanded().has(providerID)
+      return [
+        {
+          value: { providerID },
+          title: providerRowTitle(items[0]?.providerName ?? providerID, open),
+          description: providerRowDescription(items.length),
+          category: "Providers",
+          onSelect: () => toggleProvider(providerID),
+        },
+        ...(open ? items.map((option) => ({ ...option, category: "Providers", title: `  ${option.title}` })) : []),
+      ]
+    }).flat()
+
+    return [...favoriteOptions, ...recentOptions, ...providerSections]
   })
 
   const provider = createMemo(() => (props.providerID ? providers().get(props.providerID) : undefined))
@@ -154,8 +192,12 @@ export function DialogModel(props: { providerID?: string }) {
           command: "model.dialog.favorite",
           title: "Favorite",
           hidden: !connected(),
+          // A provider's own row has no model to favourite.
+          disabled: (option) => !option || !(option.value as { modelID?: string }).modelID,
           onTrigger: (option) => {
-            local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
+            const value = option.value as { providerID: string; modelID?: string }
+            if (!value.modelID) return
+            local.model.toggleFavorite({ providerID: value.providerID, modelID: value.modelID })
           },
         },
       ]}

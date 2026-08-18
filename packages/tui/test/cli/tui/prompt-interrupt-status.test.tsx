@@ -8,16 +8,21 @@ test("armed interrupt status renders visible warning text", async () => {
   const text = RGBA.fromHex("#ffffff")
   const subdued = RGBA.fromHex("#808080")
   const warning = RGBA.fromHex("#fbbf24")
-  const app = await testRender(() => <PromptInterruptStatus armed text={text} subdued={subdued} warning={warning} />, {
-    width: 30,
-    height: 1,
-  })
+  // The shortcut is passed in now: it moved off `escape` when normal mode
+  // claimed that key, so the component no longer names a key of its own.
+  const app = await testRender(
+    () => <PromptInterruptStatus armed shortcut="ctrl+bslash" text={text} subdued={subdued} warning={warning} />,
+    {
+      width: 40,
+      height: 1,
+    },
+  )
 
   try {
     await app.renderOnce()
     const line = app.renderer.currentRenderBuffer.getSpanLines()[0]!
 
-    expect(line.spans.map((span) => span.text).join("")).toContain("esc again to interrupt")
+    expect(line.spans.map((span) => span.text).join("")).toContain("ctrl+bslash again to interrupt")
     expect(line.spans.filter((span) => span.text.trim()).every((span) => span.fg.equals(warning))).toBeTrue()
   } finally {
     app.renderer.destroy()
