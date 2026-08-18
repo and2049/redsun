@@ -125,6 +125,35 @@ describe("ClaudeCodeTranslate", () => {
     })
   })
 
+  it("reads the mirror's live map, which fills in after the state is made", () => {
+    // language-model.ts calls hooks.taskChildren() once and hands the reference
+    // to makeState before any child exists, so the mirror must hand back its
+    // live map. A snapshot here would always be empty and the child link lost.
+    const children = new Map<string, ClaudeCodeTranslate.TaskChild>()
+    const state = ClaudeCodeTranslate.makeState(children)
+
+    children.set("tu_late", { sessionID: "ses_late", parentSessionID: "ses_parent", description: "late child" })
+
+    const call = ClaudeCodeTranslate.translate(
+      state,
+      msg({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_late", name: "Agent", input: {} }] },
+      }),
+    )
+    expect(call[0]).toMatchObject({
+      providerMetadata: { redsun: { sessionID: "ses_late", parentSessionID: "ses_parent" } },
+    })
+
+    // The parent tool_result arrives after task_notification for a foreground
+    // task, so the entry must still be present here.
+    const result = ClaudeCodeTranslate.translate(
+      state,
+      msg({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_late", content: "ok" }] } }),
+    )
+    expect(result[0]).toMatchObject({ result: { title: "late child", metadata: { sessionID: "ses_late" } } })
+  })
+
   it("takes usage from the last main-thread call, not the cumulative result total", () => {
     const { parts } = run([
       {

@@ -90,6 +90,8 @@ export interface Hooks {
   readonly onCursor?: (sessionID: string, claudeSessionID: string) => void
   /** True when this request is an internal one-shot (title, summary, compaction). */
   readonly isOneShot?: (sessionID: string) => boolean
+  /** Turn window closed: the subagent mirror finalizes anything still open. */
+  readonly onTurnEnd?: (sessionID: string) => Promise<void> | void
 }
 
 export interface Config {
@@ -179,8 +181,14 @@ export const make = (input: {
     })
 
     return {
-      stream: toStream(turn, state, () => {
+      stream: toStream(turn, state, async () => {
         if (state.claudeSessionID) hooks?.onCursor?.(sessionID, state.claudeSessionID)
+        // Sweep after the cursor so a mirror failure cannot lose resume continuity.
+        try {
+          await hooks?.onTurnEnd?.(sessionID)
+        } catch {
+          // Mirroring is best-effort and must never fail a completed turn.
+        }
       }),
       request: {},
       response: {},
@@ -204,7 +212,7 @@ export const make = (input: {
 const toStream = (
   messages: AsyncIterable<SDKMessage>,
   state: ClaudeCodeTranslate.State,
-  onDone?: () => void,
+  onDone?: () => Promise<void> | void,
 ): ReadableStream<LanguageModelV3StreamPart> =>
   new ReadableStream({
     async start(controller) {
@@ -215,7 +223,7 @@ const toStream = (
       } catch (error) {
         controller.enqueue({ type: "error", error })
       } finally {
-        onDone?.()
+        await onDone?.()
         controller.close()
       }
     },

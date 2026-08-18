@@ -8,11 +8,15 @@ export * as ClaudeCodeProviderPlugin from "./provider.js"
 
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Effect } from "effect"
+import { Agent } from "@opencode-ai/schema/agent"
+import { Model } from "@opencode-ai/schema/model"
+import { Bus } from "../../../bus.js"
 import { Config } from "../../../config.js"
 import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
 import { Permission } from "../../../permission.js"
 import { PluginRuntime } from "../../runtime.js"
+import { SessionMessage } from "../../../session/message.js"
 import { Tool } from "../../../tool.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
@@ -21,6 +25,8 @@ import { ClaudeCodeModels } from "./models.js"
 import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuery } from "./query.js"
 import { ClaudeCodeSessions } from "./sessions.js"
+import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
+import { ClaudeCodeSubagents } from "./subagents.js"
 
 /**
  * Hidden agents that generate a title, a summary, or a compaction. They must run
@@ -64,6 +70,7 @@ export const Plugin = define({
     const permission = yield* Permission.Service
     const tools = yield* Tool.Service
     const runtime = yield* PluginRuntime.Service
+    const bus = yield* Bus.Service
 
     // Resume cursors are read synchronously inside doStream, so keep a mirror of
     // the durable KV values in memory and write through on change.
@@ -73,6 +80,40 @@ export const Plugin = define({
     const agents = new Map<string, string>()
 
     const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery)
+
+    /**
+     * One mirror per delegated session, built lazily where the turn's model is
+     * known so mirrored children carry the model that actually produced them.
+     */
+    const mirrors = new Map<string, ClaudeCodeSubagents.Mirror>()
+    const mirrorFor = (sessionID: string, model: Model.Ref) => {
+      const existing = mirrors.get(sessionID)
+      if (existing) return existing
+      const mirror = ClaudeCodeSubagents.make({
+        parentSessionID: sessionID,
+        ops: {
+          messageID: () => SessionMessage.ID.create(),
+          // Mirroring is best-effort: a failure here must degrade to V1's
+          // pre-mirror behaviour (an opaque subagent tool call), never break
+          // the user's turn.
+          createChild: (input) =>
+            Effect.runPromise(
+              runtime.session
+                .create({
+                  parentID: sessionID as never,
+                  title: input.title,
+                  agent: Agent.ID.make(input.agent),
+                  model,
+                })
+                .pipe(Effect.map((session) => session.id as string)),
+            ).catch(() => undefined),
+          publish: (events) =>
+            Effect.runPromise(ClaudeCodeSubagentEvents.publish(bus, model, events)).catch(() => undefined),
+        },
+      })
+      mirrors.set(sessionID, mirror)
+      return mirror
+    }
 
     yield* ctx.session.hook(
       "context",
@@ -168,8 +209,13 @@ export const Plugin = define({
       "language",
       Effect.fn(function* (event) {
         if (event.model.providerID !== ClaudeCodeModels.PROVIDER_ID) return
+        const modelID = event.model.modelID ?? event.model.id
+        const modelRef = Model.Ref.make({
+          providerID: ClaudeCodeModels.PROVIDER_ID,
+          id: Model.ID.make(modelID),
+        })
         event.language = ClaudeCodeLanguageModel.make({
-          modelID: event.model.modelID ?? event.model.id,
+          modelID,
           config: {
             executablePath: resolution.path,
             cwd: location.directory,
@@ -186,6 +232,11 @@ export const Plugin = define({
               mcpServers: { redsun: ClaudeCodeMcp.makeSubagentServer(delegate(sessionID)) },
             }),
             isOneShot: (sessionID) => ONE_SHOT_AGENTS.has(agents.get(sessionID) ?? ""),
+            // The live map, never a copy: translate.ts captures this reference
+            // before any child exists and reads it as children are minted.
+            taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
+            observer: (sessionID, message) => mirrorFor(sessionID, modelRef).observe(message),
+            onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {
               if (cursors.get(sessionID) === claudeSessionID) return
@@ -197,6 +248,11 @@ export const Plugin = define({
       }),
     )
 
-    yield* Effect.addFinalizer(() => Effect.sync(() => manager.stopAll()))
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        manager.stopAll()
+        mirrors.clear()
+      }),
+    )
   }),
 })
