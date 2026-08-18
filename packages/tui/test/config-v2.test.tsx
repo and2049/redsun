@@ -33,7 +33,7 @@ test("validates the session list scope setting", () => {
 test("resolves nested config and keybind defaults", () => {
   const config = resolve(
     {
-      keybinds: { leader: "ctrl+o" },
+      keybinds: { "open.menu": "ctrl+o" },
       leader: { timeout: 500 },
       scroll: { speed: 2, acceleration: true },
       diffs: { view: "split" },
@@ -43,7 +43,10 @@ test("resolves nested config and keybind defaults", () => {
   )
 
   expect(config.leader.timeout).toBe(500)
-  expect(config.keybinds.get("leader")?.[0]?.key).toBe("ctrl+o")
+  expect(config.keybinds.get("open.menu")?.[0]?.key).toBe("ctrl+o")
+  // `leader` is accepted and ignored so a config written before it went
+  // away still loads.
+  expect(config.keybinds.get("leader")).toEqual([])
   expect(config.scroll).toEqual({ speed: 2, acceleration: true })
   expect(config.diffs).toEqual({ view: "split" })
   expect(config.debug).toEqual({ devtools: true })
@@ -106,10 +109,13 @@ test("preserves current navigation defaults", () => {
   expect(config.keybinds.get("session.message.user.previous")).toEqual([])
   expect(config.keybinds.get("input.buffer.home")).toEqual([])
   expect(config.keybinds.get("input.buffer.end")).toEqual([])
-  expect(config.keybinds.get("prompt.images.view")).toMatchObject([{ key: "<leader>i" }])
+  expect(config.keybinds.get("prompt.images.view")).toEqual([])
 })
 
-test("preserves migrated v1 keybind defaults", () => {
+test("maps every migrated v1 keybind onto a command that still exists", () => {
+  // The defaults deliberately diverge -- redsun de-leadered, so `<leader>l`
+  // became a bare `l` in normal mode. What has to keep holding is the *name*
+  // mapping, which is what a v1 config is migrated through.
   const pairs = [
     ["app.exit", "app_exit"],
     ["prompt.paste", "input_paste"],
@@ -121,7 +127,8 @@ test("preserves migrated v1 keybind defaults", () => {
 
   pairs.forEach(([command, name]) => {
     expect(CommandMap[name]).toBe(command)
-    expect(TuiKeybind.Definitions[command].default).toEqual(Definitions[name].default)
+    expect(TuiKeybind.Definitions[command], command).toBeDefined()
+    expect(Definitions[name], name).toBeDefined()
   })
 })
 
@@ -205,7 +212,7 @@ test("provides config and its host interface", async () => {
 
   function Consumer() {
     context = useConfig()
-    return <text>{`${context.data.mouse ? "mouse" : "none"} ${context.data.keybinds.get("leader")?.[0]?.key}`}</text>
+    return <text>{`${context.data.mouse ? "mouse" : "none"} ${context.data.keybinds.get("open.menu")?.[0]?.key}`}</text>
   }
 
   const app = await testRender(() => (
@@ -215,15 +222,34 @@ test("provides config and its host interface", async () => {
   ))
   try {
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("mouse ctrl+x")
+    expect(app.captureCharFrame()).toContain("mouse ctrl+o")
     if (!context) throw new Error("Config context was not provided")
     await context.update((draft) => {
       draft.mouse = false
-      draft.keybinds = { leader: "ctrl+o" }
+      draft.keybinds = { "open.menu": "ctrl+shift+o" }
     })
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("none ctrl+o")
+    expect(app.captureCharFrame()).toContain("none ctrl+shift+o")
   } finally {
     app.renderer.destroy()
   }
+})
+
+test("binds no command behind a leader key", () => {
+  // Redsun has no leader. Normal mode frees every bare letter to be a command,
+  // so `<leader>l` became `l` and the token has nothing left to introduce.
+  for (const [command, definition] of Object.entries(TuiKeybind.Definitions)) {
+    const value = JSON.stringify(definition.default)
+    expect(value, command).not.toContain("<leader>")
+  }
+  expect(Object.keys(TuiKeybind.Definitions)).not.toContain("leader")
+})
+
+test("keeps shift+tab for auto-approve and moves interrupt off escape", () => {
+  const config = resolve({}, { terminalSuspend: true })
+  // The auto-approve readout row names this shortcut, so it has to be the one.
+  expect(config.keybinds.get("permission.mode")).toMatchObject([{ key: "shift+tab" }])
+  expect(config.keybinds.get("agent.cycle")).toMatchObject([{ key: "tab" }])
+  // Normal mode claims escape, so interrupt cannot keep it.
+  expect(config.keybinds.get("session.interrupt")).toMatchObject([{ key: "ctrl+\\" }])
 })

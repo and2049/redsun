@@ -169,6 +169,8 @@ export interface Keymap {
   }
   /** Registers a low-level keymap interceptor. */
   intercept: OpenTuiKeymap["intercept"]
+  /** Drops a half-typed key sequence. */
+  clearPendingSequence(): void
 }
 
 function use(): Keymap {
@@ -179,6 +181,7 @@ function use(): Keymap {
     },
     mode: value.mode,
     intercept: value.keymap.intercept.bind(value.keymap),
+    clearPendingSequence: () => value.keymap.clearPendingSequence(),
   }
 }
 

@@ -38,14 +38,15 @@ type Definition = {
   description: string
 }
 
+// No v2 binding uses `<leader>` any more -- normal mode makes every bare
+// letter a command, so there is nothing to disambiguate. This survives as the
+// display fallback when a migrated v1 config still names the token.
 export const LeaderDefault = "ctrl+x"
 
 const keybind = (value: Definition["default"], description: string): Definition => ({ default: value, description })
 
 export const Definitions = {
-  leader: keybind(LeaderDefault, "Leader key for keybind combinations"),
-
-  "app.exit": keybind("ctrl+c,ctrl+d,<leader>q", "Exit the application"),
+  "app.exit": keybind("ctrl+c,ctrl+d,ctrl+q", "Exit the application"),
   "app.debug": keybind("none", "Toggle debug panel"),
   "app.console": keybind("none", "Toggle console"),
   "app.scrap": keybind("none", "Open scrap screen"),
@@ -59,7 +60,7 @@ export const Definitions = {
   "opencode.settings": keybind("none", "Open settings"),
   "server.pair": keybind("none", "Pair device"),
   "service.restart": keybind("none", "Restart service"),
-  "permission.mode": keybind("none", "Toggle auto-approve permissions"),
+  "permission.mode": keybind("shift+tab", "Toggle auto-approve permissions"),
   "diff.open": keybind("none", "Open diff viewer"),
   "diff.close": keybind("escape,q", "Close diff viewer"),
   "diff.down": keybind("j,down", "Move diff viewer down"),
@@ -82,32 +83,32 @@ export const Definitions = {
   "diff.mark_reviewed": keybind("m", "Toggle selected diff file reviewed"),
   "diff.help": keybind("?", "Show more diff viewer shortcuts"),
 
-  "prompt.editor": keybind("<leader>e", "Open external editor"),
-  "theme.switch": keybind("<leader>t", "List available themes"),
+  "prompt.editor": keybind("none", "Open external editor"),
+  "theme.switch": keybind("none", "List available themes"),
   "theme.switch_mode": keybind("none", "Switch between light and dark theme mode"),
   "theme.mode.lock": keybind("none", "Lock or unlock theme mode"),
-  "session.sidebar.toggle": keybind("<leader>b", "Toggle sidebar"),
+  "session.sidebar.toggle": keybind("none", "Toggle sidebar"),
   "session.toggle.scrollbar": keybind("none", "Toggle session scrollbar"),
-  "opencode.status": keybind("<leader>s", "View status"),
+  "opencode.status": keybind("none", "View status"),
   "opencode.debug": keybind("none", "View debug info"),
 
-  "session.export": keybind("<leader>x", "Export session to editor"),
+  "session.export": keybind("none", "Export session to editor"),
   "session.copy": keybind("none", "Copy session transcript"),
   "session.move": keybind("none", "Move session"),
-  "session.new": keybind("<leader>n", "Create a new session"),
-  "session.list": keybind("<leader>l", "List all sessions"),
+  "session.new": keybind("ctrl+n", "Create a new session"),
+  "session.list": keybind("none", "List all sessions"),
   "open.menu": keybind("ctrl+o", "Open recent sessions and projects"),
-  "session.timeline": keybind("<leader>g", "Show session timeline"),
+  "session.timeline": keybind("ctrl+g", "Show session timeline"),
   "session.fork": keybind("none", "Fork session from message"),
   "session.rename": keybind("ctrl+r", "Rename session"),
   "session.delete": keybind("ctrl+d", "Delete session"),
   "session.share": keybind("none", "Share current session"),
   "session.unshare": keybind("none", "Unshare current session"),
-  "session.interrupt": keybind("escape", "Interrupt current session"),
+  "session.interrupt": keybind("ctrl+\\", "Interrupt current session"),
   "session.background": keybind("ctrl+b", "Background blocking session tools"),
-  "session.compact": keybind("<leader>c", "Compact the session"),
+  "session.compact": keybind("none", "Compact the session"),
   "session.cd": keybind("none", "Change working directory"),
-  "session.queued_prompts": keybind("<leader>q", "Manage queued prompts"),
+  "session.queued_prompts": keybind("ctrl+shift+q", "Manage queued prompts"),
   "queued_prompt.delete": keybind("ctrl+d", "Delete queued prompt"),
   "session.toggle.exploration_grouping": keybind("none", "Toggle related tool call grouping"),
   "session.child.first": keybind("down", "Go to first child session"),
@@ -117,28 +118,29 @@ export const Definitions = {
   "session.child.previous": keybind("left", "Go to previous child session"),
   "session.parent": keybind("up", "Go to parent session"),
   "session.pin.toggle": keybind("ctrl+f", "Pin or unpin session in the session list"),
-  "session.quick_switch.1": keybind("<leader>1", "Switch to session in quick slot 1"),
-  "session.quick_switch.2": keybind("<leader>2", "Switch to session in quick slot 2"),
-  "session.quick_switch.3": keybind("<leader>3", "Switch to session in quick slot 3"),
-  "session.quick_switch.4": keybind("<leader>4", "Switch to session in quick slot 4"),
-  "session.quick_switch.5": keybind("<leader>5", "Switch to session in quick slot 5"),
-  "session.quick_switch.6": keybind("<leader>6", "Switch to session in quick slot 6"),
-  "session.quick_switch.7": keybind("<leader>7", "Switch to session in quick slot 7"),
-  "session.quick_switch.8": keybind("<leader>8", "Switch to session in quick slot 8"),
-  "session.quick_switch.9": keybind("<leader>9", "Switch to session in quick slot 9"),
+  "session.quick_switch.1": keybind("alt+1", "Switch to session in quick slot 1"),
+  "session.quick_switch.2": keybind("alt+2", "Switch to session in quick slot 2"),
+  "session.quick_switch.3": keybind("alt+3", "Switch to session in quick slot 3"),
+  "session.quick_switch.4": keybind("alt+4", "Switch to session in quick slot 4"),
+  "session.quick_switch.5": keybind("alt+5", "Switch to session in quick slot 5"),
+  "session.quick_switch.6": keybind("alt+6", "Switch to session in quick slot 6"),
+  "session.quick_switch.7": keybind("alt+7", "Switch to session in quick slot 7"),
+  "session.quick_switch.8": keybind("alt+8", "Switch to session in quick slot 8"),
+  "session.quick_switch.9": keybind("alt+9", "Switch to session in quick slot 9"),
 
   "stash.delete": keybind("ctrl+d", "Delete stash entry"),
   "model.dialog.provider": keybind("ctrl+a", "Open provider list from model dialog"),
   "model.dialog.favorite": keybind("ctrl+f", "Toggle model favorite status"),
-  "model.list": keybind("<leader>m", "List available models"),
+  "model.list": keybind("none", "List available models"),
+  "worker.model": keybind("none", "Choose the model worker subagents run on"),
   "model.cycle_recent": keybind("f2", "Next recently used model"),
   "model.cycle_recent_reverse": keybind("shift+f2", "Previous recently used model"),
   "model.cycle_favorite": keybind("none", "Next favorite model"),
   "model.cycle_favorite_reverse": keybind("none", "Previous favorite model"),
   "mcp.list": keybind("none", "List MCP servers"),
   "provider.connect": keybind("none", "Connect integration"),
-  "agent.list": keybind("<leader>a", "List agents"),
-  "agent.cycle": keybind("shift+tab", "Next agent"),
+  "agent.list": keybind("none", "List agents"),
+  "agent.cycle": keybind("tab", "Next agent"),
   "agent.cycle.reverse": keybind("none", "Previous agent"),
   "variant.cycle": keybind("ctrl+t", "Cycle model variants"),
   "variant.list": keybind("none", "List model variants"),
@@ -156,15 +158,15 @@ export const Definitions = {
   "session.message.user.next": keybind("none", "Navigate to next user message"),
   "session.message.user.previous": keybind("none", "Navigate to previous user message"),
   "session.messages_last_user": keybind("alt+end", "Navigate to last user message"),
-  "messages.copy": keybind("<leader>y", "Copy message"),
-  "session.undo": keybind("<leader>u", "Undo message"),
-  "session.redo": keybind("<leader>r", "Redo message"),
+  "messages.copy": keybind("none", "Copy message"),
+  "session.undo": keybind("none", "Undo message"),
+  "session.redo": keybind("none", "Redo message"),
   "session.toggle.thinking": keybind("none", "Toggle thinking blocks visibility"),
 
   "prompt.submit": keybind("none", "Submit prompt"),
-  "prompt.queue": keybind("<leader>return", "Queue prompt"),
+  "prompt.queue": keybind("alt+return", "Queue prompt"),
   "prompt.editor_context.clear": keybind("none", "Clear editor context"),
-  "prompt.images.view": keybind("<leader>i", "View image attachments"),
+  "prompt.images.view": keybind("none", "View image attachments"),
   "prompt.skills": keybind("none", "Open skill selector"),
   "prompt.stash": keybind("none", "Stash prompt"),
   "prompt.stash.pop": keybind("none", "Pop stashed prompt"),
@@ -254,6 +256,9 @@ export const Definitions = {
 
 type KeybindName = keyof typeof Definitions
 const KeybindNames = new Set<string>(Object.keys(Definitions))
+// Commands that existed in an earlier release. Ignored rather than rejected, so
+// a config written before they went away still loads.
+const RemovedKeybinds = new Set<string>(["leader"])
 
 export const KeybindOverrides = Schema.Struct(
   Object.fromEntries(
@@ -302,7 +307,7 @@ export function parse(keybinds: KeybindOverrides): Keybinds {
 export const Keybinds = { parse }
 
 export function unknownKeys(input: object) {
-  return Object.keys(input).filter((key) => !KeybindNames.has(key))
+  return Object.keys(input).filter((key) => !KeybindNames.has(key) && !RemovedKeybinds.has(key))
 }
 
 export function bindingDefaults(): BindingDefaults<Renderable, KeyEvent> {

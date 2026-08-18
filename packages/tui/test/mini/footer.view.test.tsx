@@ -981,8 +981,7 @@ test("direct footer steers the oldest queued prompt from an empty composer", asy
 
   try {
     await app.renderOnce()
-    app.mockInput.pressKey("x", { ctrl: true })
-    app.mockInput.pressEnter()
+    app.mockInput.pressEnter({ meta: true })
     await Bun.sleep(0)
     expect(steered).toEqual([])
     app.mockInput.pressEnter()
@@ -1035,8 +1034,7 @@ test("direct footer rejects local commands submitted with the queue shortcut", a
   try {
     await app.renderOnce()
     await app.mockInput.typeText("/settings ")
-    app.mockInput.pressKey("x", { ctrl: true })
-    app.mockInput.pressEnter()
+    app.mockInput.pressEnter({ meta: true })
     await Bun.sleep(0)
     expect(submitted).toEqual([])
     expect(statuses).toContain("this prompt cannot be queued")
@@ -1071,44 +1069,6 @@ test.skip("direct footer recreates the frame across command panel transitions", 
   }
 })
 
-test.skip("direct footer dispatches leader variant binding only when leader is registered", async () => {
-  const calls: string[] = []
-  const app = await renderFooter({
-    tuiConfig: createTuiResolvedConfig({ keybinds: { leader: "ctrl+x", "variant.cycle": "<leader>t" } }),
-    onCycle: () => calls.push("cycle"),
-  })
-
-  try {
-    await app.renderOnce()
-    app.mockInput.pressKey("t")
-    expect(calls).toEqual([])
-
-    app.mockInput.pressKey("x", { ctrl: true })
-    app.mockInput.pressKey("t")
-    expect(calls).toEqual(["cycle"])
-  } finally {
-    app.cleanup()
-  }
-})
-
-test("direct footer keeps leader variant binding inactive when leader is disabled", async () => {
-  const calls: string[] = []
-  const app = await renderFooter({
-    tuiConfig: createTuiResolvedConfig({ keybinds: { leader: "none", "variant.cycle": "<leader>t" } }),
-    onCycle: () => calls.push("cycle"),
-  })
-
-  try {
-    await app.renderOnce()
-    app.mockInput.pressKey("t")
-    app.mockInput.pressKey("x", { ctrl: true })
-    app.mockInput.pressKey("t")
-
-    expect(calls).toEqual([])
-  } finally {
-    app.cleanup()
-  }
-})
 
 test("direct footer submits slash autocomplete selections without dispatching shell completions", async () => {
   const submits: RunPrompt[] = []
@@ -1512,7 +1472,7 @@ test("direct footer shows authoritative queued work while running", async () => 
     expect(spinner).toBeDefined()
     expect(frame).toContain("1 queued")
     expect(frame).toContain("ctrl+b background")
-    expect(frame).toContain("ctrl+x q 1 queued")
+    expect(frame).toContain("ctrl+shift+q 1 queued")
     expect(frame).toContain("↓ subagents")
     expect(frame).toContain("ctrl+p cmd")
     expect(frame).toContain("subagents · ctrl+p cmd")
@@ -1710,7 +1670,7 @@ test("direct footer omits usage when it would fill the statusline", async () => 
     await app.renderOnce()
     const frame = app.captureCharFrame()
 
-    expect(frame).toContain("esc interrupt")
+    expect(frame).toContain("ctrl+\\ interrupt")
     expect(frame).toContain("GPT-5.6 SoL high")
     expect(frame).toContain("ctrl+p cmd")
     expect(frame).not.toContain("8.4K")

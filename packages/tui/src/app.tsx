@@ -53,6 +53,8 @@ import { useEvent } from "./context/event"
 import { ClientProvider, useClient } from "./context/client"
 import { StartupLoading } from "./component/startup-loading"
 import { WorkspaceStatus } from "./component/workspace-status"
+import { CommandBar } from "./component/command-bar"
+import { VimKeyHandler, VimProvider } from "./context/vim"
 import { DevToolsBar } from "./component/devtools-bar"
 import { Reconnecting } from "./component/reconnecting"
 import { MigrationOverlay } from "./component/migration-overlay"
@@ -358,6 +360,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                               <PermissionProvider>
                                                 <DataProvider>
                                                   <LocationProvider>
+                                                    <VimProvider>
                                                       <ThemeProvider
                                                         mode={mode}
                                                         source={createThemeSource(global.config)}
@@ -366,6 +369,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                         <LocalProvider>
                                                           <PromptStashProvider>
                                                             <DialogProvider>
+                                                              <VimKeyHandler>
                                                               <FrecencyProvider>
                                                                 <PromptHistoryProvider>
                                                                   <PromptRefProvider>
@@ -391,10 +395,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                   </PromptRefProvider>
                                                                 </PromptHistoryProvider>
                                                               </FrecencyProvider>
+                                                              </VimKeyHandler>
                                                             </DialogProvider>
                                                           </PromptStashProvider>
                                                         </LocalProvider>
                                                       </ThemeProvider>
+                                                    </VimProvider>
                                                   </LocationProvider>
                                                 </DataProvider>
                                               </PermissionProvider>
@@ -1190,6 +1196,7 @@ function App(props: { pair?: DialogPairCredentials }) {
       <Show when={route.data.type === "session"}>
         <WorkspaceStatus />
       </Show>
+      <CommandBar />
       <Show when={devtools()}>
         <DevToolsBar />
       </Show>

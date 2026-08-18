@@ -12,17 +12,18 @@ describe("run runtime boot", () => {
   test("falls back to default tui keymap config when config load fails", async () => {
     const result = await resolveRunTuiConfig(Promise.reject(new Error("boom")))
 
-    expect(result.keybinds.get("leader")?.[0]?.key).toBe("ctrl+x")
+    expect(result.keybinds.get("open.menu")?.[0]?.key).toBe("ctrl+o")
     expect(result.leader.timeout).toBe(2000)
     expect(result.keybinds.get("command.palette.show")?.[0]?.key).toBe("ctrl+p")
     expect(result.keybinds.get("variant.cycle")?.[0]?.key).toBe("ctrl+t")
-    expect(result.keybinds.get("session.interrupt")?.[0]?.key).toBe("escape")
+    // Normal mode claims escape, so interrupt lives on a chord.
+    expect(result.keybinds.get("session.interrupt")?.[0]?.key).toBe("ctrl+\\")
     expect(result.keybinds.get("prompt.history.previous")?.[0]?.key).toBe("up")
     expect(result.keybinds.get("prompt.history.next")?.[0]?.key).toBe("down")
     expect(result.keybinds.get("prompt.clear")?.[0]?.key).toBe("ctrl+c")
     expect(result.keybinds.get("input.submit")?.[0]?.key).toBe("return")
     expect(result.keybinds.get("input.newline")?.[0]?.key).toBe("shift+return,ctrl+return,ctrl+j")
-    expect(result.keybinds.get("prompt.queue")?.[0]?.key).toBe("<leader>return")
+    expect(result.keybinds.get("prompt.queue")?.[0]?.key).toBe("alt+return")
   })
 
   test("preserves shared config while resolving independent Mini defaults", async () => {
