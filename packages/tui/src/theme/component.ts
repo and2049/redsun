@@ -22,6 +22,9 @@ export function createComponentTheme(current: Accessor<ResolvedTheme>, mode: Acc
     get scrollbar() {
       return view().scrollbar
     },
+    get logo() {
+      return view().logo
+    },
     get diff() {
       return view().diff
     },

@@ -204,11 +204,20 @@ const DiffDefinition = Schema.Struct({
 })
 export type DiffDefinition = Schema.Schema.Type<typeof DiffDefinition>
 
+// REDSUN: the home screen paints its wordmark as a horizontal gradient, so a
+// theme names its two endpoints. Upstream has no wordmark and no such token.
+const LogoDefinition = Schema.Struct({
+  gradient: Schema.optional(
+    Schema.Struct({ start: Schema.optional(ColorValue), end: Schema.optional(ColorValue) }),
+  ),
+})
+
 const ThemeTokensDefinition = Schema.Struct({
   text: Schema.optional(TextDefinition),
   background: Schema.optional(BackgroundDefinition),
   border: Schema.optional(Schema.Struct({ default: Schema.optional(ColorValue) })),
   scrollbar: Schema.optional(Schema.Struct({ default: Schema.optional(ColorValue) })),
+  logo: Schema.optional(LogoDefinition),
   diff: Schema.optional(DiffDefinition),
   syntax: Schema.optional(SyntaxDefinition),
   markdown: Schema.optional(MarkdownDefinition),

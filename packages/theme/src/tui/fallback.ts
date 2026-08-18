@@ -20,6 +20,7 @@ export function fallback(): ThemeTokensDefinition {
     },
     border: { default: red },
     scrollbar: { default: red },
+    logo: { gradient: { start: red, end: red } },
     diff: {
       text: { added: red, removed: red, context: red, hunkHeader: red },
       background: { added: red, removed: red, context: red },

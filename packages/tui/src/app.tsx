@@ -52,6 +52,7 @@ import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
 import { ClientProvider, useClient } from "./context/client"
 import { StartupLoading } from "./component/startup-loading"
+import { WorkspaceStatus } from "./component/workspace-status"
 import { DevToolsBar } from "./component/devtools-bar"
 import { Reconnecting } from "./component/reconnecting"
 import { MigrationOverlay } from "./component/migration-overlay"
@@ -1184,6 +1185,11 @@ function App(props: { pair?: DialogPairCredentials }) {
           <Slot path="app" />
         </Show>
       </box>
+      {/* REDSUN DENSE: fixed rows that close out the frame. The auto-approve
+          readout is permission state, so it is session-only. */}
+      <Show when={route.data.type === "session"}>
+        <WorkspaceStatus />
+      </Show>
       <Show when={devtools()}>
         <DevToolsBar />
       </Show>

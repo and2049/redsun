@@ -11,6 +11,7 @@ import { useLocation } from "../context/location"
 import { FormPrompt } from "./session/form"
 import { Slot } from "../plugin/render"
 import { useTerminalDimensions } from "@opentui/solid"
+import { useTheme } from "../context/theme"
 
 let once = false
 const placeholder = {
@@ -28,6 +29,10 @@ export function Home() {
   const data = useData()
   const location = useLocation()
   const dimensions = useTerminalDimensions()
+  const theme = useTheme()
+  // Wide terminals get a proportionally wider prompt rather than a fixed column
+  // stranded in the middle of the frame.
+  const promptMaxWidth = createMemo(() => Math.max(75, Math.floor(dimensions().width * 0.7)))
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
   const currentLocation = () => route.location ?? data.location.default()
   const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
@@ -73,19 +78,20 @@ export function Home() {
 
   return (
     <>
-      <box
-        flexGrow={1}
-        alignItems="center"
-        paddingLeft={dimensions().width < 44 ? 1 : 2}
-        paddingRight={dimensions().width < 44 ? 1 : 2}
-      >
+      {/* REDSUN DENSE: the logo and the prompt sit in the middle of the frame
+          with equal air above and below, and a hint row between them naming the
+          three prompt triggers. */}
+      <box flexGrow={1} alignItems="center" paddingLeft={1} paddingRight={1}>
         <box flexGrow={1} minHeight={0} />
-        <box height={4} minHeight={0} flexShrink={1} />
         <box flexShrink={0}>
           <Logo />
         </box>
-        <box height={1} minHeight={0} flexShrink={1} />
-        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0}>
+        {/* Content-sized so the column's alignItems="center" centres it under
+            the logo, like the logo itself. */}
+        <box height={1} flexShrink={0} marginTop={1}>
+          <text fg={theme.text.subdued}>/ commands · ! shell · @ files</text>
+        </box>
+        <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
           <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
         </box>
         <box flexGrow={1} minHeight={0} />

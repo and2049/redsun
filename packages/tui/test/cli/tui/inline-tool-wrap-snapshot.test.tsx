@@ -3,6 +3,7 @@ import { For } from "solid-js"
 import { testRender, type JSX } from "@opentui/solid"
 import {
   InlineToolRow,
+  TRANSCRIPT_GUTTER,
   executeCallSummary,
   genericToolSummary,
   isBackgroundSubagent,
@@ -90,7 +91,7 @@ function FailedCompleteToolFixture() {
 function ReminderAlignmentFixture() {
   return (
     <box flexDirection="column">
-      <box paddingLeft={3}>
+      <box paddingLeft={TRANSCRIPT_GUTTER}>
         <text>Switched variant to medium</text>
       </box>
       <InlineToolRow icon="◈" complete={true} pending="Notice">
@@ -148,16 +149,16 @@ describe("TUI inline tool wrapping", () => {
 
   test("aligns switch reminders with instruction reminders", async () => {
     expect(await renderFrame(() => <ReminderAlignmentFixture />, { width: 35, height: 2 })).toBe(
-      "   Switched variant to medium\n   ◈ Instructions updated",
+      " Switched variant to medium\n ◈ Instructions updated",
     )
   })
 
   test("wraps a trailing status as one padded item", async () => {
     expect(await renderFrame(() => <TrailingStatusFixture />, { width: 70, height: 2 })).toBe(
-      "   : Explore Subagent — Inspect renderer status styling  Background",
+      " : Explore Subagent — Inspect renderer status styling  Background",
     )
     expect(await renderFrame(() => <TrailingStatusFixture />, { width: 62, height: 2 })).toBe(
-      "   : Explore Subagent — Inspect renderer status styling\n      Background",
+      " : Explore Subagent — Inspect renderer status styling\n    Background",
     )
   })
 

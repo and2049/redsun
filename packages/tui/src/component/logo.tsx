@@ -1,79 +1,69 @@
+// REDSUN DENSE: the home-screen wordmark.
+//
+// A block-ASCII "REDSUN" painted as a horizontal gradient between the theme's
+// two logo endpoints. Full blocks take the gradient colour directly; the box
+// characters that draw the outline take a 40%-toward-background wash of the same
+// colour, which is what gives the letters their bevelled edge.
 import { RGBA, TextAttributes } from "@opentui/core"
-import { For, type JSX } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "../context/theme"
-import { tint } from "../theme/color"
-import { go, logo } from "../logo"
+
+const LOGO = [
+  `██╗      ██████╗ ███████╗██████╗ ███████╗██╗   ██╗███╗   ██╗`,
+  `╚██╗     ██╔══██╗██╔════╝██╔══██╗██╔════╝██║░░░██║████╗░░██║`,
+  ` ╚██╗    ██████╔╝█████╗░░██║░░██║███████╗██║░░░██║██╔██╗░██║`,
+  ` ██╔╝    ██╔══██╗██╔══╝░░██║░░██║╚════██║██║░░░██║██║╚██╗██║`,
+  `██╔╝     ██║  ██║███████╗██████╔╝███████║╚██████╔╝██║░╚████║`,
+  `╚═╝      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝`,
+]
+
+const LOGO_WIDTH = LOGO[0]!.length
+const SHADOW_ALPHA = 0.4
 
 export function Logo() {
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
+  // Below the wordmark's own width there is nothing to shrink to — the art is
+  // fixed — so it gives up its rows rather than wrapping into noise.
+  const visible = createMemo(() => dimensions().height >= 12 && dimensions().width >= LOGO_WIDTH)
 
-  const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
-    const shadow = tint(theme.background.default, fg, 0.25)
-    const attrs = bold ? TextAttributes.BOLD : undefined
-    return Array.from(line).map((char) => {
-      if (char === "_") {
-        return (
-          <text fg={fg} bg={shadow} attributes={attrs} selectable={false}>
-            {" "}
-          </text>
-        )
-      }
-      if (char === "^") {
-        return (
-          <text fg={fg} bg={shadow} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
-      if (char === "~") {
-        return (
-          <text fg={shadow} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
-      if (char === ",") {
-        return (
-          <text fg={shadow} attributes={attrs} selectable={false}>
-            ▄
-          </text>
-        )
-      }
-      return (
-        <text fg={fg} attributes={attrs} selectable={false}>
-          {char}
-        </text>
-      )
-    })
-  }
+  const mix = (a: RGBA, b: RGBA, t: number) =>
+    RGBA.fromInts(
+      Math.round((a.r + (b.r - a.r) * t) * 255),
+      Math.round((a.g + (b.g - a.g) * t) * 255),
+      Math.round((a.b + (b.b - a.b) * t) * 255),
+    )
 
   return (
-    <box>
-      {dimensions().height < 12 ? null : dimensions().width < 22 ? (
-        <For each={go.right.slice(1)}>
-          {(line) => <box flexDirection="row">{renderLine(line, theme.text.default, true)}</box>}
-        </For>
-      ) : dimensions().width < 44 ? (
-        <>
-          <For each={logo.left.slice(1)}>
-            {(line) => <box flexDirection="row">{renderLine(line, theme.text.subdued, false)}</box>}
-          </For>
-          <For each={logo.right}>
-            {(line) => <box flexDirection="row">{renderLine(line, theme.text.default, true)}</box>}
-          </For>
-        </>
-      ) : (
-        <For each={logo.left}>
-          {(line, index) => (
-            <box flexDirection="row" gap={1}>
-              <box flexDirection="row">{renderLine(line, theme.text.subdued, false)}</box>
-              <box flexDirection="row">{renderLine(logo.right[index()], theme.text.default, true)}</box>
+    <Show when={visible()}>
+      <box>
+        <For each={LOGO}>
+          {(line) => (
+            <box flexDirection="row">
+              <For each={Array.from(line)}>
+                {(char, index) => {
+                  const base = createMemo(() =>
+                    mix(theme.logo.gradient.start, theme.logo.gradient.end, index() / LOGO_WIDTH),
+                  )
+                  if (char === " ") return <text selectable={false}> </text>
+                  if (char === "█")
+                    return (
+                      <text fg={base()} attributes={TextAttributes.BOLD} selectable={false}>
+                        {char}
+                      </text>
+                    )
+                  return (
+                    <text fg={mix(theme.background.default, base(), SHADOW_ALPHA)} selectable={false}>
+                      {char}
+                    </text>
+                  )
+                }}
+              </For>
             </box>
           )}
         </For>
-      )}
-    </box>
+      </box>
+    </Show>
   )
 }

@@ -168,6 +168,7 @@ export const DEFAULT_THEME = {
     },
     border: { default: "$hue.neutral.300" },
     scrollbar: { default: "$hue.neutral.400" },
+    logo: { gradient: { start: "$hue.blue.600", end: "$hue.red.500" } },
     diff: {
       text: {
         added: "$hue.green.700",
@@ -381,6 +382,7 @@ export const DEFAULT_THEME = {
     },
     border: { default: "$hue.neutral.700" },
     scrollbar: { default: "$hue.neutral.600" },
+    logo: { gradient: { start: "$hue.blue.400", end: "$hue.red.300" } },
     diff: {
       text: {
         added: "$hue.green.300",

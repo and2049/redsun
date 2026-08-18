@@ -44,6 +44,7 @@ export type ResolvedThemeTokens = {
   }
   readonly border: { readonly default: RGBA }
   readonly scrollbar: { readonly default: RGBA }
+  readonly logo: { readonly gradient: { readonly start: RGBA; readonly end: RGBA } }
   readonly diff: {
     readonly text: {
       readonly added: RGBA

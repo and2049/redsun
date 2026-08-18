@@ -141,6 +141,12 @@ function use() {
   return ctx
 }
 
+// REDSUN DENSE: Cline-style flush transcript. The scroll area itself carries no
+// horizontal padding, so a user prompt's tint bleeds to both terminal edges;
+// every transcript row instead indents itself by this one-column gutter, which
+// lines assistant text, thinking and tool rows up with the `❯`.
+export const TRANSCRIPT_GUTTER = 1
+
 export function Session() {
   const setEpilogue = useEpilogue()
   const clipboard = useClipboard()
@@ -1179,13 +1185,10 @@ export function Session() {
       }}
     >
       <box flexDirection="row" flexGrow={1} minHeight={0}>
-        <box
-          flexGrow={1}
-          minHeight={0}
-          paddingBottom={1}
-          paddingLeft={dimensions().width < 44 ? 1 : 2}
-          paddingRight={dimensions().width < 44 ? 1 : 2}
-        >
+        {/* No side padding, and no bottom padding either: the workspace row and
+            the command bar close out the dock, so a blank row here would just
+            float the prompt off the frame. */}
+        <box flexGrow={1} minHeight={0}>
           <Show when={session()}>
             <box flexGrow={1} minHeight={0} position="relative">
               <scrollbox
@@ -1450,7 +1453,7 @@ function TurnTokenUsage(props: {
   })
   return (
     <Show when={Boolean(config.data.debug?.turn_tokens) && steps().length > 0}>
-      <box paddingLeft={3} flexDirection="column">
+      <box paddingLeft={TRANSCRIPT_GUTTER} flexDirection="column">
         <box
           flexDirection="row"
           onMouseOver={() => setHover(true)}
@@ -1573,7 +1576,7 @@ function BackgroundToolHint(props: { messages: SessionMessageInfo[] }) {
   return (
     <Show when={visible() && shortcut()}>
       {(value) => (
-        <box marginTop={1} paddingLeft={3} flexShrink={0}>
+        <box marginTop={1} paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
           <text fg={theme.text.subdued}>
             Press <span style={{ fg: theme.text.default }}>{value()}</span> to move running work to the background
           </text>
@@ -1719,7 +1722,7 @@ function SessionReasoningGroupView(props: {
             <Show when={props.completed && duration()}> · {Locale.duration(duration())}</Show>
           </InlineToolRow>
           <Show when={expanded()}>
-            <box paddingLeft={3}>
+            <box paddingLeft={TRANSCRIPT_GUTTER}>
               <For each={props.refs}>
                 {(ref) => {
                   const message = createMemo(() => {
@@ -1852,12 +1855,12 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
-        <box paddingLeft={3}>
+        <box paddingLeft={TRANSCRIPT_GUTTER}>
           <text fg={theme.text.feedback.error.default}>Error: {errorMessage(props.message.error)}</text>
         </box>
       </Show>
       <AssistantRetry retry={props.message.retry} />
-      <box paddingLeft={3} marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}>
+      <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}>
         <text>
           <span style={{ fg: props.message.error ? theme.text.subdued : local.agent.color(props.message.agent) }}>
             {Locale.titlecase(props.message.agent)}
@@ -1882,7 +1885,7 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
   const theme = useTheme()
   if (props.message.type === "location-switched")
     return (
-      <box paddingLeft={3}>
+      <box paddingLeft={TRANSCRIPT_GUTTER}>
         <text>
           <span style={{ fg: theme.text.subdued }}>↳ Moved to </span>
           <span style={{ fg: theme.text.feedback.info.default }}>{props.message.location.directory}</span>
@@ -1901,7 +1904,7 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
     return ""
   }
   return (
-    <box paddingLeft={3}>
+    <box paddingLeft={TRANSCRIPT_GUTTER}>
       <text fg={theme.text.subdued}>{text()}</text>
     </box>
   )
@@ -1942,7 +1945,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
         </InlineToolRow>
       }
     >
-      <box marginLeft={3}>
+      <box marginLeft={TRANSCRIPT_GUTTER}>
         <text wrapMode="none">
           <span style={{ fg: color() }}>{heading()}</span>
           <span style={{ fg: theme.text.subdued }}>{suffix()}</span>
@@ -1995,7 +1998,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
         <box border={["top"]} borderColor={color()} flexGrow={1} />
       </box>
       <Show when={content()}>
-        <box paddingTop={1} paddingLeft={3}>
+        <box paddingTop={1} paddingLeft={TRANSCRIPT_GUTTER}>
           <markdown
             syntaxStyle={syntax()}
             streaming={true}
@@ -2166,13 +2169,8 @@ function UserMessage(props: { message: SessionMessageUser }) {
 
   return (
     <Show when={props.message.text.trim() || files().length || skills().length}>
-      <box
-        border={["left"]}
-        borderColor={delivery() ? theme.border.default : color()}
-        customBorderChars={SplitBorder.customBorderChars}
-        backgroundColor={theme.background.default}
-      >
-        <SessionImages images={images()} paddingLeft={2} />
+      <box>
+        <SessionImages images={images()} paddingLeft={TRANSCRIPT_GUTTER} />
         <box
           onMouseOver={() => {
             setHover(true)
@@ -2205,13 +2203,15 @@ function UserMessage(props: { message: SessionMessageUser }) {
               />
             ))
           }}
-          paddingTop={1}
-          paddingBottom={1}
-          paddingLeft={2}
-          backgroundColor={hover() ? theme.raise(theme.background.default) : theme.background.default}
+          paddingLeft={TRANSCRIPT_GUTTER}
+          paddingRight={TRANSCRIPT_GUTTER}
+          backgroundColor={hover() ? theme.raise(theme.background.surface.offset) : theme.background.surface.offset}
           flexShrink={0}
         >
-          <text fg={theme.text.default}>{props.message.text}</text>
+          <text fg={theme.text.default}>
+            <span style={{ fg: delivery() ? theme.text.subdued : color() }}>❯ </span>
+            {props.message.text}
+          </text>
           <Show when={skills().length}>
             <box flexDirection="row" paddingTop={1} gap={1} flexWrap="wrap">
               <For each={skills()}>
@@ -2303,7 +2303,7 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
   return (
     <Show when={props.retry}>
       {(retry) => (
-        <box paddingLeft={3}>
+        <box paddingLeft={TRANSCRIPT_GUTTER}>
           <text fg={theme.text.feedback.warning.default}>
             ⚠ Retry attempt {retry().attempt} scheduled: {retry().error.message}
           </text>
@@ -2346,7 +2346,7 @@ function ReasoningPart(props: {
 
   return (
     <Show when={content()}>
-      <box paddingLeft={3} flexDirection="column" flexShrink={0}>
+      <box paddingLeft={TRANSCRIPT_GUTTER} flexDirection="column" flexShrink={0}>
         <box
           border={!inMinimal() || expanded() ? ["left"] : undefined}
           customBorderChars={SplitBorder.customBorderChars}
@@ -2449,7 +2449,7 @@ function TextPart(props: { last: boolean; part: SessionMessageAssistantText }) {
   const plugins = usePlugin()
   return (
     <Show when={props.part.text.trim()}>
-      <box paddingLeft={3} flexShrink={0}>
+      <box paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
         <markdown
           syntaxStyle={syntax()}
           streaming={true}
@@ -2786,7 +2786,7 @@ export function InlineToolRow(props: {
   onMouseUp?: () => void
 }) {
   return (
-    <box paddingLeft={3} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>
+    <box paddingLeft={TRANSCRIPT_GUTTER} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>
       <Switch>
         <Match when={props.spinner}>
           <Show when={props.status} fallback={<Spinner color={props.color} children={props.children} />}>
@@ -3171,7 +3171,7 @@ function Read(props: ToolProps) {
       </InlineTool>
       <For each={loaded()}>
         {(filepath) => (
-          <box paddingLeft={3}>
+          <box paddingLeft={TRANSCRIPT_GUTTER}>
             <text paddingLeft={3} fg={theme.text.subdued}>
               ↳ Loaded {pathFormatter.format(filepath)}
             </text>
@@ -3345,7 +3345,7 @@ function Execute(props: ToolProps) {
       </InlineTool>
       <Index each={calls()}>{(call) => <ExecuteCallView call={call} />}</Index>
       <Show when={showOutput()}>
-        <box paddingLeft={3}>
+        <box paddingLeft={TRANSCRIPT_GUTTER}>
           <For each={outputPreview().split("\n")}>
             {(line, index) => (
               <text paddingLeft={3} fg={theme.text.feedback.error.default}>
