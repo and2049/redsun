@@ -17,14 +17,13 @@ test("validates mini replay settings", () => {
   expect(() => decodeInfo({ mini: { replay_limit: 1.5 } })).toThrow()
 })
 
-test("validates the session tabs setting", () => {
+test("validates the session list scope setting", () => {
   const decode = Schema.decodeUnknownSync(Info)
 
-  expect(decode({ tabs: { enabled: true, layout: "vertical" } })).toEqual({
-    tabs: { enabled: true, layout: "vertical" },
-  })
-  expect(() => decode({ tabs: { layout: true } })).toThrow()
-  expect(() => decode({ tabs: { enabled: "on" } })).toThrow()
+  expect(decode({ tabs: { scope: "global" } })).toEqual({ tabs: { scope: "global" } })
+  expect(() => decode({ tabs: { scope: "everything" } })).toThrow()
+  // The tab strip is gone, so its settings are no longer part of the schema.
+  expect(decode({ tabs: { enabled: true, layout: "vertical" } })).toEqual({ tabs: {} })
   expect(decode({ prompt: { image_preview: true } })).toEqual({ prompt: { image_preview: true } })
   expect(decode({ session: { image_preview: true } })).toEqual({ session: { image_preview: true } })
   expect(decode({ session: { new_location: "inherit" } })).toEqual({ session: { new_location: "inherit" } })
@@ -48,14 +47,13 @@ test("resolves nested config and keybind defaults", () => {
   expect(config.scroll).toEqual({ speed: 2, acceleration: true })
   expect(config.diffs).toEqual({ view: "split" })
   expect(config.debug).toEqual({ devtools: true })
-  expect(config.tabs).toEqual({ enabled: true, scope: "cwd", layout: "horizontal" })
+  expect(config.tabs).toEqual({ scope: "cwd" })
   expect(config.session.new_location).toBe("launch")
 })
 
-test("shows resolved tab defaults in settings", () => {
-  expect(settings.find((setting) => setting.path.join(".") === "tabs.enabled")?.default).toBe(true)
+test("offers session list scope and no tab strip settings", () => {
   expect(settings.find((setting) => setting.path.join(".") === "tabs.scope")?.default).toBe("cwd")
-  expect(settings.find((setting) => setting.path.join(".") === "tabs.layout")?.default).toBe("horizontal")
+  expect(settings.some((setting) => setting.category === "Tabs")).toBe(false)
 })
 
 test("shows the new session location default in settings", () => {
@@ -88,12 +86,20 @@ test("preserves current navigation defaults", () => {
   const config = resolve({}, { terminalSuspend: true })
 
   expect(config.keybinds.get("open.menu")).toMatchObject([{ key: "ctrl+o" }])
-  expect(config.keybinds.get("session.tab.next")).toMatchObject([{ key: "ctrl+tab,alt+down" }])
-  expect(config.keybinds.get("session.tab.previous")).toMatchObject([{ key: "ctrl+shift+tab,alt+up" }])
-  expect(config.keybinds.get("session.tab.next_unread")).toMatchObject([{ key: "alt+shift+down" }])
-  expect(config.keybinds.get("session.tab.previous_unread")).toMatchObject([{ key: "alt+shift+up" }])
-  expect(config.keybinds.get("session.tab.reopen")).toMatchObject([{ key: "ctrl+shift+t" }])
-  expect(config.keybinds.get("session.tab.select.10")).toMatchObject([{ key: "<leader>0,ctrl+0" }])
+  // Redsun has no tab strip, so no session.tab.* command is defined and none
+  // resolves to a key. An override for one is dropped at decode rather than
+  // rejected, so the binding stays empty either way.
+  expect(config.keybinds.get("session.tab.next")).toEqual([])
+  expect(config.keybinds.get("session.tab.select.10")).toEqual([])
+  expect(
+    resolve(decodeInfo({ keybinds: { "session.tab.next": "ctrl+tab" } }), { terminalSuspend: true }).keybinds.get(
+      "session.tab.next",
+    ),
+  ).toEqual([])
+  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.next")).toMatchObject([{ key: "right" }])
+  expect(config.keybinds.get("session.child.previous")).toMatchObject([{ key: "left" }])
+  expect(config.keybinds.get("session.parent")).toMatchObject([{ key: "up" }])
   expect(config.keybinds.get("session.message.next")).toEqual([])
   expect(config.keybinds.get("session.message.previous")).toEqual([])
   expect(config.keybinds.get("session.message.user.next")).toEqual([])
@@ -123,18 +129,12 @@ test("accepts every v2-only named command ID", () => {
   const commands = [
     "server.pair",
     "session.toggle.exploration_grouping",
-    "composer.subagent.up",
-    "composer.subagent.down",
-    "composer.subagent.select",
-    "composer.subagent.interrupt",
-    "composer.shell.up",
-    "composer.shell.down",
-    "composer.shell.kill",
     "diff.down",
     "diff.up",
     "diff.page.down",
     "diff.page.up",
     "diff.mark_reviewed",
+    "composer.subagent.interrupt",
     "opencode.settings",
     "service.restart",
     "permission.mode",
@@ -151,13 +151,6 @@ test("accepts every v2-only named command ID", () => {
 
 test("centralizes named command defaults and resolves explicit none", () => {
   const defaults = {
-    "composer.subagent.up": "up",
-    "composer.subagent.down": "down",
-    "composer.subagent.select": "return",
-    "composer.subagent.interrupt": "ctrl+d",
-    "composer.shell.up": "up",
-    "composer.shell.down": "down",
-    "composer.shell.kill": "ctrl+d",
     "diff.down": "j,down",
     "diff.up": "k,up",
     "diff.page.down": "pagedown,ctrl+f",

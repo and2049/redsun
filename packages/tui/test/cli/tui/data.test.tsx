@@ -13,7 +13,6 @@ import { Keymap } from "../../../src/context/keymap"
 import { LocationProvider, useLocation } from "../../../src/context/location"
 import { RouteProvider } from "../../../src/context/route"
 import { ThemeProvider } from "../../../src/context/theme"
-import { Composer } from "../../../src/routes/session/composer"
 import { createSessionRows, type SessionRow } from "../../../src/routes/session/rows"
 import { createApi, createEventStream, createFetch, directory, json, worktree } from "../../fixture/tui-client"
 import { emptyThemeSource } from "../../fixture/fixture"
@@ -1968,12 +1967,7 @@ test("keeps shell state scoped to location", async () => {
   const events = createEventStream()
   const other = "/tmp/opencode/other"
   const workspace = "ws_other"
-  let removed: URL | undefined
-  const calls = createFetch((url, request) => {
-    if (url.pathname === "/api/shell/sh_other" && request.method === "DELETE") {
-      removed = url
-      return new Response(null, { status: 204 })
-    }
+  const calls = createFetch((url) => {
     if (url.pathname !== "/api/shell") return
     const requestDirectory = url.searchParams.get("location[directory]")
     return json({
@@ -2003,9 +1997,7 @@ test("keeps shell state scoped to location", async () => {
     return (
       <RouteProvider initialRoute={{ type: "session", sessionID: "ses_shared" }}>
         <Keymap.Provider>
-          <ThemeProvider mode="dark" source={emptyThemeSource}>
-            <Composer sessionID="ses_shared" open={true} defaultTab="shell" />
-          </ThemeProvider>
+          <ThemeProvider mode="dark" source={emptyThemeSource} />
         </Keymap.Provider>
       </RouteProvider>
     )
@@ -2034,13 +2026,6 @@ test("keeps shell state scoped to location", async () => {
       ["sh_default", directory],
       ["sh_other", other],
     ])
-
-    await app.waitForFrame((frame) => frame.includes("pnpm dev"))
-    app.mockInput.pressArrow("down")
-    app.mockInput.pressKey("d", { ctrl: true })
-    await wait(() => removed !== undefined)
-    expect(removed?.searchParams.get("location[directory]")).toBe(other)
-    expect(removed?.searchParams.get("location[workspace]")).toBe(workspace)
 
     events.emit({
       id: "evt_shell_created",

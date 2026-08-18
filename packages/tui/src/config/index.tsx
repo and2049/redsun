@@ -144,19 +144,17 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Session transcript presentation settings" }),
+  // REDSUN: there is no tab strip, so `enabled` and `layout` are gone. `scope`
+  // outlived them because the session list reads it for whether to default to
+  // every project or just this directory. The key is kept where it was so an
+  // existing config keeps working.
   tabs: Schema.optional(
     Schema.Struct({
-      enabled: Schema.optional(Schema.Boolean).annotate({
-        description: "Use a persistent tab strip instead of pinned quick-switch sessions",
-      }),
       scope: Schema.optional(Schema.Literals(["global", "cwd"])).annotate({
-        description: "Share tabs globally or keep a separate set for each working directory",
-      }),
-      layout: Schema.optional(Schema.Literals(["horizontal", "vertical"])).annotate({
-        description: "Show tabs in a horizontal strip or vertical sidebar",
+        description: "List sessions from every project or only the current working directory",
       }),
     }),
-  ).annotate({ description: "Tab strip settings" }),
+  ).annotate({ description: "Session list scope" }),
   mini: Schema.optional(
     Schema.Struct({
       thinking: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
@@ -223,9 +221,7 @@ export type Resolved = Omit<Info, "attention" | "cursor" | "keybinds" | "leader"
     new_location: "launch" | "inherit"
   }
   tabs: {
-    enabled: boolean
     scope: "global" | "cwd"
-    layout: "horizontal" | "vertical"
   }
 }
 
@@ -268,9 +264,7 @@ export function resolve(input: Info, options: { terminalSuspend: boolean }): Res
     },
     tabs: {
       ...input.tabs,
-      enabled: input.tabs?.enabled ?? true,
       scope: input.tabs?.scope ?? "cwd",
-      layout: input.tabs?.layout ?? "horizontal",
     },
   }
 }

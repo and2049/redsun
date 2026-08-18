@@ -61,7 +61,9 @@ import { DialogMessage } from "./dialog-message"
 import { DialogFork } from "./dialog-fork"
 import { DialogTimeline } from "./dialog-timeline"
 import { Sidebar } from "./sidebar"
-import { Composer } from "./composer"
+import { SubagentFooter } from "./subagent-footer"
+import { scrollAnchor, setScrollAnchor } from "./scroll-anchor"
+import { childSessions as familyChildren, nextChild } from "./child-navigation"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
@@ -102,7 +104,6 @@ import { findMessageBoundary, messageNavigationSlack } from "./message-navigatio
 import { stringWidth } from "../../util/string-width"
 import { useArgs } from "../../context/args"
 import { withTimestampedFallback } from "@opencode-ai/util/session-title-fallback"
-import { useSessionTabs } from "../../context/session-tabs"
 import { createSingleFlight } from "../../util/single-flight"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import { generateThinkingSyntax } from "./thinking-syntax"
@@ -140,7 +141,7 @@ function use() {
   return ctx
 }
 
-export function Session(props: { verticalTabsWidth: number }) {
+export function Session() {
   const setEpilogue = useEpilogue()
   const clipboard = useClipboard()
   const writeExport = async (file: string, content: string) => {
@@ -182,21 +183,27 @@ export function Session(props: { verticalTabsWidth: number }) {
     setEpilogue(sessionEpilogue({ title, sessionID: session()?.id }))
   })
   onCleanup(() => setEpilogue())
-  const descendantSessionIDs = createMemo(() => {
-    if (session()?.parentID) return []
-    return data.session.family(route.sessionID).filter((id) => id !== route.sessionID)
-  })
-  const permissions = createMemo(() => {
-    if (session()?.parentID) return []
-    return [route.sessionID, ...descendantSessionIDs()].flatMap(
-      (sessionID) => data.session.permission.list(sessionID) ?? [],
-    )
-  })
+  // `data.session.family` resolves from the family root, so this is the same
+  // list whether the route is the parent or one of its children.
+  const family = createMemo(() =>
+    data.session.family(route.sessionID).flatMap((sessionID) => {
+      const info = data.session.get(sessionID)
+      return info ? [info] : []
+    }),
+  )
+  const childSessions = createMemo(() => familyChildren(family()))
+  const familySessionIDs = createMemo(() => family().map((info) => info.id))
+  // Approvals and forms surface from either side of the family. Claude Code
+  // attributes a subagent's tool permissions to the parent session, so hiding
+  // them while watching the child makes a permission-blocked subagent look
+  // identical to a hang.
+  const permissions = createMemo(() =>
+    familySessionIDs().flatMap((sessionID) => data.session.permission.list(sessionID) ?? []),
+  )
   const promptedPermissions = createMemo(() => (local.permission.mode === "auto" ? [] : permissions()))
   const forms = createMemo(() => {
     const global = data.session.form.list("global", location()) ?? []
-    if (session()?.parentID) return global
-    return [route.sessionID, ...descendantSessionIDs()]
+    return familySessionIDs()
       .flatMap((sessionID) => data.session.form.list(sessionID) ?? [])
       .concat(global)
   })
@@ -207,11 +214,11 @@ export function Session(props: { verticalTabsWidth: number }) {
   const queuedPrompts = createMemo(() =>
     pendingUsers().flatMap((item) => (item.delivery === "queue" ? [{ id: item.id, text: item.payload.text }] : [])),
   )
-  const [composer, setComposer] = createStore({
-    open: false,
-    tab: undefined as string | undefined,
-  })
   const disabled = createMemo(() => promptedPermissions().length > 0 || forms().length > 0)
+  // The prompt belongs to the session that owns the turn. A child session is a
+  // read-only view of a subagent, so its dock carries the subagent footer
+  // instead.
+  const promptVisible = createMemo(() => !session()?.parentID && !disabled())
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.type === "assistant")
@@ -227,7 +234,7 @@ export function Session(props: { verticalTabsWidth: number }) {
   const diffWrapMode = createMemo(() => config.diffs?.wrap ?? "word")
   const groupExploration = createMemo(() => config.session?.grouping !== "none")
 
-  const availableWidth = createMemo(() => dimensions().width - props.verticalTabsWidth)
+  const availableWidth = createMemo(() => dimensions().width)
   const wide = createMemo(() => availableWidth() > 120)
   const sidebarVisible = createMemo(() => {
     if (session()?.parentID) return false
@@ -272,7 +279,6 @@ export function Session(props: { verticalTabsWidth: number }) {
   const [navigationMessage, setNavigationMessage] = createSignal<string>()
   const [navigationSlack, setNavigationSlack] = createSignal(0)
   const [synced, setSynced] = createSignal(false)
-  const sessionTabs = useSessionTabs()
   const [awayFromBottom, setAwayFromBottom] = createSignal(false)
   const [latestHovered, setLatestHovered] = createSignal(false)
 
@@ -283,7 +289,7 @@ export function Session(props: { verticalTabsWidth: number }) {
 
   createEffect(
     on(
-      () => [dimensions().width, dimensions().height, props.verticalTabsWidth] as const,
+      () => [dimensions().width, dimensions().height] as const,
       (_, previous) => {
         if (previous) clearMessageNavigation()
       },
@@ -291,7 +297,7 @@ export function Session(props: { verticalTabsWidth: number }) {
   )
 
   createEffect(
-    on([descendantSessionIDs, () => client.connection.status()], ([sessionIDs, status]) => {
+    on([familySessionIDs, () => client.connection.status()], ([sessionIDs, status]) => {
       if (status !== "connected") return
       void Promise.allSettled(
         sessionIDs.flatMap((sessionID) => [data.session.permission.sync(sessionID), data.session.form.sync(sessionID)]),
@@ -316,7 +322,7 @@ export function Session(props: { verticalTabsWidth: number }) {
           variant: "error",
           duration: 5000,
         })
-        sessionTabs.enabled() ? sessionTabs.close(sessionID) : navigate({ type: "home" })
+        navigate({ type: "home" })
         return
       }
       editor.reconnect(info.location.directory)
@@ -328,7 +334,7 @@ export function Session(props: { verticalTabsWidth: number }) {
         variant: "error",
         duration: 5000,
       })
-      sessionTabs.enabled() ? sessionTabs.close(sessionID) : navigate({ type: "home" })
+      navigate({ type: "home" })
     })
   })
 
@@ -440,7 +446,7 @@ export function Session(props: { verticalTabsWidth: number }) {
   }
   function saveScrollAnchor() {
     if (!isAwayFromBottom()) {
-      sessionTabs.setScrollAnchor(sessionID, undefined)
+      setScrollAnchor(sessionID, undefined)
       return
     }
     let first: { messageID: string; screenY: number } | undefined
@@ -452,11 +458,11 @@ export function Session(props: { verticalTabsWidth: number }) {
       if (item.screenY <= 0) anchor = item
     }
     anchor ??= first
-    if (anchor) sessionTabs.setScrollAnchor(sessionID, anchor)
-    else sessionTabs.setScrollAnchor(sessionID, undefined)
+    if (anchor) setScrollAnchor(sessionID, anchor)
+    else setScrollAnchor(sessionID, undefined)
   }
   function restoreScrollPosition() {
-    const anchor = sessionTabs.scrollAnchor(sessionID)
+    const anchor = scrollAnchor(sessionID)
     const index = anchor ? boundaries().indexOf(anchor.messageID) : -1
     if (!anchor || index === -1) {
       scroll.scrollTo(scroll.scrollHeight)
@@ -471,7 +477,7 @@ export function Session(props: { verticalTabsWidth: number }) {
       afterLayout(() => {
         const boundary = scroll.getRenderable(anchor.messageID)
         if (!boundary) {
-          sessionTabs.setScrollAnchor(sessionID, undefined)
+          setScrollAnchor(sessionID, undefined)
           scroll.stickyScroll = true
           scroll.scrollTo(scroll.scrollHeight)
           setAwayFromBottom(false)
@@ -603,7 +609,7 @@ export function Session(props: { verticalTabsWidth: number }) {
     if (awayTimer) clearTimeout(awayTimer)
     awayTimer = undefined
     setAwayFromBottom(false)
-    sessionTabs.setScrollAnchor(route.sessionID, undefined)
+    setScrollAnchor(route.sessionID, undefined)
     setHiddenRows(undefined)
     setVisibleRowsEnd(undefined)
     setTimeout(() => {
@@ -1050,12 +1056,13 @@ export function Session(props: { verticalTabsWidth: number }) {
       },
     },
     {
-      title: "Toggle subagent picker",
+      title: "Go to first child session",
       id: "session.child.first",
       group: "Session",
+      palette: undefined,
+      enabled: childSessions().length > 0,
       run: () => {
-        if (composer.open || session()?.parentID) setComposer("open", false)
-        else setComposer("open", true)
+        moveFirstChild()
         dialog.clear()
       },
     },
@@ -1072,16 +1079,26 @@ export function Session(props: { verticalTabsWidth: number }) {
       group: "Session",
       palette: undefined,
       enabled: !!session()?.parentID,
-      run: () => {
+      run: childSessionHandler(() => {
         const parentID = session()?.parentID
-        if (parentID) {
-          navigate({
-            type: "session",
-            sessionID: parentID,
-          })
-        }
-        dialog.clear()
-      },
+        if (parentID) navigate({ type: "session", sessionID: parentID })
+      }),
+    },
+    {
+      title: "Go to next child session",
+      id: "session.child.next",
+      group: "Session",
+      palette: undefined,
+      enabled: !!session()?.parentID,
+      run: childSessionHandler(() => moveChild(1)),
+    },
+    {
+      title: "Go to previous child session",
+      id: "session.child.previous",
+      group: "Session",
+      palette: undefined,
+      enabled: !!session()?.parentID,
+      run: childSessionHandler(() => moveChild(-1)),
     },
   ])
 
@@ -1115,11 +1132,33 @@ export function Session(props: { verticalTabsWidth: number }) {
     on(
       () => route.sessionID,
       () => {
-        setComposer("open", false)
         clearMessageNavigation()
       },
     ),
   )
+
+  function enterChild(sessionID: string) {
+    navigate({ type: "session", sessionID })
+  }
+
+  function moveFirstChild() {
+    const next = childSessions()[0]
+    if (next) enterChild(next.id)
+  }
+
+  function moveChild(direction: number) {
+    const target = nextChild(childSessions(), session()?.id, direction)
+    if (target) enterChild(target.id)
+  }
+
+  /** Child cycling is bound to bare arrow keys, so it must not fire under a dialog. */
+  function childSessionHandler(run: () => void) {
+    return () => {
+      if (!session()?.parentID || dialog.stack.length > 0) return
+      run()
+      dialog.clear()
+    }
+  }
 
   return (
     <context.Provider
@@ -1212,18 +1251,14 @@ export function Session(props: { verticalTabsWidth: number }) {
               </Show>
             </box>
             <box flexShrink={0}>
-              <Show when={!composer.open && !disabled() && queuedPrompts().length > 0}>
+              <Show when={!disabled() && queuedPrompts().length > 0}>
                 <QueuedPromptDock prompts={queuedPrompts()} onOpen={openQueuedPrompts} />
               </Show>
               <Slot path="session.composer.top" input={{ sessionID: route.sessionID }} />
-              <Composer
-                sessionID={route.sessionID}
-                open={composer.open || (!!session()?.parentID && forms().length === 0)}
-                defaultTab={composer.tab ?? (session()?.parentID ? "subagents" : undefined)}
-                onClose={() => setComposer("open", false)}
-              />
+              <Show when={session()?.parentID}>
+                <SubagentFooter />
+              </Show>
               <Switch>
-                <Match when={composer.open || (!!session()?.parentID && forms().length === 0)}>{null}</Match>
                 <Match when={promptedPermissions().length > 0}>
                   <Show when={promptedPermissions()[0]?.id} keyed>
                     {(_) => {
@@ -1255,7 +1290,7 @@ export function Session(props: { verticalTabsWidth: number }) {
                     sessionID={route.sessionID}
                   />
                 </Match>
-                <Match when={!disabled()}>
+                <Match when={promptVisible()}>
                   <Prompt
                     visible={true}
                     ref={bind}

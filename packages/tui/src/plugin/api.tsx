@@ -19,7 +19,6 @@ import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
 import { useAttention } from "../context/attention"
 import { useStorage } from "../context/storage"
-import { useSessionTabs } from "../context/session-tabs"
 import { abbreviateHome } from "../util/path-format"
 
 export type Dispose = () => Promise<void>
@@ -67,7 +66,6 @@ export function usePluginHost() {
     toast: useToast(),
     attention: useAttention(),
     storage: useStorage(),
-    sessionTabs: useSessionTabs(),
   }
 }
 
@@ -171,32 +169,16 @@ export function createPluginContext(input: {
           return host.route.data
         },
       },
+      // REDSUN: there is no tab strip. The domain stays on the contract and
+      // answers as a TUI with tabs disabled, which the contract already
+      // defines, so a plugin written against it still type-checks and still
+      // gets a defined answer instead of a missing property.
       tabs: {
-        enabled: host.sessionTabs.enabled,
-        list: () =>
-          host.sessionTabs.tabs().map((tab) => ({
-            ...tab,
-            active: host.sessionTabs.current() === tab.sessionID,
-            ...host.sessionTabs.status(tab.sessionID),
-          })),
-        open(sessionID) {
-          if (!host.sessionTabs.enabled()) return false
-          host.sessionTabs.select(sessionID)
-          return true
-        },
-        focus(sessionID) {
-          if (!host.sessionTabs.enabled()) return false
-          if (!host.sessionTabs.tabs().some((tab) => tab.sessionID === sessionID)) return false
-          host.sessionTabs.select(sessionID)
-          return true
-        },
-        close(sessionID) {
-          if (!host.sessionTabs.enabled()) return false
-          const target = sessionID ?? host.sessionTabs.current()
-          if (!target || !host.sessionTabs.tabs().some((tab) => tab.sessionID === target)) return false
-          host.sessionTabs.close(target)
-          return true
-        },
+        enabled: () => false,
+        list: () => [],
+        open: () => false,
+        focus: () => false,
+        close: () => false,
       },
       slot(value: SlotClaim) {
         // Keys are counter-suffixed so one plugin may claim several places;

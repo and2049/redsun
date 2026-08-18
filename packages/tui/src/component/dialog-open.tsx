@@ -8,7 +8,6 @@ import { useRoute } from "../context/route"
 import { useData } from "../context/data"
 import { useClient } from "../context/client"
 import { useLocation } from "../context/location"
-import { useSessionTabs } from "../context/session-tabs"
 import { useTheme, useThemes } from "../context/theme"
 import { Keymap } from "../context/keymap"
 import { Locale } from "../util/locale"
@@ -42,7 +41,6 @@ export function DialogOpen(props: { sessions: SessionInfo[] }) {
   const data = useData()
   const client = useClient()
   const location = useLocation()
-  const sessionTabs = useSessionTabs()
   const themes = useThemes()
   const theme = useTheme("elevated")
   const mode = themes.mode
@@ -64,9 +62,6 @@ export function DialogOpen(props: { sessions: SessionInfo[] }) {
         .catch(() => undefined),
   )
 
-  const openTabs = createMemo(
-    () => new Set(sessionTabs.enabled() ? sessionTabs.tabs().map((tab) => tab.sessionID) : []),
-  )
   const currentSessionID = createMemo(() =>
     route.data.type === "session" ? data.session.root(route.data.sessionID) : undefined,
   )
@@ -83,15 +78,7 @@ export function DialogOpen(props: { sessions: SessionInfo[] }) {
   })
 
   const options = createMemo(() => {
-    const tabs = openTabs()
-    // With an empty query the menu shows what is not already one keystroke away: open tabs are
-    // visible in the strip, so recents exclude them. Typing widens the pool to every session so
-    // matching a loaded tab by name still switches to it.
-    const recent = filter().trim()
-      ? sessions()
-      : sessions()
-          .filter((session) => !tabs.has(session.id))
-          .slice(0, RECENT_LIMIT)
+    const recent = filter().trim() ? sessions() : sessions().slice(0, RECENT_LIMIT)
     const sessionOptions = recent.map((session) => {
       const project = data.project.get(session.projectID)
       const name = projectName(project)
@@ -105,11 +92,7 @@ export function DialogOpen(props: { sessions: SessionInfo[] }) {
         category: "Sessions",
         footer: `${name ? `${Locale.truncate(name, 20)} · ` : ""}${timeAgo(session.time.updated)}`,
         onSelect: () => location.set(session.location),
-        gutter: running
-          ? (color: RGBA) => <Spinner color={color} />
-          : tabs.has(session.id)
-            ? () => <text fg={theme.hue.accent[mode() === "light" ? 800 : 200]}>▪</text>
-            : undefined,
+        gutter: running ? (color: RGBA) => <Spinner color={color} /> : undefined,
       }
     })
 
