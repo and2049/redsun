@@ -15,8 +15,7 @@ import { ToolFailure } from "@opencode-ai/ai"
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
 import { Model } from "@opencode-ai/schema/model"
-import type { Catalog } from "../../catalog.js"
-import { Catalog as CatalogService } from "../../catalog.js"
+import { Catalog } from "../../catalog.js"
 import { Form } from "../../form.js"
 import { KV } from "../../kv.js"
 import { RedsunWorkerModel } from "./worker-model.js"
@@ -48,7 +47,7 @@ export const Plugin = define({
   id: "redsun.tool.worker-model",
   effect: Effect.fn(function* (ctx) {
     const forms = yield* Form.Service
-    const catalog = yield* CatalogService.Service
+    const catalog = yield* Catalog.Service
     // A tool's execute effect must have `never` requirements, so the services it
     // needs are bound here at plugin scope — the same shape subagent.ts uses.
     const services: RedsunWorkerModel.Services = { kv: yield* KV.Service, catalog }
@@ -128,5 +127,3 @@ export const Plugin = define({
     })
   }),
 })
-
-export type { Catalog }
