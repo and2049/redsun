@@ -22,8 +22,10 @@ export interface QueryLike extends AsyncIterable<SDKMessage> {
   setModel(model?: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   close(): void
-  /** Init handshake (account/commands/models); used by the auth probe. */
+  /** Init handshake (account/commands/models); the auth probe's fallback. */
   initializationResult?(): Promise<unknown>
+  /** Signed-in account, resolved from the same init handshake. */
+  accountInfo?(): Promise<unknown>
 }
 
 /** Injectable so tests can run against fixture message streams. */

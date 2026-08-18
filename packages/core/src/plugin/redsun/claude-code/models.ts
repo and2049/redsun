@@ -53,9 +53,17 @@ export const MODELS = [
 /** Redsun model id -> Claude Code CLI `--model` string. Identity today by design. */
 export const cliModel = (modelID: string) => modelID
 
+/**
+ * `enabled`, not `auto`: auth.ts registers a `claude-code` integration, and
+ * catalog.ts hides an `auto` provider that has an integration with no
+ * connections. Autodetection is the contract here — the provider appears
+ * whenever the binary resolves, and connecting is opt-in identity verification
+ * rather than a gate. The plugin only registers any of this after the
+ * executable resolves, so `enabled` never means "always on".
+ */
 export const providerInfo = (): Provider.Info => ({
   id: PROVIDER_ID,
   name: DISPLAY_NAME,
-  activation: "auto",
+  activation: "enabled",
   package: SENTINEL_PACKAGE,
 })

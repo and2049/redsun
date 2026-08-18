@@ -19,6 +19,7 @@ import { Permission } from "../../../permission.js"
 import { PluginRuntime } from "../../runtime.js"
 import { SessionMessage } from "../../../session/message.js"
 import { Tool } from "../../../tool.js"
+import { ClaudeCodeAuth } from "./auth.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
 import { ClaudeCodeMcp } from "./mcp.js"
@@ -66,6 +67,20 @@ export const Plugin = define({
           Object.assign(draft, model)
         })
       }
+    })
+
+    // Connecting never signs anybody in: it verifies the CLI's existing sign-in
+    // and records the account so the dialog can name it. See auth.ts.
+    yield* ctx.integration.transform((draft) => {
+      draft.update(ClaudeCodeModels.PROVIDER_ID, (integration) => {
+        integration.name = ClaudeCodeModels.DISPLAY_NAME
+      })
+      draft.method.update(
+        ClaudeCodeAuth.oauth({
+          createQuery: ClaudeCodeQuery.defaultCreateQuery,
+          options: { cwd: process.cwd(), pathToClaudeCodeExecutable: resolution.path } as never,
+        }) as never,
+      )
     })
 
     const location = yield* Location.Service
