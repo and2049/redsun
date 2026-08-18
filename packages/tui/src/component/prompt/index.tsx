@@ -58,6 +58,7 @@ import {
 import { useData } from "../../context/data"
 import { useLocation } from "../../context/location"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
+import { useVim } from "../../context/vim"
 import { abbreviateHome } from "../../runtime"
 import { Slot } from "../../plugin/render"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
@@ -192,6 +193,12 @@ export function Prompt(props: PromptProps) {
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable | undefined>()
 
   const leader = Keymap.useLeaderActive()
+  const vim = useVim()
+  // REDSUN: outside insert mode the prompt is not taking input -- normal mode
+  // hands every bare letter to the keymap and command mode hands them to the
+  // `:` bar. `muted` is that state, and it drives focus and every colour that
+  // used to answer to a pending leader sequence.
+  const muted = createMemo(() => leader() || vim.mode !== "insert")
   const local = useLocal()
   const args = useArgs()
   const paths = useTuiPaths()
@@ -724,7 +731,10 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || props.disabled || dialog.stack.length > 0) {
+    // REDSUN: normal and command mode take the keyboard away from the textarea.
+    // Without this the letters still land in the prompt and the `:` bar looks
+    // open but cannot be typed into.
+    if (props.visible === false || props.disabled || dialog.stack.length > 0 || vim.mode !== "insert") {
       if (input.focused) input.blur()
       return
     }
@@ -1510,7 +1520,7 @@ export function Prompt(props: PromptProps) {
   }
 
   const highlight = createMemo(() => {
-    if (leader()) return theme.border.default
+    if (muted()) return theme.border.default
     if (store.mode === "shell") return theme.text.action.primary.selected
     const agent = local.agent.current()
     if (!agent) return theme.border.default
@@ -1529,6 +1539,39 @@ export function Prompt(props: PromptProps) {
     return !!current
   })
 
+  // REDSUN DENSE: the meta row is a flex row of separate <text> items, so an
+  // overflow doesn't truncate -- every item shrinks and wraps, which shards the
+  // labels into narrow columns and pushes the row to two lines, and a two-line
+  // row shifts the whole centred home column up. Terminal width can't predict
+  // it either: home caps the prompt at its own max width while the session
+  // route shares its row with the sidebar. So measure the left group (it grows
+  // into whatever the right group leaves, making its width exactly the budget)
+  // and drop the provider names -- the least load-bearing labels -- when the
+  // full line won't fit.
+  const metaItems = createMemo(() => {
+    const label = agentLabel()
+    if (!label) return []
+    const items = [label]
+    if (store.mode !== "normal") return items
+    items.push("\u00b7", local.model.parsed().model, currentProviderLabel())
+    if (showVariant()) items.push("\u00b7", local.model.variant.current() ?? "")
+    return items
+  })
+  const [metaLabelsWidth, setMetaLabelsWidth] = createSignal(0)
+  const showProviderLabels = createMemo(() => {
+    // The new-session page runs the prompt at its configured max width, narrow
+    // enough that a compose pair truncates more often than not, so the
+    // providers come off there unconditionally. A session prompt has the full
+    // row and keeps them until they genuinely don't fit.
+    if (props.sessionID == null) return false
+    // Yoga floors an unmeasured box at 1; treat that as "not measured yet".
+    const available = metaLabelsWidth()
+    if (available <= 1) return true
+    const items = metaItems()
+    // gap={1} sits between every rendered item
+    return items.reduce((sum, item) => sum + item.length, items.length - 1) <= available
+  })
+
   const agentMetaAlpha = createFadeIn(() => store.mode === "shell" || !!local.agent.current(), animationsEnabled)
   const modelMetaAlpha = createFadeIn(() => !!local.agent.current() && store.mode === "normal", animationsEnabled)
   const variantMetaAlpha = createFadeIn(
@@ -1536,6 +1579,9 @@ export function Prompt(props: PromptProps) {
     animationsEnabled,
   )
   const footerInput = () => ({ sessionID: props.sessionID, mode: store.mode })
+  const editorFileReadout = createMemo(() =>
+    editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined,
+  )
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1679,107 +1725,122 @@ export function Prompt(props: PromptProps) {
             {/* REDSUN DENSE: the border stays agent-neutral -- the arrow
                 carries that signal -- and the arrow sits in its own column so
                 a wrapped prompt keeps a straight left edge. */}
-            <box flexDirection="row" width="100%" flexShrink={0} border borderStyle="rounded"
-              borderColor={theme.border.default} paddingLeft={1} paddingRight={1}
+            <box
+              flexDirection="row"
+              width="100%"
+              flexShrink={0}
+              border
+              borderStyle="rounded"
+              borderColor={theme.border.default}
+              paddingLeft={1}
+              paddingRight={1}
             >
               <text flexShrink={0} fg={highlight()}>
                 {store.mode === "shell" ? "! " : "❯ "}
               </text>
-            <textarea
-              flexGrow={1}
-              placeholder={placeholderText()}
-              placeholderColor={theme.text.subdued}
-              textColor={leader() ? theme.text.subdued : theme.text.default}
-              focusedTextColor={leader() ? theme.text.subdued : theme.text.default}
-              minHeight={1}
-              maxHeight={maxHeight()}
-              cursorStyle={config.cursor}
-              onContentChange={() => {
-                const value = input.plainText
-                setStore("prompt", "text", value)
-                auto()?.onInput(value)
-                syncExtmarksWithPromptParts()
-                setCursorVersion((value) => value + 1)
-              }}
-              onCursorChange={() => setCursorVersion((value) => value + 1)}
-              onKeyDown={(e: { preventDefault(): void }) => {
-                if (props.disabled) {
-                  e.preventDefault()
-                  return
-                }
-              }}
-              onSubmit={() => {
-                // IME: double-defer so the last composed character (e.g. Korean
-                // hangul) is flushed to plainText before we read it for submission.
-                setTimeout(() => setTimeout(() => submit(), 0), 0)
-              }}
-              onPaste={(event: PasteEvent) => {
-                if (props.disabled) {
+              <textarea
+                flexGrow={1}
+                placeholder={placeholderText()}
+                placeholderColor={theme.text.subdued}
+                textColor={muted() ? theme.text.subdued : theme.text.default}
+                focusedTextColor={muted() ? theme.text.subdued : theme.text.default}
+                minHeight={1}
+                maxHeight={maxHeight()}
+                cursorStyle={config.cursor}
+                onContentChange={() => {
+                  const value = input.plainText
+                  setStore("prompt", "text", value)
+                  auto()?.onInput(value)
+                  syncExtmarksWithPromptParts()
+                  setCursorVersion((value) => value + 1)
+                }}
+                onCursorChange={() => setCursorVersion((value) => value + 1)}
+                onKeyDown={(e: { preventDefault(): void }) => {
+                  if (props.disabled) {
+                    e.preventDefault()
+                    return
+                  }
+                }}
+                onSubmit={() => {
+                  // IME: double-defer so the last composed character (e.g. Korean
+                  // hangul) is flushed to plainText before we read it for submission.
+                  setTimeout(() => setTimeout(() => submit(), 0), 0)
+                }}
+                onPaste={(event: PasteEvent) => {
+                  if (props.disabled) {
+                    event.preventDefault()
+                    return
+                  }
+
+                  // Normalize line endings at the boundary
+                  // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
+                  // Replace CRLF first, then any remaining CR
+                  const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+
+                  // Windows Terminal <1.25 can surface image-only clipboard as an
+                  // empty bracketed paste. Windows Terminal 1.25+ does not.
+                  if (event.bytes.byteLength === 0) {
+                    keymap.dispatch("prompt.paste")
+                    return
+                  }
+
+                  // Once we cross an async boundary below, the terminal may perform its
+                  // default paste unless we suppress it first and handle insertion ourselves.
                   event.preventDefault()
-                  return
-                }
 
-                // Normalize line endings at the boundary
-                // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
-                // Replace CRLF first, then any remaining CR
-                const normalizedText = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-
-                // Windows Terminal <1.25 can surface image-only clipboard as an
-                // empty bracketed paste. Windows Terminal 1.25+ does not.
-                if (event.bytes.byteLength === 0) {
-                  keymap.dispatch("prompt.paste")
-                  return
-                }
-
-                // Once we cross an async boundary below, the terminal may perform its
-                // default paste unless we suppress it first and handle insertion ourselves.
-                event.preventDefault()
-
-                void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
-              }}
-              ref={(r: TextareaRenderable) => {
-                input = r
-                Object.assign(r, {
-                  getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.pasted),
-                })
-                setInputTarget(r)
-                if (promptPartTypeId === 0) {
-                  promptPartTypeId = input.extmarks.registerType("prompt-part")
-                }
-                props.ref?.(ref)
-                setTimeout(() => {
-                  // setTimeout is a workaround and needs to be addressed properly
-                  if (!input || input.isDestroyed) return
-                  input.cursorColor = theme.text.default
-                  if (config.cursor) input.cursorStyle = config.cursor
-                }, 0)
-              }}
-              onMouseDown={(r: MouseEvent) => {
-                if (props.disabled || r.button !== 0) return
-                r.target?.focus()
-                const extmark = input.extmarks
-                  .getAtOffset(input.cursorOffset)
-                  .find((item) => store.extmarkToPart.get(item.id)?.type === "pasted")
-                if (!extmark || !expandPastedText(extmark.id)) return
-                r.preventDefault()
-                r.stopPropagation()
-              }}
-              focusedBackgroundColor="transparent"
-              cursorColor={props.disabled ? theme.background.surface.offset : theme.text.default}
-              syntaxStyle={syntax()}
-            />
+                  void enqueuePaste((changed) => pasteInputText(normalizedText, changed))
+                }}
+                ref={(r: TextareaRenderable) => {
+                  input = r
+                  Object.assign(r, {
+                    getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.pasted),
+                  })
+                  setInputTarget(r)
+                  if (promptPartTypeId === 0) {
+                    promptPartTypeId = input.extmarks.registerType("prompt-part")
+                  }
+                  props.ref?.(ref)
+                  setTimeout(() => {
+                    // setTimeout is a workaround and needs to be addressed properly
+                    if (!input || input.isDestroyed) return
+                    input.cursorColor = theme.text.default
+                    if (config.cursor) input.cursorStyle = config.cursor
+                  }, 0)
+                }}
+                onMouseDown={(r: MouseEvent) => {
+                  if (props.disabled || r.button !== 0) return
+                  r.target?.focus()
+                  const extmark = input.extmarks
+                    .getAtOffset(input.cursorOffset)
+                    .find((item) => store.extmarkToPart.get(item.id)?.type === "pasted")
+                  if (!extmark || !expandPastedText(extmark.id)) return
+                  r.preventDefault()
+                  r.stopPropagation()
+                }}
+                focusedBackgroundColor="transparent"
+                cursorColor={props.disabled ? theme.background.surface.offset : theme.text.default}
+                syntaxStyle={syntax()}
+              />
             </box>
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
-              <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
+              <box
+                flexDirection="row"
+                gap={1}
+                flexGrow={1}
+                flexShrink={1}
+                minWidth={0}
+                onSizeChange={function (this: BoxRenderable) {
+                  const width = this.width
+                  queueMicrotask(() => setMetaLabelsWidth(width))
+                }}
+              >
                 <Show when={agentLabel()} fallback={<box height={1} />}>
                   {(label) => (
                     <>
                       <text fg={fadeColor(highlight(), agentMetaAlpha())}>{label()}</text>
-                      <Show
-                        when={store.mode === "normal" && local.permission.mode === "auto" && dimensions().width >= 44}
-                      >
-                        <text fg={fadeColor(theme.text.subdued, agentMetaAlpha())}>auto</text>
-                      </Show>
+                      {/* REDSUN DENSE: no `auto` marker here -- the auto-approve
+                          state has its own always-on row above the command bar,
+                          so repeating it beside the agent is noise. */}
                       <Show when={store.mode === "normal" && dimensions().width >= 28}>
                         <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
                           <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
@@ -1788,11 +1849,11 @@ export function Prompt(props: PromptProps) {
                             minWidth={0}
                             wrapMode="none"
                             truncate
-                            fg={fadeColor(leader() ? theme.text.subdued : theme.text.default, modelMetaAlpha())}
+                            fg={fadeColor(muted() ? theme.text.subdued : theme.text.default, modelMetaAlpha())}
                           >
                             {local.model.parsed().model}
                           </text>
-                          <Show when={dimensions().width >= 50}>
+                          <Show when={showProviderLabels() && dimensions().width >= 50}>
                             <text flexShrink={0} fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>
                               {currentProviderLabel()}
                             </text>
@@ -1816,34 +1877,23 @@ export function Prompt(props: PromptProps) {
                   )}
                 </Show>
               </box>
-              <Show when={hasRightContent()}>
-                <box flexDirection="row" gap={1} alignItems="center">
-                  {props.right}
-                </box>
-              </Show>
-            </box>
-          </box>
-        </box>
-        <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
-          <Slot path="prompt.footer" input={footerInput()}>
-            <Slot path="prompt.footer.status" input={footerInput()}>
-              <box
-                flexGrow={1}
-                flexShrink={1}
-                minWidth={0}
-                onSizeChange={function (this: BoxRenderable) {
-                  const width = this.width
-                  queueMicrotask(() => setLocationWidth(width))
-                }}
+              {/* REDSUN DENSE: in a session the dock's own rows carry the
+                  workspace, the usage readout and the permission state, so the
+                  footer row below is home-only and the live status moves up
+                  here. This group never shrinks, which is what makes the left
+                  box's measured width the true budget for the meta labels. */}
+              <Show
+                when={
+                  hasRightContent() ||
+                  (props.sessionID !== undefined && (status() === "running" || editorFileReadout() !== undefined))
+                }
               >
-                <Switch>
-                  <Match when={status() === "running"}>
-                    <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
-                      <box marginLeft={1}>
-                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.subdued}>[⋯]</text>}>
-                          <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
-                        </Show>
-                      </box>
+                <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
+                  <Show when={props.sessionID !== undefined && status() === "running"}>
+                    <box flexDirection="row" gap={1} alignItems="center">
+                      <Show when={config.animations ?? true} fallback={<text fg={theme.text.subdued}>[⋯]</text>}>
+                        <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+                      </Show>
                       <PromptInterruptStatus
                         armed={store.interrupt > 0}
                         animations={animationsEnabled()}
@@ -1853,62 +1903,115 @@ export function Prompt(props: PromptProps) {
                         flash={theme.decrease(theme.text.feedback.warning.default, 2)}
                       />
                     </box>
-                  </Match>
-                  <Match when={move.progress()}>
-                    {(progress) => (
-                      <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
-                        <Spinner color={theme.hue.accent[500]}>
-                          {progress()}
-                          <span style={{ fg: theme.text.subdued }}>{".".repeat(move.creatingDots())}</span>
-                        </Spinner>
-                      </box>
-                    )}
-                  </Match>
-                  <Match when={move.pendingNew()}>
-                    <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
-                      <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
-                        (new worktree)
+                  </Show>
+                  <Show when={props.sessionID !== undefined ? editorFileReadout() : undefined}>
+                    {(file) => (
+                      <text
+                        wrapMode="none"
+                        truncate
+                        flexShrink={1}
+                        fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.subdued}
+                      >
+                        {file()}
                       </text>
-                    </box>
-                  </Match>
-                  <Match when={true}>
-                    <Show when={!props.hint && locationLabelDisplay()} fallback={props.hint ?? <text />}>
-                      {(location) => (
-                        <text
-                          id="prompt.footer.location"
-                          fg={locationActions.hovered() ? theme.text.default : theme.text.subdued}
-                          wrapMode="none"
-                          truncate
-                          flexGrow={1}
-                          flexShrink={1}
-                          onMouseOver={locationActions.onMouseOver}
-                          onMouseOut={locationActions.onMouseOut}
-                          onMouseUp={locationActions.onMouseUp}
-                        >
-                          {location()}
-                        </text>
-                      )}
-                    </Show>
-                  </Match>
-                </Switch>
-              </box>
-            </Slot>
-            <Slot path="prompt.footer.file" input={footerInput()}>
-              <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
-                {(file) => (
-                  <text
-                    wrapMode="none"
-                    truncate
-                    flexShrink={1}
-                    fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.subdued}
-                  >
-                    {file()}
-                  </text>
-                )}
+                    )}
+                  </Show>
+                  {props.right}
+                </box>
               </Show>
-            </Slot>
-          </Slot>
+            </box>
+          </box>
         </box>
+        {/* REDSUN DENSE: home only. In a session this row would repeat the
+            command bar's workspace and usage readouts and pad the dock out by a
+            line, which is exactly the double reading v0.3.0 removed. */}
+        <Show when={props.sessionID === undefined}>
+          <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
+            <Slot path="prompt.footer" input={footerInput()}>
+              <Slot path="prompt.footer.status" input={footerInput()}>
+                <box
+                  flexGrow={1}
+                  flexShrink={1}
+                  minWidth={0}
+                  onSizeChange={function (this: BoxRenderable) {
+                    const width = this.width
+                    queueMicrotask(() => setLocationWidth(width))
+                  }}
+                >
+                  <Switch>
+                    <Match when={status() === "running"}>
+                      <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
+                        <box marginLeft={1}>
+                          <Show when={config.animations ?? true} fallback={<text fg={theme.text.subdued}>[⋯]</text>}>
+                            <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+                          </Show>
+                        </box>
+                        <PromptInterruptStatus
+                          armed={store.interrupt > 0}
+                          animations={animationsEnabled()}
+                          text={theme.text.default}
+                          subdued={theme.text.subdued}
+                          warning={theme.text.feedback.warning.default}
+                          flash={theme.decrease(theme.text.feedback.warning.default, 2)}
+                        />
+                      </box>
+                    </Match>
+                    <Match when={move.progress()}>
+                      {(progress) => (
+                        <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+                          <Spinner color={theme.hue.accent[500]}>
+                            {progress()}
+                            <span style={{ fg: theme.text.subdued }}>{".".repeat(move.creatingDots())}</span>
+                          </Spinner>
+                        </box>
+                      )}
+                    </Match>
+                    <Match when={move.pendingNew()}>
+                      <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
+                        <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
+                          (new worktree)
+                        </text>
+                      </box>
+                    </Match>
+                    <Match when={true}>
+                      <Show when={!props.hint && locationLabelDisplay()} fallback={props.hint ?? <text />}>
+                        {(location) => (
+                          <text
+                            id="prompt.footer.location"
+                            fg={locationActions.hovered() ? theme.text.default : theme.text.subdued}
+                            wrapMode="none"
+                            truncate
+                            flexGrow={1}
+                            flexShrink={1}
+                            onMouseOver={locationActions.onMouseOver}
+                            onMouseOut={locationActions.onMouseOut}
+                            onMouseUp={locationActions.onMouseUp}
+                          >
+                            {location()}
+                          </text>
+                        )}
+                      </Show>
+                    </Match>
+                  </Switch>
+                </box>
+              </Slot>
+              <Slot path="prompt.footer.file" input={footerInput()}>
+                <Show when={editorFileReadout()}>
+                  {(file) => (
+                    <text
+                      wrapMode="none"
+                      truncate
+                      flexShrink={1}
+                      fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.subdued}
+                    >
+                      {file()}
+                    </text>
+                  )}
+                </Show>
+              </Slot>
+            </Slot>
+          </box>
+        </Show>
       </box>
       <Autocomplete
         sessionID={props.sessionID}

@@ -1,32 +1,16 @@
-import { logo } from "../logo"
-
+// REDSUN: the exit epilogue is the product name and the two lines that let you
+// pick the session back up. The gradient wordmark belongs to the new-session
+// screen, where it has a frame to sit in; printed into scrollback after the
+// alternate screen is gone it is four rows of noise above the one line that
+// matters.
 const reset = "\x1b[0m"
 const bold = "\x1b[1m"
 const dim = "\x1b[90m"
 
-function wordmark(pad = "") {
-  const draw = (line: string, fg: string, shadow: string, bg: string) =>
-    [...line]
-      .map((char) => {
-        if (char === "_") return `${bg} ${reset}`
-        if (char === "^") return `${fg}${bg}▀${reset}`
-        if (char === "~") return `${shadow}▀${reset}`
-        if (char === " ") return " "
-        return `${fg}${char}${reset}`
-      })
-      .join("")
-
-  return logo.left.map((line, index) => {
-    const left = draw(line, dim, "\x1b[38;5;235m", "\x1b[48;5;235m")
-    const right = draw(logo.right[index] ?? "", reset, "\x1b[38;5;238m", "\x1b[48;5;238m")
-    return `${pad}${left} ${right}`
-  })
-}
-
 export function sessionEpilogue(input: { title: string; sessionID?: string }) {
   const weak = (text: string) => `${dim}${text.padEnd(10, " ")}${reset}`
   return [
-    ...wordmark("  "),
+    "redsun",
     "",
     `  ${weak("Session")}${bold}${input.title}${reset}`,
     `  ${weak("Continue")}${bold}redsun -s ${input.sessionID}${reset}`,

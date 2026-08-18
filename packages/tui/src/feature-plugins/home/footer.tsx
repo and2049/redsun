@@ -11,6 +11,35 @@ export function homeFooterVisibility(width: number) {
   }
 }
 
+// REDSUN DENSE: the workspace and its branch, in the same shape the command
+// bar uses in a session -- name in the foreground, branch parenthesised and
+// subdued -- so the two readouts read as one thing seen from two screens.
+function Directory(props: { context: Plugin.Context }) {
+  const location = createMemo(() => props.context.location)
+  const name = createMemo(() => {
+    const current = location()
+    if (!current) return undefined
+    if (current.workspaceID) return current.workspaceID
+    return current.directory.split(/[\\/]/).filter(Boolean).at(-1)
+  })
+  const branch = createMemo(() => props.context.data.location.vcs.info(location())?.branch.current)
+
+  return (
+    <Show when={name()}>
+      {(value) => (
+        <box flexShrink={1} minWidth={0}>
+          <text wrapMode="none" truncate>
+            <span style={{ fg: props.context.theme.text.default }}>{value()}</span>
+            <Show when={branch()}>
+              {(item) => <span style={{ fg: props.context.theme.text.subdued }}> ({item()})</span>}
+            </Show>
+          </text>
+        </box>
+      )}
+    </Show>
+  )
+}
+
 function Mcp(props: { context: Plugin.Context }) {
   const dimensions = useTerminalDimensions()
   const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
@@ -77,7 +106,6 @@ function View(props: { context: Plugin.Context }) {
     <Show when={dimensions().height >= 12 && dimensions().width >= 44}>
       <box
         width="100%"
-        paddingTop={dimensions().height < 16 ? 0 : 1}
         paddingBottom={dimensions().height < 16 ? 0 : 1}
         paddingLeft={2}
         paddingRight={2}
@@ -85,6 +113,7 @@ function View(props: { context: Plugin.Context }) {
         flexShrink={0}
         gap={2}
       >
+        <Directory context={props.context} />
         <Mcp context={props.context} />
         <Plugins context={props.context} />
         <box flexGrow={1} />

@@ -55,7 +55,6 @@ import { StartupLoading } from "./component/startup-loading"
 import { WorkspaceStatus } from "./component/workspace-status"
 import { CommandBar } from "./component/command-bar"
 import { VimKeyHandler, VimProvider } from "./context/vim"
-import { DevToolsBar } from "./component/devtools-bar"
 import { Reconnecting } from "./component/reconnecting"
 import { MigrationOverlay } from "./component/migration-overlay"
 import { DataProvider, useData } from "./context/data"
@@ -370,31 +369,31 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                           <PromptStashProvider>
                                                             <DialogProvider>
                                                               <VimKeyHandler>
-                                                              <FrecencyProvider>
-                                                                <PromptHistoryProvider>
-                                                                  <PromptRefProvider>
-                                                                    <EditorContextProvider>
-                                                                      <AttentionProvider>
-                                                                        <PluginProvider
-                                                                          packages={input.packages}
-                                                                          directories={pluginDirectories}
-                                                                        >
-                                                                          <App
-                                                                            pair={
-                                                                              input.server.endpoint.auth
-                                                                                ? input.server.endpoint.auth
-                                                                                : {
-                                                                                    username: "opencode",
-                                                                                    password: "",
-                                                                                  }
-                                                                            }
-                                                                          />
-                                                                        </PluginProvider>
-                                                                      </AttentionProvider>
-                                                                    </EditorContextProvider>
-                                                                  </PromptRefProvider>
-                                                                </PromptHistoryProvider>
-                                                              </FrecencyProvider>
+                                                                <FrecencyProvider>
+                                                                  <PromptHistoryProvider>
+                                                                    <PromptRefProvider>
+                                                                      <EditorContextProvider>
+                                                                        <AttentionProvider>
+                                                                          <PluginProvider
+                                                                            packages={input.packages}
+                                                                            directories={pluginDirectories}
+                                                                          >
+                                                                            <App
+                                                                              pair={
+                                                                                input.server.endpoint.auth
+                                                                                  ? input.server.endpoint.auth
+                                                                                  : {
+                                                                                      username: "opencode",
+                                                                                      password: "",
+                                                                                    }
+                                                                              }
+                                                                            />
+                                                                          </PluginProvider>
+                                                                        </AttentionProvider>
+                                                                      </EditorContextProvider>
+                                                                    </PromptRefProvider>
+                                                                  </PromptHistoryProvider>
+                                                                </FrecencyProvider>
                                                               </VimKeyHandler>
                                                             </DialogProvider>
                                                           </PromptStashProvider>
@@ -446,7 +445,6 @@ function App(props: { pair?: DialogPairCredentials }) {
   const startup = useTuiStartup()
   const paths = useTuiPaths()
   const config = useConfig()
-  const devtools = createMemo(() => config.data.debug?.devtools ?? app.channel === "local")
   const route = useRoute()
   const dimensions = useTerminalDimensions()
   const renderer = useRenderer()
@@ -547,24 +545,27 @@ function App(props: { pair?: DialogPairCredentials }) {
     if (session) active = { id: session.id, title: session.title }
     if (!terminalTitleEnabled()) return
 
+    // REDSUN: the window title is the product name until a session has earned a
+    // real one, and then the title alone behind the prompt arrow -- a tab strip
+    // full of `OC | ...` reads as one repeated word before it reads as anything.
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle("redsun")
       return
     }
 
     if (route.data.type === "session") {
       const title = session?.title
       if (!title || isFallbackTitle(title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle("redsun")
         return
       }
 
-      renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + "..." : title}`)
+      renderer.setTerminalTitle(`> ${title.length > 40 ? title.slice(0, 37) + "..." : title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.name}`)
+      renderer.setTerminalTitle(`redsun | ${route.data.name}`)
     }
   })
 
@@ -1197,9 +1198,6 @@ function App(props: { pair?: DialogPairCredentials }) {
         <WorkspaceStatus />
       </Show>
       <CommandBar />
-      <Show when={devtools()}>
-        <DevToolsBar />
-      </Show>
       <Show when={!startup.skipInitialLoading}>
         <StartupLoading ready={plugins.ready} />
       </Show>

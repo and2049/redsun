@@ -78,9 +78,15 @@ export function Home() {
 
   return (
     <>
-      {/* REDSUN DENSE: the logo and the prompt sit in the middle of the frame
-          with equal air above and below, and a hint row between them naming the
-          three prompt triggers. */}
+      {/* REDSUN DENSE: the workspace, its branch and the version open the
+          frame rather than closing it. The slot keeps its `home.footer` name
+          because that path is plugin contract; only where it renders moved. */}
+      <box width="100%" flexShrink={0}>
+        <Slot path="home.footer" />
+      </box>
+      {/* The logo and the prompt sit in the middle of the frame with equal air
+          above and below, and a hint row between them naming the three prompt
+          triggers. */}
       <box flexGrow={1} alignItems="center" paddingLeft={1} paddingRight={1}>
         <box flexGrow={1} minHeight={0} />
         <box flexShrink={0}>
@@ -95,9 +101,6 @@ export function Home() {
           <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
         </box>
         <box flexGrow={1} minHeight={0} />
-      </box>
-      <box width="100%" flexShrink={0}>
-        <Slot path="home.footer" />
       </box>
       <Show when={forms()[0]?.id} keyed>
         {(_) => {

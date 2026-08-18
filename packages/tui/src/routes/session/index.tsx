@@ -1910,7 +1910,10 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
         </box>
       </Show>
       <AssistantRetry retry={props.message.retry} />
-      <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}>
+      <box
+        paddingLeft={TRANSCRIPT_GUTTER}
+        marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}
+      >
         <text>
           <span style={{ fg: props.message.error ? theme.text.subdued : local.agent.color(props.message.agent) }}>
             {Locale.titlecase(props.message.agent)}
@@ -2173,20 +2176,21 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
   const output = createMemo(() => stripAnsi(props.message.output?.output.trim() ?? ""))
 
   return (
+    // REDSUN DENSE: the same shape the tool block uses -- the fill hugs its
+    // text and a margin above does the separating.
     <box
       width="100%"
       border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
-      gap={1}
+      marginTop={1}
+      paddingLeft={1}
+      paddingRight={1}
       backgroundColor={theme.background.default}
       customBorderChars={SplitBorder.customBorderChars}
       borderColor={theme.background.default}
     >
       <text fg={theme.text.default}>$ {props.message.command}</text>
       <Show when={output()}>
-        <text fg={theme.text.subdued}>{output()}</text>
+        <text fg={theme.text.default}>{output()}</text>
       </Show>
     </box>
   )
@@ -2836,7 +2840,12 @@ export function InlineToolRow(props: {
   onMouseUp?: () => void
 }) {
   return (
-    <box paddingLeft={TRANSCRIPT_GUTTER} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>
+    <box
+      paddingLeft={TRANSCRIPT_GUTTER}
+      onMouseOver={props.onMouseOver}
+      onMouseOut={props.onMouseOut}
+      onMouseUp={props.onMouseUp}
+    >
       <Switch>
         <Match when={props.spinner}>
           <Show when={props.status} fallback={<Spinner color={props.color} children={props.children} />}>
@@ -2947,12 +2956,15 @@ function BlockToolContent(props: BlockToolProps & { borderColor: RGBA }) {
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error.message : undefined))
   const permission = useToolPermission(() => props.part)
   return (
+    // REDSUN DENSE: the tinted block hugs its text. Padding inside the fill
+    // costs two rows per tool call and reads as air the block owns; a margin
+    // above costs one row and reads as the separation between calls, which is
+    // the thing it actually is.
     <box
       border={["left"]}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
-      gap={1}
+      marginTop={1}
+      paddingLeft={1}
+      paddingRight={1}
       backgroundColor={hover() ? theme.raise(theme.background.default) : theme.background.default}
       customBorderChars={SplitBorder.customBorderChars}
       borderColor={props.borderColor}
@@ -3102,18 +3114,21 @@ function Shell(props: ToolProps) {
     const content = toolDisplayContent(props.part.state)[0]
     return stripAnsi(content?.type === "text" ? content.text.trim() : "")
   })
-  const maxLines = 10
+  // REDSUN DENSE: Claude Code shows three output lines before truncating; one
+  // more here because the hint row takes the place of the last one anyway. The
+  // command is never part of the budget -- it is the one line always worth
+  // seeing -- so only the output is collapsed.
+  const maxLines = 4
   const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
   const prefix = createMemo(() => (workdir() && workdir() !== "." ? `cd ${workdir()} && ` : ""))
   const input = createMemo(() => (command() ? `${isRunning() ? "" : "$ "}${prefix()}${command()}` : ""))
-  const content = createMemo(() => [input(), output()].filter(Boolean).join("\n\n"))
-  const collapsed = createMemo(() => collapseToolOutput(content(), maxLines, maxChars()))
-  const limited = createMemo(() => {
-    if (expanded() || !collapsed().overflow) return content()
-    return collapsed().output
+  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
+  const limitedOutput = createMemo(() => {
+    if (expanded() || !collapsed().overflow) return output()
+    // The hint row below carries the ellipsis and the hidden-line count.
+    return collapsed().output.replace(/\n…$/, "")
   })
-  const limitedInput = createMemo(() => limited().slice(0, input().length))
-  const limitedOutput = createMemo(() => limited().slice(Math.min(limited().length, input().length + 2)))
+  const remaining = createMemo(() => Math.max(0, output().split("\n").length - maxLines))
   const expandable = createMemo(() => Boolean(shellID()) || collapsed().overflow)
   const toggle = () => {
     const next = !expanded()
@@ -3124,23 +3139,36 @@ function Shell(props: ToolProps) {
   return (
     <BlockTool part={props.part} onClick={expandable() ? toggle : undefined}>
       <box gap={1}>
-        <Show
-          when={command()}
-          fallback={
-            isRunning() || props.part.state.status === "streaming" ? (
-              <Spinner color={color()}>Writing command...</Spinner>
-            ) : (
-              <text fg={theme.text.subdued}>Writing command...</text>
-            )
-          }
-        >
-          <Show when={isRunning()} fallback={<text fg={theme.text.default}>{limitedInput()}</text>}>
-            <Spinner color={color()}>{limitedInput()}</Spinner>
+        {/* Command, output and hint are one unbroken block -- a gap between
+            them would read as two separate things rather than one call. */}
+        <box>
+          <Show
+            when={command()}
+            fallback={
+              isRunning() || props.part.state.status === "streaming" ? (
+                <Spinner color={color()}>Writing command...</Spinner>
+              ) : (
+                <text fg={theme.text.subdued}>Writing command...</text>
+              )
+            }
+          >
+            <Show when={isRunning()} fallback={<text fg={theme.text.default}>{input()}</text>}>
+              <Spinner color={color()}>{input()}</Spinner>
+            </Show>
+            <Show when={limitedOutput()}>
+              <text fg={theme.text.default}>{limitedOutput()}</text>
+            </Show>
+            <Show when={collapsed().overflow}>
+              <text fg={theme.text.subdued}>
+                {expanded()
+                  ? "click to collapse"
+                  : remaining() > 0
+                    ? `… +${remaining()} ${remaining() === 1 ? "line" : "lines"} (click to expand)`
+                    : "… (click to expand)"}
+              </text>
+            </Show>
           </Show>
-          <Show when={limitedOutput()}>
-            <text fg={theme.text.subdued}>{limitedOutput()}</text>
-          </Show>
-        </Show>
+        </box>
         <Show when={background()}>
           <StatusBadge>Background</StatusBadge>
         </Show>

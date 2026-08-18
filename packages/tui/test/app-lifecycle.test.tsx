@@ -4,6 +4,8 @@ import { Effect, FileSystem } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Global } from "@opencode-ai/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
+import { rmSync } from "fs"
+import path from "path"
 
 test("SIGHUP clears title and disposes scoped resources once", async () => {
   const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
@@ -15,7 +17,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
   const setTitle = setup.renderer.setTerminalTitle.bind(setup.renderer)
   setup.renderer.setTerminalTitle = (title) => {
     titles.push(title)
-    if (title === "OpenCode") started()
+    if (title === "redsun") started()
     setTitle(title)
   }
   const listeners = new Set(process.listeners("SIGHUP"))
@@ -60,8 +62,8 @@ test("session lifecycle updates the terminal title and prints the epilogue after
   })
   const setTitle = setup.renderer.setTerminalTitle.bind(setup.renderer)
   setup.renderer.setTerminalTitle = (title) => {
-    if (title === "OC | Demo session") initialTitle()
-    if (title === "OC | Renamed session") renamedTitle()
+    if (title === "> Demo session") initialTitle()
+    if (title === "> Renamed session") renamedTitle()
     setTitle(title)
   }
   const events = createEventStream()
@@ -141,7 +143,7 @@ test("session title generated while an untitled session is loading remains visib
   const generatedTitle = Promise.withResolvers<void>()
   setup.renderer.setTerminalTitle = (title) => {
     titles.push(title)
-    if (title === "OC | Generated title") generatedTitle.resolve()
+    if (title === "> Generated title") generatedTitle.resolve()
     setTitle(title)
   }
   const sessionRequested = Promise.withResolvers<void>()
@@ -209,9 +211,9 @@ test("session title generated while an untitled session is loading remains visib
     ])
     await Bun.sleep(20)
 
-    const generated = titles.lastIndexOf("OC | Generated title")
+    const generated = titles.lastIndexOf("> Generated title")
     expect(generated).toBeGreaterThan(-1)
-    expect(titles.slice(generated + 1)).not.toContain("OpenCode")
+    expect(titles.slice(generated + 1)).not.toContain("redsun")
     setup.renderer.destroy()
     await task
   } finally {
@@ -296,6 +298,9 @@ test("session startup prompt is submitted exactly once", async () => {
 })
 
 test("configured app bindings execute settings and permission commands", async () => {
+  // The permission mode is a remembered preference, so a previous run of this
+  // test would otherwise decide which way F7 toggles it.
+  rmSync(path.join(Global.Path.state, "test", "tui", "permission.json"), { force: true })
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
   setup.renderer.start()
   const ready = Promise.withResolvers<void>()

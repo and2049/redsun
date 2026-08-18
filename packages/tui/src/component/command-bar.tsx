@@ -90,8 +90,12 @@ export function CommandBar() {
   })
 
   createEffect(() => {
+    // Read the mode before the ref guard: the <input> only exists while the bar
+    // is in command mode, so an early return that has not tracked the mode
+    // leaves the effect subscribed to nothing and the bar never takes focus.
+    const mode = vim.mode
     if (!inputRef) return
-    if (vim.mode !== "command") {
+    if (mode !== "command") {
       inputRef.blur()
       return
     }
