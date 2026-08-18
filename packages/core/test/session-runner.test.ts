@@ -164,6 +164,13 @@ const undersizedContextModel = LanguageModel.make({
   provider: "fake",
   route: OpenAIChat.route.with({ limits: { context: 1, output: 1_000 } }),
 })
+// REDSUN: same tiny limits as compactModel, but delegated. Claude Code owns its
+// own context window, so the runner must not compact it.
+const delegatedCompactModel = LanguageModel.make({
+  id: "sonnet",
+  provider: "claude-code",
+  route: OpenAIChat.route.with({ limits: { context: 4_000, output: 50 } }),
+})
 const recoveryModel = LanguageModel.make({
   id: "recovery",
   provider: "fake",
@@ -2307,6 +2314,56 @@ describe("SessionRunnerLLM", () => {
       expect((yield* (yield* SessionStore.Service).context(sessionID))[0]).toMatchObject({
         type: "compaction",
         summary: "## Objective\n- Preserve the updated task",
+      })
+    }),
+  )
+
+  it.effect("never auto-compacts a delegated Claude Code session", () =>
+    Effect.gen(function* () {
+      const session = yield* setup
+      yield* TestLLM.push(TestLLM.textWithUsage("Earlier answer", "text-delegated-first", 3_950))
+      yield* runPrompt(session, "Earlier question ".repeat(180))
+
+      // Identical limits and usage to "automatically compacts into a completed
+      // summary", which spends an extra request on the summary. Claude Code
+      // auto-compacts inside the CLI, so a v2-side summary would replace a
+      // transcript this model never reads.
+      currentModel = delegatedCompactModel
+      requests.length = 0
+      yield* TestLLM.push(TestLLM.textWithUsage("Continued", "text-delegated-final", 3_950))
+      yield* runPrompt(session, "Recent exact request ".repeat(180))
+
+      expect(requests).toHaveLength(1)
+      expect(yield* session.context(sessionID)).not.toContainEqual(expect.objectContaining({ type: "compaction" }))
+    }),
+  )
+
+  it.effect("forwards a manual compaction to the Claude Code CLI", () =>
+    Effect.gen(function* () {
+      const session = yield* setup
+      currentModel = delegatedCompactModel
+      yield* session.switchModel({
+        sessionID,
+        model: { id: ID.make("sonnet"), providerID: Provider.ID.make("claude-code") },
+      })
+      yield* TestLLM.push(TestLLM.text("Earlier answer", "text-delegated-manual-first"))
+      yield* runPrompt(session, "Earlier question")
+
+      requests.length = 0
+      yield* TestLLM.push(TestLLM.text("Compacted", "text-delegated-manual-compact"))
+      const compaction = yield* session.compact({ sessionID })
+      yield* session.resume(sessionID)
+
+      // One request, and it is the CLI's own /compact command rather than a
+      // summary prompt: a one-shot summary process does not own the interactive
+      // session's history, so it could not compact anything.
+      expect(requests).toHaveLength(1)
+      expect(userTexts(requests[0])).toContain("/compact")
+      expect((yield* session.messages({ sessionID })).find((message) => message.id === compaction.id)).toMatchObject({
+        type: "compaction",
+        status: "failed",
+        reason: "manual",
+        error: { type: "compaction.delegated" },
       })
     }),
   )
