@@ -13,7 +13,6 @@ import { useLocal } from "../../context/local"
 import { useTheme, useThemes } from "../../context/theme"
 import { tint } from "../../theme/color"
 import { createAnimatable, tween } from "../../ui/animation"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -1536,7 +1535,6 @@ export function Prompt(props: PromptProps) {
     () => !!local.agent.current() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
-  const borderHighlight = createMemo(() => tint(theme.border.default, highlight(), agentMetaAlpha()))
   const footerInput = () => ({ sessionID: props.sessionID, mode: store.mode })
 
   const placeholderText = createMemo(() => {
@@ -1601,29 +1599,15 @@ export function Prompt(props: PromptProps) {
   })
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
-  const promptBg = createMemo(() => theme.raise(theme.background.surface.offset))
-
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        <box
-          width="100%"
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
-        >
-          <box
-            paddingLeft={dimensions().width < 44 ? 1 : 2}
-            paddingRight={dimensions().width < 44 ? 1 : 2}
-            paddingTop={1}
-            flexShrink={0}
-            backgroundColor={promptBg()}
-            flexGrow={1}
-            width="100%"
-          >
+        <box width="100%">
+          {/* REDSUN DENSE: no fill behind the input. The dense prompt reads
+              as an outlined element on the plain background, so a filled
+              rectangle would show square corners behind the rounded
+              border -- a terminal cell cannot clip. */}
+          <box flexShrink={0} flexGrow={1} width="100%">
             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
               <box
                 width="100%"
@@ -1692,8 +1676,17 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
+            {/* REDSUN DENSE: the border stays agent-neutral -- the arrow
+                carries that signal -- and the arrow sits in its own column so
+                a wrapped prompt keeps a straight left edge. */}
+            <box flexDirection="row" width="100%" flexShrink={0} border borderStyle="rounded"
+              borderColor={theme.border.default} paddingLeft={1} paddingRight={1}
+            >
+              <text flexShrink={0} fg={highlight()}>
+                {store.mode === "shell" ? "! " : "❯ "}
+              </text>
             <textarea
-              width="100%"
+              flexGrow={1}
               placeholder={placeholderText()}
               placeholderColor={theme.text.subdued}
               textColor={leader() ? theme.text.subdued : theme.text.default}
@@ -1775,6 +1768,7 @@ export function Prompt(props: PromptProps) {
               cursorColor={props.disabled ? theme.background.surface.offset : theme.text.default}
               syntaxStyle={syntax()}
             />
+            </box>
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
                 <Show when={agentLabel()} fallback={<box height={1} />}>
@@ -1829,32 +1823,6 @@ export function Prompt(props: PromptProps) {
               </Show>
             </box>
           </box>
-        </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: promptBg().a !== 0 ? "╹" : " ",
-          }}
-        >
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={promptBg()}
-            customBorderChars={
-              promptBg().a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
           <Slot path="prompt.footer" input={footerInput()}>
