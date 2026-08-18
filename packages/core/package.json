@@ -93,6 +93,7 @@
     "drizzle-kit": "catalog:"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@ai-sdk/alibaba": "1.0.17",
     "@ai-sdk/amazon-bedrock": "4.0.112",
     "@ai-sdk/anthropic": "3.0.82",
