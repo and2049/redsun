@@ -7,14 +7,25 @@ import { parse, type ParseError } from "jsonc-parser"
 import path from "node:path"
 import { action, type Policy } from "./updater-action"
 
-declare const OPENCODE_CLI_NAME: string | undefined
+// REDSUN: redsun ships through its own installer and GitHub releases, and
+// publishes no npm package. The package-manager upgrade paths are deliberately
+// not advertised: probing for them resolved the main `redsun` build to
+// `@opencode-ai/cli` (the branch only matched `redsun-node`), so an autoupdate
+// installed upstream OpenCode over redsun.
+type Method = "curl" | "powershell"
 
-type Method = "npm" | "pnpm" | "bun" | "yarn" | "curl"
+export const REPOSITORY = "and2049/redsun"
+export const RELEASE_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`
+export const INSTALLER = `https://raw.githubusercontent.com/${REPOSITORY}/main/install`
+export const INSTALLER_WINDOWS = `https://raw.githubusercontent.com/${REPOSITORY}/main/install.ps1`
 
-const packageName =
-  typeof OPENCODE_CLI_NAME === "string" && OPENCODE_CLI_NAME === "redsun-node"
-    ? OPENCODE_CLI_NAME
-    : "@opencode-ai/cli"
+/** The tag of the newest release, without its leading `v`. */
+export function versionFromRelease(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null || !("tag_name" in data)) return undefined
+  const tag = data.tag_name
+  if (typeof tag !== "string" || !tag) return undefined
+  return tag.replace(/^v/, "")
+}
 
 export interface Interface {
   readonly check: () => Effect.Effect<void>
@@ -38,7 +49,6 @@ export const layer = Layer.effect(
     const fs = yield* FileSystem.FileSystem
     const global = yield* Global.Service
     const appProcess = yield* AppProcess.Service
-    const channel = OPENCODE_CHANNEL.replace(/[^a-zA-Z0-9._-]/g, "-")
 
     const readPolicy = Effect.fnUntraced(function* () {
       const values = yield* Effect.forEach(["config.json", "redsun.json", "redsun.jsonc"], (name) =>
@@ -67,34 +77,17 @@ export const layer = Layer.effect(
         )
     })
 
+    // The installer is the only supported upgrade path, so the method is just
+    // the platform's way of running it.
     const method = Effect.fnUntraced(function* () {
-      const binary = path.join(
-        global.home,
-        ".redsun",
-        "bin",
-        process.platform === "win32" ? "redsun.exe" : "redsun",
-      )
-      if (path.resolve(process.execPath) === path.resolve(binary)) return "curl"
-
-      const checks: ReadonlyArray<{ method: Method; command: string[] }> = [
-        { method: "npm", command: ["npm", "list", "-g", "--depth=0", packageName] },
-        { method: "pnpm", command: ["pnpm", "list", "-g", "--depth=0", packageName] },
-        { method: "bun", command: ["bun", "pm", "ls", "-g"] },
-        { method: "yarn", command: ["yarn", "global", "list"] },
-      ]
-      const results = yield* Effect.forEach(
-        checks,
-        (check) => run(check.command).pipe(Effect.map((result) => ({ check, result }))),
-        { concurrency: "unbounded" },
-      )
-      return results.find((result) => result.result.stdout.includes(packageName))?.check.method
+      return process.platform === "win32" ? ("powershell" as const) : ("curl" as const)
     })
 
     const latest = Effect.fnUntraced(function* () {
       const response = yield* Effect.tryPromise({
         try: () =>
-          fetch(`https://update.opencode.ai/api/${encodeURIComponent(channel)}/cli/npm`, {
-            headers: { "User-Agent": `opencode/${OPENCODE_VERSION}` },
+          fetch(RELEASE_API, {
+            headers: { "User-Agent": `redsun/${OPENCODE_VERSION}` },
             signal: AbortSignal.timeout(10_000),
           }),
         catch: (cause) => new Error("Failed to check for updates", { cause }),
@@ -104,39 +97,42 @@ export const layer = Layer.effect(
         try: () => response.json(),
         catch: (cause) => new Error("Failed to read update information", { cause }),
       })
-      if (typeof data !== "object" || data === null || !("version" in data) || typeof data.version !== "string") {
-        return yield* Effect.fail(new Error("Update information did not include a version"))
-      }
-      return data.version
+      const version = versionFromRelease(data)
+      if (!version) return yield* Effect.fail(new Error("Update information did not include a version"))
+      return version
     })
 
     const upgrade = Effect.fnUntraced(function* (method: Method, version: string) {
-      const target = `${packageName}@${version}`
-      const commands: Record<Exclude<Method, "bun" | "curl">, string[]> = {
-        npm: ["npm", "install", "--global", target],
-        pnpm: ["pnpm", "add", "--global", `--allow-build=${packageName}`, target],
-        yarn: ["yarn", "global", "add", target],
-      }
       const result = yield* Effect.scoped(
         Effect.gen(function* () {
-          if (method === "bun") {
-            // Bun does not prune old versions from its shared package cache.
-            yield* fs.makeDirectory(global.cache, { recursive: true })
-            const cache = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
-            return yield* run(["bun", "install", "--global", "--trust", "--cache-dir", cache, target], "5 minutes")
-          }
-          if (method === "curl") {
-            yield* fs.makeDirectory(global.cache, { recursive: true })
-            const directory = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
-            const installer = path.join(directory, "install")
-            const download = yield* run(
-              ["curl", "-fsSL", "-o", installer, "https://opencode.ai/v2/install"],
+          yield* fs.makeDirectory(global.cache, { recursive: true })
+          const directory = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
+          if (method === "powershell") {
+            // Windows PowerShell will not run a downloaded script from a pipe,
+            // so it goes to a real .ps1 file first.
+            const installer = path.join(directory, "install.ps1")
+            const download = yield* run(["curl", "-fsSL", "-o", installer, INSTALLER_WINDOWS], "5 minutes")
+            if (download.code !== 0) return download
+            return yield* run(
+              [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                installer,
+                "-Version",
+                version,
+                "-NoModifyPath",
+              ],
               "5 minutes",
             )
-            if (download.code !== 0) return download
-            return yield* run(["bash", installer, "--version", version, "--no-modify-path"], "5 minutes")
           }
-          return yield* run(commands[method], "5 minutes")
+          const installer = path.join(directory, "install")
+          const download = yield* run(["curl", "-fsSL", "-o", installer, INSTALLER], "5 minutes")
+          if (download.code !== 0) return download
+          return yield* run(["bash", installer, "--version", version, "--no-modify-path"], "5 minutes")
         }),
       )
       if (result.code === 0) return
@@ -163,9 +159,8 @@ export const layer = Layer.effect(
           const next = action(OPENCODE_VERSION, version, policy)
           if (next === "none") return yield* Effect.logInfo("update check done", { action: "up-to-date" })
           const detected = yield* method()
-          if (!detected) return yield* Effect.logWarning("automatic update skipped: installation method not found")
           yield* upgrade(detected, version)
-          yield* Effect.logInfo("updated OpenCode", { from: OPENCODE_VERSION, to: version, method: detected })
+          yield* Effect.logInfo("updated redsun", { from: OPENCODE_VERSION, to: version, method: detected })
         })
       },
       Effect.catchCause((cause) => Effect.logWarning("automatic update failed", { cause })),

@@ -84,7 +84,7 @@ describe("Ripgrep", () => {
           const ripgrep = yield* Ripgrep.Service
 
           const files = yield* ripgrep.find({ cwd: tmp.path, pattern: "**/*", limit: 10 })
-          expect(files.map((item) => item.path)).toContain(RelativePath.make(".opencode/config"))
+          expect(files.map((item) => item.path)).toContain(RelativePath.make(".redsun/config"))
           expect(files.map((item) => item.path)).not.toContain(RelativePath.make(".git/config"))
 
           const observed: string[] = []
@@ -97,7 +97,7 @@ describe("Ripgrep", () => {
           expect(observed).toEqual(limited.map((item) => item.path))
 
           const matches = yield* ripgrep.grep({ cwd: tmp.path, pattern: "needle", include: "config", limit: 10 })
-          expect(matches.map((item) => item.entry.path)).toContain(RelativePath.make(".opencode/config"))
+          expect(matches.map((item) => item.entry.path)).toContain(RelativePath.make(".redsun/config"))
           expect(matches.map((item) => item.entry.path)).not.toContain(RelativePath.make(".git/config"))
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
