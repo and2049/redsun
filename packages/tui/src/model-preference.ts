@@ -6,10 +6,14 @@ export type ModelPreferenceModel = {
   modelID: string
 }
 
+/** A model plus the variant it was last picked with. */
+export type ModelPreferenceSelection = ModelPreferenceModel & { variant?: string }
+
 export type ModelPreference = {
   recent: ModelPreferenceModel[]
   favorite: ModelPreferenceModel[]
   variant: Record<string, string | undefined>
+  worker?: ModelPreferenceSelection
 }
 
 export type ModelPreferenceDocument = Record<string, unknown> & ModelPreference
@@ -22,6 +26,14 @@ function models(value: unknown) {
     if (typeof item.modelID !== "string" || item.modelID.length === 0) return []
     return [{ providerID: item.providerID, modelID: item.modelID }]
   })
+}
+
+function selection(value: unknown): ModelPreferenceSelection | undefined {
+  if (!isRecord(value)) return undefined
+  if (typeof value.providerID !== "string" || value.providerID.length === 0) return undefined
+  if (typeof value.modelID !== "string" || value.modelID.length === 0) return undefined
+  const variant = typeof value.variant === "string" ? normalizeModelVariant(value.variant) : undefined
+  return { providerID: value.providerID, modelID: value.modelID, ...(variant === undefined ? {} : { variant }) }
 }
 
 function variants(value: unknown) {
@@ -60,6 +72,7 @@ export function decodeModelPreference(value: unknown): ModelPreferenceDocument {
     recent: models(root.recent),
     favorite: models(root.favorite),
     variant: variants(root.variant),
+    worker: selection(root.worker),
   }
 }
 
@@ -68,6 +81,7 @@ function preference(value: ModelPreferenceDocument): ModelPreference {
     recent: value.recent,
     favorite: value.favorite,
     variant: value.variant,
+    worker: value.worker,
   }
 }
 
@@ -76,6 +90,7 @@ function patch(value: Partial<ModelPreference>) {
     ...(value.recent === undefined ? {} : { recent: models(value.recent) }),
     ...(value.favorite === undefined ? {} : { favorite: models(value.favorite) }),
     ...(value.variant === undefined ? {} : { variant: variants(value.variant) }),
+    ...(value.worker === undefined ? {} : { worker: selection(value.worker) }),
   }
 }
 

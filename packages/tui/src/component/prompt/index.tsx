@@ -59,6 +59,7 @@ import { useData } from "../../context/data"
 import { useLocation } from "../../context/location"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { useVim } from "../../context/vim"
+import { parseWorkerModelRef, WORKER_MODEL_KEY } from "../dialog-worker-model"
 import { Slot } from "../../plugin/render"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import {
@@ -102,6 +103,9 @@ function randomIndex(count: number) {
   if (count <= 0) return 0
   return Math.floor(Math.random() * count)
 }
+
+/** What the meta row says when compose has nothing to delegate on. */
+const WORKER_UNSET = "worker model not set"
 
 function fadeColor(color: RGBA, alpha: number) {
   return RGBA.fromValues(color.r, color.g, color.b, color.a * alpha)
@@ -313,6 +317,56 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const interruptShortcut = createMemo(() => shortcuts.get("session.interrupt"))
+  // REDSUN: the worker model rides along on the prompt.
+  //
+  // The TUI owns the picker but has no route to the backend's copy -- a
+  // plugin can add neither an HTTP nor a KV route -- so the choice is stamped
+  // on the user message, which the client can already send and the projector
+  // already persists. `RedsunWorkerModel.sessionOverride` reads it back off
+  // the session's history, which also makes the messages the durable record
+  // of what a session last delegated on.
+  // Opening a session restores the worker model it last ran with, read back
+  // off its own messages. A session that never set one falls through to the
+  // globally remembered pick, which is what a fresh session gets too.
+  let workerSyncedSessionID: string | undefined
+  createEffect(() => {
+    const sessionID = props.sessionID
+    if (!sessionID || sessionID === workerSyncedSessionID) return
+    const messages = data.session.message.list(sessionID)
+    if (messages === undefined) return
+    workerSyncedSessionID = sessionID
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]
+      if (message?.type !== "user") continue
+      const value = message.metadata?.[WORKER_MODEL_KEY]
+      if (typeof value !== "string" || value.length === 0) continue
+      local.model.worker.restore(sessionID, parseWorkerModelRef(value))
+      return
+    }
+    local.model.worker.restore(sessionID, undefined)
+  })
+
+  const composeWorker = createMemo(() => local.agent.current()?.id === "compose" && store.mode === "normal")
+  const workerDisplay = createMemo(() => {
+    const value = local.model.worker.current()
+    if (!value) return undefined
+    const ref = currentLocation.ref ?? data.location.default()
+    const provider = data.location.provider.list(ref)?.find((item) => item.id === value.providerID)
+    const info = data.location.model
+      .list(ref)
+      ?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+    return {
+      model: info?.name ?? value.modelID,
+      provider: provider?.name ?? value.providerID,
+      variant: value.variant,
+    }
+  })
+
+  const workerMetadata = createMemo(() => {
+    if (local.agent.current()?.id !== "compose") return undefined
+    const ref = local.model.worker.ref()
+    return ref === undefined ? undefined : { [WORKER_MODEL_KEY]: ref }
+  })
   const connected = useConnected()
   const hasRightContent = createMemo(() => Boolean(props.right))
 
@@ -1325,6 +1379,7 @@ export function Prompt(props: PromptProps) {
           files: store.prompt.files,
           agents: store.prompt.agents,
           skills: store.prompt.skills?.length ? store.prompt.skills : undefined,
+          ...(workerMetadata() === undefined ? {} : { metadata: workerMetadata() }),
           delivery,
         })
         .then(
@@ -1560,6 +1615,15 @@ export function Prompt(props: PromptProps) {
     if (store.mode !== "normal") return items
     items.push("\u00b7", local.model.parsed().model, currentProviderLabel())
     if (showVariant()) items.push("\u00b7", local.model.variant.current() ?? "")
+    if (composeWorker()) {
+      const worker = workerDisplay()
+      items.push("\u00b7")
+      if (!worker) items.push(WORKER_UNSET)
+      else {
+        items.push(worker.model, worker.provider)
+        if (worker.variant) items.push("\u00b7", worker.variant)
+      }
+    }
     return items
   })
   const [metaLabelsWidth, setMetaLabelsWidth] = createSignal(0)
@@ -1849,6 +1913,56 @@ export function Prompt(props: PromptProps) {
                                 {local.model.variant.current()}
                               </span>
                             </text>
+                          </Show>
+                          {/* REDSUN: compose runs two models -- its own and the
+                              one it delegates on -- and which worker is behind a
+                              delegation is not recoverable from anywhere else on
+                              screen. */}
+                          <Show when={composeWorker() && dimensions().width >= 70}>
+                            <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
+                            <Show
+                              when={workerDisplay()}
+                              fallback={
+                                <text
+                                  flexShrink={0}
+                                  fg={fadeColor(theme.text.feedback.warning.default, modelMetaAlpha())}
+                                >
+                                  {WORKER_UNSET}
+                                </text>
+                              }
+                            >
+                              {(worker) => (
+                                <>
+                                  <text
+                                    flexShrink={1}
+                                    minWidth={0}
+                                    wrapMode="none"
+                                    truncate
+                                    fg={fadeColor(muted() ? theme.text.subdued : theme.text.default, modelMetaAlpha())}
+                                  >
+                                    {worker().model}
+                                  </text>
+                                  <Show when={showProviderLabels()}>
+                                    <text flexShrink={0} fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>
+                                      {worker().provider}
+                                    </text>
+                                  </Show>
+                                  <Show when={worker().variant}>
+                                    <text fg={fadeColor(theme.text.subdued, variantMetaAlpha())}>·</text>
+                                    <text>
+                                      <span
+                                        style={{
+                                          fg: fadeColor(theme.text.feedback.warning.default, variantMetaAlpha()),
+                                          bold: true,
+                                        }}
+                                      >
+                                        {worker().variant}
+                                      </span>
+                                    </text>
+                                  </Show>
+                                </>
+                              )}
+                            </Show>
                           </Show>
                         </box>
                       </Show>

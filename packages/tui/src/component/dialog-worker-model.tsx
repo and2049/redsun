@@ -1,115 +1,120 @@
-// REDSUN: the worker model picker, wearing the model menu's clothes.
+// REDSUN: picking the model compose delegates to.
 //
-// The worker override is session state the plugin owns, and a plugin can add
-// neither an HTTP nor a KV route, so the only way to set it is to answer the
-// form the `worker_model` tool raises. That form would otherwise render as the
-// generic dock form — a flat list of every model on every provider, in a
-// surface that looks nothing like `/models` even though it is the same choice.
+// It is the model menu pointed at a different sink -- same bottom-anchored
+// list, same providers collapsed behind one row -- because it is the same kind
+// of choice and should not have to be learned twice.
 //
-// So the form is answered from here instead: the same bottom-anchored menu,
-// the same providers collapsed behind one row each. What is picked is still a
-// form answer; only the shape of the asking changed.
-import { createMemo, createSignal } from "solid-js"
-import { DialogSelect } from "../ui/dialog-select"
+// Two things open it. `worker.model` opens it directly, which is the ordinary
+// way. The `worker_model` tool opens it too, by raising a form when a worker
+// refuses for lack of a model; answering that form is what makes the choice
+// take effect for the rest of the turn already running, since the TUI's own
+// copy only reaches the backend on the next prompt.
 import { useDialog } from "../ui/dialog"
+import { useLocal } from "../context/local"
 import { useClient } from "../context/client"
-import { useData, type FormWithLocation } from "../context/data"
-import { useLocation } from "../context/location"
+import type { FormWithLocation } from "../context/data"
+import { DialogModel } from "./dialog-model"
+import { DialogVariant } from "./dialog-variant"
 import { formRequestOptions, isFormAnswerField } from "../util/form"
-import { groupByProvider, providerOfValue, providerRowDescription, providerRowTitle } from "../util/provider-menu"
 
-/** The metadata key the `worker_model` tool stamps on its form. */
-export const WORKER_MODEL_FORM = "worker-model"
+/** The metadata key the tool stamps on its form, and the prompt on its message. */
+export const WORKER_MODEL_KEY = "redsun.worker-model"
 
 export function isWorkerModelForm(form: FormWithLocation) {
-  return form.metadata?.["kind"] === WORKER_MODEL_FORM
+  return form.metadata?.["kind"] === "worker-model"
 }
 
-type Choice = { value: string; label: string; description?: string }
+/** `provider/model#variant`, the shape the backend parses. */
+export function workerModelRef(model: { providerID: string; modelID: string; variant?: string }) {
+  return `${model.providerID}/${model.modelID}${model.variant ? `#${model.variant}` : ""}`
+}
 
-export function DialogWorkerModel(props: { form: FormWithLocation; onReplied?: () => void }) {
+/**
+ * The inverse of `workerModelRef`.
+ *
+ * Only the first slash separates the provider, because model ids carry slashes
+ * of their own, and only a trailing `#` marks the variant.
+ */
+export function parseWorkerModelRef(value: string) {
+  const slash = value.indexOf("/")
+  if (slash <= 0) return undefined
+  const providerID = value.slice(0, slash)
+  const rest = value.slice(slash + 1)
+  const hash = rest.lastIndexOf("#")
+  const modelID = hash > 0 ? rest.slice(0, hash) : rest
+  const variant = hash > 0 ? rest.slice(hash + 1) : undefined
+  if (modelID.length === 0) return undefined
+  return { providerID, modelID, ...(variant ? { variant } : {}) }
+}
+
+export function useWorkerVariantDialog() {
   const dialog = useDialog()
+  const local = useLocal()
+
+  return () => {
+    const current = local.model.worker.current()
+    const variants = local.model.worker.variants()
+    if (!current || variants.length === 0) return false
+    dialog.replace(() => (
+      <DialogVariant
+        title="Select worker model variant"
+        variants={variants}
+        selected={current.variant}
+        onSelect={(variant) => local.model.worker.setVariant(variant)}
+      />
+    ))
+    return true
+  }
+}
+
+export function useWorkerModelDialog() {
+  const dialog = useDialog()
+  const local = useLocal()
   const client = useClient()
-  const data = useData()
-  const location = useLocation()
-  dialog.setPlacement("bottom")
-  const [expanded, setExpanded] = createSignal(new Set<string>())
+  const openVariant = useWorkerVariantDialog()
 
-  function toggleProvider(providerID: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(providerID)) next.delete(providerID)
-      else next.add(providerID)
-      return next
-    })
-  }
+  /**
+   * @param form the pending `worker_model` form, when the tool is what asked.
+   *   Answering it applies the choice inside the turn already running.
+   */
+  return (form?: FormWithLocation) => {
+    const current = local.model.worker.current()
+    let answered = false
 
-  const field = createMemo(() => {
-    const item = props.form.fields.find(isFormAnswerField)
-    if (!item || item.type !== "string" || !item.options) return undefined
-    return { key: item.key, choices: item.options as Choice[] }
-  })
+    const answer = (ref: string) => {
+      if (!form || answered) return
+      const field = form.fields.find(isFormAnswerField)
+      if (!field) return
+      answered = true
+      void client.api.form
+        .reply({ sessionID: form.sessionID, formID: form.id, answer: { [field.key]: ref } }, formRequestOptions(form))
+        .catch(() => {})
+    }
 
-  const providerNames = createMemo(
-    () => new Map((data.location.provider.list(location.ref) ?? []).map((item) => [item.id, item.name])),
-  )
-
-  const options = createMemo(() => {
-    const current = field()
-    if (!current) return []
-
-    // Anything that is not `provider/model` is an instruction rather than a
-    // model -- "use the configured default" is the one the tool sends -- and it
-    // belongs under the sections, not inside one.
-    const loose = current.choices.filter((choice) => providerOfValue(choice.value) === undefined)
-    const groups = groupByProvider(
-      current.choices.filter((choice) => providerOfValue(choice.value) !== undefined),
-      (choice) => providerOfValue(choice.value)!,
+    dialog.replace(
+      () => (
+        <DialogModel
+          title="Select worker model"
+          current={current ? { providerID: current.providerID, modelID: current.modelID } : undefined}
+          closeOnSelect={false}
+          onSelect={(model) => {
+            local.model.worker.set(model)
+            answer(workerModelRef(model))
+            // The variant is a second step; the backend picks it up from the
+            // next prompt, since the form only carries the model.
+            if (!openVariant()) dialog.clear()
+          }}
+        />
+      ),
+      () => {
+        // Escaping withdraws the tool's ask. Without that the tool waits forever
+        // on a form with nothing left on screen to answer it.
+        if (!form || answered) return
+        void client.api.form
+          .cancel({ sessionID: form.sessionID, formID: form.id }, formRequestOptions(form))
+          .catch(() => {})
+      },
+      form ? { key: `worker-model:${form.id}` } : undefined,
     )
-
-    const sections = Array.from(groups, ([providerID, items]) => {
-      const open = expanded().has(providerID)
-      return [
-        {
-          value: `provider:${providerID}`,
-          title: providerRowTitle(providerNames().get(providerID) ?? providerID, open),
-          description: providerRowDescription(items.length),
-          category: "Providers",
-          onSelect: () => toggleProvider(providerID),
-        },
-        ...(open
-          ? items.map((choice) => ({
-              value: choice.value,
-              title: `  ${choice.label}`,
-              category: "Providers",
-              onSelect: () => reply(choice.value),
-            }))
-          : []),
-      ]
-    }).flat()
-
-    return [
-      ...sections,
-      ...loose.map((choice) => ({
-        value: choice.value,
-        title: choice.label,
-        description: choice.description,
-        category: "Session",
-        onSelect: () => reply(choice.value),
-      })),
-    ]
-  })
-
-  function reply(value: string) {
-    const current = field()
-    if (!current) return
-    props.onReplied?.()
-    void client.api.form.reply(
-      { sessionID: props.form.sessionID, formID: props.form.id, answer: { [current.key]: value } },
-      formRequestOptions(props.form),
-    )
-    dialog.clear()
   }
-
-  return <DialogSelect<string> options={options()} title="Worker model" flat={true} />
 }

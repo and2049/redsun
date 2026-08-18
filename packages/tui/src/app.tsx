@@ -62,6 +62,7 @@ import { LocationProvider, useLocation } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
+import { useWorkerModelDialog, useWorkerVariantDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -121,6 +122,8 @@ const pinnedSessionBindingCommands = [
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
+  "worker.model",
+  "worker.variant",
   "model.cycle_recent",
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
@@ -456,6 +459,8 @@ function App(props: { pair?: DialogPairCredentials }) {
   const toast = useToast()
   const theme = useTheme()
   const tabsTheme = useTheme("elevated")
+  const openWorkerModel = useWorkerModelDialog()
+  const openWorkerVariant = useWorkerVariantDialog()
   const { mode, supports, setMode, locked, lock, unlock } = useThemes()
   const data = useData()
   const location = useLocation()
@@ -709,6 +714,28 @@ function App(props: { pair?: DialogPairCredentials }) {
         slash: { name: "models", aliases: ["mo"] },
         run: () => {
           dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "worker.model",
+        title: "Switch worker model",
+        category: "Agent",
+        slash: { name: "worker-model", aliases: ["worker"] },
+        run: () => openWorkerModel(),
+      },
+      {
+        name: "worker.variant",
+        title: "Switch worker model variant",
+        category: "Agent",
+        palette: undefined,
+        slash: { name: "worker-variant" },
+        run: () => {
+          if (openWorkerVariant()) return
+          toast.show({
+            variant: "info",
+            message: local.model.worker.current() ? "This worker model has no variants" : "Select a worker model first",
+            duration: 3000,
+          })
         },
       },
       {

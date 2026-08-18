@@ -11,7 +11,14 @@ import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
 import { groupByProvider, providerRowDescription, providerRowTitle } from "../util/provider-menu"
 
-export function DialogModel(props: { providerID?: string }) {
+export function DialogModel(props: {
+  providerID?: string
+  /** REDSUN: the worker picker is this menu pointed at a different sink. */
+  title?: string
+  current?: { providerID: string; modelID: string }
+  closeOnSelect?: boolean
+  onSelect?: (model: { providerID: string; modelID: string }) => void
+}) {
   const local = useLocal()
   const data = useData()
   const dialog = useDialog()
@@ -152,12 +159,18 @@ export function DialogModel(props: { providerID?: string }) {
   const provider = createMemo(() => (props.providerID ? providers().get(props.providerID) : undefined))
 
   const title = createMemo(() => {
+    if (props.title) return props.title
     const value = provider()
     if (!value) return "Select model"
     return value.name
   })
 
   function onSelect(providerID: string, modelID: string) {
+    if (props.onSelect) {
+      props.onSelect({ providerID, modelID })
+      if (props.closeOnSelect !== false) dialog.clear()
+      return
+    }
     local.model.set({ providerID, modelID }, { recent: true })
     const list = local.model.variant.list()
     const cur = local.model.variant.current()
@@ -205,7 +218,7 @@ export function DialogModel(props: { providerID?: string }) {
       flat={true}
       skipFilter={true}
       title={title()}
-      current={local.model.current()}
+      current={props.current ?? local.model.current()}
       focusCurrent={false}
     />
   )

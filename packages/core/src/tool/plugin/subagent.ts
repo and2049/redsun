@@ -11,6 +11,7 @@ import { SessionSchema } from "../../session/schema.js"
 import { RedsunWorkerModel } from "../../plugin/redsun/worker-model.js"
 import { Catalog } from "../../catalog.js"
 import { KV } from "../../kv.js"
+import { SessionStore } from "../../session/store.js"
 
 export const name = "subagent"
 
@@ -63,6 +64,7 @@ export const Plugin = {
     const redsunWorkerModel: RedsunWorkerModel.Services = {
       kv: yield* KV.Service,
       catalog: yield* Catalog.Service,
+      store: yield* SessionStore.Service,
     }
     // One completion observer per job generation. Keyed by child plus start time so a fresh
     // continuation job is observable even while a settled generation's observer is finalizing.

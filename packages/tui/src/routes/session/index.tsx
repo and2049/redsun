@@ -78,8 +78,7 @@ import { useEpilogue } from "../../context/epilogue"
 import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { FormPrompt } from "./form"
-import { DialogWorkerModel, isWorkerModelForm } from "../../component/dialog-worker-model"
-import { formRequestOptions } from "../../util/form"
+import { isWorkerModelForm, useWorkerModelDialog } from "../../component/dialog-worker-model"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { DialogExportResult } from "../../ui/dialog-export-result"
 import { sessionEpilogue } from "../../util/presentation"
@@ -230,28 +229,16 @@ export function Session() {
   // way.
   const workerModelForm = createMemo(() => forms().find(isWorkerModelForm))
   const dockForms = createMemo(() => forms().filter((form) => !isWorkerModelForm(form)))
+  const openWorkerModel = useWorkerModelDialog()
   createEffect(() => {
     const form = workerModelForm()
-    const key = form ? `worker-model:${form.id}` : undefined
     if (!form) {
       // Answered or withdrawn elsewhere: take the menu down with it.
       if (typeof dialog.key === "string" && dialog.key.startsWith("worker-model:")) dialog.clear()
       return
     }
-    if (dialog.key === key) return
-    let replied = false
-    dialog.replace(
-      () => <DialogWorkerModel form={form} onReplied={() => (replied = true)} />,
-      () => {
-        // Escaping the menu has to withdraw the ask, or the tool waits forever
-        // on a form with nothing left on screen to answer it.
-        if (replied) return
-        void client.api.form
-          .cancel({ sessionID: form.sessionID, formID: form.id }, formRequestOptions(form))
-          .catch(() => {})
-      },
-      { key },
-    )
+    if (dialog.key === `worker-model:${form.id}`) return
+    openWorkerModel(form)
   })
   const disabled = createMemo(() => promptedPermissions().length > 0 || forms().length > 0)
   // The prompt belongs to the session that owns the turn. A child session is a
@@ -985,21 +972,6 @@ export function Session() {
             break
           }
         }
-      },
-    },
-    {
-      // REDSUN: the worker model lives in a session-scoped override the plugin
-      // owns, and a plugin can add neither an HTTP nor a KV route -- which is
-      // why the picker is a Form behind the `/worker-model` command rather than
-      // a dialog with its own write path. This is the keyboard way in: it
-      // submits that command, and the Form renders in the dock like any other.
-      title: "Choose the worker model",
-      id: "worker.model",
-      group: "Agent",
-      run: () => {
-        dialog.clear()
-        promptRef.current?.set({ text: "/worker-model", files: [], agents: [], pasted: [] })
-        promptRef.current?.submit()
       },
     },
     {

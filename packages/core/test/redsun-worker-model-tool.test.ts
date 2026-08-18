@@ -43,9 +43,9 @@ describe("RedsunWorkerModelTool", () => {
     })
   })
 
-  it("nudges the model to call the tool rather than answering itself", () => {
-    // Command.Info is a prompt template, so the slash command cannot invoke a
-    // tool directly.
-    expect(RedsunWorkerModelTool.TEMPLATE).toContain(RedsunWorkerModelTool.NAME)
+  it("stamps its form so the TUI can recognise it and show the model menu", () => {
+    // The TUI answers this form with the same picker `/models` uses; without the
+    // marker it would render as the generic dock form instead.
+    expect(RedsunWorkerModelTool.FORM_KIND).toBe("worker-model")
   })
 })

@@ -112,7 +112,16 @@ const subagentPluginSupervisor = makeLocationNode({
     PluginSupervisor.Service,
     registerToolPlugin(SubagentTool.Plugin).pipe(Effect.as(PluginSupervisor.Service.of({ flush: Effect.void }))),
   ),
-  deps: [Agent.node, Catalog.node, Config.node, KV.node, Permission.node, PluginRuntime.node, Tool.node],
+  deps: [
+    Agent.node,
+    Catalog.node,
+    Config.node,
+    KV.node,
+    Permission.node,
+    PluginRuntime.node,
+    SessionStore.node,
+    Tool.node,
+  ],
 })
 
 const nodes = LayerNode.group([

@@ -18,20 +18,19 @@ import { Model } from "@opencode-ai/schema/model"
 import { Catalog } from "../../catalog.js"
 import { Form } from "../../form.js"
 import { KV } from "../../kv.js"
+import { SessionStore } from "../../session/store.js"
 import { RedsunWorkerModel } from "./worker-model.js"
 
 export const NAME = "worker_model"
-export const COMMAND = "worker-model"
 export const FIELD = "model"
-export const CLEAR = "__clear__"
+export const CLEAR = RedsunWorkerModel.CLEAR
+/** Marks the form so the TUI answers it with the model menu, not the dock form. */
+export const FORM_KIND = "worker-model"
 
 export const DESCRIPTION =
   "Ask the user which model worker subagents should run on for this session. " +
   "The choice outranks `agent.worker.model` for this session only. Call this when the user asks to " +
   "change the worker model, or after a worker refuses to run because no model is configured for it."
-
-export const TEMPLATE =
-  "Call the worker_model tool so I can choose which model worker subagents run on for this session."
 
 /** Options for the picker: every available model, plus a way back to config. */
 export const options = (models: readonly Model.Info[]) => [
@@ -50,7 +49,11 @@ export const Plugin = define({
     const catalog = yield* Catalog.Service
     // A tool's execute effect must have `never` requirements, so the services it
     // needs are bound here at plugin scope — the same shape subagent.ts uses.
-    const services: RedsunWorkerModel.Services = { kv: yield* KV.Service, catalog }
+    const services: RedsunWorkerModel.Services = {
+      kv: yield* KV.Service,
+      catalog,
+      store: yield* SessionStore.Service,
+    }
 
     yield* ctx.tool
       .transform((draft) =>
@@ -70,7 +73,7 @@ export const Plugin = define({
                 .ask({
                   sessionID: context.sessionID,
                   title: "Worker model",
-                  metadata: { kind: "worker-model" },
+                  metadata: { kind: FORM_KIND },
                   fields: [
                     {
                       key: FIELD,
@@ -117,13 +120,10 @@ export const Plugin = define({
       )
       .pipe(Effect.orDie)
 
-    // `Command.Info` is a prompt template, so the slash command is a nudge to
-    // call the tool rather than a direct invocation.
-    yield* ctx.command.transform((draft) => {
-      draft.update(COMMAND, (command) => {
-        command.template = TEMPLATE
-        command.description = "choose the model worker subagents run on"
-      })
-    })
+    // No slash command. `Command.Info` is a prompt template, so a `/worker-model`
+    // here would spend a turn asking the model to call this tool -- and the TUI
+    // now owns a `worker.model` command that opens the picker outright. This
+    // tool is the model's way in, for when a worker refuses and the user has to
+    // choose before the turn can continue.
   }),
 })

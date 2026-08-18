@@ -142,9 +142,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const [selectionState, setSelectionState] = createStore<{
         newSessionModelByLocationAgent: Record<string, ModelPreferenceModel | undefined>
         draftBySession: Record<string, ModelSelection | undefined>
+        workerBySession: Record<string, ModelSelection | undefined>
       }>({
         newSessionModelByLocationAgent: {},
         draftBySession: {},
+        workerBySession: {},
       })
 
       const repository = createModelPreferenceRepository(path.join(paths.state, "model.json"))
@@ -166,6 +168,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             recent: preferences.recent,
             favorite: preferences.favorite,
             variant: preferences.variant,
+            worker: preferences.worker,
           })
           .catch(() => undefined)
       }
@@ -176,6 +179,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setPreferences("recent", value.recent)
           setPreferences("favorite", value.favorite)
           setPreferences("variant", value.variant)
+          setPreferences("worker", value.worker)
         })
         .catch(() => {})
         .finally(() => {
@@ -299,12 +303,79 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         event.on("session.deleted", (evt) => {
           pendingSelectionCommits.delete(evt.data.sessionID)
           setSelectionState("draftBySession", evt.data.sessionID, undefined)
+          setSelectionState("workerBySession", evt.data.sessionID, undefined)
         }),
       )
+
+      const workerSelection = createMemo<ModelSelection | undefined>(() => {
+        const perSession =
+          route.data.type === "session" ? selectionState.workerBySession[route.data.sessionID] : undefined
+        const candidate = perSession ?? preferences.worker
+        if (!candidate || !isModelValid(candidate)) return undefined
+        return candidate
+      })
+
+      function rememberWorker(selection: ModelSelection | undefined) {
+        batch(() => {
+          if (route.data.type === "session") setSelectionState("workerBySession", route.data.sessionID, selection)
+          setPreferences("worker", selection)
+          savePreferences()
+        })
+      }
+
+      const worker = {
+        current: workerSelection,
+        /** `provider/model#variant`, the shape the backend parses. */
+        ref() {
+          const value = workerSelection()
+          if (!value) return undefined
+          const variant = normalizeModelVariant(value.variant)
+          return `${value.providerID}/${value.modelID}${variant ? `#${variant}` : ""}`
+        },
+        set(model: { providerID: string; modelID: string; variant?: string }) {
+          if (!isModelValid(model)) {
+            toast.show({
+              message: `Model ${model.providerID}/${model.modelID} is not valid`,
+              variant: "warning",
+              duration: 3000,
+            })
+            return
+          }
+          rememberWorker({
+            providerID: model.providerID,
+            modelID: model.modelID,
+            variant: normalizeModelVariant(model.variant),
+          })
+        },
+        clear() {
+          if (route.data.type === "session") setSelectionState("workerBySession", route.data.sessionID, undefined)
+          setPreferences("worker", undefined)
+          savePreferences()
+        },
+        setVariant(variant: string | undefined) {
+          const value = workerSelection()
+          if (!value) return
+          rememberWorker({ ...value, variant: normalizeModelVariant(variant) })
+        },
+        variants() {
+          const value = workerSelection()
+          if (!value) return []
+          const info = models()?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+          return info?.variants?.map((item) => item.id) ?? []
+        },
+        /** Seeds a session's worker model from what it last ran with. */
+        restore(sessionID: string, selection: ModelSelection | undefined) {
+          setSelectionState("workerBySession", sessionID, selection)
+        },
+        restored(sessionID: string) {
+          return selectionState.workerBySession[sessionID] !== undefined
+        },
+      }
 
       return {
         current: currentModel,
         selection: currentSelection,
+        worker,
         available(model = currentModel()) {
           return model ? isModelValid(model) : false
         },
