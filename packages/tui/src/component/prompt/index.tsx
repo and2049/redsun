@@ -59,7 +59,6 @@ import { useData } from "../../context/data"
 import { useLocation } from "../../context/location"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { useVim } from "../../context/vim"
-import { abbreviateHome } from "../../runtime"
 import { Slot } from "../../plugin/render"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import {
@@ -70,8 +69,6 @@ import {
 import { DialogImagePreview } from "../dialog-image-preview"
 import { useDirectoryRecents } from "../../prompt/directory-recents"
 import { directoryRecentValue } from "../../prompt/directory-completion"
-import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
-import { truncateFilePath } from "../../ui/file-path"
 
 export type PromptProps = {
   sessionID?: string
@@ -1597,32 +1594,6 @@ export function Prompt(props: PromptProps) {
     const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
     return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
   })
-  const footerLocation = createMemo(() => {
-    if (!props.sessionID) {
-      // No session yet: show where the next session will be created.
-      return currentLocation.ref ?? data.location.default()
-    }
-    if (status() !== "idle") return
-    return data.session.get(props.sessionID)?.location
-  })
-  const locationLabel = createMemo(() => {
-    const location = footerLocation()
-    if (!location) return
-    const directory = abbreviateHome(location.directory, paths.home)
-    const branch = data.location.vcs.info(location)?.branch.current
-    return branch ? `${directory}:${branch}` : directory
-  })
-  const [locationWidth, setLocationWidth] = createSignal(dimensions().width)
-  const locationLabelDisplay = createMemo(() => {
-    const label = locationLabel()
-    if (!label) return
-    return truncateFilePath(label, locationWidth())
-  })
-  const locationActions = useWorkingDirectoryActions({
-    directory: () => footerLocation()?.directory,
-    onMove: () => void move.open(),
-  })
-
   const spinnerDef = createMemo(() => {
     const agent = status() === "running" ? local.agent.current() : local.agent.current()
     const color = agent ? local.agent.color(agent.id) : theme.border.default
@@ -1822,7 +1793,7 @@ export function Prompt(props: PromptProps) {
                 syntaxStyle={syntax()}
               />
             </box>
-            <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
+            <box flexDirection="row" flexShrink={0} gap={1} justifyContent="space-between">
               <box
                 flexDirection="row"
                 gap={1}
@@ -1929,15 +1900,7 @@ export function Prompt(props: PromptProps) {
           <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
             <Slot path="prompt.footer" input={footerInput()}>
               <Slot path="prompt.footer.status" input={footerInput()}>
-                <box
-                  flexGrow={1}
-                  flexShrink={1}
-                  minWidth={0}
-                  onSizeChange={function (this: BoxRenderable) {
-                    const width = this.width
-                    queueMicrotask(() => setLocationWidth(width))
-                  }}
-                >
+                <box flexGrow={1} flexShrink={1} minWidth={0}>
                   <Switch>
                     <Match when={status() === "running"}>
                       <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
@@ -1973,25 +1936,7 @@ export function Prompt(props: PromptProps) {
                         </text>
                       </box>
                     </Match>
-                    <Match when={true}>
-                      <Show when={!props.hint && locationLabelDisplay()} fallback={props.hint ?? <text />}>
-                        {(location) => (
-                          <text
-                            id="prompt.footer.location"
-                            fg={locationActions.hovered() ? theme.text.default : theme.text.subdued}
-                            wrapMode="none"
-                            truncate
-                            flexGrow={1}
-                            flexShrink={1}
-                            onMouseOver={locationActions.onMouseOver}
-                            onMouseOut={locationActions.onMouseOut}
-                            onMouseUp={locationActions.onMouseUp}
-                          >
-                            {location()}
-                          </text>
-                        )}
-                      </Show>
-                    </Match>
+                    <Match when={true}>{props.hint ?? <text />}</Match>
                   </Switch>
                 </box>
               </Slot>

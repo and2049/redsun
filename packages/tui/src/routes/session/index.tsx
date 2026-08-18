@@ -97,7 +97,6 @@ import {
   messageBoundaryIDs,
   explorationSummary,
   resolvePart,
-  turnDuration,
   type CacheUsage,
   type PartRef,
   type SessionRow,
@@ -1888,19 +1887,7 @@ function SessionGroupView(props: {
 }
 
 function AssistantFooter(props: { message: SessionMessageAssistant }) {
-  const ctx = use()
-  const data = useData()
-  const local = useLocal()
-  const dimensions = useTerminalDimensions()
   const theme = useTheme("elevated")
-  const model = createMemo(
-    () =>
-      ctx
-        .models()
-        .find((model) => model.providerID === props.message.model.providerID && model.id === props.message.model.id)
-        ?.name ?? `${props.message.model.providerID}/${props.message.model.id}`,
-  )
-  const duration = createMemo(() => turnDuration(props.message, data.session.message.list(ctx.sessionID)))
   const interrupted = createMemo(() => props.message.error?.message === "Step interrupted")
   return (
     <>
@@ -1910,25 +1897,16 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
         </box>
       </Show>
       <AssistantRetry retry={props.message.retry} />
-      <box
-        paddingLeft={TRANSCRIPT_GUTTER}
-        marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}
-      >
-        <text>
-          <span style={{ fg: props.message.error ? theme.text.subdued : local.agent.color(props.message.agent) }}>
-            {Locale.titlecase(props.message.agent)}
-          </span>
-          <Show when={dimensions().width >= 28}>
-            <span style={{ fg: theme.text.subdued }}> · {model()}</span>
-          </Show>
-          <Show when={duration() && (dimensions().width < 28 || dimensions().width >= 36)}>
-            <span style={{ fg: theme.text.subdued }}> · {Locale.duration(duration())}</span>
-          </Show>
-          <Show when={interrupted()}>
-            <span style={{ fg: theme.text.subdued }}> · interrupted</span>
-          </Show>
-        </text>
-      </box>
+      {/* REDSUN DENSE: no agent/model/duration line. The agent and the model are
+          already named in the prompt's meta row and do not change mid-transcript
+          often enough to be worth a row per turn; the elapsed time is of no use
+          once the turn is over. An interruption is the one thing left that the
+          transcript alone can say. */}
+      <Show when={interrupted()}>
+        <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={props.message.retry ? 1 : 0}>
+          <text fg={theme.text.subdued}>Interrupted</text>
+        </box>
+      </Show>
     </>
   )
 }
@@ -2939,6 +2917,9 @@ type BlockToolProps = {
   spinner?: boolean
 }
 
+/** Rows a collapsed shell call may occupy, its command line included. */
+const SHELL_BLOCK_ROWS = 5
+
 function BlockTool(props: BlockToolProps) {
   const parentTheme = useTheme()
   return (
@@ -3114,21 +3095,28 @@ function Shell(props: ToolProps) {
     const content = toolDisplayContent(props.part.state)[0]
     return stripAnsi(content?.type === "text" ? content.text.trim() : "")
   })
-  // REDSUN DENSE: Claude Code shows three output lines before truncating; one
-  // more here because the hint row takes the place of the last one anyway. The
-  // command is never part of the budget -- it is the one line always worth
-  // seeing -- so only the output is collapsed.
-  const maxLines = 4
-  const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
   const prefix = createMemo(() => (workdir() && workdir() !== "." ? `cd ${workdir()} && ` : ""))
   const input = createMemo(() => (command() ? `${isRunning() ? "" : "$ "}${prefix()}${command()}` : ""))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
+  // REDSUN DENSE: a collapsed shell call is five rows of the transcript, command
+  // included -- the budget is the space the block takes on screen, not a line
+  // count that a wrapped command can quietly double. A long command spends the
+  // budget it needs and the output gets what is left, never less than one row,
+  // because a call that shows nothing it produced is not worth collapsing to.
+  const contentWidth = createMemo(() => Math.max(20, ctx.width - 4))
+  const commandRows = createMemo(() =>
+    input()
+      .split("\n")
+      .reduce((sum, line) => sum + Math.max(1, Math.ceil(stringWidth(line) / contentWidth())), 0),
+  )
+  const maxLines = createMemo(() => Math.max(1, SHELL_BLOCK_ROWS - commandRows()))
+  const maxChars = createMemo(() => maxLines() * contentWidth())
+  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines(), maxChars()))
   const limitedOutput = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     // The hint row below carries the ellipsis and the hidden-line count.
     return collapsed().output.replace(/\n…$/, "")
   })
-  const remaining = createMemo(() => Math.max(0, output().split("\n").length - maxLines))
+  const remaining = createMemo(() => Math.max(0, output().split("\n").length - maxLines()))
   const expandable = createMemo(() => Boolean(shellID()) || collapsed().overflow)
   const toggle = () => {
     const next = !expanded()

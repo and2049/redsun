@@ -106,6 +106,7 @@ function View(props: { context: Plugin.Context }) {
     <Show when={dimensions().height >= 12 && dimensions().width >= 44}>
       <box
         width="100%"
+        paddingTop={dimensions().height < 16 ? 0 : 1}
         paddingBottom={dimensions().height < 16 ? 0 : 1}
         paddingLeft={2}
         paddingRight={2}
