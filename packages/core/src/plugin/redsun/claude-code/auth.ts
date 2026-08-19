@@ -54,7 +54,8 @@ export const probe = (input: {
       } finally {
         try {
           query.close()
-        } catch {}
+        } catch {
+        }
       }
     },
     catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),

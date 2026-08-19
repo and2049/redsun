@@ -117,7 +117,8 @@ export class SessionManager {
           if (session.observer) {
             try {
               await session.observer(message, turn !== undefined)
-            } catch {}
+            } catch {
+            }
           }
           turn?.push(message)
           if (message.type === "result") {
@@ -208,7 +209,8 @@ export class SessionManager {
     session.turn = undefined
     try {
       session.query.close()
-    } catch {}
+    } catch {
+    }
   }
 
   stopAll(): void {

@@ -104,7 +104,6 @@ function randomIndex(count: number) {
   return Math.floor(Math.random() * count)
 }
 
-/** What the meta row says when compose has nothing to delegate on. */
 const WORKER_UNSET = "worker model not set"
 
 function fadeColor(color: RGBA, alpha: number) {
@@ -114,7 +113,6 @@ function fadeColor(color: RGBA, alpha: number) {
 export function PromptInterruptStatus(props: {
   armed: boolean
   animations?: boolean
-  /** Formatted binding for `session.interrupt`; omitted when it has none. */
   shortcut?: string
   text: RGBA
   subdued: RGBA
@@ -198,10 +196,6 @@ export function Prompt(props: PromptProps) {
 
   const leader = Keymap.useLeaderActive()
   const vim = useVim()
-  // REDSUN: outside insert mode the prompt is not taking input -- normal mode
-  // hands every bare letter to the keymap and command mode hands them to the
-  // `:` bar. `muted` is that state, and it drives focus and every colour that
-  // used to answer to a pending leader sequence.
   const muted = createMemo(() => leader() || vim.mode !== "insert")
   const local = useLocal()
   const args = useArgs()
@@ -317,45 +311,6 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const interruptShortcut = createMemo(() => shortcuts.get("session.interrupt"))
-  let workerSyncedSessionID: string | undefined
-  createEffect(() => {
-    const sessionID = props.sessionID
-    if (!sessionID || sessionID === workerSyncedSessionID) return
-    const messages = data.session.message.list(sessionID)
-    if (messages === undefined) return
-    workerSyncedSessionID = sessionID
-    for (let index = messages.length - 1; index >= 0; index--) {
-      const message = messages[index]
-      if (message?.type !== "user") continue
-      const value = message.metadata?.[WORKER_MODEL_KEY]
-      if (typeof value !== "string" || value.length === 0) continue
-      local.model.worker.restore(sessionID, parseWorkerModelRef(value))
-      return
-    }
-    local.model.worker.restore(sessionID, undefined)
-  })
-
-  const composeWorker = createMemo(() => local.agent.current()?.id === "compose" && store.mode === "normal")
-  const workerDisplay = createMemo(() => {
-    const value = local.model.worker.current()
-    if (!value) return undefined
-    const ref = currentLocation.ref ?? data.location.default()
-    const provider = data.location.provider.list(ref)?.find((item) => item.id === value.providerID)
-    const info = data.location.model
-      .list(ref)
-      ?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
-    return {
-      model: info?.name ?? value.modelID,
-      provider: provider?.name ?? value.providerID,
-      variant: value.variant,
-    }
-  })
-
-  const workerMetadata = createMemo(() => {
-    if (local.agent.current()?.id !== "compose") return undefined
-    const ref = local.model.worker.ref()
-    return ref === undefined ? undefined : { [WORKER_MODEL_KEY]: ref }
-  })
   const connected = useConnected()
   const hasRightContent = createMemo(() => Boolean(props.right))
 
@@ -414,6 +369,45 @@ export function Prompt(props: PromptProps) {
     extmarkToPart: new Map(),
     interrupt: 0,
   })
+  let workerSyncedSessionID: string | undefined
+  createEffect(() => {
+    const sessionID = props.sessionID
+    if (!sessionID || sessionID === workerSyncedSessionID) return
+    const messages = data.session.message.list(sessionID)
+    if (messages === undefined) return
+    workerSyncedSessionID = sessionID
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]
+      if (message?.type !== "user") continue
+      const value = message.metadata?.[WORKER_MODEL_KEY]
+      if (typeof value !== "string" || value.length === 0) continue
+      local.model.worker.restore(sessionID, parseWorkerModelRef(value))
+      return
+    }
+    local.model.worker.restore(sessionID, undefined)
+  })
+
+  const composeWorker = createMemo(() => local.agent.current()?.id === "compose" && store.mode === "normal")
+  const workerDisplay = createMemo(() => {
+    const value = local.model.worker.current()
+    if (!value) return undefined
+    const ref = currentLocation.ref ?? data.location.default()
+    const provider = data.location.provider.list(ref)?.find((item) => item.id === value.providerID)
+    const info = data.location.model
+      .list(ref)
+      ?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+    return {
+      model: info?.name ?? value.modelID,
+      provider: provider?.name ?? value.providerID,
+      variant: value.variant,
+    }
+  })
+  const workerMetadata = createMemo(() => {
+    if (local.agent.current()?.id !== "compose") return undefined
+    const ref = local.model.worker.ref()
+    return ref === undefined ? undefined : { [WORKER_MODEL_KEY]: ref }
+  })
+
   let disposed = false
   let pasteQueue = Promise.resolve()
 
@@ -779,9 +773,6 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    // REDSUN: normal and command mode take the keyboard away from the textarea.
-    // Without this the letters still land in the prompt and the `:` bar looks
-    // open but cannot be typed into.
     if (props.visible === false || props.disabled || dialog.stack.length > 0 || vim.mode !== "insert") {
       if (input.focused) input.blur()
       return
@@ -1588,15 +1579,6 @@ export function Prompt(props: PromptProps) {
     return !!current
   })
 
-  // REDSUN DENSE: the meta row is a flex row of separate <text> items, so an
-  // overflow doesn't truncate -- every item shrinks and wraps, which shards the
-  // labels into narrow columns and pushes the row to two lines, and a two-line
-  // row shifts the whole centred home column up. Terminal width can't predict
-  // it either: home caps the prompt at its own max width while the session
-  // route shares its row with the sidebar. So measure the left group (it grows
-  // into whatever the right group leaves, making its width exactly the budget)
-  // and drop the provider names -- the least load-bearing labels -- when the
-  // full line won't fit.
   const metaItems = createMemo(() => {
     const label = agentLabel()
     if (!label) return []
@@ -1681,10 +1663,6 @@ export function Prompt(props: PromptProps) {
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         <box width="100%">
-          {/* REDSUN DENSE: no fill behind the input. The dense prompt reads
-              as an outlined element on the plain background, so a filled
-              rectangle would show square corners behind the rounded
-              border -- a terminal cell cannot clip. */}
           <box flexShrink={0} flexGrow={1} width="100%">
             <Show when={config.prompt?.image_preview && visibleImageAttachments().length > 0}>
               <box
@@ -1754,9 +1732,6 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
             </Show>
-            {/* REDSUN DENSE: the border stays agent-neutral -- the arrow
-                carries that signal -- and the arrow sits in its own column so
-                a wrapped prompt keeps a straight left edge. */}
             <box
               flexDirection="row"
               width="100%"
@@ -1870,9 +1845,6 @@ export function Prompt(props: PromptProps) {
                   {(label) => (
                     <>
                       <text fg={fadeColor(highlight(), agentMetaAlpha())}>{label()}</text>
-                      {/* REDSUN DENSE: no `auto` marker here -- the auto-approve
-                          state has its own always-on row above the command bar,
-                          so repeating it beside the agent is noise. */}
                       <Show when={store.mode === "normal" && dimensions().width >= 28}>
                         <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
                           <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
@@ -1903,10 +1875,6 @@ export function Prompt(props: PromptProps) {
                               </span>
                             </text>
                           </Show>
-                          {/* REDSUN: compose runs two models -- its own and the
-                              one it delegates on -- and which worker is behind a
-                              delegation is not recoverable from anywhere else on
-                              screen. */}
                           <Show when={composeWorker() && dimensions().width >= 70}>
                             <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
                             <Show
@@ -1959,11 +1927,6 @@ export function Prompt(props: PromptProps) {
                   )}
                 </Show>
               </box>
-              {/* REDSUN DENSE: in a session the dock's own rows carry the
-                  workspace, the usage readout and the permission state, so the
-                  footer row below is home-only and the live status moves up
-                  here. This group never shrinks, which is what makes the left
-                  box's measured width the true budget for the meta labels. */}
               <Show
                 when={
                   hasRightContent() ||
@@ -2005,9 +1968,6 @@ export function Prompt(props: PromptProps) {
             </box>
           </box>
         </box>
-        {/* REDSUN DENSE: home only. In a session this row would repeat the
-            command bar's workspace and usage readouts and pad the dock out by a
-            line, which is exactly the double reading v0.3.0 removed. */}
         <Show when={props.sessionID === undefined}>
           <box width="100%" flexDirection="row" justifyContent="space-between" gap={2}>
             <Slot path="prompt.footer" input={footerInput()}>
