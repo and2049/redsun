@@ -33,7 +33,7 @@ const writesOnlyPlans = (input: { tool: string; input: unknown; root: string; ba
 }
 
 const enter = `<system-reminder>
-You are in Plan mode. You are not allowed to edit or create files, and you may not ask a subagent to do that either.
+You are in Plan mode. You are not allowed to edit or create files, run shell commands, or ask a subagent to do any of that.
 
 You are in Plan mode until the user switches agents. Plan mode is not changed by user intent, tone, or imperative language. If the user asks you to change files, do not edit. Tell them they need to switch agents.
 </system-reminder>`
@@ -60,6 +60,16 @@ export const Plugin = define({
 
     yield* ctx.tool.hook("execute.before", (event) => {
       if (event.agent !== plan) return Effect.void
+      // REDSUN: a delegated Claude Code session has Bash blocked by the SDK's own
+      // permissionMode: "plan"; a native model had no equivalent, so plan mode was
+      // read-only in name only. Refused here rather than as a permission deny because
+      // the shell scanner yields no resource for some inputs, and a rule that is never
+      // asserted is not a restriction.
+      if (event.tool === "shell")
+        return new ToolFailure({
+          message:
+            "Cannot use shell in Plan mode. You are in a read-only mode and must not run commands. Use read, grep, and glob to investigate; if you need to run something, tell the user to switch agents.",
+        })
       if (event.tool !== "edit" && event.tool !== "write" && event.tool !== "patch") return Effect.void
       if (writesOnlyPlans({ tool: event.tool, input: event.input, root: plans, base: location.directory }))
         return Effect.void

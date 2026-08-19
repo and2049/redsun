@@ -288,7 +288,7 @@ describe("WebSearchTool registration", () => {
           fields: [
             {
               key: "choice",
-              description: "Allow OpenCode to search the web for up-to-date information?",
+              description: "Allow redsun to search the web for up-to-date information?",
               type: "string",
               required: true,
               custom: false,

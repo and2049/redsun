@@ -15,9 +15,9 @@ export const OpencodeContent = opencodeContent
 export const ReportContent = reportContent
 
 export const OpencodeDescription =
-  "Use this skill for any question about OpenCode itself, including how OpenCode works, using or configuring it, migrating from V1 to V2, troubleshooting it, developing plugins or integrations, using the OpenCode SDK, clients, server, or API, and contributing to the OpenCode codebase. Also use it for OpenCode agents, commands, skills, tools, permissions, MCP servers, providers, models, themes, keybinds, formatters, the CLI, TUI, desktop app, and web app."
+  "Use this skill for any question about redsun itself, including how redsun works, using or configuring it, migrating from V1 to V2, troubleshooting it, developing plugins or integrations, using its clients, server, or API, and contributing to the redsun codebase. Also use it for redsun agents, commands, skills, tools, permissions, MCP servers, providers, models, themes, keybinds, formatters, the CLI, TUI, desktop app, and web app."
 const REPORT_DESCRIPTION =
-  "Use when the user wants to report an opencode issue or bug. Collect standard diagnostics, add user-specific reproduction context, and publish the issue with GitHub CLI."
+  "Use when the user wants to report a redsun issue or bug. Collect standard diagnostics, add user-specific reproduction context, and publish the issue with GitHub CLI."
 
 export const Plugin = define({
   id: "opencode.skill",
@@ -26,10 +26,10 @@ export const Plugin = define({
     yield* ctx.skill.transform((draft) => {
       draft.add(
         Skill.Info.make({
-          id: Skill.ID.make("opencode"),
-          name: Skill.Name.make("OpenCode"),
+          id: Skill.ID.make("redsun"),
+          name: Skill.Name.make("redsun"),
           description: OpencodeDescription,
-          location: AbsolutePath.make("/builtin/opencode.md"),
+          location: AbsolutePath.make("/builtin/redsun.md"),
           content: OpencodeContent,
         }),
       )
@@ -58,7 +58,7 @@ const reportContentWithDiagnostics = Effect.fn("SkillPlugin.reportContentWithDia
     "",
     "These values were captured when the built-in report skill was registered. Verify them before publishing.",
     "",
-    `- opencode version: ${app.version}`,
+    `- redsun version: ${app.version}`,
     `- install/channel: ${app.channel}`,
     `- OS: ${os.type()} ${os.release()} (${os.platform()} ${os.arch()})`,
     `- Terminal: ${terminal()}`,

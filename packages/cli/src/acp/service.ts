@@ -186,7 +186,7 @@ export function make(input: { readonly client: OpenCodeClient; readonly connecti
       }
       if (params.clientCapabilities?._meta?.["terminal-auth"] === true) {
         authMethod._meta = {
-          "terminal-auth": { command: "opencode", args: ["auth", "login"], label: "OpenCode Login" },
+          "terminal-auth": { command: "redsun", args: ["auth", "login"], label: "redsun Login" },
         }
       }
       return {
@@ -199,7 +199,7 @@ export function make(input: { readonly client: OpenCodeClient; readonly connecti
           _meta: { [ChildSessionUpdatesCapability]: true },
         },
         authMethods: [authMethod],
-        agentInfo: { name: "OpenCode", version: OPENCODE_VERSION },
+        agentInfo: { name: "redsun", version: OPENCODE_VERSION },
       }
     },
     authenticate: async (params) => {

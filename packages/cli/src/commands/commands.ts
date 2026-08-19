@@ -28,12 +28,12 @@ const PermissionParams = {
 }
 
 const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME : "opencode", {
-  description: "Redsun command line interface",
+  description: "redsun command line interface",
   params: {
     ...ServerParams,
     ...PermissionParams,
     directory: Argument.string("directory").pipe(
-      Argument.withDescription("Directory to start Redsun in"),
+      Argument.withDescription("Directory to start redsun in"),
       Argument.optional,
     ),
     continue: Flag.boolean("continue").pipe(
@@ -218,7 +218,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       },
     }),
     Spec.make("run", {
-      description: "Run OpenCode with a message",
+      description: "Run redsun with a message",
       params: {
         ...ServerParams,
         message: Argument.string("message").pipe(

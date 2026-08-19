@@ -65,9 +65,9 @@ describe("SystemPromptPlugin", () => {
         discard: true,
       })
       const cases = [
-        ["gpt-5", "You are OpenCode, You and the user share the same workspace"],
-        ["gpt-4.1", "You are OpenCode, You and the user share the same workspace"],
-        ["o3", "You are OpenCode, You and the user share the same workspace"],
+        ["gpt-5", "You are redsun, You and the user share the same workspace"],
+        ["gpt-4.1", "You are redsun, You and the user share the same workspace"],
+        ["o3", "You are redsun, You and the user share the same workspace"],
         ["gpt-5-codex", "## Editing constraints"],
         ["gemini-2.5-pro", "# Core Mandates"],
         ["claude-sonnet-4", "# Professional objectivity"],
@@ -198,7 +198,7 @@ describe("SystemPromptPlugin", () => {
       yield* hooks.trigger("session", "context", physicalCustom)
       yield* hooks.trigger("session", "context", familyOpenAI)
 
-      expect(physicalOpenAI.system[0]?.text).toContain("You are OpenCode, You and the user share the same workspace")
+      expect(physicalOpenAI.system[0]?.text).toContain("You are redsun, You and the user share the same workspace")
       expect(physicalCustom.system[0]?.text).toBe(fallback)
       expect(familyOpenAI.system[0]?.text).toContain("## Editing constraints")
     }),

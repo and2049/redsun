@@ -33,7 +33,7 @@ export default Runtime.handler(Commands, (input) =>
       },
     }).pipe(
       Effect.tapError(() =>
-        Effect.promise(() => preflight.fail("OpenCode update could not start the new background service")),
+        Effect.promise(() => preflight.fail("redsun update could not start the new background service")),
       ),
     )
     const updater = yield* Updater.Service

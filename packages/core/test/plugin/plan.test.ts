@@ -267,10 +267,23 @@ describe("plan plugin file access", () => {
     }),
   )
 
+  it.effect("refuses shell outright, whatever the command", () =>
+    Effect.gen(function* () {
+      // Read-only has to include the shell, or `sed -i` walks straight around the
+      // edit/write/patch refusals above.
+      for (const command of ["ls", "rm -rf build", "sed -i 's/a/b/' src/index.ts"]) {
+        const message = yield* refused({ tool: "shell", agent: plan, input: { command } })
+        expect(message).toContain("read-only mode")
+        expect(message).toContain("shell")
+      }
+    }),
+  )
+
   it.effect("leaves other agents and other tools alone", () =>
     Effect.gen(function* () {
       expect(yield* refused({ tool: "write", agent: build, input: { path: "src/index.ts" } })).toBe(undefined)
       expect(yield* refused({ tool: "read", agent: plan, input: { path: "src/index.ts" } })).toBe(undefined)
+      expect(yield* refused({ tool: "shell", agent: build, input: { command: "rm -rf build" } })).toBe(undefined)
     }),
   )
 
