@@ -1,15 +1,10 @@
-import { Effect } from "effect"
-import { define } from "../internal"
+import { createProviderPlugin } from "./factory.js"
 
-export const MistralPlugin = define({
-  id: "mistral",
-  effect: Effect.fn(function* (ctx) {
-    yield* ctx.aisdk.sdk(
-      Effect.fn(function* (evt) {
-        if (evt.package !== "@ai-sdk/mistral") return
-        const mod = yield* Effect.promise(() => import("@ai-sdk/mistral"))
-        evt.sdk = mod.createMistral(evt.options)
-      }),
-    )
-  }),
+export const MistralPlugin = createProviderPlugin({
+  id: "opencode.provider.mistral",
+  package: "@ai-sdk/mistral",
+  load: async (options) => {
+    const { createMistral } = await import("@ai-sdk/mistral")
+    return createMistral(options)
+  },
 })

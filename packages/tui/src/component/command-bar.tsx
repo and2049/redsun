@@ -2,90 +2,69 @@ import { InputRenderable, type KeyEvent } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import fuzzysort from "fuzzysort"
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
-import { useVim } from "../context/vim"
-import { selectedForeground, useTheme } from "../context/theme"
-import { useOpencodeKeymap, useOpencodeModeStack, useKeymapSelector } from "../keymap"
 import { commandAliases, resolveCommand } from "../vim"
-import { SplitBorder } from "../ui/border"
+import { useVim } from "../context/vim"
+import { Keymap } from "../context/keymap"
+import { useData } from "../context/data"
+import { useLocation } from "../context/location"
 import { useRoute } from "../context/route"
-import { useProject } from "../context/project"
-import { useTuiPaths } from "../context/runtime"
-import { useSync } from "../context/sync"
+import { useTheme } from "../context/theme"
+import { SplitBorder } from "../ui/border"
 import { fitSessionUsage, sessionUsage } from "../util/session-usage"
 
 const MAX_SUGGESTIONS = 10
 
-// REDSUN DENSE: the bar participates in the dock's column layout instead of
-// floating over the last row. The idle bar shows the workspace (branch) on
-// the left and the session usage readout on the right. Behaviour, bindings
-// and command resolution are shared.
 export function CommandBar() {
   const vim = useVim()
-  const { theme } = useTheme()
-  const keymap = useOpencodeKeymap()
-  const modeStack = useOpencodeModeStack()
+  const theme = useTheme()
+  const keymap = Keymap.use()
+  const commandList = Keymap.useCommands()
   const dimensions = useTerminalDimensions()
   const route = useRoute()
-  const sync = useSync()
-  const project = useProject()
-  const paths = useTuiPaths()
-  const entries = useKeymapSelector((value) =>
-    value.getCommandEntries({
-      visibility: "reachable",
-      namespace: "palette",
-      filter: (command) => command.hidden !== true,
-    }),
-  )
+  const data = useData()
+  const location = useLocation()
   const [input, setInput] = createSignal("")
   const [selected, setSelected] = createSignal(-1)
-  let inputRef: InputRenderable
+  let inputRef: InputRenderable | undefined
+
+  const sessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
 
   const workspace = createMemo(() => {
-    const current = route.data
-    if (current.type !== "session") return undefined
-    const workspaceID = project.workspace.current()
-    if (workspaceID) return project.workspace.get(workspaceID)?.name
-    const path = project.instance.path()
-    return (path.worktree || path.directory || paths.cwd).split(/[\\/]/).filter(Boolean).at(-1)
+    if (!sessionID()) return undefined
+    const current = location.current
+    if (!current) return undefined
+    if (current.workspaceID) return current.workspaceID
+    return current.directory.split(/[\\/]/).filter(Boolean).at(-1)
   })
-  const workspaceLabel = createMemo(() => {
-    const name = workspace()
-    if (!name) return undefined
-    const branch = sync.data.vcs?.branch
-    return branch ? `${name} (${branch})` : name
-  })
+  const branch = createMemo(() => data.location.vcs.info(location.current)?.branch.current)
+
   const usage = createMemo(() => {
-    const current = route.data
-    if (current.type !== "session") return undefined
+    const id = sessionID()
+    if (!id) return undefined
+    const models = data.location.model.list(location.current)
     return sessionUsage({
-      messages: sync.data.message[current.sessionID] ?? [],
-      providers: sync.data.provider,
-      cost: sync.session.get(current.sessionID)?.cost ?? 0,
+      messages: data.session.message.list(id) ?? [],
+      contextLimit: (model) =>
+        models?.find((item) => item.providerID === model.providerID && item.id === model.id)?.limit.context,
+      cost: data.session.cost(id),
     })
   })
   const usageLabel = createMemo(() => {
     if (vim.mode === "command") return undefined
     const current = usage()
     if (!current) return undefined
-    return fitSessionUsage(current, Math.max(0, dimensions().width - (workspaceLabel()?.length ?? 0) - 4))
+    const left = (workspace()?.length ?? 0) + (branch()?.length ?? 0) + 4
+    return fitSessionUsage(current, Math.max(0, dimensions().width - left - 4))
   })
 
   const commands = createMemo(() => {
     const result = new Map<string, { target: string; description: string }>()
-    for (const entry of entries()) {
-      const description =
-        typeof entry.command.desc === "string"
-          ? entry.command.desc
-          : typeof entry.command.title === "string"
-            ? entry.command.title
-            : entry.command.name
-      result.set(entry.command.name, { target: entry.command.name, description })
-      if (typeof entry.command.slashName === "string") {
-        result.set(entry.command.slashName, { target: entry.command.name, description })
-      }
-      if (Array.isArray(entry.command.slashAliases)) {
-        for (const alias of entry.command.slashAliases) result.set(alias, { target: entry.command.name, description })
-      }
+    for (const command of commandList()) {
+      if (!command.id) continue
+      const entry = { target: command.id, description: command.title ?? command.description ?? command.id }
+      result.set(command.id, entry)
+      if (command.slash?.name) result.set(command.slash.name, entry)
+      for (const alias of command.slash?.aliases ?? []) result.set(alias, entry)
     }
     for (const [alias, target] of Object.entries(commandAliases)) {
       const entry = result.get(target)
@@ -106,13 +85,13 @@ export function CommandBar() {
   createEffect(() => {
     const mode = vim.mode
     if (!inputRef) return
-    if (mode === "command") {
-      inputRef.focus()
-      setSelected(-1)
-      onCleanup(modeStack.push("command"))
+    if (mode !== "command") {
+      inputRef.blur()
       return
     }
-    inputRef.blur()
+    inputRef.focus()
+    setSelected(-1)
+    onCleanup(keymap.mode.push("command"))
   })
 
   const close = () => {
@@ -133,20 +112,21 @@ export function CommandBar() {
       event.preventDefault()
       const command = commands().get(resolveCommand(input()))
       close()
-      if (command) setTimeout(() => keymap.dispatchCommand(command.target))
+      if (command) setTimeout(() => keymap.dispatch(command.target))
       return
     }
     if (event.name !== "tab") return
     event.preventDefault()
     const list = suggestions()
     if (list.length === 0) return
-    const next = selected() < 0
-      ? event.shift
-        ? list.length - 1
-        : 0
-      : (selected() + (event.shift ? -1 : 1) + list.length) % list.length
+    const next =
+      selected() < 0
+        ? event.shift
+          ? list.length - 1
+          : 0
+        : (selected() + (event.shift ? -1 : 1) + list.length) % list.length
     setSelected(next)
-    setInput(list[next])
+    setInput(list[next]!)
   })
 
   return (
@@ -156,7 +136,7 @@ export function CommandBar() {
       flexShrink={0}
       height={1}
       zIndex={1000}
-      backgroundColor={vim.mode === "command" ? theme.backgroundElement : theme.background}
+      backgroundColor={vim.mode === "command" ? theme.background.surface.offset : theme.background.default}
       flexDirection="row"
       alignItems="center"
       paddingLeft={1}
@@ -164,17 +144,17 @@ export function CommandBar() {
     >
       <Switch>
         <Match when={vim.mode === "command"}>
-          <text fg={theme.primary}>:</text>
+          <text fg={theme.text.action.primary.selected}>:</text>
           <input
             ref={(value: InputRenderable) => (inputRef = value)}
             value={input()}
-            onInput={(value) => {
+            onInput={(value: string) => {
               setInput(value)
               setSelected(-1)
             }}
-            focusedBackgroundColor={theme.backgroundElement}
-            focusedTextColor={theme.text}
-            cursorColor={theme.primary}
+            focusedBackgroundColor={theme.background.surface.offset}
+            focusedTextColor={theme.text.default}
+            cursorColor={theme.text.action.primary.selected}
             flexGrow={1}
           />
           <Show when={suggestions().length > 0}>
@@ -184,9 +164,10 @@ export function CommandBar() {
               left={0}
               width={Math.min(56, dimensions().width)}
               flexDirection="column"
-              backgroundColor={theme.backgroundMenu}
-              {...SplitBorder}
-              borderColor={theme.border}
+              backgroundColor={theme.background.surface.overlay}
+              border={["left"]}
+              customBorderChars={SplitBorder.customBorderChars}
+              borderColor={theme.border.default}
               zIndex={100}
             >
               <For each={suggestions()}>
@@ -194,10 +175,20 @@ export function CommandBar() {
                   <box
                     paddingLeft={1}
                     paddingRight={1}
-                    backgroundColor={index() === selected() ? theme.primary : undefined}
+                    backgroundColor={index() === selected() ? theme.background.action.primary.selected : undefined}
                   >
-                    <text fg={index() === selected() ? selectedForeground(theme) : theme.text} wrapMode="none">
-                      {suggestion} <span style={{ fg: index() === selected() ? selectedForeground(theme) : theme.textMuted }}>- {commands().get(suggestion)?.description}</span>
+                    <text
+                      fg={index() === selected() ? theme.text.action.primary.focused : theme.text.default}
+                      wrapMode="none"
+                    >
+                      {suggestion}{" "}
+                      <span
+                        style={{
+                          fg: index() === selected() ? theme.text.action.primary.focused : theme.text.subdued,
+                        }}
+                      >
+                        — {commands().get(suggestion)?.description}
+                      </span>
                     </text>
                   </box>
                 )}
@@ -210,24 +201,22 @@ export function CommandBar() {
             <Show when={workspace()}>
               {(value) => (
                 <text wrapMode="none">
-                  <span style={{ fg: theme.text }}>{value()}</span>
-                  <Show when={sync.data.vcs?.branch}>
-                    {(branch) => <span style={{ fg: theme.textMuted }}> ({branch()})</span>}
-                  </Show>
+                  <span style={{ fg: theme.text.default }}>{value()}</span>
+                  <Show when={branch()}>{(name) => <span style={{ fg: theme.text.subdued }}> ({name()})</span>}</Show>
                 </text>
               )}
             </Show>
             <box flexDirection="row" flexShrink={0}>
               <Show when={vim.pendingCount()}>
                 {(count) => (
-                  <text fg={theme.text} wrapMode="none">
+                  <text fg={theme.text.default} wrapMode="none">
                     {count()}{" "}
                   </text>
                 )}
               </Show>
               <Show when={usageLabel()}>
                 {(value) => (
-                  <text fg={theme.textMuted} wrapMode="none">
+                  <text fg={theme.text.subdued} wrapMode="none">
                     {value()}
                   </text>
                 )}

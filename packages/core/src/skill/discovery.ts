@@ -1,13 +1,14 @@
-export * as SkillDiscovery from "./discovery"
+export * as SkillDiscovery from "./discovery.js"
 
 import path from "path"
 import { Context, Effect, Layer, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { FSUtil } from "../fs-util"
-import { Global } from "../global"
-import { makeGlobalNode } from "../effect/app-node"
-import { httpClient } from "../effect/app-node-platform"
-import { AbsolutePath } from "../schema"
+import { FSUtil } from "@opencode-ai/util/fs-util"
+import { Global } from "@opencode-ai/util/global"
+import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { httpClient } from "@opencode-ai/util/effect/app-node-platform"
+import { AbsolutePath } from "../schema.js"
+import { Hash } from "@opencode-ai/util/hash"
 
 const skillConcurrency = 4
 const fileConcurrency = 8
@@ -66,7 +67,7 @@ export interface Interface {
   readonly pull: (url: string) => Effect.Effect<AbsolutePath[]>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/SkillDiscovery") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/SkillDiscovery") {}
 
 const layer = Layer.effect(
   Service,
@@ -110,7 +111,7 @@ const layer = Layer.effect(
         )
         if (!data) return []
 
-        const sourceRoot = path.resolve(global.cache, "skills", Bun.hash(base).toString(16))
+        const sourceRoot = path.resolve(global.cache, "skills", Hash.fast(base))
         return yield* Effect.forEach(
           data.skills.flatMap((skill) => {
             if (!isSafeSegment(skill.name)) {
@@ -126,7 +127,7 @@ const layer = Layer.effect(
             }
 
             const skillUrl = new URL(`${encodeURIComponent(skill.name)}/`, source)
-            const versionFile = path.join(root, ".redsun-version")
+            const versionFile = path.join(root, ".opencode-version")
             const files = skill.files.map((file) => {
               if (!isSafeRelativePath(file)) return undefined
               let resource: URL
@@ -177,7 +178,7 @@ const layer = Layer.effect(
                     (yield* fs.exists(path.join(staging, "SKILL.md")).pipe(Effect.orDie)) ||
                     (yield* fs.exists(path.join(staging, `${skill.name}.md`)).pipe(Effect.orDie))
                   if (!exists) return
-                  yield* fs.writeFileString(path.join(staging, ".redsun-version"), version)
+                  yield* fs.writeFileString(path.join(staging, ".opencode-version"), version)
                   yield* Effect.uninterruptible(
                     Effect.gen(function* () {
                       const cached = yield* fs.exists(root).pipe(Effect.orDie)

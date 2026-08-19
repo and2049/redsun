@@ -1,5 +1,6 @@
-import { TextAttributes, RGBA } from "@opentui/core"
-import { For } from "solid-js"
+import { RGBA, TextAttributes } from "@opentui/core"
+import { For, Show, createMemo } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "../context/theme"
 
 const LOGO = [
@@ -11,75 +12,50 @@ const LOGO = [
   `╚═╝      ╚═╝  ╚═╝╚══════╝╚═════╝ ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝`,
 ]
 
-export function Logo() {
-  const { theme } = useTheme()
-  const logoWidth = LOGO[0].length
+const LOGO_WIDTH = LOGO[0]!.length
+const SHADOW_ALPHA = 0.4
 
-  const actualBg = () => theme.background
+export function Logo() {
+  const theme = useTheme()
+  const dimensions = useTerminalDimensions()
+  const visible = createMemo(() => dimensions().height >= 12 && dimensions().width >= LOGO_WIDTH)
+
+  const mix = (a: RGBA, b: RGBA, t: number) =>
+    RGBA.fromInts(
+      Math.round((a.r + (b.r - a.r) * t) * 255),
+      Math.round((a.g + (b.g - a.g) * t) * 255),
+      Math.round((a.b + (b.b - a.b) * t) * 255),
+    )
 
   return (
-    <box>
-      <For each={LOGO}>
-        {(line) => {
-          const chars = line.split("")
-          return (
+    <Show when={visible()}>
+      <box>
+        <For each={LOGO}>
+          {(line) => (
             <box flexDirection="row">
-              <For each={chars}>
-                {(char, i) => {
-                  const t = () => i() / logoWidth
-
-                  const baseColor = () => {
-                    const start = theme.logoGradientStart
-                    const end = theme.logoGradientEnd
-                    const r = start.r + (end.r - start.r) * t()
-                    const g = start.g + (end.g - start.g) * t()
-                    const b = start.b + (end.b - start.b) * t()
-                    return RGBA.fromInts(Math.round(r * 255), Math.round(g * 255), Math.round(b * 255))
-                  }
-
-                  if (char === " ") {
-                    return <text selectable={false}> </text>
-                  }
-
-                  if (char === "█") {
+              <For each={Array.from(line)}>
+                {(char, index) => {
+                  const base = createMemo(() =>
+                    mix(theme.logo.gradient.start, theme.logo.gradient.end, index() / LOGO_WIDTH),
+                  )
+                  if (char === " ") return <text selectable={false}> </text>
+                  if (char === "█")
                     return (
-                      <text fg={baseColor()} attributes={TextAttributes.BOLD} selectable={false}>
+                      <text fg={base()} attributes={TextAttributes.BOLD} selectable={false}>
                         {char}
                       </text>
                     )
-                  }
-
-                  const shadowColor = () => {
-                    const start = theme.logoGradientStart
-                    const end = theme.logoGradientEnd
-                    const r = start.r + (end.r - start.r) * t()
-                    const g = start.g + (end.g - start.g) * t()
-                    const b = start.b + (end.b - start.b) * t()
-
-                    const alpha = 0.4
-                    const bg = actualBg()
-
-                    const shadowR = r * alpha + bg.r * (1.0 - alpha)
-                    const shadowG = g * alpha + bg.g * (1.0 - alpha)
-                    const shadowB = b * alpha + bg.b * (1.0 - alpha)
-                    return RGBA.fromInts(
-                      Math.round(shadowR * 255),
-                      Math.round(shadowG * 255),
-                      Math.round(shadowB * 255),
-                    )
-                  }
-
                   return (
-                    <text fg={shadowColor()} selectable={false}>
+                    <text fg={mix(theme.background.default, base(), SHADOW_ALPHA)} selectable={false}>
                       {char}
                     </text>
                   )
                 }}
               </For>
             </box>
-          )
-        }}
-      </For>
-    </box>
+          )}
+        </For>
+      </box>
+    </Show>
   )
 }

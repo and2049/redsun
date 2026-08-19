@@ -1,7 +1,7 @@
 import { Location } from "@opencode-ai/core/location"
 import { LocationServiceMap } from "@opencode-ai/core/location-services"
 import { AbsolutePath } from "@opencode-ai/core/schema"
-import { WorkspaceV2 } from "@opencode-ai/core/workspace"
+import { Workspace } from "@opencode-ai/core/workspace"
 import { Effect, Layer } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
@@ -26,7 +26,7 @@ export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
   })
 }
 
-function ref(request: HttpServerRequest.HttpServerRequest): Location.Ref {
+export function requestRef(request: HttpServerRequest.HttpServerRequest): Location.Ref {
   const query = new URL(request.url, "http://localhost").searchParams
   const workspaceID = query.get("location[workspace]") || request.headers["x-opencode-workspace"]
   const directory =
@@ -34,7 +34,7 @@ function ref(request: HttpServerRequest.HttpServerRequest): Location.Ref {
     (request.headers["x-opencode-directory"] ? decode(request.headers["x-opencode-directory"]) : process.cwd())
   return Location.Ref.make({
     directory: AbsolutePath.make(directory),
-    workspaceID: workspaceID ? WorkspaceV2.ID.make(workspaceID) : undefined,
+    workspaceID: workspaceID ? Workspace.ID.make(workspaceID) : undefined,
   })
 }
 
@@ -53,7 +53,7 @@ export const layer = Layer.effect(
     return LocationMiddleware.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        return yield* effect.pipe(Effect.provide(locations.get(ref(request))))
+        return yield* effect.pipe(Effect.provide(locations.get(requestRef(request))))
       }),
     )
   }),

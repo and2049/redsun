@@ -7,13 +7,13 @@
  */
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
-import { FSUtil } from "./fs-util"
-import { Git } from "./git"
-import { Global } from "./global"
-import { Repository } from "./repository"
-import { AbsolutePath } from "./schema"
-import { makeGlobalNode } from "./effect/app-node"
-import { EffectFlock } from "./util/effect-flock"
+import { FSUtil } from "@opencode-ai/util/fs-util"
+import { Git } from "./git.js"
+import { Global } from "@opencode-ai/util/global"
+import { Repository } from "./repository.js"
+import { AbsolutePath } from "./schema.js"
+import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { EffectFlock } from "@opencode-ai/util/effect-flock"
 
 export type Result = {
   readonly repository: string
@@ -31,33 +31,22 @@ export type EnsureInput = {
   readonly branch?: string
 }
 
-export class InvalidRepositoryError extends Schema.TaggedErrorClass<InvalidRepositoryError>()(
-  "RepositoryCacheInvalidRepositoryError",
-  {
-    repository: Schema.String,
-    message: Schema.String,
-  },
-) {}
+export class InvalidBranchError extends Schema.TaggedError<InvalidBranchError>()("RepositoryCacheInvalidBranchError", {
+  branch: Schema.String,
+  message: Schema.String,
+}) {}
 
-export class InvalidBranchError extends Schema.TaggedErrorClass<InvalidBranchError>()(
-  "RepositoryCacheInvalidBranchError",
-  {
-    branch: Schema.String,
-    message: Schema.String,
-  },
-) {}
-
-export class CloneFailedError extends Schema.TaggedErrorClass<CloneFailedError>()("RepositoryCacheCloneFailedError", {
+export class CloneFailedError extends Schema.TaggedError<CloneFailedError>()("RepositoryCacheCloneFailedError", {
   repository: Schema.String,
   message: Schema.String,
 }) {}
 
-export class FetchFailedError extends Schema.TaggedErrorClass<FetchFailedError>()("RepositoryCacheFetchFailedError", {
+export class FetchFailedError extends Schema.TaggedError<FetchFailedError>()("RepositoryCacheFetchFailedError", {
   repository: Schema.String,
   message: Schema.String,
 }) {}
 
-export class CheckoutFailedError extends Schema.TaggedErrorClass<CheckoutFailedError>()(
+export class CheckoutFailedError extends Schema.TaggedError<CheckoutFailedError>()(
   "RepositoryCacheCheckoutFailedError",
   {
     repository: Schema.String,
@@ -66,27 +55,23 @@ export class CheckoutFailedError extends Schema.TaggedErrorClass<CheckoutFailedE
   },
 ) {}
 
-export class ResetFailedError extends Schema.TaggedErrorClass<ResetFailedError>()("RepositoryCacheResetFailedError", {
+export class ResetFailedError extends Schema.TaggedError<ResetFailedError>()("RepositoryCacheResetFailedError", {
   repository: Schema.String,
   message: Schema.String,
 }) {}
 
-export class LockFailedError extends Schema.TaggedErrorClass<LockFailedError>()("RepositoryCacheLockFailedError", {
+export class LockFailedError extends Schema.TaggedError<LockFailedError>()("RepositoryCacheLockFailedError", {
   localPath: Schema.String,
   message: Schema.String,
 }) {}
 
-export class CacheOperationError extends Schema.TaggedErrorClass<CacheOperationError>()(
-  "RepositoryCacheOperationError",
-  {
-    operation: Schema.String,
-    path: Schema.String,
-    message: Schema.String,
-  },
-) {}
+export class CacheOperationError extends Schema.TaggedError<CacheOperationError>()("RepositoryCacheOperationError", {
+  operation: Schema.String,
+  path: Schema.String,
+  message: Schema.String,
+}) {}
 
 export type Error =
-  | InvalidRepositoryError
   | InvalidBranchError
   | CloneFailedError
   | FetchFailedError
@@ -103,7 +88,6 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Re
 
 export function isError(error: unknown): error is Error {
   return (
-    error instanceof InvalidRepositoryError ||
     error instanceof InvalidBranchError ||
     error instanceof CloneFailedError ||
     error instanceof FetchFailedError ||
@@ -113,13 +97,6 @@ export function isError(error: unknown): error is Error {
     error instanceof CacheOperationError
   )
 }
-
-export const parseRemote = Effect.fn("RepositoryCache.parseRemote")(function* (repository: string) {
-  return yield* Effect.try({
-    try: () => Repository.parseRemote(repository),
-    catch: (error) => new InvalidRepositoryError({ repository, message: errorMessage(error) }),
-  })
-})
 
 export const validateBranch = Effect.fn("RepositoryCache.validateBranch")(function* (branch: string) {
   return yield* Effect.try({
@@ -164,7 +141,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | Git.Service | EffectFl
                     Repository.same(originReference, cloneTarget),
                 )
                 if (!reuse && (yield* fs.existsSafe(localPath))) {
-                  yield* cacheOperation(fs.remove(localPath, {recursive: true}), "remove stale cache", localPath)
+                  yield* cacheOperation(fs.remove(localPath, { recursive: true }), "remove stale cache", localPath)
                 }
 
                 const status = !reuse
@@ -256,4 +233,4 @@ function cacheOperation<A, E, R>(effect: Effect.Effect<A, E, R>, operation: stri
   )
 }
 
-export * as RepositoryCache from "./repository-cache"
+export * as RepositoryCache from "./repository-cache.js"

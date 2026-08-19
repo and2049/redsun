@@ -1,13 +1,13 @@
-export * as CommandPlugin from "./command"
+export * as CommandPlugin from "./command.js"
 
-import { define } from "./internal"
+import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Effect } from "effect"
-import { Location } from "../location"
+import { Location } from "../location.js"
 import PROMPT_INITIALIZE from "./command/initialize.txt"
 import PROMPT_REVIEW from "./command/review.txt"
 
 export const Plugin = define({
-  id: "command",
+  id: "opencode.command",
   effect: Effect.fn(function* (ctx) {
     const location = yield* Location.Service
     yield* ctx.command.transform((draft) => {
@@ -18,7 +18,6 @@ export const Plugin = define({
       draft.update("review", (command) => {
         command.template = PROMPT_REVIEW.replace("${path}", location.project.directory)
         command.description = "review changes [commit|branch|pr], defaults to uncommitted"
-        command.subtask = true
       })
     })
   }),

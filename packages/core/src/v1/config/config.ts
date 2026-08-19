@@ -1,21 +1,20 @@
-export * as ConfigV1 from "./config"
+export * as ConfigV1 from "./config.js"
 
 import { Schema } from "effect"
-import { NonNegativeInt, PositiveInt, type DeepMutable } from "../../schema"
-import { ConfigExperimental } from "../../config/experimental"
-import { ConfigReference } from "../../config/reference"
-import { ConfigAgentV1 } from "./agent"
-import { ConfigAttachmentV1 } from "./attachment"
-import { ConfigCommandV1 } from "./command"
-import { ConfigFormatterV1 } from "./formatter"
-import { ConfigLayoutV1 } from "./layout"
-import { ConfigLSPV1 } from "./lsp"
-import { ConfigMCPV1 } from "./mcp"
-import { ConfigPermissionV1 } from "./permission"
-import { ConfigPluginV1 } from "./plugin"
-import { ConfigProviderV1 } from "./provider"
-import { ConfigServerV1 } from "./server"
-import { ConfigSkillsV1 } from "./skills"
+import { ConfigReference } from "@opencode-ai/schema/config/reference"
+import { NonNegativeInt, PositiveInt, type DeepMutable } from "../../schema.js"
+import { ConfigAgentV1 } from "./agent.js"
+import { ConfigAttachmentV1 } from "./attachment.js"
+import { ConfigCommandV1 } from "./command.js"
+import { ConfigFormatterV1 } from "./formatter.js"
+import { ConfigLayoutV1 } from "./layout.js"
+import { ConfigLSPV1 } from "./lsp.js"
+import { ConfigMCPV1 } from "./mcp.js"
+import { ConfigPermissionV1 } from "./permission.js"
+import { ConfigPluginV1 } from "./plugin.js"
+import { ConfigProviderV1 } from "./provider.js"
+import { ConfigServerV1 } from "./server.js"
+import { ConfigSkillsV1 } from "./skills.js"
 
 export type Layout = ConfigLayoutV1.Layout
 
@@ -54,12 +53,6 @@ export const Info = Schema.Struct({
       "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",
   }),
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPluginV1.Spec))),
-  extension: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
-    description: "Pi-style redsun extension modules",
-  }),
-  defaultProjectTrust: Schema.optional(Schema.Literals(["ask", "always", "never"])).annotate({
-    description: "Default policy for project-local executable configuration",
-  }),
   share: Schema.optional(Schema.Literals(["manual", "auto", "disabled"])).annotate({
     description:
       "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",
@@ -82,40 +75,6 @@ export const Info = Schema.Struct({
   }),
   small_model: Schema.optional(Schema.String).annotate({
     description: "Small model to use for tasks like title generation in the format of provider/model",
-  }),
-  task_router: Schema.optional(
-    Schema.Struct({
-      compact: Schema.optional(Schema.String),
-      summary: Schema.optional(Schema.String),
-      title: Schema.optional(Schema.String),
-      explore: Schema.optional(Schema.String),
-      general: Schema.optional(Schema.String),
-      worker: Schema.optional(Schema.String),
-      worker_variant: Schema.optional(Schema.String),
-    }),
-  ).annotate({ description: "Optional provider/model overrides for lightweight internal tasks" }),
-  advisor: Schema.optional(
-    Schema.Struct({
-      enabled: Schema.optional(Schema.Boolean),
-      model: Schema.optional(Schema.String),
-      mode: Schema.optional(Schema.Literals(["auto", "aside-only"])),
-      cooldownTurns: Schema.optional(Schema.Number),
-      guidance: Schema.optional(Schema.String),
-    }),
-  ).annotate({ description: "Redsun watchdog advisor that reviews completed v2 session turns with a second model" }),
-  claude_code: Schema.optional(
-    Schema.Struct({
-      enabled: Schema.optional(Schema.Boolean),
-      binary_path: Schema.optional(Schema.String),
-      config_dir: Schema.optional(Schema.String),
-      permission_mode: Schema.optional(Schema.Literals(["default", "acceptEdits", "bypassPermissions", "plan"])),
-      worker_permission_mode: Schema.optional(Schema.Literals(["inherit", "acceptEdits", "bypassPermissions"])),
-      extra_args: Schema.optional(Schema.Record(Schema.String, Schema.NullOr(Schema.String))),
-      env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-    }),
-  ).annotate({
-    description:
-      "Claude Code delegated-agent provider. Drives the claude CLI headlessly through the Claude Agent SDK using the user's existing subscription login",
   }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:
@@ -186,29 +145,6 @@ export const Info = Schema.Struct({
     description:
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
   }),
-  // REDSUN: per-turn reminder toggles and instruction truncation cap
-  reminders: Schema.optional(
-    Schema.Struct({
-      plan: Schema.optional(Schema.Boolean).annotate({
-        description: "Inject the plan-mode reminder each plan-agent turn (default: true)",
-      }),
-      compose: Schema.optional(Schema.Boolean).annotate({
-        description: "Inject the compose-mode brief each compose-agent turn (default: true)",
-      }),
-      worker: Schema.optional(Schema.Boolean).annotate({
-        description: "Inject the worker-mode brief each worker-agent turn (default: true)",
-      }),
-      build_switch: Schema.optional(Schema.Boolean).annotate({
-        description: "Inject the plan-to-build switch notice after leaving plan mode (default: true)",
-      }),
-    }),
-  ).annotate({
-    description: "Enable or disable the synthetic per-turn reminder messages redsun appends for specific agents.",
-  }),
-  instruction_max_chars: Schema.optional(PositiveInt).annotate({
-    description:
-      "Maximum characters of each instruction file (AGENTS.md, .redsun/memory.md, ...) included in the system prompt before truncation (default: 24000)",
-  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
@@ -219,7 +155,7 @@ export const Info = Schema.Struct({
       }),
       tail_turns: Schema.optional(NonNegativeInt).annotate({
         description:
-          "Maximum number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction. By default retention is limited only by the preserved token budget.",
+          "Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)",
       }),
       preserve_recent_tokens: Schema.optional(NonNegativeInt).annotate({
         description: "Maximum number of tokens from recent turns to preserve verbatim after compaction",
@@ -227,17 +163,6 @@ export const Info = Schema.Struct({
       reserved: Schema.optional(NonNegativeInt).annotate({
         description: "Token buffer for compaction. Leaves enough window to avoid overflow during compaction.",
       }),
-      strategy: Schema.optional(Schema.Literals(["hybrid", "algorithmic", "llm"])).annotate({
-        description: "Compaction strategy (default: hybrid)",
-      }),
-      keepRecent: Schema.optional(NonNegativeInt).annotate({
-        description: "Recent messages retained verbatim for hybrid compaction (default: 4)",
-      }),
-      maxToolResults: Schema.optional(NonNegativeInt).annotate({
-        description: "Maximum tool-result summaries retained by algorithmic extraction (default: 30)",
-      }),
-      triggerThreshold: Schema.optional(Schema.Number),
-      resetThreshold: Schema.optional(Schema.Number),
     }),
   ),
   experimental: Schema.optional(
@@ -250,14 +175,14 @@ export const Info = Schema.Struct({
       primary_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
         description: "Tools that should only be available to primary agents.",
       }),
+      subagent_depth: Schema.optional(NonNegativeInt).annotate({
+        description: "Maximum subagent nesting depth. Defaults to 1.",
+      }),
       continue_loop_on_deny: Schema.optional(Schema.Boolean).annotate({
         description: "Continue the agent loop when a tool call is denied",
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
-      }),
-      policies: Schema.optional(Schema.mutable(Schema.Array(ConfigExperimental.Policy))).annotate({
-        description: "Policy statements applied to supported resources, such as provider access",
       }),
     }),
   ),

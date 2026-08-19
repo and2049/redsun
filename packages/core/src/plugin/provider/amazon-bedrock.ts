@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { LanguageModelV3 } from "@ai-sdk/provider"
-import { define } from "../internal"
-import { ProviderV2 } from "../../provider"
+import { define } from "@opencode-ai/plugin/effect/plugin"
+import { Provider } from "../../provider.js"
 
 type MantleSDK = {
   languageModel: (modelID: string) => LanguageModelV3
@@ -60,25 +60,23 @@ function selectMantleModel(sdk: MantleSDK, modelID: string) {
 }
 
 export const AmazonBedrockPlugin = define({
-  id: "amazon-bedrock",
+  id: "opencode.provider.amazon-bedrock",
   effect: Effect.fn(function* (ctx) {
-    yield* ctx.catalog.transform(
-      Effect.fn(function* (evt) {
-        for (const item of evt.provider.list()) {
-          if (item.provider.api.type !== "aisdk") continue
-          if (item.provider.api.package !== "@ai-sdk/amazon-bedrock") continue
-          evt.provider.update(item.provider.id, (provider) => {
-            if (provider.api.type !== "aisdk") return
-            if (typeof provider.request.body.endpoint !== "string") return
-            // The AI SDK expects a base URL, but users configure Bedrock private/VPC
-            // endpoints as `endpoint`; move it into the catalog endpoint URL once.
-            provider.api.url = provider.request.body.endpoint
-            delete provider.request.body.endpoint
-          })
-        }
-      }),
-    )
-    yield* ctx.aisdk.sdk(
+    yield* ctx.catalog.transform((evt) => {
+      for (const item of evt.provider.list()) {
+        if (!Provider.isAISDK(item.provider.package)) continue
+        if (Provider.packageName(item.provider.package) !== "@ai-sdk/amazon-bedrock") continue
+        evt.provider.update(item.provider.id, (provider) => {
+          if (typeof provider.settings?.endpoint !== "string") return
+          // The AI SDK expects a base URL, but users configure Bedrock private/VPC
+          // endpoints as `endpoint`; move it into the catalog endpoint URL once.
+          provider.settings.baseURL = provider.settings.endpoint
+          delete provider.settings.endpoint
+        })
+      }
+    })
+    yield* ctx.aisdk.hook(
+      "sdk",
       Effect.fn(function* (evt) {
         if (!["@ai-sdk/amazon-bedrock", "@ai-sdk/amazon-bedrock/mantle"].includes(evt.package)) return
         const options = { ...evt.options }
@@ -111,15 +109,19 @@ export const AmazonBedrockPlugin = define({
         evt.sdk = mod.createAmazonBedrock(options)
       }),
     )
-    yield* ctx.aisdk.language(
+    yield* ctx.aisdk.hook(
+      "language",
       Effect.fn(function* (evt) {
-        if (evt.model.providerID !== ProviderV2.ID.amazonBedrock) return
-        if (evt.model.api.type === "aisdk" && evt.model.api.package === "@ai-sdk/amazon-bedrock/mantle") {
-          evt.language = selectMantleModel(evt.sdk, evt.model.api.id)
+        if (evt.model.providerID !== Provider.ID.amazonBedrock) return
+        if (
+          Provider.isAISDK(evt.model.package) &&
+          Provider.packageName(evt.model.package) === "@ai-sdk/amazon-bedrock/mantle"
+        ) {
+          evt.language = selectMantleModel(evt.sdk, evt.model.modelID ?? evt.model.id)
           return
         }
         const region = typeof evt.options.region === "string" ? evt.options.region : process.env.AWS_REGION
-        evt.language = evt.sdk.languageModel(resolveModelID(evt.model.api.id, region))
+        evt.language = evt.sdk.languageModel(resolveModelID(evt.model.modelID ?? evt.model.id, region))
       }),
     )
   }),

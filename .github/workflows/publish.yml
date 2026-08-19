@@ -1,3 +1,8 @@
+# REDSUN: releases are GitHub release assets built from `packages/cli`, not npm
+# packages built from `packages/opencode`. This replaces upstream's workflow
+# wholesale and follows dev's shape: one runner, Bun cross-compiles every
+# target, `script/publish.ts` archives them, and the installers ship alongside
+# the binaries so `redsun upgrade` can fetch a version-matched copy.
 name: publish
 
 on:
@@ -7,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish (e.g. v1.0.0)"
+        description: "Tag to publish (e.g. v0.3.1)"
         required: false
         type: string
 
@@ -19,7 +24,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -47,18 +52,24 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Typecheck
-        run: bun turbo typecheck
-        timeout-minutes: 10
+        run: bun turbo typecheck --concurrency=3
+        timeout-minutes: 15
 
-      - name: Test
-        run: cd packages/redsun && bun test
-        timeout-minutes: 10
+      - name: Test core
+        run: cd packages/core && bun test
+        timeout-minutes: 20
+        env:
+          CI: true
+
+      - name: Test tui
+        run: cd packages/tui && bun test
+        timeout-minutes: 15
         env:
           CI: true
 
       - name: Build, smoke test, and create release archives
-        run: cd packages/redsun && bun run script/publish.ts
-        timeout-minutes: 20
+        run: cd packages/cli && bun run script/publish.ts
+        timeout-minutes: 60
         env:
           REDSUN_VERSION: ${{ steps.version.outputs.version }}
           REDSUN_CHANNEL: release
@@ -68,9 +79,12 @@ jobs:
         with:
           name: redsun-binaries
           path: |
-            packages/redsun/dist/*.tar.gz
-            packages/redsun/dist/*.zip
+            packages/cli/dist/*.tar.gz
+            packages/cli/dist/*.zip
 
+      # Draft, like dev: the release is reviewed and published by hand, and
+      # `install`/`install.ps1` are attached so `releases/latest/download/install`
+      # resolves for both a fresh install and `redsun upgrade`.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -79,7 +93,7 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            packages/redsun/dist/*.tar.gz
-            packages/redsun/dist/*.zip
+            packages/cli/dist/*.tar.gz
+            packages/cli/dist/*.zip
             install
             install.ps1

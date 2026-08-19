@@ -78,7 +78,7 @@ fi
 
 combo="$os-$arch"
 case "$combo" in
-  linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
+  linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64|windows-arm64)
     ;;
   *)
     echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}"
@@ -185,7 +185,9 @@ check_version() {
         redsun_path=$(which redsun)
 
         installed_version=$(redsun --version 2>/dev/null || echo "0.0.0")
-        installed_version=$(echo $installed_version | awk '{print $2}')
+        # `redsun --version` prints "redsun v<version>"; the tag it is compared
+        # against carries no leading v.
+        installed_version=$(echo $installed_version | awk '{print $2}' | sed 's/^v//')
 
         if [[ "$installed_version" != "$specific_version" ]]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."

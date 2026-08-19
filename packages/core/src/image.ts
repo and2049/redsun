@@ -1,16 +1,16 @@
-export * as Image from "./image"
+export * as Image from "./image.js"
 
-import { makeLocationNode } from "./effect/app-node"
+import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { Context, Effect, Layer, Schema } from "effect"
-import { Config } from "./config"
-import { FileSystem } from "./filesystem"
+import { Config } from "./config.js"
+import { FileSystem } from "./filesystem.js"
 
-export class ResizerUnavailableError extends Schema.TaggedErrorClass<ResizerUnavailableError>()(
+export class ResizerUnavailableError extends Schema.TaggedError<ResizerUnavailableError>()(
   "Image.ResizerUnavailableError",
   {},
 ) {}
 
-export class DecodeError extends Schema.TaggedErrorClass<DecodeError>()("Image.DecodeError", {
+export class DecodeError extends Schema.TaggedError<DecodeError>()("Image.DecodeError", {
   resource: Schema.String,
 }) {
   override get message() {
@@ -18,7 +18,7 @@ export class DecodeError extends Schema.TaggedErrorClass<DecodeError>()("Image.D
   }
 }
 
-export class SizeError extends Schema.TaggedErrorClass<SizeError>()("Image.SizeError", {
+export class SizeError extends Schema.TaggedError<SizeError>()("Image.SizeError", {
   resource: Schema.String,
   width: Schema.Number,
   height: Schema.Number,
@@ -50,7 +50,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const loadAdapter = yield* Effect.cached(
       Effect.tryPromise({
-        try: () => import("./image/photon"),
+        try: () => import("./image/photon.js"),
         catch: () => new ResizerUnavailableError(),
       }).pipe(Effect.flatMap((adapter) => adapter.make)),
     )
@@ -61,7 +61,7 @@ const layer = Layer.effect(
       const image = Object.assign(
         {},
         ...(yield* config.entries()).flatMap((entry) =>
-          entry.type === "document" && entry.info.attachments?.image ? [entry.info.attachments.image] : [],
+          entry.type === "document" && entry.info.media?.image ? [entry.info.media.image] : [],
         ),
       )
       const normalize = yield* loadAdapter
@@ -75,7 +75,5 @@ const layer = Layer.effect(
     return Service.of({ normalize })
   }),
 )
-
-export const locationLayer = layer.pipe(Layer.provide(Config.locationLayer))
 
 export const node = makeLocationNode({ service: Service, layer, deps: [Config.node] })

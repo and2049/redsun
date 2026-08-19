@@ -1,77 +1,122 @@
-import { type AstNode, InterpreterRuntimeError } from "../interpreter/model.js"
+import { Effect } from "effect"
+import {
+  type AstNode,
+  AsyncIteratorSymbol,
+  InterpreterRuntimeError,
+  IteratorSymbol,
+  IteratorSymbols,
+} from "../interpreter/model.js"
+import { containsOpaqueReference } from "../interpreter/references.js"
 import { isBlockedMember } from "../tool-runtime.js"
-import { isSandboxValue, SandboxMap, SandboxURLSearchParams } from "../values.js"
+import { isCodeModeValue, CodeModePromise } from "../values.js"
 import { boundedData, coerceToString } from "./value.js"
+import { preserveConsumerError, type SyncIteratorRunner } from "../interpreter/iterator.js"
 
-export const objectStatics = new Set(["keys", "values", "entries", "hasOwn", "assign", "fromEntries"])
+export const objectMethodsPreservingIdentity = new Set(["assign", "values", "entries", "fromEntries"])
+
+export const objectStatics = new Set(["keys", "values", "entries", "hasOwn", "is", "assign", "fromEntries", "groupBy"])
 
 export const invokeObjectMethod = (name: string, args: Array<unknown>, node: AstNode): unknown => {
-  if (!objectStatics.has(name)) throw new InterpreterRuntimeError(`Object.${name} is not available in CodeMode.`, node)
   const requireObject = (): Record<string, unknown> => {
-    const value = boundedData(args[0], `Object.${name} input`)
-    if (isSandboxValue(value)) return {}
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      throw new InterpreterRuntimeError(`Object.${name} expects a data object.`, node)
+    const input = args[0]
+    if (Array.isArray(input)) return input as unknown as Record<string, unknown>
+    if (isCodeModeValue(input)) return {}
+    if (input instanceof CodeModePromise) {
+      throw new InterpreterRuntimeError(
+        `Object.${name} received an un-awaited Promise; await it before inspecting the result.`,
+        node,
+        "InvalidDataValue",
+      )
     }
-    return value as Record<string, unknown>
+    if (input === null || typeof input !== "object") {
+      throw new InterpreterRuntimeError(`Object.${name} expects a data object or array.`, node, "InvalidDataValue")
+    }
+    const prototype = Object.getPrototypeOf(input)
+    if (prototype !== null && prototype !== Object.prototype) {
+      throw new InterpreterRuntimeError(`Object.${name} expects a data object or array.`, node, "InvalidDataValue")
+    }
+    return input as Record<string, unknown>
   }
   const guardedSet = (out: Record<string, unknown>, key: string, item: unknown): void => {
-    if (isBlockedMember(key)) throw new InterpreterRuntimeError(`Property '${key}' is not available in CodeMode.`, node)
+    if (isBlockedMember(key)) throw new InterpreterRuntimeError(`Property '${key}' is not available.`, node)
     out[key] = item
   }
   switch (name) {
-    case "keys": {
-      const value = boundedData(args[0], "Object.keys input")
-      if (isSandboxValue(value)) return []
-      if (Array.isArray(value)) return Object.keys(value)
-      if (value === null || typeof value !== "object") {
-        throw new InterpreterRuntimeError("Object.keys expects a data object or array.", node)
-      }
-      return Object.keys(value)
-    }
+    case "keys":
+      return Object.keys(requireObject())
     case "values":
       return Object.values(requireObject())
     case "entries":
       return Object.entries(requireObject()).map(([key, item]) => [key, item])
     case "hasOwn":
-      return Object.hasOwn(requireObject(), String(args[1]))
+      return Object.hasOwn(
+        requireObject(),
+        args[1] === AsyncIteratorSymbol || args[1] === IteratorSymbol ? args[1] : String(args[1]),
+      )
+    case "is":
+      if (containsOpaqueReference(args[0]) || containsOpaqueReference(args[1])) {
+        throw new InterpreterRuntimeError("Object.is requires data values.", node, "InvalidDataValue")
+      }
+      return Object.is(args[0], args[1])
     case "assign": {
-      const out: Record<string, unknown> = Object.create(null)
-      for (const source of args) {
-        if (source === null || source === undefined) continue
-        const value = boundedData(source, "Object.assign input")
-        if (isSandboxValue(value)) continue
-        if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      const target = args[0]
+      if (target === null || typeof target !== "object" || Array.isArray(target) || isCodeModeValue(target)) {
+        throw new InterpreterRuntimeError("Object.assign expects a data object target.", node)
+      }
+      const out = target as Record<string, unknown>
+      for (const source of args.slice(1)) {
+        if (source === null || source === undefined || isCodeModeValue(source)) continue
+        if (typeof source !== "object" || Array.isArray(source)) {
           throw new InterpreterRuntimeError("Object.assign expects data objects.", node)
         }
-        for (const [key, item] of Object.entries(value)) guardedSet(out, key, item)
-      }
-      return out
-    }
-    case "fromEntries": {
-      if (args[0] instanceof SandboxMap) {
-        const out: Record<string, unknown> = Object.create(null)
-        for (const [key, item] of args[0].map.entries()) guardedSet(out, coerceToString(key), item)
-        return out
-      }
-      if (args[0] instanceof SandboxURLSearchParams) {
-        const out: Record<string, unknown> = Object.create(null)
-        for (const [key, value] of args[0].params.entries()) guardedSet(out, key, value)
-        return out
-      }
-      const pairs = boundedData(args[0], "Object.fromEntries input")
-      if (!Array.isArray(pairs)) {
-        throw new InterpreterRuntimeError("Object.fromEntries expects an array of [key, value] pairs.", node)
-      }
-      const out: Record<string, unknown> = Object.create(null)
-      for (const pair of pairs) {
-        if (!Array.isArray(pair)) {
-          throw new InterpreterRuntimeError("Object.fromEntries expects [key, value] pairs.", node)
+        for (const [key, item] of Object.entries(source)) guardedSet(out, key, item)
+        for (const symbol of IteratorSymbols) {
+          if (Object.hasOwn(source, symbol)) Reflect.set(out, symbol, Reflect.get(source, symbol))
         }
-        guardedSet(out, String(pair[0]), pair[1])
       }
       return out
     }
   }
-  throw new InterpreterRuntimeError(`Object.${name} is not available in CodeMode.`, node)
+  throw new InterpreterRuntimeError(`Object.${name} is not available.`, node)
+}
+
+export const invokeObjectFromEntries = <R>(
+  runner: SyncIteratorRunner<R>,
+  source: unknown,
+  node: AstNode,
+): Effect.Effect<Record<string, unknown>, unknown, R> => {
+  const out: Record<string, unknown> = Object.create(null)
+  return Effect.gen(function* () {
+    const cursor = yield* runner.syncIterator(source, node)
+    if (cursor === undefined) {
+      throw new InterpreterRuntimeError("Object.fromEntries expects a synchronous iterable of entries.", node).as(
+        "TypeError",
+      )
+    }
+    while (true) {
+      const step = yield* cursor.next
+      if (step.done) return out
+      yield* preserveConsumerError(
+        cursor,
+        Effect.sync(() => {
+          if (
+            step.value === null ||
+            typeof step.value !== "object" ||
+            isCodeModeValue(step.value) ||
+            containsOpaqueReference(step.value)
+          ) {
+            throw new InterpreterRuntimeError("Object.fromEntries expects [key, value] entry objects.", node).as(
+              "TypeError",
+            )
+          }
+          const entry = step.value as Record<string, unknown>
+          boundedData(entry[0], "Object.fromEntries key")
+          boundedData(entry[1], "Object.fromEntries value")
+          const key = coerceToString(entry[0])
+          if (isBlockedMember(key)) throw new InterpreterRuntimeError(`Property '${key}' is not available.`, node)
+          out[key] = entry[1]
+        }),
+      )
+    }
+  })
 }

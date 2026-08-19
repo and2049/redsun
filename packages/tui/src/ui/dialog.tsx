@@ -1,35 +1,38 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
+import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
 import { MouseButton, Renderable, RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
+import { useConfig } from "../config"
 import { SplitBorder } from "./border"
 
-export type DialogPlacement = "center" | "bottom"
+export type DialogSize = "medium" | "large" | "xlarge"
+
+export type DialogPlacement = "default" | "bottom"
+
+export function dialogWidth(size: DialogSize) {
+  if (size === "xlarge") return 116
+  if (size === "large") return 88
+  return 60
+}
 
 export function Dialog(
   props: ParentProps<{
-    size?: "medium" | "large" | "xlarge"
+    size?: DialogSize
+    centered?: boolean
     placement?: DialogPlacement
     onClose: () => void
   }>,
 ) {
   const dimensions = useTerminalDimensions()
-  const { theme } = useTheme()
+  const theme = useTheme("elevated")
   const renderer = useRenderer()
-
-  let dismiss = false
-  const width = () => {
-    if (props.size === "xlarge") return 116
-    if (props.size === "large") return 88
-    return 60
-  }
   const bottom = () => props.placement === "bottom"
 
+  let dismiss = false
   return (
     <box
       onMouseDown={() => {
@@ -45,16 +48,14 @@ export function Dialog(
       width={dimensions().width}
       height={dimensions().height}
       alignItems={bottom() ? "stretch" : "center"}
-      justifyContent={bottom() ? "flex-end" : "flex-start"}
+      justifyContent={bottom() ? "flex-end" : props.centered ? "center" : undefined}
       position="absolute"
       zIndex={3000}
-      paddingTop={bottom() ? 0 : dimensions().height / 4}
+      paddingTop={bottom() || props.centered ? 0 : dimensions().height / 4}
       left={0}
       top={0}
       backgroundColor={bottom() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
     >
-      {/* opentui force-enables a full border when borderColor/customBorderChars
-          are set, so the centered panel must not receive any border props. */}
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
           // A selection release must bubble up to the copy-on-select handler in
@@ -63,17 +64,14 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={bottom() ? "100%" : width()}
+        width={bottom() ? "100%" : dialogWidth(props.size ?? "medium")}
         maxWidth={bottom() ? dimensions().width : dimensions().width - 2}
         border={bottom() ? SplitBorder.border : false}
         customBorderChars={bottom() ? SplitBorder.customBorderChars : undefined}
-        borderColor={bottom() ? theme.border : undefined}
-        backgroundColor={bottom() ? theme.background : theme.backgroundPanel}
+        borderColor={bottom() ? theme.border.default : undefined}
+        backgroundColor={theme.background.default}
       >
-        {/* The menu runs flush to the terminal's last row, covering the command
-            bar, so it needs an opaque base to keep the bar (and transcript) from
-            bleeding through translucent backgroundMenu. */}
-        <box backgroundColor={bottom() ? theme.backgroundMenu : RGBA.fromInts(0, 0, 0, 0)} paddingTop={1}>
+        <box backgroundColor={bottom() ? theme.background.surface.overlay : undefined} paddingTop={1}>
           {props.children}
         </box>
       </box>
@@ -86,23 +84,26 @@ function init() {
     stack: [] as {
       element: JSX.Element
       onClose?: () => void
+      key?: unknown
     }[],
-    size: "medium" as "medium" | "large" | "xlarge",
-    placement: "center" as DialogPlacement,
+    size: "medium" as DialogSize,
+    centered: false,
+    placement: "default" as DialogPlacement,
   })
 
   const renderer = useRenderer()
-  const modeStack = useOpencodeModeStack()
+  const keymap = Keymap.use()
 
   createEffect(() => {
     if (store.stack.length === 0) return
-    const popMode = modeStack.push("modal")
+    const popMode = keymap.mode.push("modal")
     onCleanup(popMode)
   })
 
   let focus: Renderable | null
   function refocus() {
     setTimeout(() => {
+      if (store.stack.length > 0) return
       if (!focus) return
       if (focus.isDestroyed) return
       function find(item: Renderable) {
@@ -118,14 +119,15 @@ function init() {
     }, 1)
   }
 
-  useBindings(() => ({
+  Keymap.createLayer(() => ({
+    mode: "modal",
     enabled: store.stack.length > 0 && !renderer.getSelection()?.getSelectedText(),
-    bindings: [
+    commands: [
       {
-        key: "escape",
-        desc: "Close dialog",
+        bind: "escape",
+        title: "Close dialog",
         group: "Dialog",
-        cmd: () => {
+        run: () => {
           if (renderer.getSelection()) {
             renderer.clearSelection()
           }
@@ -136,10 +138,10 @@ function init() {
         },
       },
       {
-        key: "ctrl+c",
-        desc: "Close dialog",
+        bind: "ctrl+c",
+        title: "Close dialog",
         group: "Dialog",
-        cmd: () => {
+        run: () => {
           if (renderer.getSelection()) {
             renderer.clearSelection()
           }
@@ -159,12 +161,13 @@ function init() {
       }
       batch(() => {
         setStore("size", "medium")
-        setStore("placement", "center")
+        setStore("centered", false)
+        setStore("placement", "default")
         setStore("stack", [])
       })
       refocus()
     },
-    replace(input: any, onClose?: () => void) {
+    replace(input: any, onClose?: () => void, options?: { key?: unknown; size?: DialogSize }) {
       if (store.stack.length === 0) {
         focus = renderer.currentFocusedRenderable
         focus?.blur()
@@ -172,14 +175,18 @@ function init() {
       for (const item of store.stack) {
         if (item.onClose) item.onClose()
       }
-      setStore("size", "medium")
-      setStore("placement", "center")
-      setStore("stack", [
-        {
-          element: input,
-          onClose,
-        },
-      ])
+      batch(() => {
+        setStore("size", options?.size ?? "medium")
+        setStore("centered", false)
+        setStore("placement", "default")
+        setStore("stack", [
+          {
+            element: input,
+            onClose,
+            key: options?.key,
+          },
+        ])
+      })
     },
     get stack() {
       return store.stack
@@ -187,8 +194,17 @@ function init() {
     get size() {
       return store.size
     },
+    get centered() {
+      return store.centered
+    },
+    get key() {
+      return store.stack.at(-1)?.key
+    },
     setSize(size: "medium" | "large" | "xlarge") {
       setStore("size", size)
+    },
+    setCentered(centered: boolean) {
+      setStore("centered", centered)
     },
     get placement() {
       return store.placement
@@ -208,10 +224,13 @@ export function DialogProvider(props: ParentProps) {
   const renderer = useRenderer()
   const toast = useToast()
   const clipboard = useClipboard()
+  const config = useConfig()
+  const copyOnSelectEnabled = () =>
+    (config.data.terminal?.copy ?? (process.platform === "win32" ? "manual" : "select")) === "select"
 
   function copySelection() {
     const text = renderer.getSelection()?.getSelectedText()
-    if (!text || !clipboard.write) return false
+    if (!text) return false
     void clipboard.write(text).then(
       () => toast.show({ message: "Copied to clipboard", variant: "info" }),
       (error) => toast.error(error),
@@ -227,17 +246,17 @@ export function DialogProvider(props: ParentProps) {
         position="absolute"
         zIndex={3000}
         onMouseDown={(evt: { button: number; preventDefault(): void; stopPropagation(): void }) => {
-          if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
+          if (copyOnSelectEnabled()) return
           if (evt.button !== MouseButton.RIGHT) return
 
           if (!copySelection()) return
           evt.preventDefault()
           evt.stopPropagation()
         }}
-        onMouseUp={!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT ? copySelection : undefined}
+        onMouseUp={copyOnSelectEnabled() ? copySelection : undefined}
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size} placement={value.placement}>
+          <Dialog onClose={() => value.clear()} size={value.size} centered={value.centered} placement={value.placement}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

@@ -6,7 +6,11 @@
 // offline and drop into any transport (`res.end(...)`, Effect `response.end`,
 // etc.).
 //
-// Keep the callback self-contained so provider sign-in works without external assets.
+// The visual language mirrors the OpenCode app: the design tokens are a curated
+// subset of the OC-2 semantic tokens in `packages/ui/src/styles/theme.css`, and
+// the wordmark is a plain text mark rather than the upstream pixel-font SVG,
+// which spells `opencode` in its path geometry and cannot simply be relabelled.
+// Keep this file in sync with the brand when it changes.
 
 export interface CallbackPageOptions {
   /** Friendly integration name shown as a subtitle, e.g. "xAI", "Snowflake", "MCP". */
@@ -70,7 +74,7 @@ export function bootstrap(options: BootstrapOptions) {
   })
 }
 
-export * as OauthCallbackPage from "./page"
+export * as OauthCallbackPage from "./page.js"
 
 type Status = "pending" | "success" | "error"
 
@@ -143,7 +147,7 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;")
 }
 
-// Curated subset of OC-2 tokens from the upstream opencode web theme. Default is
+// Curated subset of OC-2 tokens (packages/ui/src/styles/theme.css). Default is
 // light; dark applies via prefers-color-scheme. The [data-theme] selectors let a
 // host force a scheme without changing the default.
 const LIGHT_VARS = `
@@ -211,7 +215,8 @@ const STYLES = `
     text-align: center;
   }
   .brand { display: flex; justify-content: center; margin-bottom: 1.75rem; }
-  .wordmark { color: var(--oc-text-strong); font-size: 1rem; font-weight: 700; letter-spacing: 0.16em; }
+  .brand svg { height: 19px; width: auto; }
+  .wordmark { font: 600 19px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; color: var(--oc-icon-base); }
   .status { display: flex; justify-content: center; margin-bottom: 1.125rem; }
   .icon { display: none; line-height: 0; }
   .icon svg { display: block; }
@@ -246,7 +251,10 @@ const STYLES = `
   @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 `
 
-const WORDMARK = `<span class="wordmark" aria-label="redsun">redsun</span>`
+// Text wordmark. The upstream SVG spells `opencode` in pixel-font path geometry,
+// so it cannot be relabelled -- it has to be replaced. `.wordmark` in STYLES sizes it
+// to the cap height the SVG had.
+const WORDMARK = `<span class="wordmark" role="img" aria-label="redsun">redsun</span>`
 
 const ICON_CHECK = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.4 2.4 4.6-5.4" /></svg>`
 

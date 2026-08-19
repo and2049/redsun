@@ -1,13 +1,15 @@
-import * as pty from "@lydell/node-pty"
-import type { Opts, Proc } from "./pty"
+import { createRequire } from "node:module"
+import { isSea } from "node:sea"
+import type { Opts, Proc } from "./pty.js"
 
-export type { Disp, Exit, Opts, Proc } from "./pty"
+export type { Disp, Exit, Opts, Proc } from "./pty.js"
+
+const pty = createRequire(import.meta.url)(
+  process.env.OPENCODE_NODE_PTY_PATH ?? "@lydell/node-pty",
+) as typeof import("@lydell/node-pty")
 
 export function spawn(file: string, args: string[], opts: Opts): Proc {
-  const proc = pty.spawn(file, args, {
-    ...opts,
-    ...(process.platform === "win32" ? { useConptyDll: true } : {}),
-  })
+  const proc = pty.spawn(file, args, process.platform === "win32" && isSea() ? { ...opts, useConptyDll: true } : opts)
   return {
     pid: proc.pid,
     onData(listener) {

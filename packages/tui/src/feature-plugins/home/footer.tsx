@@ -1,110 +1,137 @@
-import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
-import type { BuiltinTuiPlugin } from "../builtins"
+import { Plugin } from "@opencode-ai/plugin/tui"
 import { createMemo, Match, Show, Switch } from "solid-js"
-import { abbreviateHome } from "../../runtime"
-import { useTuiPaths } from "../../context/runtime"
-import { useHomeSessionDestination } from "../../routes/home/session-destination"
+import { useTerminalDimensions } from "@opentui/solid"
+import { usePlugin } from "../../plugin/context"
 
-const id = "internal:home-footer"
+export function homeFooterVisibility(width: number) {
+  return {
+    mcpCommand: width >= 64,
+    pluginCommand: width >= 80,
+    version: width >= 64,
+  }
+}
 
-function Directory(props: { api: TuiPluginApi }) {
-  const theme = () => props.api.theme.current
-  const destination = useHomeSessionDestination()
-  const paths = useTuiPaths()
-  const dir = createMemo(() => {
-    const selected = destination?.destination()
-    if (!selected || selected.type === "new") return
-    const name = abbreviateHome(selected.directory, paths.home).split(/[\\/]/).filter(Boolean).at(-1)
-    const branch =
-      selected.directory === (props.api.state.path.directory || paths.cwd) ? props.api.state.vcs?.branch : undefined
-    return branch ? { name, branch } : { name }
+function Directory(props: { context: Plugin.Context }) {
+  const location = createMemo(() => props.context.location)
+  const name = createMemo(() => {
+    const current = location()
+    if (!current) return undefined
+    if (current.workspaceID) return current.workspaceID
+    return current.directory.split(/[\\/]/).filter(Boolean).at(-1)
   })
+  const branch = createMemo(() => props.context.data.location.vcs.info(location())?.branch.current)
 
   return (
-    <Show when={dir()}>
+    <Show when={name()}>
       {(value) => (
-        <text wrapMode="none">
-          <span style={{ fg: theme().text }}>{value().name}</span>
-          <Show when={value().branch}>
-            {(branch) => <span style={{ fg: theme().textMuted }}> ({branch()})</span>}
-          </Show>
-        </text>
+        <box flexShrink={1} minWidth={0}>
+          <text wrapMode="none" truncate>
+            <span style={{ fg: props.context.theme.text.default }}>{value()}</span>
+            <Show when={branch()}>
+              {(item) => <span style={{ fg: props.context.theme.text.subdued }}> ({item()})</span>}
+            </Show>
+          </text>
+        </box>
       )}
     </Show>
   )
 }
 
-function Mcp(props: { api: TuiPluginApi }) {
-  const theme = () => props.api.theme.current
-  const list = createMemo(() => props.api.state.mcp())
-  const has = createMemo(() => list().length > 0)
-  const err = createMemo(() => list().some((item) => item.status === "failed"))
-  const count = createMemo(() => list().filter((item) => item.status === "connected").length)
+function Mcp(props: { context: Plugin.Context }) {
+  const dimensions = useTerminalDimensions()
+  const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
+  const list = createMemo(() => props.context.data.location.mcp.server.list(props.context.location) ?? [])
+  const failed = createMemo(() => list().filter((item) => item.status.status === "failed").length)
+  const count = createMemo(() => list().filter((item) => item.status.status === "connected").length)
 
   return (
-    <Show when={has()}>
-      <box gap={1} flexDirection="row" flexShrink={0}>
-        <text fg={theme().text}>
+    <Show when={list().length}>
+      <box gap={1} flexDirection="row" flexShrink={0} onMouseUp={() => props.context.keymap.dispatch("mcp.list")}>
+        <text fg={props.context.theme.text.default}>
           <Switch>
-            <Match when={err()}>
-              <span style={{ fg: theme().error }}>⊙ </span>
+            <Match when={failed()}>
+              <span style={{ fg: props.context.theme.text.feedback.error.default }}>⊙ </span>
+              {failed()} MCP failed
             </Match>
             <Match when={true}>
-              <span style={{ fg: count() > 0 ? theme().success : theme().textMuted }}>⊙ </span>
+              <span
+                style={{
+                  fg:
+                    count() > 0 ? props.context.theme.text.feedback.success.default : props.context.theme.text.subdued,
+                }}
+              >
+                ⊙{" "}
+              </span>
+              {count()} MCP
             </Match>
           </Switch>
-          {count()} MCP
         </text>
-        <text fg={theme().textMuted}>/status</text>
+        <Show when={visibility().mcpCommand}>
+          <text fg={props.context.theme.text.subdued}>/mcps</text>
+        </Show>
       </box>
     </Show>
   )
 }
 
-function Version(props: { api: TuiPluginApi }) {
-  const theme = () => props.api.theme.current
+function Plugins(props: { context: Plugin.Context }) {
+  const dimensions = useTerminalDimensions()
+  const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
+  const plugins = usePlugin()
+  const failed = createMemo(() => plugins.list().filter((item) => item.status === "failed").length)
 
   return (
-    <box flexShrink={0}>
-      <text fg={theme().textMuted}>{props.api.app.version}</text>
-    </box>
+    <Show when={failed()}>
+      <box gap={1} flexDirection="row" flexShrink={0} onMouseUp={() => props.context.keymap.dispatch("plugins.list")}>
+        <text fg={props.context.theme.text.default}>
+          <span style={{ fg: props.context.theme.text.feedback.error.default }}>⊙ </span>
+          {failed()} plugin{failed() === 1 ? "" : "s"} failed
+        </text>
+        <Show when={visibility().pluginCommand}>
+          <text fg={props.context.theme.text.subdued}>/plugins</text>
+        </Show>
+      </box>
+    </Show>
   )
 }
 
-function View(props: { api: TuiPluginApi }) {
+function View(props: { context: Plugin.Context }) {
+  const dimensions = useTerminalDimensions()
+  const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
+
   return (
-    <box
-      width="100%"
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
-      paddingRight={2}
-      flexDirection="row"
-      flexShrink={0}
-      gap={2}
-    >
-      <Directory api={props.api} />
-      <Mcp api={props.api} />
-      <box flexGrow={1} />
-      <Version api={props.api} />
-    </box>
+    <Show when={dimensions().height >= 12 && dimensions().width >= 44}>
+      <box
+        width="100%"
+        paddingTop={dimensions().height < 16 ? 0 : 1}
+        paddingBottom={dimensions().height < 16 ? 0 : 1}
+        paddingLeft={2}
+        paddingRight={2}
+        flexDirection="row"
+        flexShrink={0}
+        gap={2}
+      >
+        <Directory context={props.context} />
+        <Mcp context={props.context} />
+        <Plugins context={props.context} />
+        <box flexGrow={1} />
+        <Show when={visibility().version}>
+          <box flexShrink={0}>
+            <text fg={props.context.theme.text.subdued}>{props.context.app.version}</text>
+          </box>
+        </Show>
+      </box>
+    </Show>
   )
 }
 
-const tui: TuiPlugin = async (api) => {
-  api.slots.register({
-    order: 100,
-    slots: {
-      home_top() {
-        return <View api={api} />
-      },
-    },
-  })
-}
-
-const plugin: BuiltinTuiPlugin = {
-  id,
-  tui,
-}
-
-export default plugin
+export default Plugin.define({
+  id: "opencode.home-footer",
+  setup(context) {
+    // Root takeover: an external plugin replacing home.footer wins (last-
+    // enabled) and this builtin shows as suppressed, not silently gone.
+    // Append keeps the path open to additive plugin claims; an external
+    // replace still takes the boundary over.
+    context.ui.slot({ append: "home.footer", render: () => <View context={context} /> })
+  },
+})

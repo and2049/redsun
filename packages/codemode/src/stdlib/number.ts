@@ -1,6 +1,15 @@
-export const numberMethods = new Set(["toFixed", "toPrecision", "toExponential", "toString"])
+export const numberMethods = new Set(["toFixed", "toPrecision", "toExponential", "toString", "valueOf"])
 
-export const numberConstants = new Set(["MAX_SAFE_INTEGER", "MIN_SAFE_INTEGER", "MAX_VALUE", "MIN_VALUE", "EPSILON"])
+export const numberConstants = new Set([
+  "MAX_SAFE_INTEGER",
+  "MIN_SAFE_INTEGER",
+  "MAX_VALUE",
+  "MIN_VALUE",
+  "EPSILON",
+  "NaN",
+  "POSITIVE_INFINITY",
+  "NEGATIVE_INFINITY",
+])
 
 export const numberStatics = new Set(["isInteger", "isFinite", "isNaN", "isSafeInteger", "parseInt", "parseFloat"])
 
@@ -32,8 +41,11 @@ export const invokeNumberMethod = (value: number, name: string, args: Array<unkn
       result = value.toString(radix)
       break
     }
+    case "valueOf":
+      result = value
+      break
     default:
-      throw new InterpreterRuntimeError(`Number method '${name}' is not available in CodeMode.`, node)
+      throw new InterpreterRuntimeError(`Number method '${name}' is not available.`, node)
   }
   return boundedData(result, `Number.${name} result`)
 }
@@ -59,7 +71,7 @@ export const invokeNumberStatic = (name: string, args: Array<unknown>, node: Ast
     case "parseFloat":
       return parseFloat(coerceToString(value))
     default:
-      throw new InterpreterRuntimeError(`Number.${name} is not available in CodeMode.`, node)
+      throw new InterpreterRuntimeError(`Number.${name} is not available.`, node)
   }
 }
 import { type AstNode, InterpreterRuntimeError } from "../interpreter/model.js"

@@ -1,106 +1,253 @@
-export * as PluginHost from "./host"
+export * as PluginHost from "./host.js"
 
-import type { PluginContext as Interface } from "@opencode-ai/plugin/v2/effect"
-import { Effect, Schema } from "effect"
-import { AgentV2 } from "../agent"
-import { AISDK } from "../aisdk"
-import { Catalog } from "../catalog"
-import { CommandV2 } from "../command"
-import { Credential } from "../credential"
-import { Integration } from "../integration"
-import { ModelV2 } from "../model"
-import { PluginV2 } from "../plugin"
-import { ProviderV2 } from "../provider"
-import { Reference } from "../reference"
-import type { DeepMutable } from "../schema"
-import { SkillV2 } from "../skill"
+import { Plugin } from "@opencode-ai/plugin/effect"
+import type { IntegrationMethodRegistration } from "@opencode-ai/plugin/effect/integration"
+import type { CredentialOAuth } from "@opencode-ai/sdk/v2/types"
+import { EventManifest } from "@opencode-ai/schema/event-manifest"
+import { Mcp } from "@opencode-ai/schema/mcp"
+import { App } from "../app.js"
+import { Effect, Schema, Stream } from "effect"
+import { Agent } from "../agent.js"
+import { AISDK } from "../aisdk.js"
+import { Catalog } from "../catalog.js"
+import { Command } from "../command.js"
+import { Credential } from "../credential.js"
+import { Bus } from "../bus.js"
+import { Integration } from "../integration.js"
+import { Location } from "../location.js"
+import { Model } from "../model.js"
+import { MCP } from "../mcp/index.js"
+import { PluginRuntime } from "./runtime.js"
+import { Provider } from "../provider.js"
+import { Reference } from "../reference.js"
+import { AbsolutePath, type DeepMutable } from "../schema.js"
+import { Skill } from "../skill.js"
+import { Tool } from "../tool.js"
+import { Workspace } from "../workspace.js"
+import { WebSearch } from "../websearch.js"
+import { PluginHooks } from "./hooks.js"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
-
-export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Interface) {
-  const agents = yield* AgentV2.Service
+export const make = Effect.fn("PluginHost.make")(function* (plugin: import("../plugin.js").Interface) {
+  const app = yield* App.Metadata
+  const agents = yield* Agent.Service
   const aisdk = yield* AISDK.Service
   const catalog = yield* Catalog.Service
-  const commands = yield* CommandV2.Service
+  const commands = yield* Command.Service
+  const bus = yield* Bus.Service
   const integration = yield* Integration.Service
+  const mcp = yield* MCP.Service
+  const location = yield* Location.Service
   const reference = yield* Reference.Service
-  const skill = yield* SkillV2.Service
+  const skill = yield* Skill.Service
+  const tools = yield* Tool.Service
+  const websearch = yield* WebSearch.Service
+  const hooks = yield* PluginHooks.Service
+  const runtime = yield* PluginRuntime.Service
+  const locationInfo = () =>
+    new Location.Info({
+      directory: location.directory,
+      workspaceID: location.workspaceID,
+      project: location.project,
+    })
+  const locationRef = (input?: { readonly location?: { readonly directory?: string; readonly workspace?: string } }) =>
+    input?.location === undefined
+      ? undefined
+      : Location.Ref.make({
+          directory: AbsolutePath.make(input.location.directory ?? location.directory),
+          workspaceID:
+            input.location.workspace === undefined ? location.workspaceID : Workspace.ID.make(input.location.workspace),
+        })
+  const isCurrentLocation = (ref: Location.Ref) =>
+    ref.directory === location.directory && ref.workspaceID === location.workspaceID
+  const response = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.map((data) => ({ location: locationInfo(), data })))
 
   return {
+    app,
     options: {},
     agent: {
+      get: (input) => {
+        const ref = locationRef(input)
+        const output =
+          ref && !isCurrentLocation(ref)
+            ? runtime.location.agent.list(ref).pipe(
+                Effect.map((result) => ({
+                  ...result,
+                  data: result.data.find((agent) => agent.id === input.agentID),
+                })),
+              )
+            : response(agents.get(input.agentID))
+        return output.pipe(
+          Effect.flatMap((result) =>
+            result.data
+              ? Effect.succeed({ ...result, data: result.data })
+              : Effect.fail(new Error(`Agent not found: ${input.agentID}`)),
+          ),
+        )
+      },
+      list: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.agent.list(ref)
+        return agents.list().pipe(Effect.map((data) => ({ location: locationInfo(), data })))
+      },
       reload: agents.reload,
       transform: (callback) =>
-        agents.transform((draft) =>
+        agents.transform((draft) => {
           callback({
             list: () => mutable(draft.list()),
-            get: (id) => mutable(draft.get(AgentV2.ID.make(id))),
-            default: (id) => draft.default(id === undefined ? undefined : AgentV2.ID.make(id)),
-            update: (id, update) => draft.update(AgentV2.ID.make(id), update),
-            remove: (id) => draft.remove(AgentV2.ID.make(id)),
-          }),
-        ),
+            get: (id) => mutable(draft.get(Agent.ID.make(id))),
+            default: (id) => draft.default(id === undefined ? undefined : Agent.ID.make(id)),
+            update: (id, update) => draft.update(Agent.ID.make(id), update),
+            remove: (id) => draft.remove(Agent.ID.make(id)),
+          })
+        }),
     },
     aisdk: {
-      sdk: (callback) =>
-        aisdk.hook.sdk((event) => {
+      hook: (name, callback) => {
+        if (name === "sdk") {
+          return aisdk.hook.sdk((event) => {
+            const output = {
+              model: mutable(event.model),
+              package: event.package,
+              options: event.options,
+              sdk: event.sdk,
+            }
+            return Reflect.apply(callback, undefined, [output]).pipe(
+              Effect.tap(() => Effect.sync(() => (event.sdk = output.sdk))),
+            )
+          })
+        }
+        return aisdk.hook.language((event) => {
           const output = {
             model: mutable(event.model),
-            package: event.package,
             options: event.options,
             sdk: event.sdk,
-          }
-          const result = callback(output)
-          return Effect.suspend(() => (Effect.isEffect(result) ? result : Effect.void)).pipe(
-            Effect.tap(() => Effect.sync(() => (event.sdk = output.sdk))),
-          )
-        }),
-      language: (callback) =>
-        aisdk.hook.language((event) => {
-          const output = {
-            model: mutable(event.model),
-            sdk: event.sdk,
-            options: event.options,
             language: event.language,
           }
-          const result = callback(output)
-          return Effect.suspend(() => (Effect.isEffect(result) ? result : Effect.void)).pipe(
+          return Reflect.apply(callback, undefined, [output]).pipe(
             Effect.tap(() => Effect.sync(() => (event.language = output.language))),
           )
-        }),
+        })
+      },
     },
     catalog: {
+      provider: {
+        list: () => response(catalog.provider.available()),
+        get: (input) =>
+          catalog.provider
+            .get(Provider.ID.make(input.providerID))
+            .pipe(
+              Effect.flatMap((provider) =>
+                provider === undefined
+                  ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
+                  : response(Effect.succeed(provider)),
+              ),
+            ),
+      },
+      model: {
+        list: () => response(catalog.model.available()),
+        default: () => response(catalog.model.default()),
+      },
       reload: catalog.reload,
       transform: (callback) =>
-        catalog.transform((draft) =>
+        catalog.transform((draft) => {
           callback({
             provider: {
               list: () => mutable(draft.provider.list()),
-              get: (id) => mutable(draft.provider.get(ProviderV2.ID.make(id))),
-              update: (id, update) => draft.provider.update(ProviderV2.ID.make(id), update),
-              remove: (id) => draft.provider.remove(ProviderV2.ID.make(id)),
+              get: (id) => mutable(draft.provider.get(Provider.ID.make(id))),
+              update: (id, update) => draft.provider.update(Provider.ID.make(id), update),
+              remove: (id) => draft.provider.remove(Provider.ID.make(id)),
             },
             model: {
               get: (providerID, modelID) =>
-                mutable(draft.model.get(ProviderV2.ID.make(providerID), ModelV2.ID.make(modelID))),
+                mutable(draft.model.get(Provider.ID.make(providerID), Model.ID.make(modelID))),
               update: (providerID, modelID, update) =>
-                draft.model.update(ProviderV2.ID.make(providerID), ModelV2.ID.make(modelID), update),
-              remove: (providerID, modelID) =>
-                draft.model.remove(ProviderV2.ID.make(providerID), ModelV2.ID.make(modelID)),
+                draft.model.update(Provider.ID.make(providerID), Model.ID.make(modelID), update),
+              remove: (providerID, modelID) => draft.model.remove(Provider.ID.make(providerID), Model.ID.make(modelID)),
               default: {
                 get: draft.model.default.get,
                 set: (providerID, modelID) =>
-                  draft.model.default.set(ProviderV2.ID.make(providerID), ModelV2.ID.make(modelID)),
+                  draft.model.default.set(Provider.ID.make(providerID), Model.ID.make(modelID)),
               },
             },
-          }),
-        ),
+          })
+        }),
     },
     command: {
+      list: () => response(commands.list()),
       reload: commands.reload,
-      transform: commands.transform,
+      transform: (callback) =>
+        commands.transform((draft) => {
+          callback(draft)
+        }),
+    },
+    event: {
+      subscribe: () => bus.subscribe().pipe(Stream.filter(EventManifest.isServer)),
     },
     integration: {
+      list: () => response(integration.list()),
+      get: (input) => response(integration.get(Integration.ID.make(input.integrationID))),
+      connect: {
+        key: (input) =>
+          integration.connection.key({
+            integrationID: Integration.ID.make(input.integrationID),
+            key: input.key,
+            answer: input.answer,
+            label: input.label,
+          }),
+      },
+      oauth: {
+        connect: (input) =>
+          response(
+            integration.oauth.connect({
+              integrationID: Integration.ID.make(input.integrationID),
+              methodID: Integration.MethodID.make(input.methodID),
+              answer: input.answer,
+              label: input.label,
+            }),
+          ),
+        status: (input) =>
+          response(
+            integration.oauth.status({
+              integrationID: Integration.ID.make(input.integrationID),
+              attemptID: Integration.AttemptID.make(input.attemptID),
+            }),
+          ),
+        complete: (input) =>
+          integration.oauth.complete({
+            integrationID: Integration.ID.make(input.integrationID),
+            attemptID: Integration.AttemptID.make(input.attemptID),
+            code: input.code,
+          }),
+        cancel: (input) =>
+          integration.oauth.cancel({
+            integrationID: Integration.ID.make(input.integrationID),
+            attemptID: Integration.AttemptID.make(input.attemptID),
+          }),
+      },
+      command: {
+        connect: (input) =>
+          response(
+            integration.command.connect({
+              integrationID: Integration.ID.make(input.integrationID),
+              methodID: Integration.MethodID.make(input.methodID),
+              label: input.label,
+            }),
+          ),
+        status: (input) =>
+          response(
+            integration.command.status({
+              integrationID: Integration.ID.make(input.integrationID),
+              attemptID: Integration.AttemptID.make(input.attemptID),
+            }),
+          ),
+        cancel: (input) =>
+          integration.command.cancel({
+            integrationID: Integration.ID.make(input.integrationID),
+            attemptID: Integration.AttemptID.make(input.attemptID),
+          }),
+      },
       reload: integration.reload,
       connection: {
         active: (id) => integration.connection.active(Integration.ID.make(id)),
@@ -110,110 +257,196 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
           ),
       },
       transform: (callback) =>
-        integration.transform((draft) =>
+        integration.transform((draft) => {
           callback({
             list: () => mutable(draft.list()),
             get: (id) => mutable(draft.get(Integration.ID.make(id))),
             update: (id, update) => draft.update(Integration.ID.make(id), update),
             remove: (id) => draft.remove(Integration.ID.make(id)),
             method: {
-              list: (id) => mutable(draft.method.list(Integration.ID.make(id))),
-              update: (input) => {
-                if ("authorize" in input) {
-                  const methodID = Integration.MethodID.make(input.method.id)
-                  const refresh = input.refresh
-                  draft.method.update({
-                    integrationID: Integration.ID.make(input.integrationID),
-                    method: { ...input.method, id: methodID },
-                    authorize: (inputs) =>
-                      input.authorize(inputs).pipe(
-                        Effect.map((authorization) => {
-                          if (authorization.mode === "auto") {
-                            return {
-                              ...authorization,
-                              callback: authorization.callback.pipe(
-                                Effect.map((credential) =>
-                                  Credential.OAuth.make({
-                                    ...credential,
-                                    methodID: Integration.MethodID.make(credential.methodID),
-                                  }),
-                                ),
-                              ),
-                            }
-                          }
-                          return {
-                            ...authorization,
-                            callback: (code: string) =>
-                              authorization.callback(code).pipe(
-                                Effect.map((credential) =>
-                                  Credential.OAuth.make({
-                                    ...credential,
-                                    methodID: Integration.MethodID.make(credential.methodID),
-                                  }),
-                                ),
-                              ),
-                          }
-                        }),
-                      ),
-                    ...(refresh
-                      ? {
-                          refresh: (value: Credential.OAuth) =>
-                            refresh(value).pipe(
-                              Effect.map((next) =>
-                                Credential.OAuth.make({
-                                  ...next,
-                                  methodID: Integration.MethodID.make(next.methodID),
-                                }),
-                              ),
-                            ),
-                        }
-                      : {}),
-                    ...(input.label ? { label: input.label } : {}),
-                  })
-                  return
-                }
-                if (input.method.type === "env") {
-                  draft.method.update({
-                    integrationID: Integration.ID.make(input.integrationID),
-                    method: { type: "env", names: input.method.names },
-                  })
-                  return
-                }
-                draft.method.update({
-                  integrationID: Integration.ID.make(input.integrationID),
-                  method: { type: "key", label: input.method.label },
-                })
-              },
+              list: (id) => draft.method.list(Integration.ID.make(id)),
+              update: (input) => draft.method.update(methodImplementation(input)),
               remove: (id, method) =>
                 draft.method.remove(Integration.ID.make(id), Schema.decodeUnknownSync(Integration.Method)(method)),
             },
-          }),
-        ),
+          })
+        }),
+    },
+    mcp: {
+      list: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.mcp.list(ref)
+        return response(mcp.servers())
+      },
+      add: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.mcp.add(ref, input.server, input.config)
+        return mcp.add(input.server, input.config)
+      },
+      remove: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.mcp.remove(ref, input.server)
+        return mcp.remove(input.server)
+      },
+      connect: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.mcp.connect(ref, input.server)
+        return mcp.connect(input.server)
+      },
+      disconnect: (input) => {
+        const ref = locationRef(input)
+        if (ref && !isCurrentLocation(ref)) return runtime.location.mcp.disconnect(ref, input.server)
+        return mcp.disconnect(input.server)
+      },
+      reload: mcp.reload,
+      transform: (callback) =>
+        mcp.transform((draft) => {
+          callback({
+            list: () => draft.list().map(([name, config]) => [name, mutable(config)]),
+            get: (name) => mutable(draft.get(name)),
+            set: (name, config) => draft.set(name, Schema.decodeUnknownSync(Mcp.ServerConfig)(config)),
+            update: draft.update,
+            remove: draft.remove,
+          })
+        }),
     },
     plugin: {
-      add: (input) => plugin.add(PluginV2.ID.make(input.id), input.effect),
-      remove: (id) => plugin.remove(PluginV2.ID.make(id)),
+      list: () => response(plugin.list()),
     },
     reference: {
+      list: () => response(reference.list()),
       reload: reference.reload,
       transform: (callback) =>
-        reference.transform((draft) =>
+        reference.transform((draft) => {
           callback({
             add: (name, source) => draft.add(name, Schema.decodeUnknownSync(Reference.Source)(source)),
             remove: draft.remove,
             list: draft.list,
-          }),
-        ),
+          })
+        }),
     },
     skill: {
+      list: () => response(skill.list()),
       reload: skill.reload,
       transform: (callback) =>
-        skill.transform((draft) =>
+        skill.transform((draft) => {
           callback({
-            source: (source) => draft.source(Schema.decodeUnknownSync(SkillV2.Source)(source)),
-            list: draft.list,
+            list: () => mutable(draft.list()),
+            add: (value) => draft.add(Schema.decodeUnknownSync(Skill.Info)(value)),
+            update: draft.update,
+            remove: draft.remove,
+          })
+        }),
+    },
+    shell: {
+      hook: (name, callback) => hooks.register("shell", name, callback),
+    },
+    tool: {
+      transform: (callback) =>
+        tools
+          .transform((draft) =>
+            callback({
+              add: (tool) => draft.add(tool),
+            }),
+          )
+          .pipe(Effect.orDie, Effect.as({ dispose: Effect.void })),
+      hook: (name, callback) => hooks.register("tool", name, callback),
+    },
+    websearch: {
+      providers: () => response(websearch.providers()),
+      query: (input) =>
+        response(
+          websearch.query({
+            query: input.query,
+            providerID: input.providerID === undefined ? undefined : WebSearch.ID.make(input.providerID),
           }),
         ),
+      reload: websearch.reload,
+      transform: (callback) =>
+        websearch.transform((draft) => {
+          callback({
+            add: (definition) =>
+              draft.add({
+                id: WebSearch.ID.make(definition.id),
+                name: definition.name,
+                execute: definition.execute,
+              }),
+            default: {
+              get: draft.default.get,
+              set: (selection) =>
+                draft.default.set(
+                  selection === false || selection === "random" ? selection : WebSearch.ID.make(selection),
+                ),
+            },
+          })
+        }),
     },
-  } satisfies Interface
+    session: {
+      hook: (name, callback) => hooks.register("session", name, callback),
+      create: (input) =>
+        runtime.session.create({
+          id: input?.id,
+          title: input?.title,
+          agent: input?.agent,
+          model: input?.model,
+          location:
+            input?.location ?? Location.Ref.make({ directory: location.directory, workspaceID: location.workspaceID }),
+        }),
+      get: (input) => runtime.session.get(input.sessionID),
+      prompt: runtime.session.prompt,
+      generate: (input) => runtime.session.generate(input).pipe(Effect.map((text) => ({ text }))),
+      command: runtime.session.command,
+      rename: runtime.session.rename,
+      synthetic: runtime.session.synthetic,
+      interrupt: (input) => runtime.session.interrupt(input.sessionID),
+      wait: (input) => runtime.session.wait(input.sessionID),
+    },
+  } satisfies Plugin.Context
 })
+
+function methodImplementation(input: IntegrationMethodRegistration): Integration.Implementation {
+  if ("authorize" in input) {
+    const refresh = input.refresh
+    return {
+      integrationID: Integration.ID.make(input.integrationID),
+      method: { ...input.method, id: Integration.MethodID.make(input.method.id) },
+      authorize: (answer) =>
+        input.authorize(answer).pipe(
+          Effect.map((authorization) => {
+            if (authorization.mode === "auto") {
+              return {
+                ...authorization,
+                callback: authorization.callback.pipe(Effect.map(credential)),
+              }
+            }
+            return {
+              ...authorization,
+              callback: (code: string) => authorization.callback(code).pipe(Effect.map(credential)),
+            }
+          }),
+        ),
+      ...(refresh ? { refresh: (value: Credential.OAuth) => refresh(value).pipe(Effect.map(credential)) } : {}),
+      ...(input.label ? { label: input.label } : {}),
+    }
+  }
+  if (input.method.type === "env") {
+    return {
+      integrationID: Integration.ID.make(input.integrationID),
+      method: input.method,
+    }
+  }
+  if (input.method.type === "command") {
+    return {
+      integrationID: Integration.ID.make(input.integrationID),
+      method: { ...input.method, id: Integration.MethodID.make(input.method.id) },
+    }
+  }
+  return {
+    integrationID: Integration.ID.make(input.integrationID),
+    method: input.method,
+  }
+}
+
+function credential(value: CredentialOAuth) {
+  return Credential.OAuth.make({ ...value, methodID: Integration.MethodID.make(value.methodID) })
+}

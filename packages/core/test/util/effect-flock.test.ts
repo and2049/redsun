@@ -5,11 +5,10 @@ import path from "path"
 import os from "os"
 import { Cause, Effect, Exit } from "effect"
 import { testEffect } from "../lib/effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
-import { Global } from "@opencode-ai/core/global"
-import { Hash } from "@opencode-ai/core/util/hash"
+import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { EffectFlock } from "@opencode-ai/util/effect-flock"
+import { Global } from "@opencode-ai/util/global"
+import { Hash } from "@opencode-ai/util/hash"
 
 function lock(dir: string, key: string) {
   return path.join(dir, Hash.fast(key) + ".lock")
@@ -110,7 +109,7 @@ const testGlobal = Global.layerWith({
   log: os.tmpdir(),
 })
 
-const testLayer = AppNodeBuilder.build(EffectFlock.node, [[Global.node, testGlobal]])
+const testLayer = LayerNode.compile(EffectFlock.node, [[Global.node, testGlobal]])
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -130,6 +129,29 @@ describe("util.effect-flock", () => {
       yield* Effect.scoped(flock.acquire("eflock:acquire", dir))
 
       expect(yield* Effect.promise(() => exists(lockDir))).toBe(false)
+      yield* Effect.promise(() => fs.rm(tmp, { recursive: true, force: true }))
+    }),
+  )
+
+  it.live(
+    "supports an acquisition timeout",
+    Effect.gen(function* () {
+      const flock = yield* EffectFlock.Service
+      const tmp = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "eflock-test-")))
+      const dir = path.join(tmp, "locks")
+      const key = "eflock:timeout"
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* flock.acquire(key, dir)
+          const started = performance.now()
+          const error = yield* Effect.scoped(flock.acquire(key, dir, { staleMs: 10_000, timeoutMs: 300 })).pipe(
+            Effect.flip,
+          )
+          expect(error._tag).toBe("LockTimeoutError")
+          expect(performance.now() - started).toBeLessThan(1_000)
+        }),
+      )
       yield* Effect.promise(() => fs.rm(tmp, { recursive: true, force: true }))
     }),
   )

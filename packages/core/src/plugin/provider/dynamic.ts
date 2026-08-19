@@ -1,13 +1,15 @@
 import { Effect } from "effect"
 import { pathToFileURL } from "url"
-import { define } from "../internal"
-import { Npm } from "../../npm"
+import { define } from "@opencode-ai/plugin/effect/plugin"
+import { Npm } from "@opencode-ai/util/npm"
+import { importModule } from "@opencode-ai/util/runtime-import"
 
 export const DynamicProviderPlugin = define({
-  id: "dynamic-provider",
+  id: "opencode.provider.dynamic",
   effect: Effect.fn(function* (ctx) {
     const npm = yield* Npm.Service
-    yield* ctx.aisdk.sdk(
+    yield* ctx.aisdk.hook(
+      "sdk",
       Effect.fn(function* (evt) {
         if (evt.sdk) return
 
@@ -16,11 +18,9 @@ export const DynamicProviderPlugin = define({
           : (yield* npm.add(evt.package).pipe(Effect.orDie)).entrypoint
         if (!installedPath) throw new Error(`Package ${evt.package} has no import entrypoint`)
 
-        const mod = yield* Effect.promise(async () => {
-          return (await import(
-            installedPath.startsWith("file://") ? installedPath : pathToFileURL(installedPath).href
-          )) as Record<string, (options: any) => any>
-        }).pipe(Effect.orDie)
+        const mod = (yield* Effect.promise(() =>
+          importModule(installedPath.startsWith("file://") ? installedPath : pathToFileURL(installedPath).href),
+        ).pipe(Effect.orDie)) as Record<string, (options: any) => any>
         const match = Object.keys(mod).find((name) => name.startsWith("create"))
         if (!match) throw new Error(`Package ${evt.package} has no provider factory export`)
 

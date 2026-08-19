@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-BUMP_TYPE=${1:-patch}
+# REDSUN: releases are tag-triggered -- pushing `v0.3.1` runs the workflow. This
+# is the manual re-run for a tag that already exists. Upstream's version ran the
+# workflow against the `v2` branch, which is not a branch this fork has.
 
-gh workflow run publish.yml -f bump="$BUMP_TYPE"
+tag=${1:-}
+if [ -z "$tag" ]; then
+  echo "usage: script/release <tag>   e.g. script/release v0.3.1" >&2
+  exit 1
+fi
+
+gh workflow run publish.yml --field tag="$tag"

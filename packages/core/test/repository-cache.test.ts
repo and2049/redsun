@@ -4,8 +4,8 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Global } from "@opencode-ai/core/global"
+import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { Global } from "@opencode-ai/util/global"
 import { Repository } from "@opencode-ai/core/repository"
 import { RepositoryCache } from "@opencode-ai/core/repository-cache"
 import { branch, git, gitRemote } from "./fixture/git"
@@ -101,13 +101,10 @@ describe("RepositoryCache", () => {
     ),
   )
 
-  it.live("returns typed validation and clone failures", () =>
+  it.live("returns typed branch validation and clone failures", () =>
     withRemote((fixture) =>
       Effect.gen(function* () {
         const cache = yield* RepositoryCache.Service
-        const invalidRepository = yield* Effect.flip(RepositoryCache.parseRemote("not-a-repo"))
-        expect(invalidRepository).toBeInstanceOf(RepositoryCache.InvalidRepositoryError)
-
         const invalidBranch = yield* Effect.flip(cache.ensure({ reference: fixture.reference, branch: "../unsafe" }))
         expect(invalidBranch).toBeInstanceOf(RepositoryCache.InvalidBranchError)
 

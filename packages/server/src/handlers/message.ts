@@ -1,5 +1,5 @@
 import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionV2 } from "@opencode-ai/core/session"
+import { Session } from "@opencode-ai/core/session"
 import { Effect, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -16,7 +16,7 @@ const Cursor = Schema.Struct({
 const decodeCursor = Schema.decodeUnknownSync(Cursor)
 
 const cursor = {
-  encode(message: SessionMessage.Message, order: "asc" | "desc", direction: "previous" | "next") {
+  encode(message: SessionMessage.Info, order: "asc" | "desc", direction: "previous" | "next") {
     return Buffer.from(JSON.stringify({ id: message.id, order, direction })).toString("base64url")
   },
   decode(input: string) {
@@ -26,7 +26,7 @@ const cursor = {
 
 export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handlers) =>
   Effect.gen(function* () {
-    const session = yield* SessionV2.Service
+    const session = yield* Session.Service
 
     return handlers.handle(
       "session.messages",

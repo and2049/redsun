@@ -4,11 +4,10 @@ import { abbreviateHome } from "../src/runtime"
 import { TuiPathsProvider, useTuiPaths } from "../src/context/runtime"
 
 test("abbreviates paths within home boundaries", () => {
-  const stable = (value: string) => value.replaceAll("\\", "/")
-  expect(stable(abbreviateHome("/home/test", "/home/test"))).toBe("~")
-  expect(stable(abbreviateHome("/home/test/project", "/home/test"))).toBe("~/project")
-  expect(stable(abbreviateHome("/home/tester/project", "/home/test"))).toBe("/home/tester/project")
-  expect(stable(abbreviateHome("/tmp/project", "/home/test"))).toBe("/tmp/project")
+  expect(abbreviateHome("/home/test", "/home/test")).toBe("~")
+  expect(abbreviateHome("/home/test/project", "/home/test")).toBe("~/project")
+  expect(abbreviateHome("/home/tester/project", "/home/test")).toBe("/home/tester/project")
+  expect(abbreviateHome("/tmp/project", "/home/test")).toBe("/tmp/project")
 })
 
 test("provides focused immutable runtime inputs", async () => {
