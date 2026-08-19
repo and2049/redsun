@@ -1,127 +1,128 @@
-export * as PluginV2 from "./plugin"
+export * as Plugin from "./plugin.js"
+export { Event, ID, Info } from "@opencode-ai/schema/plugin"
 
-import { makeLocationNode } from "./effect/app-node"
-import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
-import type { Plugin as PluginRuntime } from "@opencode-ai/plugin/v2/effect"
 import { Plugin } from "@opencode-ai/schema/plugin"
-import { AgentV2 } from "./agent"
-import { AISDK } from "./aisdk"
-import { Catalog } from "./catalog"
-import { CommandV2 } from "./command"
-import { EventV2 } from "./event"
-import { Integration } from "./integration"
-import { KeyedMutex } from "./effect/keyed-mutex"
-import { PluginHost } from "./plugin/host"
-import { Reference } from "./reference"
-import { SkillV2 } from "./skill"
-import { State } from "./state"
-
-export const ID = Plugin.ID
-export type ID = typeof ID.Type
-export const Event = Plugin.Event
+import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { App } from "./app.js"
+import { Context, Effect, Exit, Layer, Logger, References, Scope, Semaphore } from "effect"
+import { Agent } from "./agent.js"
+import { AISDK } from "./aisdk.js"
+import { Catalog } from "./catalog.js"
+import { Command } from "./command.js"
+import { Bus } from "./bus.js"
+import { Integration } from "./integration.js"
+import { MCP } from "./mcp/index.js"
+import { Location } from "./location.js"
+import { PluginHost } from "./plugin/host.js"
+import { PluginRuntime } from "./plugin/runtime.js"
+import { WebSearch } from "./websearch.js"
+import { Reference } from "./reference.js"
+import { Skill } from "./skill.js"
+import { State } from "./state.js"
+import { Tool } from "./tool.js"
+import { PluginHooks } from "./plugin/hooks.js"
 
 export interface Interface {
-  readonly add: (id: ID, effect: PluginRuntime["effect"]) => Effect.Effect<void>
-  readonly remove: (id: ID) => Effect.Effect<void>
-  readonly wait: (id: ID) => Effect.Effect<void>
+  readonly activate: (plugins: readonly Versioned[]) => Effect.Effect<void>
+  readonly list: () => Effect.Effect<Plugin.Info[]>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/Plugin") {}
+export type Versioned = import("@opencode-ai/plugin/effect/plugin").Plugin & { readonly version: string }
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/Plugin") {}
 
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2.Service
-    const locks = KeyedMutex.makeUnsafe<ID>()
+    const bus = yield* Bus.Service
     const scope = yield* Scope.make()
-    const active = new Map<ID, Scope.Closeable>()
-    const loading = new Set<ID>()
-    const waiters = new Map<ID, Set<Deferred.Deferred<void>>>()
-    const failures = new Map<ID, Exit.Exit<void, never>>()
-    let host: Parameters<PluginRuntime["effect"]>[0]
+    const active = new Map<Plugin.ID, { readonly plugin: Versioned; readonly scope: Scope.Closeable }>()
+    const lock = Semaphore.makeUnsafe(1)
+    let host: Parameters<import("@opencode-ai/plugin/effect/plugin").Plugin["effect"]>[0]
 
-    const add = Effect.fn("Plugin.add")(function* (id: ID, effect: PluginRuntime["effect"]) {
-      if (loading.has(id)) return yield* Effect.die(`Plugin load cycle detected for ${id}`)
+    const load = Effect.fnUntraced(function* (plugin: Versioned) {
+      const child = yield* Scope.fork(scope)
+      const inherit = yield* State.inherit()
+      const loaded = yield* Effect.suspend(() => plugin.effect(host)).pipe(
+        inherit,
+        Effect.updateContext((context: Context.Context<never>) =>
+          Context.make(Scope.Scope, child).pipe(
+            Context.add(Logger.CurrentLoggers, Context.get(context, Logger.CurrentLoggers)),
+            Context.add(References.MinimumLogLevel, Context.get(context, References.MinimumLogLevel)),
+          ),
+        ),
+        Effect.withSpan("Plugin.load", { attributes: { "plugin.id": plugin.id } }),
+        Effect.andThen(bus.publish(Plugin.Event.Added, { id: Plugin.ID.make(plugin.id) })),
+        Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(child, exit) : Effect.void)),
+        Effect.exit,
+      )
+      if (Exit.isSuccess(loaded)) return child
+      yield* Effect.logWarning("failed to load plugin", {
+        "plugin.id": plugin.id,
+        cause: loaded.cause,
+      })
+      return undefined
+    })
 
-      yield* locks.withLock(id)(
-        Effect.sync(() => {
-          loading.add(id)
-          failures.delete(id)
-        }).pipe(
-          Effect.andThen(
-            State.batch(
-              Effect.gen(function* () {
-                const existing = active.get(id)
-                active.delete(id)
-                if (existing) yield* Scope.close(existing, Exit.void).pipe(Effect.ignore)
+    const activate = Effect.fn("Plugin.activate")(function* (plugins: readonly Versioned[]) {
+      const definitions = plugins.map((plugin) => ({ ...plugin, id: Plugin.ID.make(plugin.id) }))
+      const ids = new Set<Plugin.ID>()
+      for (const definition of definitions) {
+        if (ids.has(definition.id)) yield* Effect.die(new Error(`Duplicate plugin ID: ${definition.id}`))
+        ids.add(definition.id)
+      }
 
-                const child = yield* Scope.fork(scope)
-                yield* effect(host).pipe(
-                  Scope.provide(child),
-                  Effect.withSpan("Plugin.load", { attributes: { "plugin.id": id } }),
-                  Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(child, exit) : Effect.void)),
-                )
-                yield* events.publish(Event.Added, { id })
-                active.set(id, child)
-                yield* Effect.forEach(waiters.get(id) ?? [], (waiter) => Deferred.succeed(waiter, undefined), {
-                  discard: true,
+      yield* lock.withPermit(
+        Effect.gen(function* () {
+          const next = definitions.map((definition) => ({ id: definition.id, version: definition.version }))
+          const current = Array.from(active.values(), (entry) => ({
+            id: entry.plugin.id,
+            version: entry.plugin.version,
+          }))
+          if (
+            current.length === next.length &&
+            current.every((definition, index) => {
+              const candidate = next[index]
+              return definition.id === candidate?.id && definition.version === candidate.version
+            })
+          )
+            return
+
+          yield* State.batch(
+            Effect.gen(function* () {
+              for (const definition of definitions) {
+                const previous = active.get(definition.id)
+                active.delete(definition.id)
+                if (previous) yield* Scope.close(previous.scope, Exit.void).pipe(Effect.ignore)
+
+                const loaded = yield* load(definition)
+                if (loaded) {
+                  active.set(definition.id, { plugin: definition, scope: loaded })
+                  continue
+                }
+
+                if (!previous) continue
+                const restored = yield* load(previous.plugin)
+                if (restored) {
+                  active.set(definition.id, { plugin: previous.plugin, scope: restored })
+                  continue
+                }
+                yield* Effect.logError("failed to restore plugin; deactivating", {
+                  "plugin.id": definition.id,
                 })
-                waiters.delete(id)
-              }),
-            ),
-          ),
-          Effect.onExit((exit) => {
-            if (Exit.isSuccess(exit)) return Effect.void
-            failures.set(id, exit)
-            return Effect.forEach(waiters.get(id) ?? [], (waiter) => Deferred.done(waiter, exit), {
-              discard: true,
-            }).pipe(Effect.ensuring(Effect.sync(() => waiters.delete(id))))
-          }),
-          Effect.ensuring(Effect.sync(() => loading.delete(id))),
-        ),
-      )
-    })
+              }
 
-    const remove = Effect.fn("Plugin.remove")(function* (id: ID) {
-      if (loading.has(id)) return yield* Effect.die(`Cannot remove plugin ${id} while it is loading`)
-
-      yield* locks.withLock(id)(
-        State.batch(
-          Effect.gen(function* () {
-            const current = active.get(id)
-            active.delete(id)
-            failures.delete(id)
-            if (current) yield* Scope.close(current, Exit.void).pipe(Effect.ignore)
-          }),
-        ),
-      )
-    })
-
-    const wait = Effect.fn("Plugin.wait")(function* (id: ID) {
-      const waiter = yield* Deferred.make<void>()
-      const pending = yield* locks.withLock(id)(
-        Effect.sync(() => {
-          if (active.has(id)) return false
-          const failure = failures.get(id)
-          if (failure) return failure
-          const current = waiters.get(id) ?? new Set()
-          current.add(waiter)
-          waiters.set(id, current)
-          return true
-        }),
-      )
-      if (!pending) return
-      if (typeof pending !== "boolean") return yield* pending
-      yield* Deferred.await(waiter).pipe(
-        Effect.ensuring(
-          locks.withLock(id)(
-            Effect.sync(() => {
-              const current = waiters.get(id)
-              current?.delete(waiter)
-              if (current?.size === 0) waiters.delete(id)
+              const removed = Array.from(active.entries())
+                .filter(([id]) => !ids.has(id))
+                .toReversed()
+              removed.forEach(([id]) => active.delete(id))
+              yield* Effect.forEach(removed, ([, entry]) => Scope.close(entry.scope, Exit.void).pipe(Effect.ignore), {
+                discard: true,
+              })
             }),
-          ),
-        ),
+          )
+          yield* bus.publish(Plugin.Event.Updated, {})
+        }),
       )
     })
 
@@ -133,35 +134,34 @@ const layer = Layer.effect(
     )
 
     const service = Service.of({
-      add,
-      remove,
-      wait,
+      activate,
+      list: Effect.fn("Plugin.list")(function* () {
+        return Array.from(active.keys()).map((id) => ({ id }))
+      }),
     })
     host = yield* PluginHost.make(service)
     return service
   }),
 )
 
-export const locationLayer = layer.pipe(
-  Layer.provideMerge(AgentV2.locationLayer),
-  Layer.provideMerge(AISDK.locationLayer),
-  Layer.provideMerge(Catalog.locationLayer),
-  Layer.provideMerge(CommandV2.locationLayer),
-  Layer.provideMerge(Integration.locationLayer),
-  Layer.provideMerge(Reference.locationLayer),
-)
-
 export const node = makeLocationNode({
   service: Service,
   layer,
   deps: [
-    EventV2.node,
-    AgentV2.node,
+    Bus.node,
+    App.node,
+    Agent.node,
     AISDK.node,
     Catalog.node,
-    CommandV2.node,
+    Command.node,
     Integration.node,
+    MCP.node,
+    Location.node,
     Reference.node,
-    SkillV2.node,
+    Skill.node,
+    Tool.node,
+    PluginHooks.node,
+    PluginRuntime.node,
+    WebSearch.node,
   ],
 })

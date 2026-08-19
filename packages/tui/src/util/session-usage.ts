@@ -1,10 +1,7 @@
-import type { AssistantMessage, Message, Provider } from "@opencode-ai/sdk/v2"
+import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode-ai/client/promise"
 import { Locale } from "./locale"
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
 
 export type SessionUsage = {
   context: string
@@ -14,55 +11,54 @@ export type SessionUsage = {
 }
 
 export function sessionUsage(input: {
-  messages: Message[]
-  providers: Provider[]
+  messages: readonly SessionMessageInfo[]
+  contextLimit?: (model: { providerID: string; id: string }) => number | undefined
   cost: number
 }): SessionUsage | undefined {
   const last = input.messages.findLast(
-    (item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0,
+    (item): item is SessionMessageAssistant => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
   )
-  if (!last) return undefined
+  if (!last?.tokens) return undefined
 
   const tokens =
     last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
   if (tokens <= 0) return undefined
 
-  const model = input.providers.find((item) => item.id === last.providerID)?.models[last.modelID]
-  const percent = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
+  const limit = input.contextLimit?.(last.model)
+  const percent = limit ? `${Math.round((tokens / limit) * 100)}%` : undefined
 
   let cumulativeInput = 0
-  let cumulativeCacheRead = 0
-  let cumulativeCacheWrite = 0
+  let cumulativeRead = 0
+  let cumulativeWrite = 0
   for (const item of input.messages) {
-    if (item.role !== "assistant" || item.tokens.output === 0) continue
+    if (item.type !== "assistant" || !item.tokens || item.tokens.output === 0) continue
     cumulativeInput += item.tokens.input
-    cumulativeCacheRead += item.tokens.cache.read
-    cumulativeCacheWrite += item.tokens.cache.write
+    cumulativeRead += item.tokens.cache.read
+    cumulativeWrite += item.tokens.cache.write
   }
-  const cacheDenominator = cumulativeInput + cumulativeCacheRead + cumulativeCacheWrite
-  const cacheHitRatio =
-    cumulativeCacheRead + cumulativeCacheWrite > 0 && cacheDenominator > 0
-      ? Math.round((cumulativeCacheRead / cacheDenominator) * 100)
+  const denominator = cumulativeInput + cumulativeRead + cumulativeWrite
+  const ratio =
+    cumulativeRead + cumulativeWrite > 0 && denominator > 0
+      ? Math.round((cumulativeRead / denominator) * 100)
       : undefined
 
   return {
     context: percent ? `${Locale.number(tokens)} (${percent})` : Locale.number(tokens),
     percent,
-    cache: cacheHitRatio === undefined ? undefined : `cache ${cacheHitRatio}%`,
+    cache: ratio === undefined ? undefined : `cache ${ratio}%`,
     cost: input.cost > 0 ? money.format(input.cost) : undefined,
   }
 }
 
 export function fitSessionUsage(usage: SessionUsage, width: number) {
-  const compactContext = usage.percent ?? usage.context
-  const candidates = [
+  const compact = usage.percent ?? usage.context
+  return [
     [usage.context, usage.cache, usage.cost],
-    [compactContext, usage.cache, usage.cost],
-    [compactContext, usage.cache],
-    [compactContext],
+    [compact, usage.cache, usage.cost],
+    [compact, usage.cache],
+    [compact],
   ]
     .map((parts) => parts.filter((part): part is string => Boolean(part)).join(" · "))
     .filter((value, index, values) => value && values.indexOf(value) === index)
-
-  return candidates.find((value) => value.length <= width)
+    .find((value) => value.length <= width)
 }

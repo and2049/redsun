@@ -1,91 +1,93 @@
 import { useDialog } from "../ui/dialog"
 import { useLocal } from "../context/local"
-import { useSync } from "../context/sync"
-import { useToast } from "../ui/toast"
+import { useClient } from "../context/client"
+import type { FormWithLocation } from "../context/data"
 import { DialogModel } from "./dialog-model"
-import type { Provider } from "@opencode-ai/sdk/v2"
-import * as Model from "../util/model"
 import { DialogVariant } from "./dialog-variant"
+import { formRequestOptions, isFormAnswerField } from "../util/form"
 
-export function needsWorkerModel(agent: string, route: string | undefined) {
-  return agent === "compose" && !route
+export const WORKER_MODEL_KEY = "redsun.worker-model"
+
+export function isWorkerModelForm(form: FormWithLocation) {
+  return form.metadata?.["kind"] === "worker-model"
 }
 
-export function workerModelDisplay(route: string | undefined, providers: Provider[]) {
-  if (!route) return
-  const { providerID, modelID } = Model.parse(route)
-  const provider = providers.find((item) => item.id === providerID)
-  return {
-    model: provider?.models[modelID]?.name ?? modelID,
-    provider: provider?.name ?? providerID,
-  }
+export function workerModelRef(model: { providerID: string; modelID: string; variant?: string }) {
+  return `${model.providerID}/${model.modelID}${model.variant ? `#${model.variant}` : ""}`
 }
 
-export function workerModelVariants(route: string | undefined, providers: Provider[]) {
-  if (!route) return []
-  const { providerID, modelID } = Model.parse(route)
-  return Object.keys(providers.find((item) => item.id === providerID)?.models[modelID]?.variants ?? {})
-}
-
-export function workerVariantDisplay(route: string | undefined, variant: string | undefined, providers: Provider[]) {
-  if (!variant || variant === "default") return undefined
-  return workerModelVariants(route, providers).includes(variant) ? variant : undefined
+export function parseWorkerModelRef(value: string) {
+  const slash = value.indexOf("/")
+  if (slash <= 0) return undefined
+  const providerID = value.slice(0, slash)
+  const rest = value.slice(slash + 1)
+  const hash = rest.lastIndexOf("#")
+  const modelID = hash > 0 ? rest.slice(0, hash) : rest
+  const variant = hash > 0 ? rest.slice(hash + 1) : undefined
+  if (modelID.length === 0) return undefined
+  return { providerID, modelID, ...(variant ? { variant } : {}) }
 }
 
 export function useWorkerVariantDialog() {
   const dialog = useDialog()
   const local = useLocal()
-  const sync = useSync()
-  const toast = useToast()
 
-  return (route?: string) => {
-    const resolved = local.model.worker.current()
-    const effective = route ?? (resolved ? `${resolved.providerID}/${resolved.modelID}` : undefined)
-    const variants = workerModelVariants(effective, sync.data.provider)
-    if (!effective) {
-      toast.show({ message: "Select a worker model first", variant: "warning" })
-      return
-    }
-    if (!variants.length) {
-      toast.show({ message: "This worker model has no variants", variant: "warning" })
-      return
-    }
+  return () => {
+    const current = local.model.worker.current()
+    const variants = local.model.worker.variants()
+    if (!current || variants.length === 0) return false
     dialog.replace(() => (
       <DialogVariant
         title="Select worker model variant"
         variants={variants}
-        selected={resolved?.variant ?? "default"}
-        onSelect={(variant) => {
-          local.model.worker.setVariant(variant)
-        }}
+        selected={current.variant}
+        onSelect={(variant) => local.model.worker.setVariant(variant)}
       />
     ))
+    return true
   }
 }
 
 export function useWorkerModelDialog() {
   const dialog = useDialog()
   const local = useLocal()
-  const sync = useSync()
-  const toast = useToast()
+  const client = useClient()
   const openVariant = useWorkerVariantDialog()
 
-  return () => {
+  return (form?: FormWithLocation) => {
     const current = local.model.worker.current()
-    dialog.replace(() => (
-      <DialogModel
-        title="Select worker model"
-        current={current ? { providerID: current.providerID, modelID: current.modelID } : undefined}
-        closeOnSelect={false}
-        onSelect={(model, context) => {
-          local.model.worker.set({ providerID: model.providerID, modelID: model.modelID })
-          const worker = `${model.providerID}/${model.modelID}`
-          if (!context.active()) return
-          if (workerModelVariants(worker, sync.data.provider).length) openVariant(worker)
-          else dialog.clear()
-        }}
-        onError={(error) => toast.error(error)}
-      />
-    ))
+    let answered = false
+
+    const answer = (ref: string) => {
+      if (!form || answered) return
+      const field = form.fields.find(isFormAnswerField)
+      if (!field) return
+      answered = true
+      void client.api.form
+        .reply({ sessionID: form.sessionID, formID: form.id, answer: { [field.key]: ref } }, formRequestOptions(form))
+        .catch(() => {})
+    }
+
+    dialog.replace(
+      () => (
+        <DialogModel
+          title="Select worker model"
+          current={current ? { providerID: current.providerID, modelID: current.modelID } : undefined}
+          closeOnSelect={false}
+          onSelect={(model) => {
+            local.model.worker.set(model)
+            answer(workerModelRef(model))
+            if (!openVariant()) dialog.clear()
+          }}
+        />
+      ),
+      () => {
+        if (!form || answered) return
+        void client.api.form
+          .cancel({ sessionID: form.sessionID, formID: form.id }, formRequestOptions(form))
+          .catch(() => {})
+      },
+      form ? { key: `worker-model:${form.id}` } : undefined,
+    )
   }
 }

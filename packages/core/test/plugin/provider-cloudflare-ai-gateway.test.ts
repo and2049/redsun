@@ -1,18 +1,20 @@
 import { AISDK } from "@opencode-ai/core/aisdk"
 import { describe, expect, mock } from "bun:test"
 import { Effect } from "effect"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { PluginV2 } from "@opencode-ai/core/plugin"
+import { Catalog } from "@opencode-ai/core/catalog"
+import { Model } from "@opencode-ai/core/model"
+import { Plugin } from "@opencode-ai/core/plugin"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { CloudflareAIGatewayPlugin } from "@opencode-ai/core/plugin/provider/cloudflare-ai-gateway"
-import { ProviderV2 } from "@opencode-ai/core/provider"
+import { Provider } from "@opencode-ai/core/provider"
+import { Integration } from "@opencode-ai/core/integration"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 
 const it = testEffect(PluginTestLayer)
 
 const addPlugin = Effect.fn(function* () {
-  const plugin = yield* PluginV2.Service
+  const plugin = yield* Plugin.Service
   const aisdk = yield* AISDK.Service
   const host = yield* PluginHost.make(plugin)
   yield* CloudflareAIGatewayPlugin.effect(host)
@@ -102,6 +104,24 @@ mock.module("ai-gateway-provider/providers/unified", () => ({
 }))
 
 describe("CloudflareAIGatewayPlugin", () => {
+  it.effect("registers account and gateway forms when the environment does not provide them", () =>
+    withEnv({ CLOUDFLARE_ACCOUNT_ID: undefined, CLOUDFLARE_GATEWAY_ID: undefined }, () =>
+      Effect.gen(function* () {
+        yield* addPlugin()
+        expect(
+          (yield* (yield* Integration.Service).get(Integration.ID.make("cloudflare-ai-gateway")))?.methods,
+        ).toContainEqual({
+          type: "key",
+          label: "Gateway API token",
+          form: [
+            expect.objectContaining({ type: "string", key: "accountId", required: true }),
+            expect.objectContaining({ type: "string", key: "gatewayId", required: true }),
+          ],
+        })
+      }),
+    ),
+  )
+
   it.effect("requires account, gateway, and token before creating the unified SDK", () =>
     withEnv(
       {
@@ -112,13 +132,14 @@ describe("CloudflareAIGatewayPlugin", () => {
       },
       () =>
         Effect.gen(function* () {
-          const plugin = yield* PluginV2.Service
+          const plugin = yield* Plugin.Service
           const aisdk = yield* AISDK.Service
           yield* addPlugin()
           const result = yield* aisdk.runSDK({
-            model: ModelV2.Info.make({
-              ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-              api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+            model: Model.Info.make({
+              ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+              modelID: Model.ID.make("openai/gpt-5"),
+              package: "aisdk:test-provider",
             }),
             package: "ai-gateway-provider",
             options: { name: "cloudflare-ai-gateway" },
@@ -132,14 +153,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv(), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: {
@@ -176,14 +198,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv(), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: {
@@ -205,14 +228,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv(), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: {
@@ -242,14 +266,15 @@ describe("CloudflareAIGatewayPlugin", () => {
       () =>
         Effect.gen(function* () {
           resetCalls()
-          const plugin = yield* PluginV2.Service
+          const plugin = yield* Plugin.Service
           const aisdk = yield* AISDK.Service
           yield* addPlugin()
 
           yield* aisdk.runSDK({
-            model: ModelV2.Info.make({
-              ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-              api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+            model: Model.Info.make({
+              ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+              modelID: Model.ID.make("openai/gpt-5"),
+              package: "aisdk:test-provider",
             }),
             package: "ai-gateway-provider",
             options: {
@@ -273,14 +298,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv({ CLOUDFLARE_API_TOKEN: undefined, CF_AIG_TOKEN: "cf-aig-token" }), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: { name: "cloudflare-ai-gateway" },
@@ -295,14 +321,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv({ CLOUDFLARE_ACCOUNT_ID: undefined, CLOUDFLARE_GATEWAY_ID: undefined }), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         const result = yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: { name: "cloudflare-ai-gateway" },
@@ -318,14 +345,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv({ CLOUDFLARE_API_TOKEN: undefined, CF_AIG_TOKEN: undefined }), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         const result = yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: { name: "cloudflare-ai-gateway" },
@@ -347,14 +375,24 @@ describe("CloudflareAIGatewayPlugin", () => {
       () =>
         Effect.gen(function* () {
           resetCalls()
-          const plugin = yield* PluginV2.Service
+          const plugin = yield* Plugin.Service
           const aisdk = yield* AISDK.Service
+          const catalog = yield* Catalog.Service
+          yield* catalog.transform((catalog) =>
+            catalog.provider.update(Provider.ID.make("cloudflare-ai-gateway"), (provider) => {
+              provider.settings = { ...provider.settings, baseURL: "https://proxy.example/v1" }
+            }),
+          )
           yield* addPlugin()
+          expect(
+            (yield* (yield* Integration.Service).get(Integration.ID.make("cloudflare-ai-gateway")))?.methods,
+          ).toContainEqual({ type: "key", label: "Gateway API token" })
 
           const result = yield* aisdk.runSDK({
-            model: ModelV2.Info.make({
-              ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-              api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+            model: Model.Info.make({
+              ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+              modelID: Model.ID.make("openai/gpt-5"),
+              package: "aisdk:test-provider",
             }),
             package: "ai-gateway-provider",
             options: { name: "cloudflare-ai-gateway", baseURL: "https://proxy.example/v1" },
@@ -370,21 +408,18 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv(), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         const result = yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(
-              ProviderV2.ID.make("cloudflare-ai-gateway"),
-              ModelV2.ID.make("anthropic/claude-sonnet-4-5"),
+          model: Model.Info.make({
+            ...Model.Info.default(
+              Provider.ID.make("cloudflare-ai-gateway"),
+              Model.ID.make("anthropic/claude-sonnet-4-5"),
             ),
-            api: {
-              id: ModelV2.ID.make("anthropic/claude-sonnet-4-5"),
-              type: "aisdk",
-              package: "test-provider",
-            },
+            modelID: Model.ID.make("anthropic/claude-sonnet-4-5"),
+            package: "aisdk:test-provider",
           }),
           package: "ai-gateway-provider",
           options: { name: "cloudflare-ai-gateway" },
@@ -405,14 +440,15 @@ describe("CloudflareAIGatewayPlugin", () => {
     withEnv(cloudflareEnv(), () =>
       Effect.gen(function* () {
         resetCalls()
-        const plugin = yield* PluginV2.Service
+        const plugin = yield* Plugin.Service
         const aisdk = yield* AISDK.Service
         yield* addPlugin()
 
         const result = yield* aisdk.runSDK({
-          model: ModelV2.Info.make({
-            ...ModelV2.Info.empty(ProviderV2.ID.make("cloudflare-ai-gateway"), ModelV2.ID.make("openai/gpt-5")),
-            api: { id: ModelV2.ID.make("openai/gpt-5"), type: "aisdk", package: "test-provider" },
+          model: Model.Info.make({
+            ...Model.Info.default(Provider.ID.make("cloudflare-ai-gateway"), Model.ID.make("openai/gpt-5")),
+            modelID: Model.ID.make("openai/gpt-5"),
+            package: "aisdk:test-provider",
           }),
           package: "@ai-sdk/openai-compatible",
           options: { name: "cloudflare-ai-gateway" },

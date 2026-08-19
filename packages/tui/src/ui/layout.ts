@@ -1,0 +1,1 @@
+export const SESSION_SIDEBAR_WIDTH = 42

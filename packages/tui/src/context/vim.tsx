@@ -1,26 +1,13 @@
 import { createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
-import { createSimpleContext } from "./helper"
-import { pushCount, transition, type VimMode } from "../vim"
-import { useOpencodeKeymap } from "../keymap"
-import { useDialog } from "../ui/dialog"
 import type { KeyEvent } from "@opentui/core"
+import { createSimpleContext } from "./helper"
+import { Keymap } from "./keymap"
+import { useDialog } from "../ui/dialog"
+import { NORMAL_LETTER_COMMANDS, pushCount, transition, type VimMode } from "../vim"
 
 const TEMP_DURATION_MS = 3000
 const TICK_INTERVAL_MS = 250
-
-type VimContext = {
-  get mode(): VimMode
-  setMode: (next: VimMode) => void
-  requestMode: (next: VimMode) => void
-  tempRemaining: () => number | null
-  enterTempNormal: (ms?: number) => void
-  clearTemp: () => void
-  pendingCount: () => number | null
-  pushCountDigit: (digit: number) => void
-  takeCount: () => number
-  clearCount: () => void
-}
 
 export const { use: useVim, provider: VimProvider } = createSimpleContext({
   name: "Vim",
@@ -29,8 +16,8 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
     const [tempRemaining, setTempRemaining] = createSignal<number | null>(null)
     const [pendingCount, setPendingCount] = createSignal<number | null>(null)
     let tempEndAt = 0
-    let tempTimer: ReturnType<typeof setTimeout> | null = null
-    let tempTick: ReturnType<typeof setInterval> | null = null
+    let tempTimer: ReturnType<typeof setTimeout> | undefined
+    let tempTick: ReturnType<typeof setInterval> | undefined
 
     function clearCount() {
       setPendingCount(null)
@@ -43,14 +30,10 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
     }
 
     function clearTemp() {
-      if (tempTimer) {
-        clearTimeout(tempTimer)
-        tempTimer = null
-      }
-      if (tempTick) {
-        clearInterval(tempTick)
-        tempTick = null
-      }
+      if (tempTimer) clearTimeout(tempTimer)
+      if (tempTick) clearInterval(tempTick)
+      tempTimer = undefined
+      tempTick = undefined
       tempEndAt = 0
       setTempRemaining(null)
     }
@@ -62,8 +45,8 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       tempEndAt = Date.now() + ms
       setTempRemaining(Math.ceil(ms / 1000))
       tempTick = setInterval(() => {
-        const remain = Math.max(0, Math.ceil((tempEndAt - Date.now()) / 1000))
-        if (remain !== tempRemaining()) setTempRemaining(remain)
+        const remaining = Math.max(0, Math.ceil((tempEndAt - Date.now()) / 1000))
+        if (remaining !== tempRemaining()) setTempRemaining(remaining)
       }, TICK_INTERVAL_MS)
       tempTimer = setTimeout(() => {
         clearTemp()
@@ -78,6 +61,8 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       setMode(next)
     }
 
+    onCleanup(clearTemp)
+
     return {
       get mode() {
         return mode()
@@ -91,66 +76,44 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       pushCountDigit: (digit: number) => setPendingCount((current) => pushCount(current, digit)),
       takeCount,
       clearCount,
-    } satisfies VimContext
+    }
   },
 })
 
-// Bare-letter -> command name, available in normal mode. Bare letters in insert
-// mode are typed into the prompt; in command mode the CommandBar owns input.
-// Modifier chords and other keys are intentionally left to @opentui/keymap.
-const NORMAL_LETTER_COMMANDS: Record<string, string> = {
-  l: "session.list",
-  s: "opencode.status",
-  m: "model.list",
-  n: "session.new",
-  a: "agent.list",
-  t: "theme.switch",
-  b: "session.sidebar.toggle",
-  c: "session.compact",
-  u: "session.undo",
-  w: "worker.model",
-  r: "session.redo",
-  y: "messages.copy",
-  e: "prompt.editor",
-  x: "session.export",
-  h: "session.toggle.conceal",
-}
-
-// VimKeyHandler mounts below DialogProvider so it can gate letter dispatch on
-// the dialog stack. Mode transitions (Esc/i/:) run globally regardless of
-// focus, mirroring dev's ModeProvider.useKeyboard.
 export function VimKeyHandler(props: { children: JSX.Element }) {
   const vim = useVim()
-  const keymap = useOpencodeKeymap()
+  const keymap = Keymap.use()
   const dialog = useDialog()
 
-  // ctrl+x enters temporary normal mode directly; no leader system remains.
   onMount(() => {
-    const offIntercept = keymap.intercept(
-      "key",
-      (ctx: { event: KeyEvent; consume: () => void }) => {
-        const event = ctx.event
-        if (!event.ctrl || event.name !== "x" || vim.mode === "command") return
-        ctx.consume()
-        keymap.clearPendingSequence()
-        vim.enterTempNormal()
-      },
-      { priority: 1000 },
+    onCleanup(
+      keymap.intercept(
+        "key",
+        (ctx) => {
+          const event = ctx.event
+          if (!event.ctrl || event.name !== "x" || vim.mode === "command") return
+          ctx.consume()
+          keymap.clearPendingSequence()
+          vim.enterTempNormal()
+        },
+        { priority: 1000 },
+      ),
     )
-    onCleanup(offIntercept)
   })
 
   useKeyboard((event: KeyEvent) => {
     if (event.ctrl || event.meta) return
     if (vim.mode === "command") return
     if (dialog.stack.length > 0 && event.name !== "escape") return
-    if (vim.mode === "normal" && vim.tempRemaining() != null && event.name === "escape") {
+
+    if (vim.mode === "normal" && vim.tempRemaining() !== null && event.name === "escape") {
       event.preventDefault()
       vim.clearTemp()
       vim.clearCount()
       vim.setMode("insert")
       return
     }
+
     const next = transition(vim.mode, event)
     if (next) {
       event.preventDefault()
@@ -158,8 +121,7 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
       return
     }
     if (vim.mode !== "normal") return
-    // Count prefix: digits accumulate for the next motion (5j, 12k, 3J). A
-    // digit never ends temp-normal; only the consuming motion does.
+
     if (/^[0-9]$/.test(event.name)) {
       if (event.option || event.shift) return
       if (event.name === "0" && vim.pendingCount() === null) return
@@ -167,23 +129,22 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
       vim.pushCountDigit(Number(event.name))
       return
     }
-    if (event.name === "escape" && vim.pendingCount() !== null && dialog.stack.length === 0) {
+    if (event.name === "escape" && vim.pendingCount() !== null) {
       event.preventDefault()
       vim.clearCount()
       return
     }
     if (event.shift) return
+
     const command = NORMAL_LETTER_COMMANDS[event.name]
-    if (!command) return
-    if (dialog.stack.length > 0) return
+    if (!command || dialog.stack.length > 0) return
     event.preventDefault()
-    const wasTemp = vim.tempRemaining() != null
-    keymap.dispatchCommand(command)
+    const borrowed = vim.tempRemaining() !== null
+    keymap.dispatch(command)
     vim.clearCount()
-    if (wasTemp) {
-      vim.clearTemp()
-      vim.setMode("insert")
-    }
+    if (!borrowed) return
+    vim.clearTemp()
+    vim.setMode("insert")
   })
 
   return props.children as JSX.Element

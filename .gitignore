@@ -11,8 +11,10 @@ node_modules
 playground
 tmp
 dist
+dist-node
 ts-dist
 .turbo
+.typecheck-profiles
 **/.serena
 .serena/
 **/.omo
@@ -24,6 +26,7 @@ Session.vim
 a.out
 target
 .scripts
+.cache
 .direnv/
 
 # Local dev files
@@ -32,6 +35,3 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
-
-# Transient migration working state
-tmp_dev_extract/

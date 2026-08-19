@@ -6,8 +6,8 @@ import { Project } from "@opencode-ai/schema/project"
 import { Session } from "@opencode-ai/schema/session"
 import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { PermissionNotFoundError, SessionNotFoundError } from "../errors"
-import { LocationQuery, locationQueryOpenApi } from "./location"
+import { PermissionNotFoundError, SessionNotFoundError } from "../errors.js"
+import { LocationQuery, locationQueryOpenApi } from "./location.js"
 
 export const makePermissionGroup = <
   LocationId extends HttpApiMiddleware.AnyId,
@@ -32,6 +32,30 @@ export const makePermissionGroup = <
             description: "Retrieve pending permission requests for a location.",
           }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.get("permission.mode.get", "/api/permission/mode", {
+        success: Schema.Struct({ data: Schema.Struct({ mode: Permission.Mode }) }),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.mode.get",
+          summary: "Get auto-approve mode",
+          description: "Retrieve whether permissions that would prompt are approved automatically.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.put("permission.mode.set", "/api/permission/mode", {
+        payload: Schema.Struct({ mode: Permission.Mode }),
+        success: HttpApiSchema.NoContent,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.mode.set",
+          summary: "Set auto-approve mode",
+          description:
+            "Approve every permission that would prompt. Rules that deny still deny, so read-only agents stay read-only.",
+        }),
+      ),
     )
     .add(
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
@@ -134,4 +158,4 @@ export const makePermissionGroup = <
           }),
         ),
     )
-    .annotateMerge(OpenApi.annotations({ title: "permissions", description: "Experimental permission routes." }))
+    .annotateMerge(OpenApi.annotations({ title: "permission", description: "Experimental permission routes." }))

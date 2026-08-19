@@ -1,49 +1,53 @@
-import type { Effect, Fiber } from "effect"
+import type { Fiber } from "effect"
 
-export class SandboxPromise {
-  interrupted = false
-  constructor(
-    readonly fiber: Fiber.Fiber<unknown, unknown> | undefined,
-    readonly immediate?: Effect.Effect<unknown, unknown>,
-  ) {}
+export class CodeModePromise {
+  constructor(readonly fiber: Fiber.Fiber<unknown, unknown>) {}
 }
 
-export class SandboxDate {
-  constructor(readonly time: number) {}
+export class CodeModeDate {
+  constructor(public time: number) {}
 }
 
-export class SandboxRegExp {
+export class CodeModeRegExp {
   readonly regex: RegExp
   constructor(pattern: string, flags: string) {
     this.regex = new RegExp(pattern, flags)
   }
-}
 
-export class SandboxMap {
-  readonly map = new Map<unknown, unknown>()
-}
+  get lastIndex(): unknown {
+    return Reflect.get(this.regex, "lastIndex")
+  }
 
-export class SandboxSet {
-  readonly set = new Set<unknown>()
-}
-
-export class SandboxURLSearchParams {
-  constructor(readonly params: URLSearchParams) {}
-}
-
-export class SandboxURL {
-  readonly searchParams: SandboxURLSearchParams
-  constructor(readonly url: URL) {
-    this.searchParams = new SandboxURLSearchParams(url.searchParams)
+  set lastIndex(value: unknown) {
+    Reflect.set(this.regex, "lastIndex", value)
   }
 }
 
-export const isSandboxValue = (
+export class CodeModeMap {
+  readonly map = new Map<unknown, unknown>()
+}
+
+export class CodeModeSet {
+  readonly set = new Set<unknown>()
+}
+
+export class CodeModeURLSearchParams {
+  constructor(readonly params: URLSearchParams) {}
+}
+
+export class CodeModeURL {
+  readonly searchParams: CodeModeURLSearchParams
+  constructor(readonly url: URL) {
+    this.searchParams = new CodeModeURLSearchParams(url.searchParams)
+  }
+}
+
+export const isCodeModeValue = (
   value: unknown,
-): value is SandboxDate | SandboxRegExp | SandboxMap | SandboxSet | SandboxURL | SandboxURLSearchParams =>
-  value instanceof SandboxDate ||
-  value instanceof SandboxRegExp ||
-  value instanceof SandboxMap ||
-  value instanceof SandboxSet ||
-  value instanceof SandboxURL ||
-  value instanceof SandboxURLSearchParams
+): value is CodeModeDate | CodeModeRegExp | CodeModeMap | CodeModeSet | CodeModeURL | CodeModeURLSearchParams =>
+  value instanceof CodeModeDate ||
+  value instanceof CodeModeRegExp ||
+  value instanceof CodeModeMap ||
+  value instanceof CodeModeSet ||
+  value instanceof CodeModeURL ||
+  value instanceof CodeModeURLSearchParams

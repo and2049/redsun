@@ -41,8 +41,8 @@ if ($arch -eq "AMD64") { $arch = "x64" }
 if ($arch -eq "ARM64") { $arch = "arm64" }
 
 $combo = "$os-$arch"
-if ($combo -ne "windows-x64") {
-    Write-Error "Unsupported OS/Arch: $os/$arch. Windows x64 is the only supported platform for this installer."
+if ($combo -ne "windows-x64" -and $combo -ne "windows-arm64") {
+    Write-Error "Unsupported OS/Arch: $os/$arch. This installer supports Windows x64 and arm64."
     exit 1
 }
 
@@ -96,7 +96,8 @@ if ($existingCommand) {
     try {
         $versionOutput = & $App --version 2>$null
         if ($versionOutput) {
-            $installedVersion = ($versionOutput -split '\s+')[1]
+            # "redsun v<version>"; the tag it is compared against has no leading v.
+            $installedVersion = (($versionOutput -split '\s+')[1]).TrimStart('v')
             if ($installedVersion -eq $specificVersion) {
                 Write-Info "Version $specificVersion already installed"
                 exit 0

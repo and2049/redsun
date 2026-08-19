@@ -4,12 +4,9 @@ export const stringMethods = new Set([
   "trim",
   "trimStart",
   "trimEnd",
-  "trimLeft",
-  "trimRight",
   "split",
   "slice",
   "substring",
-  "substr",
   "includes",
   "startsWith",
   "endsWith",
@@ -46,7 +43,7 @@ export const invokeStringStatic = (name: string, args: Array<unknown>, node: Ast
     case "fromCodePoint":
       return String.fromCodePoint(...codes)
     default:
-      throw new InterpreterRuntimeError(`String.${name} is not available in CodeMode.`, node)
+      throw new InterpreterRuntimeError(`String.${name} is not available.`, node)
   }
 }
 import { type AstNode, InterpreterRuntimeError } from "../interpreter/model.js"

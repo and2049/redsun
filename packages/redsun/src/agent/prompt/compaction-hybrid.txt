@@ -1,1 +1,0 @@
-Summarize the conversation for immediate continuation. The structured inventory already records files, tool results, failures, and explicit requirements. Preserve the semantic context it cannot capture: decisions and reasoning, relationships between work items, constraints, current state, and concrete next steps. Be concise and do not repeat the inventory verbatim.

@@ -1,128 +1,107 @@
-import { createMemo, createSignal, Show } from "solid-js"
-import { useRouteData } from "../../context/route"
-import { useSync } from "../../context/sync"
-import { useTheme } from "../../context/theme"
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
-import { Locale } from "../../util/locale"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
+import type { SessionMessageAssistant } from "@opencode-ai/client/promise"
+import { useData } from "../../context/data"
+import { Keymap } from "../../context/keymap"
+import { useRouteData } from "../../context/route"
+import { useTheme } from "../../context/theme"
+import { Locale } from "../../util/locale"
+
+const AGENT_PATTERN = /@([\w-]+) subagent/
+
+const ACTIONS = [
+  { key: "parent", label: "Parent", command: "session.parent" },
+  { key: "previous", label: "Prev", command: "session.child.previous" },
+  { key: "next", label: "Next", command: "session.child.next" },
+] as const
+
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
 
 export function SubagentFooter() {
   const route = useRouteData("session")
-  const sync = useSync()
-  const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
-  const session = createMemo(() => sync.session.get(route.sessionID))
+  const data = useData()
+  const theme = useTheme()
+  const keymap = Keymap.use()
+  const shortcuts = Keymap.useShortcuts()
+  const [hover, setHover] = createSignal<string | undefined>()
+  useTerminalDimensions()
 
-  const subagentInfo = createMemo(() => {
-    const s = session()
-    if (!s) return { label: "Subagent", index: 0, total: 0 }
-    const agentMatch = s.title.match(/@([\w-]+) subagent/)
-    const label = agentMatch ? Locale.titlecase(agentMatch[1]) : "Subagent"
+  const session = createMemo(() => data.session.get(route.sessionID))
 
-    if (!s.parentID) return { label, index: 0, total: 0 }
-
-    const siblings = sync.data.session
-      .filter((x) => x.parentID === s.parentID)
+  const position = createMemo(() => {
+    const current = session()
+    if (!current) return { label: "Subagent", index: 0, total: 0 }
+    const label = Locale.titlecase(AGENT_PATTERN.exec(current.title ?? "")?.[1] ?? "subagent")
+    if (!current.parentID) return { label, index: 0, total: 0 }
+    const siblings = data.session
+      .family(current.id)
+      .flatMap((sessionID) => {
+        const info = data.session.get(sessionID)
+        return info && info.parentID === current.parentID ? [info] : []
+      })
       .toSorted((a, b) => a.time.created - b.time.created)
-    const index = siblings.findIndex((x) => x.id === s.id)
-
-    return { label, index: index + 1, total: siblings.length }
+    return { label, index: siblings.findIndex((info) => info.id === current.id) + 1, total: siblings.length }
   })
 
   const usage = createMemo(() => {
-    const msg = messages()
-    const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
-    if (!last) return
-
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    if (tokens <= 0) return
-
-    const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
     const cost = session()?.cost ?? 0
-
-    const money = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    })
-
+    const messages = data.session.message.list(route.sessionID) ?? []
+    const last = messages.findLast(
+      (message): message is SessionMessageAssistant =>
+        message.type === "assistant" && (message.tokens?.output ?? 0) > 0,
+    )
+    const tokens = last?.tokens
+      ? last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+      : 0
+    if (tokens <= 0 && cost <= 0) return undefined
+    const limit = last
+      ? data.location.model
+          .list(session()?.location)
+          ?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)?.limit.context
+      : undefined
+    const percent = limit ? ` (${Math.round((tokens / limit) * 100)}%)` : ""
     return {
-      context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
+      context: tokens > 0 ? `${Locale.number(tokens)}${percent}` : undefined,
       cost: cost > 0 ? money.format(cost) : undefined,
     }
   })
 
-  const { theme } = useTheme()
-  // Dense UI draws the footer in the chat box's rounded shape. A fill would
-  // paint the full rectangle behind the rounded corners (terminal cells can't
-  // clip), so like the prompt box it stays on the plain background.
-  const shape = {
-    border: true as const,
-    borderStyle: "rounded" as const,
-    paddingLeft: 1,
-    paddingRight: 1,
-  }
-  const buttonBackground = (active: boolean) => (active ? theme.backgroundElement : undefined)
-  const keymap = useOpencodeKeymap()
-  const parentShortcut = useCommandShortcut("session.parent")
-  const previousShortcut = useCommandShortcut("session.child.previous")
-  const nextShortcut = useCommandShortcut("session.child.next")
-  const [hover, setHover] = createSignal<"parent" | "prev" | "next" | null>(null)
-  useTerminalDimensions()
-
   return (
     <box flexShrink={0}>
-      <box {...shape} borderColor={theme.border} flexShrink={0}>
+      <box border borderStyle="rounded" borderColor={theme.border.default} paddingLeft={1} paddingRight={1}>
         <box flexDirection="row" justifyContent="space-between" gap={1}>
           <box flexDirection="row" gap={1}>
-            <text fg={theme.text}>
-              <b>{subagentInfo().label}</b>
+            <text fg={theme.text.default}>
+              <b>{position().label}</b>
             </text>
-            <Show when={subagentInfo().total > 0}>
-              <text style={{ fg: theme.textMuted }}>
-                ({subagentInfo().index} of {subagentInfo().total})
+            <Show when={position().total > 0}>
+              <text fg={theme.text.subdued}>
+                ({position().index} of {position().total})
               </text>
             </Show>
             <Show when={usage()}>
               {(item) => (
-                <text fg={theme.textMuted} wrapMode="none">
+                <text fg={theme.text.subdued} wrapMode="none">
                   {[item().context, item().cost].filter(Boolean).join(" · ")}
                 </text>
               )}
             </Show>
           </box>
           <box flexDirection="row" gap={2}>
-            <box
-              onMouseOver={() => setHover("parent")}
-              onMouseOut={() => setHover(null)}
-              onMouseUp={() => keymap.dispatchCommand("session.parent")}
-              backgroundColor={buttonBackground(hover() === "parent")}
-            >
-              <text fg={theme.text}>
-                Parent <span style={{ fg: theme.textMuted }}>{parentShortcut()}</span>
-              </text>
-            </box>
-            <box
-              onMouseOver={() => setHover("prev")}
-              onMouseOut={() => setHover(null)}
-              onMouseUp={() => keymap.dispatchCommand("session.child.previous")}
-              backgroundColor={buttonBackground(hover() === "prev")}
-            >
-              <text fg={theme.text}>
-                Prev <span style={{ fg: theme.textMuted }}>{previousShortcut()}</span>
-              </text>
-            </box>
-            <box
-              onMouseOver={() => setHover("next")}
-              onMouseOut={() => setHover(null)}
-              onMouseUp={() => keymap.dispatchCommand("session.child.next")}
-              backgroundColor={buttonBackground(hover() === "next")}
-            >
-              <text fg={theme.text}>
-                Next <span style={{ fg: theme.textMuted }}>{nextShortcut()}</span>
-              </text>
-            </box>
+            <For each={ACTIONS}>
+              {(action) => (
+                <box
+                  onMouseOver={() => setHover(action.key)}
+                  onMouseOut={() => setHover(undefined)}
+                  onMouseUp={() => keymap.dispatch(action.command)}
+                  backgroundColor={hover() === action.key ? theme.background.surface.offset : undefined}
+                >
+                  <text fg={theme.text.default}>
+                    {action.label} <span style={{ fg: theme.text.subdued }}>{shortcuts.get(action.command)}</span>
+                  </text>
+                </box>
+              )}
+            </For>
           </box>
         </box>
       </box>

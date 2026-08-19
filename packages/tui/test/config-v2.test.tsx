@@ -1,0 +1,255 @@
+/** @jsxImportSource @opentui/solid */
+import { testRender } from "@opentui/solid"
+import { expect, test } from "bun:test"
+import { Schema } from "effect"
+import { resolve, ConfigProvider, Info, useConfig, type Interface } from "../src/config"
+import { settings } from "../src/component/dialog-config"
+import { TuiKeybind } from "../src/config/keybind"
+import { CommandMap, Definitions } from "../src/config/v1/keybind"
+
+const decodeInfo = Schema.decodeUnknownSync(Info)
+
+test("validates mini replay settings", () => {
+  expect(decodeInfo({ mini: { replay: false, replay_limit: 50 } })).toEqual({
+    mini: { replay: false, replay_limit: 50 },
+  })
+  expect(() => decodeInfo({ mini: { replay_limit: 0 } })).toThrow()
+  expect(() => decodeInfo({ mini: { replay_limit: 1.5 } })).toThrow()
+})
+
+test("validates the session list scope setting", () => {
+  const decode = Schema.decodeUnknownSync(Info)
+
+  expect(decode({ tabs: { scope: "global" } })).toEqual({ tabs: { scope: "global" } })
+  expect(() => decode({ tabs: { scope: "everything" } })).toThrow()
+  // The tab strip is gone, so its settings are no longer part of the schema.
+  expect(decode({ tabs: { enabled: true, layout: "vertical" } })).toEqual({ tabs: {} })
+  expect(decode({ prompt: { image_preview: true } })).toEqual({ prompt: { image_preview: true } })
+  expect(decode({ session: { image_preview: true } })).toEqual({ session: { image_preview: true } })
+  expect(decode({ session: { new_location: "inherit" } })).toEqual({ session: { new_location: "inherit" } })
+  expect(() => decode({ session: { new_location: "current" } })).toThrow()
+})
+
+test("resolves nested config and keybind defaults", () => {
+  const config = resolve(
+    {
+      keybinds: { "open.menu": "ctrl+o" },
+      leader: { timeout: 500 },
+      scroll: { speed: 2, acceleration: true },
+      diffs: { view: "split" },
+      debug: { devtools: true },
+    },
+    { terminalSuspend: true },
+  )
+
+  expect(config.leader.timeout).toBe(500)
+  expect(config.keybinds.get("open.menu")?.[0]?.key).toBe("ctrl+o")
+  // `leader` is accepted and ignored so a config written before it went
+  // away still loads.
+  expect(config.keybinds.get("leader")).toEqual([])
+  expect(config.scroll).toEqual({ speed: 2, acceleration: true })
+  expect(config.diffs).toEqual({ view: "split" })
+  expect(config.debug).toEqual({ devtools: true })
+  expect(config.tabs).toEqual({ scope: "cwd" })
+  expect(config.session.new_location).toBe("launch")
+})
+
+test("offers session list scope and no tab strip settings", () => {
+  expect(settings.find((setting) => setting.path.join(".") === "tabs.scope")?.default).toBe("cwd")
+  expect(settings.some((setting) => setting.category === "Tabs")).toBe(false)
+})
+
+test("shows the new session location default in settings", () => {
+  expect(settings.find((setting) => setting.path.join(".") === "session.new_location")?.default).toBe("launch")
+})
+
+test("validates terminal copy behavior", () => {
+  expect(decodeInfo({ terminal: { copy: "manual" } })).toEqual({ terminal: { copy: "manual" } })
+  expect(decodeInfo({ terminal: { copy: "select" } })).toEqual({ terminal: { copy: "select" } })
+  expect(() => decodeInfo({ terminal: { copy: "always" } })).toThrow()
+
+  const setting = settings.find((setting) => setting.path.join(".") === "terminal.copy")
+  expect(setting?.values).toEqual(["manual", "select"])
+  expect(setting?.default).toBe(process.platform === "win32" ? "manual" : "select")
+})
+
+test("uses command IDs as keybind keys", () => {
+  const config = resolve({ keybinds: { "session.list": "ctrl+l" } }, { terminalSuspend: true })
+
+  expect(config.keybinds.get("session.list")).toMatchObject([{ key: "ctrl+l" }])
+  expect(TuiKeybind.unknownKeys({ session_list: "ctrl+l" })).toEqual(["session_list"])
+  expect(
+    Object.keys(TuiKeybind.Definitions)
+      .filter((key) => key !== "leader")
+      .every((key) => key.includes(".")),
+  ).toBe(true)
+})
+
+test("preserves current navigation defaults", () => {
+  const config = resolve({}, { terminalSuspend: true })
+
+  expect(config.keybinds.get("open.menu")).toMatchObject([{ key: "ctrl+o" }])
+  // Redsun has no tab strip, so no session.tab.* command is defined and none
+  // resolves to a key. An override for one is dropped at decode rather than
+  // rejected, so the binding stays empty either way.
+  expect(config.keybinds.get("session.tab.next")).toEqual([])
+  expect(config.keybinds.get("session.tab.select.10")).toEqual([])
+  expect(
+    resolve(decodeInfo({ keybinds: { "session.tab.next": "ctrl+tab" } }), { terminalSuspend: true }).keybinds.get(
+      "session.tab.next",
+    ),
+  ).toEqual([])
+  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.next")).toMatchObject([{ key: "right" }])
+  expect(config.keybinds.get("session.child.previous")).toMatchObject([{ key: "left" }])
+  expect(config.keybinds.get("session.parent")).toMatchObject([{ key: "up" }])
+  expect(config.keybinds.get("session.message.next")).toEqual([])
+  expect(config.keybinds.get("session.message.previous")).toEqual([])
+  expect(config.keybinds.get("session.message.user.next")).toEqual([])
+  expect(config.keybinds.get("session.message.user.previous")).toEqual([])
+  expect(config.keybinds.get("input.buffer.home")).toEqual([])
+  expect(config.keybinds.get("input.buffer.end")).toEqual([])
+  expect(config.keybinds.get("prompt.images.view")).toEqual([])
+})
+
+test("maps every migrated v1 keybind onto a command that still exists", () => {
+  // The defaults deliberately diverge -- redsun de-leadered, so `<leader>l`
+  // became a bare `l` in normal mode. What has to keep holding is the *name*
+  // mapping, which is what a v1 config is migrated through.
+  const pairs = [
+    ["app.exit", "app_exit"],
+    ["prompt.paste", "input_paste"],
+    ["prompt.queue", "prompt_queue"],
+    ["session.delete", "session_delete"],
+    ["session.list", "session_list"],
+    ["agent.list", "agent_list"],
+  ] as const
+
+  pairs.forEach(([command, name]) => {
+    expect(CommandMap[name]).toBe(command)
+    expect(TuiKeybind.Definitions[command], command).toBeDefined()
+    expect(Definitions[name], name).toBeDefined()
+  })
+})
+
+test("accepts every v2-only named command ID", () => {
+  const commands = [
+    "server.pair",
+    "session.toggle.exploration_grouping",
+    "diff.down",
+    "diff.up",
+    "diff.page.down",
+    "diff.page.up",
+    "diff.mark_reviewed",
+    "composer.subagent.interrupt",
+    "opencode.settings",
+    "service.restart",
+    "permission.mode",
+    "session.cd",
+    "app.scrap",
+  ]
+  const config = resolve(
+    decodeInfo({ keybinds: Object.fromEntries(commands.map((command) => [command, "ctrl+alt+z"])) }),
+    { terminalSuspend: true },
+  )
+
+  commands.forEach((command) => expect(config.keybinds.get(command)).toMatchObject([{ key: "ctrl+alt+z" }]))
+})
+
+test("centralizes named command defaults and resolves explicit none", () => {
+  const defaults = {
+    "diff.down": "j,down",
+    "diff.up": "k,up",
+    "diff.page.down": "pagedown,ctrl+f",
+    "diff.page.up": "pageup,ctrl+b",
+    "diff.mark_reviewed": "m",
+  }
+  const config = resolve({}, { terminalSuspend: true })
+  Object.entries(defaults).forEach(([command, key]) => expect(config.keybinds.get(command)).toMatchObject([{ key }]))
+
+  const disabled = resolve(
+    decodeInfo({ keybinds: Object.fromEntries(Object.keys(defaults).map((command) => [command, "none"])) }),
+    { terminalSuspend: true },
+  )
+  Object.keys(defaults).forEach((command) => expect(disabled.keybinds.get(command)).toEqual([]))
+})
+
+test("rejects orphaned keybind definitions", () => {
+  expect(decodeInfo({ keybinds: { "app.heap_snapshot": "ctrl+h" } })).toEqual({ keybinds: {} })
+})
+
+test("uses ctrl+z for input undo when terminal suspend is unavailable", () => {
+  const config = resolve({}, { terminalSuspend: false })
+  expect(config.keybinds.has("terminal.suspend")).toBe(false)
+  expect(config.keybinds.get("input.undo")).toMatchObject([{ key: "ctrl+z,ctrl+-,super+z" }])
+
+  const overridden = resolve(
+    { keybinds: { "terminal.suspend": "ctrl+s", "input.undo": "ctrl+u" } },
+    { terminalSuspend: false },
+  )
+  expect(overridden.keybinds.has("terminal.suspend")).toBe(false)
+  expect(overridden.keybinds.get("input.undo")).toMatchObject([{ key: "ctrl+u" }])
+})
+
+test("keeps turn token usage inside developer tools", () => {
+  expect(settings.find((setting) => setting.path.join(".") === "debug.devtools")?.title).toBe("Developer tools")
+  expect(settings.some((setting) => setting.path.join(".") === "debug.turn_tokens")).toBe(false)
+})
+
+test("provides config and its host interface", async () => {
+  const config = resolve({}, { terminalSuspend: true })
+  let current = {}
+  const service: Interface = {
+    get: async () => current,
+    update: async (update) => {
+      const draft: Record<string, any> = { ...current }
+      update(draft)
+      current = draft
+      return draft
+    },
+  }
+  let context: ReturnType<typeof useConfig> | undefined
+
+  function Consumer() {
+    context = useConfig()
+    return <text>{`${context.data.mouse ? "mouse" : "none"} ${context.data.keybinds.get("open.menu")?.[0]?.key}`}</text>
+  }
+
+  const app = await testRender(() => (
+    <ConfigProvider config={config} service={service}>
+      <Consumer />
+    </ConfigProvider>
+  ))
+  try {
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("mouse ctrl+o")
+    if (!context) throw new Error("Config context was not provided")
+    await context.update((draft) => {
+      draft.mouse = false
+      draft.keybinds = { "open.menu": "ctrl+shift+o" }
+    })
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("none ctrl+shift+o")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("binds no command behind a leader key", () => {
+  // Redsun has no leader. Normal mode frees every bare letter to be a command,
+  // so `<leader>l` became `l` and the token has nothing left to introduce.
+  for (const [command, definition] of Object.entries(TuiKeybind.Definitions)) {
+    const value = JSON.stringify(definition.default)
+    expect(value, command).not.toContain("<leader>")
+  }
+  expect(Object.keys(TuiKeybind.Definitions)).not.toContain("leader")
+})
+
+test("keeps shift+tab for auto-approve and moves interrupt off escape", () => {
+  const config = resolve({}, { terminalSuspend: true })
+  // The auto-approve readout row names this shortcut, so it has to be the one.
+  expect(config.keybinds.get("permission.mode")).toMatchObject([{ key: "shift+tab" }])
+  expect(config.keybinds.get("agent.cycle")).toMatchObject([{ key: "tab" }])
+  // Normal mode claims escape, so interrupt cannot keep it.
+  expect(config.keybinds.get("session.interrupt")).toMatchObject([{ key: "ctrl+\\" }])
+})

@@ -23,4 +23,3 @@ describe("computePromptTraits", () => {
     expect(traits.status).toBe("SHELL")
   })
 })
-

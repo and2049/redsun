@@ -1,12 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { TextareaRenderable } from "@opentui/core"
-import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
-import { testRender, useRenderer } from "@opentui/solid"
+import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { onCleanup } from "solid-js"
-import { tmpdir } from "../../fixture/fixture"
+import { emptyThemeSource, tmpdir } from "../../fixture/fixture"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import type { TuiKeybind } from "../../../src/config/keybind"
 import { TestTuiContexts } from "../../fixture/tui-environment"
@@ -26,34 +25,27 @@ async function mountPrompt(input: {
 }) {
   const state = path.join(input.root, "state")
   await mkdir(state, { recursive: true })
-  await Bun.write(path.join(state, "kv.json"), "{}")
 
-  const [
-    { DialogProvider },
-    { DialogPrompt },
-    { KVProvider },
-    { ThemeProvider },
-    { TuiConfigProvider },
-    { ToastProvider },
-    { OpencodeKeymapProvider, registerOpencodeKeymap },
-  ] = await Promise.all([
-    import("../../../src/ui/dialog"),
-    import("../../../src/ui/dialog-prompt"),
-    import("../../../src/context/kv"),
-    import("../../../src/context/theme"),
-    import("../../../src/config"),
-    import("../../../src/ui/toast"),
-    import("../../../src/keymap"),
-  ])
+  const [{ DialogProvider }, { DialogPrompt }, { ThemeProvider }, { ConfigProvider }, { ToastProvider }, { Keymap }] =
+    await Promise.all([
+      import("../../../src/ui/dialog"),
+      import("../../../src/ui/dialog-prompt"),
+      import("../../../src/context/theme"),
+      import("../../../src/config"),
+      import("../../../src/ui/toast"),
+      import("../../../src/context/keymap"),
+    ])
 
   function Harness() {
-    const renderer = useRenderer()
-    const keymap = createDefaultOpenTuiKeymap(renderer)
     const resolvedConfig = createTuiResolvedConfig({
       keybinds: input.keybinds,
+      leader: { timeout: 1000 },
     })
-    const off = registerOpencodeKeymap(keymap, renderer, resolvedConfig)
-    onCleanup(off)
+
+    function Prompt() {
+      onCleanup(Keymap.use().mode.push("modal"))
+      return <DialogPrompt title="Rename Session" value="draft" onConfirm={input.onConfirm} />
+    }
 
     return (
       <TestTuiContexts
@@ -64,24 +56,23 @@ async function mountPrompt(input: {
           worktree: input.root,
         }}
       >
-        <OpencodeKeymapProvider keymap={keymap}>
-          <TuiConfigProvider config={resolvedConfig}>
-            <KVProvider>
-              <ThemeProvider mode="dark">
-                <ToastProvider>
-                  <DialogProvider>
-                    <DialogPrompt title="Rename Session" value="draft" onConfirm={input.onConfirm} />
-                  </DialogProvider>
-                </ToastProvider>
-              </ThemeProvider>
-            </KVProvider>
-          </TuiConfigProvider>
-        </OpencodeKeymapProvider>
+        <ConfigProvider config={resolvedConfig}>
+          <Keymap.Provider>
+            <ThemeProvider mode="dark" source={emptyThemeSource}>
+              <ToastProvider>
+                <DialogProvider>
+                  <Prompt />
+                </DialogProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </Keymap.Provider>
+        </ConfigProvider>
       </TestTuiContexts>
     )
   }
 
   const app = await testRender(() => <Harness />, { kittyKeyboard: true })
+  app.renderer.start()
   return {
     app,
     async cleanup() {
@@ -96,8 +87,8 @@ test("dialog prompt submit wins when return is also input newline", async () => 
   const prompt = await mountPrompt({
     root: tmp.path,
     keybinds: {
-      input_submit: "super+return",
-      input_newline: "return,shift+return,alt+return,ctrl+j",
+      "input.submit": "super+return",
+      "input.newline": "return,shift+return,alt+return,ctrl+j",
     },
     onConfirm: (value) => confirmed.push(value),
   })
@@ -122,7 +113,7 @@ test("dialog prompt submit can be rebound separately from input submit", async (
   const prompt = await mountPrompt({
     root: tmp.path,
     keybinds: {
-      input_submit: "return",
+      "input.submit": "return",
       "dialog.prompt.submit": "ctrl+y",
     },
     onConfirm: (value) => confirmed.push(value),
@@ -140,6 +131,32 @@ test("dialog prompt submit can be rebound separately from input submit", async (
     prompt.app.mockInput.pressKey("y", { ctrl: true })
 
     expect(confirmed).toEqual(["draft"])
+  } finally {
+    await prompt.cleanup()
+  }
+})
+
+test("dialog prompt submit can be disabled", async () => {
+  await using tmp = await tmpdir()
+  const confirmed: string[] = []
+  const prompt = await mountPrompt({
+    root: tmp.path,
+    keybinds: {
+      "input.submit": "return",
+      "dialog.prompt.submit": "none",
+    },
+    onConfirm: (value) => confirmed.push(value),
+  })
+
+  try {
+    await wait(() => prompt.app.renderer.currentFocusedEditor instanceof TextareaRenderable)
+    const textarea = prompt.app.renderer.currentFocusedEditor
+    if (!(textarea instanceof TextareaRenderable)) throw new Error("expected focused dialog textarea")
+
+    prompt.app.mockInput.pressEnter()
+
+    expect(confirmed).toEqual([])
+    expect(textarea.plainText).toBe("draft")
   } finally {
     await prompt.cleanup()
   }

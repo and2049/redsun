@@ -1,54 +1,36 @@
-import { createMemo, onCleanup } from "solid-js"
+import { createMemo } from "solid-js"
 import { useLocal } from "../context/local"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 
-export function DialogVariant(
-  props: {
-    title?: string
-    variants?: string[]
-    selected?: string
-    onSelect?: (variant: string | undefined) => void | Promise<void>
-  } = {},
-) {
+export function DialogVariant(props: {
+  title?: string
+  variants?: string[]
+  selected?: string
+  onSelect?: (variant: string) => void
+}) {
   const local = useLocal()
   const dialog = useDialog()
   dialog.setPlacement("bottom")
-  let active = true
-  onCleanup(() => {
-    active = false
-  })
 
-  const select = async (variant: string | undefined) => {
-    try {
-      await props.onSelect?.(variant)
-    } catch {
-      return
-    }
-    if (!props.onSelect) local.model.variant.set(variant)
-    if (active) dialog.clear()
-  }
-
-  const options = createMemo(() => {
-    return [
-      {
-        value: "default",
-        title: "Default",
-        onSelect: () => select(undefined),
+  const list = createMemo(() => props.variants ?? local.model.variant.list())
+  const options = createMemo(() =>
+    list().map((variant) => ({
+      value: variant,
+      title: variant,
+      onSelect: () => {
+        dialog.clear()
+        if (props.onSelect) props.onSelect(variant)
+        else local.model.variant.set(variant)
       },
-      ...(props.variants ?? local.model.variant.list()).map((variant) => ({
-        value: variant,
-        title: variant,
-        onSelect: () => select(variant),
-      })),
-    ]
-  })
+    })),
+  )
 
   return (
     <DialogSelect<string>
       options={options()}
       title={props.title ?? "Select variant"}
-      current={props.selected ?? local.model.variant.selected()}
+      current={props.selected ?? local.model.variant.current()}
       flat={true}
     />
   )

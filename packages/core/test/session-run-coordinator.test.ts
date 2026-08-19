@@ -104,8 +104,10 @@ describe("SessionRunCoordinator", () => {
       Effect.gen(function* () {
         const failure = new Error("failed")
         const defect = new Error("defect")
+        const settled: Exit.Exit<void, Error>[] = []
         const coordinator = yield* SessionRunCoordinator.make({
           drain: (key: string) => (key === "failure" ? Effect.fail(failure) : Effect.die(defect)),
+          settled: (_key, exit) => Effect.sync(() => void settled.push(exit)),
         })
 
         const failed = yield* coordinator.run("failure").pipe(Effect.exit)
@@ -115,6 +117,25 @@ describe("SessionRunCoordinator", () => {
         const died = yield* coordinator.run("defect").pipe(Effect.exit)
         expect(Exit.isFailure(died) && Cause.hasDies(died.cause)).toBeTrue()
         expect(Array.from(yield* coordinator.active)).toEqual([])
+        expect(settled).toHaveLength(2)
+      }),
+    ),
+  )
+
+  it.effect("preserves settlement hook defects while releasing ownership", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const defect = new Error("terminal publication failed")
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: () => Effect.void,
+          settled: () => Effect.die(defect),
+        })
+
+        const exit = yield* coordinator.run("session").pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+        if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBe(defect)
+        expect(yield* coordinator.active).toEqual(new Set())
       }),
     ),
   )
@@ -209,8 +230,70 @@ describe("SessionRunCoordinator", () => {
   it.effect("does nothing when interrupted while idle", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const coordinator = yield* SessionRunCoordinator.make({ drain: () => Effect.void })
-        yield* coordinator.interrupt("session")
+        const reasons: Array<string | undefined> = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never, string>({
+          drain: () => Effect.void,
+          settled: (_key, _exit, reason) => Effect.sync(() => void reasons.push(reason)),
+        })
+        yield* coordinator.interrupt("session", "user")
+        yield* coordinator.run("session")
+        expect(reasons).toEqual([undefined])
+      }),
+    ),
+  )
+
+  it.effect("does not attach a late interrupt reason after terminal settlement starts", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const settling = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const reasons: Array<string | undefined> = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never, string>({
+          drain: () => Effect.void,
+          settled: (_key, _exit, reason) =>
+            Deferred.succeed(settling, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.andThen(Effect.sync(() => void reasons.push(reason))),
+            ),
+        })
+
+        const run = yield* coordinator.run("session").pipe(Effect.forkChild)
+        yield* Deferred.await(settling)
+        yield* coordinator.interrupt("session", "user")
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(run)
+        yield* coordinator.run("session")
+
+        expect(reasons).toEqual([undefined, undefined])
+      }),
+    ),
+  )
+
+  it.effect("replaces a settlement-window wake with a steer continuation", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const settling = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) => Effect.sync(() => requests.push(request)),
+          settled: () => Deferred.succeed(settling, undefined).pipe(Effect.andThen(Deferred.await(release))),
+        })
+
+        yield* coordinator.wake("session", "input")
+        yield* Deferred.await(settling)
+        yield* coordinator.wake("session", "input")
+        const interrupted = yield* coordinator
+          .interrupt("session", undefined, {
+            continue: { request: "steer", when: Effect.succeed(true) },
+          })
+          .pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(interrupted)
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["input", "steer"])
       }),
     ),
   )
@@ -221,25 +304,28 @@ describe("SessionRunCoordinator", () => {
         const started = yield* Deferred.make<void>()
         const interrupted = yield* Deferred.make<void>()
         let runs = 0
-        const coordinator = yield* SessionRunCoordinator.make({
+        const reasons: Array<string | undefined> = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never, string>({
           drain: () =>
             Effect.sync(() => ++runs).pipe(
               Effect.andThen(Deferred.succeed(started, undefined)),
               Effect.andThen(Effect.never),
               Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined)),
             ),
+          settled: (_key, _exit, reason) => Effect.sync(() => void reasons.push(reason)),
         })
 
         const resumed = yield* coordinator.run("session").pipe(Effect.forkChild)
         yield* Deferred.await(started)
         yield* coordinator.wake("session")
-        yield* coordinator.interrupt("session")
+        yield* coordinator.interrupt("session", "user")
         yield* Deferred.await(interrupted)
 
         const exit = yield* Fiber.await(resumed)
         expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBeTrue()
         expect(Array.from(yield* coordinator.active)).toEqual([])
         expect(runs).toBe(1)
+        expect(reasons).toEqual(["user"])
       }),
     ),
   )
@@ -252,6 +338,7 @@ describe("SessionRunCoordinator", () => {
         const cleanupGate = yield* Deferred.make<void>()
         const secondStarted = yield* Deferred.make<void>()
         let runs = 0
+        let starts = 0
         const coordinator = yield* SessionRunCoordinator.make({
           drain: () =>
             Effect.sync(() => ++runs).pipe(
@@ -266,6 +353,7 @@ describe("SessionRunCoordinator", () => {
                   : Deferred.succeed(secondStarted, undefined),
               ),
             ),
+          started: () => Effect.sync(() => starts++).pipe(Effect.asVoid),
         })
 
         yield* coordinator.wake("session")
@@ -278,6 +366,194 @@ describe("SessionRunCoordinator", () => {
         yield* Deferred.await(secondStarted)
 
         expect(runs).toBe(2)
+        expect(starts).toBe(2)
+      }),
+    ),
+  )
+
+  it.effect("coalesces drain requests with input taking precedence", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) =>
+            Effect.gen(function* () {
+              requests.push(request)
+              if (requests.length !== 1) return
+              yield* Deferred.succeed(firstStarted, undefined)
+              yield* Deferred.await(release)
+            }),
+        })
+
+        yield* coordinator.wake("session", "steer")
+        yield* Deferred.await(firstStarted)
+        yield* coordinator.wake("session", "steer")
+        yield* coordinator.wake("session", "input")
+        yield* Deferred.succeed(release, undefined)
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["steer", "input"])
+      }),
+    ),
+  )
+
+  it.effect("does not carry a completed input request into a steer drain", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) =>
+            Effect.gen(function* () {
+              requests.push(request)
+              if (requests.length !== 1) return
+              yield* Deferred.succeed(firstStarted, undefined)
+              yield* Deferred.await(release)
+            }),
+        })
+
+        yield* coordinator.wake("session", "input")
+        yield* Deferred.await(firstStarted)
+        yield* coordinator.wake("session", "steer")
+        yield* Deferred.succeed(release, undefined)
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["input", "steer"])
+      }),
+    ),
+  )
+
+  it.effect("an active wake inherits scope without starting idle work", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) =>
+            Effect.gen(function* () {
+              requests.push(request)
+              if (requests.length !== 1) return
+              yield* Deferred.succeed(firstStarted, undefined)
+              yield* Deferred.await(release)
+            }),
+        })
+
+        yield* coordinator.wakeActive("session")
+        yield* coordinator.wake("session", "steer")
+        yield* Deferred.await(firstStarted)
+        yield* coordinator.wakeActive("session")
+        yield* Deferred.succeed(release, undefined)
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["steer", "steer"])
+      }),
+    ),
+  )
+
+  it.effect("coalesces overlapping interrupt continuations into one steer successor", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const cleanupStarted = yield* Deferred.make<void>()
+        const cleanupGate = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) =>
+            Effect.gen(function* () {
+              requests.push(request)
+              if (requests.length !== 1) return
+              yield* Deferred.succeed(firstStarted, undefined)
+              yield* Effect.never.pipe(
+                Effect.onInterrupt(() =>
+                  Deferred.succeed(cleanupStarted, undefined).pipe(Effect.andThen(Deferred.await(cleanupGate))),
+                ),
+              )
+            }),
+        })
+        const continuation = { continue: { request: "steer" as const, when: Effect.succeed(false) } }
+
+        yield* coordinator.wake("session")
+        yield* Deferred.await(firstStarted)
+        const first = yield* coordinator.interrupt("session", undefined, continuation).pipe(Effect.forkChild)
+        yield* Deferred.await(cleanupStarted)
+        const second = yield* coordinator.interrupt("session", undefined, continuation).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* coordinator.wake("session", "input")
+        yield* Deferred.succeed(cleanupGate, undefined)
+        yield* Effect.all([Fiber.join(first), Fiber.join(second)])
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["input", "steer"])
+      }),
+    ),
+  )
+
+  it.effect("a continuing interrupt replaces a cleanup-era input wake", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstStarted = yield* Deferred.make<void>()
+        const cleanupStarted = yield* Deferred.make<void>()
+        const cleanupGate = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) =>
+            Effect.gen(function* () {
+              requests.push(request)
+              if (requests.length !== 1) return
+              yield* Deferred.succeed(firstStarted, undefined)
+              yield* Effect.never.pipe(
+                Effect.onInterrupt(() =>
+                  Deferred.succeed(cleanupStarted, undefined).pipe(Effect.andThen(Deferred.await(cleanupGate))),
+                ),
+              )
+            }),
+        })
+
+        yield* coordinator.wake("session", "input")
+        yield* Deferred.await(firstStarted)
+        const plain = yield* coordinator.interrupt("session").pipe(Effect.forkChild)
+        yield* Deferred.await(cleanupStarted)
+        yield* coordinator.wake("session", "input")
+        const continuing = yield* coordinator
+          .interrupt("session", undefined, {
+            continue: { request: "steer", when: Effect.succeed(false) },
+          })
+          .pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(cleanupGate, undefined)
+        yield* Effect.all([Fiber.join(plain), Fiber.join(continuing)])
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["input", "steer"])
+      }),
+    ),
+  )
+
+  it.effect("does not start a conditional continuation without eligible work", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const requests: SessionRunCoordinator.Request[] = []
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: (_key, _force, request) =>
+            Effect.sync(() => requests.push(request)).pipe(
+              Effect.andThen(Deferred.succeed(started, undefined)),
+              Effect.andThen(Effect.never),
+            ),
+        })
+
+        yield* coordinator.wake("session")
+        yield* Deferred.await(started)
+        yield* coordinator.interrupt("session", undefined, {
+          continue: { request: "steer", when: Effect.succeed(false) },
+        })
+        yield* coordinator.awaitIdle("session")
+
+        expect(requests).toEqual(["input"])
       }),
     ),
   )
@@ -388,6 +664,71 @@ describe("SessionRunCoordinator", () => {
         yield* Deferred.await(bothStarted)
         yield* Deferred.succeed(gate, undefined)
         yield* Effect.all([Fiber.join(first), Fiber.join(second)])
+      }),
+    ),
+  )
+
+  it.effect("settles once per execution across coalesced drains", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        const idle = yield* Deferred.make<void>()
+        let drains = 0
+        let starts = 0
+        const settled: Exit.Exit<void, never>[] = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: () =>
+            Effect.sync(() => ++drains).pipe(
+              Effect.flatMap((run) =>
+                run === 1
+                  ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(gate)))
+                  : Effect.void,
+              ),
+              Effect.asVoid,
+            ),
+          started: () => Effect.sync(() => starts++).pipe(Effect.asVoid),
+          settled: (_key, exit) =>
+            Effect.sync(() => void settled.push(exit)).pipe(
+              Effect.andThen(Deferred.succeed(idle, undefined)),
+              Effect.asVoid,
+            ),
+        })
+
+        yield* coordinator.wake("session")
+        yield* Deferred.await(started)
+        yield* coordinator.wake("session")
+        yield* Deferred.succeed(gate, undefined)
+        yield* Deferred.await(idle)
+
+        expect(drains).toBe(2)
+        expect(starts).toBe(1)
+        expect(settled).toHaveLength(1)
+        expect(Exit.isSuccess(settled[0]!)).toBe(true)
+      }),
+    ),
+  )
+
+  it.effect("settles interrupted executions before waiters resolve", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const gate = yield* Deferred.make<void>()
+        const settled: Exit.Exit<void, never>[] = []
+        const coordinator = yield* SessionRunCoordinator.make<string, never>({
+          drain: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(gate))),
+          settled: (_key, exit) => Effect.sync(() => void settled.push(exit)),
+        })
+
+        yield* coordinator.wake("session")
+        yield* Deferred.await(started)
+        yield* coordinator.interrupt("session")
+
+        expect(settled).toHaveLength(1)
+        expect(settled[0] !== undefined && Exit.isFailure(settled[0]) && Cause.hasInterrupts(settled[0].cause)).toBe(
+          true,
+        )
+        expect(yield* coordinator.active).toEqual(new Set())
       }),
     ),
   )

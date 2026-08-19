@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { CommandV2 } from "@opencode-ai/core/command"
+import { Command } from "@opencode-ai/core/command"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Location } from "@opencode-ai/core/location"
 import { CommandPlugin } from "@opencode-ai/core/plugin/command"
@@ -15,15 +15,19 @@ const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(location({ directory }, { projectDirectory: project })),
 )
-const it = testEffect(AppNodeBuilder.build(CommandV2.node, [[Location.node, locationLayer]]))
+const it = testEffect(AppNodeBuilder.build(Command.node, [[Location.node, locationLayer]]))
 
 describe("CommandPlugin.Plugin", () => {
   it.effect("registers built-in init and review commands", () =>
     Effect.gen(function* () {
-      const command = yield* CommandV2.Service
+      const command = yield* Command.Service
       yield* CommandPlugin.Plugin.effect(
         host({
-          command: { transform: command.transform, reload: command.reload },
+          command: {
+            list: () => Effect.die("unused command.list"),
+            transform: command.transform,
+            reload: command.reload,
+          },
         }),
       ).pipe(
         Effect.provideService(
@@ -40,7 +44,6 @@ describe("CommandPlugin.Plugin", () => {
       expect(yield* command.get("review")).toMatchObject({
         name: "review",
         description: "review changes [commit|branch|pr], defaults to uncommitted",
-        subtask: true,
       })
     }),
   )

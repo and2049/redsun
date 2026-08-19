@@ -1,19 +1,7 @@
-export * as DurableEventManifest from "./durable-event-manifest"
+export * as DurableEventManifest from "./durable-event-manifest.js"
 
-import { Event } from "./event"
-import { RedsunAdvisorEvent } from "./redsun-advisor-event"
-import { RedsunGoalEvent } from "./redsun-goal-event"
-import { SessionEvent } from "./session-event"
-import { SessionV1 } from "./session-v1"
+import { Event } from "./event.js"
+import { Worktree } from "./worktree.js"
+import { SessionEvent } from "./session-event.js"
 
-export const SessionDurable = {
-  definitions: Event.durable(SessionEvent.DurableDefinitions),
-  schema: SessionEvent.Durable,
-} as const
-
-export const Durable = Event.durable([
-  ...SessionV1.Event.Definitions.filter((definition) => definition.durable !== undefined),
-  ...SessionEvent.DurableDefinitions,
-  ...RedsunGoalEvent.DurableDefinitions,
-  ...RedsunAdvisorEvent.DurableDefinitions,
-])
+export const Durable = Event.durableMap([...SessionEvent.DurableDefinitions, Worktree.Event.Resolved])

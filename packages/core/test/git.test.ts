@@ -3,7 +3,7 @@ import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Git } from "@opencode-ai/core/git"
 import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
 import { branch, commit, gitRemote } from "./fixture/git"
@@ -13,6 +13,26 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(LayerNode.compile(Git.node))
 
 describe("Git", () => {
+  it.live("discovers repository metadata without a work tree", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      yield* Effect.promise(async () => {
+        await initRepo(root.path)
+        await $`git config core.bare true`.cwd(root.path).quiet()
+      })
+      const directory = AbsolutePath.make(yield* Effect.promise(() => fs.realpath(root.path)))
+      const git = yield* Git.Service
+      const repository = yield* git.repo.discover(directory)
+
+      expect(repository?.worktree).toBe(directory)
+      expect(repository?.gitDirectory).toBe(AbsolutePath.make(path.join(directory, ".git")))
+      expect(repository?.commonDirectory).toBe(repository?.gitDirectory)
+    }),
+  )
+
   it.live("clones a remote and reads checkout metadata", () =>
     withRemote((fixture) =>
       Effect.gen(function* () {
@@ -128,8 +148,21 @@ describe("Git trees", () => {
       const git = yield* Git.Service
       const source = yield* git.repo.discover(AbsolutePath.make(root.path))
       if (!source) throw new Error("Repository not found")
-      const storage = AbsolutePath.make(path.join(root.path, ".snapshot"))
+      const storage = AbsolutePath.make(path.join(root.path, ".snapshot storage"))
       const repository = yield* git.repo.create({ worktree: source.worktree, gitDirectory: storage, seed: source })
+      yield* Effect.promise(() => $`git --git-dir ${storage} config --add include.path first.gitconfig`.quiet())
+      yield* Effect.promise(() => $`git --git-dir ${storage} config --add include.path second.gitconfig`.quiet())
+      yield* Effect.promise(() => $`git --git-dir ${storage} config core.autocrlf true`.quiet())
+      yield* git.repo.create({ worktree: source.worktree, gitDirectory: storage, seed: source })
+      expect(
+        yield* Effect.promise(() => $`git --git-dir ${storage} config --local --includes core.autocrlf`.text()),
+      ).toBe("false\n")
+      expect(
+        (yield* Effect.promise(() => fs.readFile(path.join(storage, "config"), "utf8"))).match(/opencode\.gitconfig/g),
+      ).toHaveLength(1)
+      expect(
+        yield* Effect.promise(() => $`git --git-dir ${storage} config --local --get-all include.path`.text()),
+      ).toBe("opencode.gitconfig\nfirst.gitconfig\nsecond.gitconfig\n")
       yield* git.index.refresh({ repository, scope: RelativePath.make("scope") })
       const before = yield* git.tree.write(repository)
 
@@ -146,15 +179,12 @@ describe("Git trees", () => {
         RelativePath.make("scope/tracked.txt"),
       ])
       const diffs = yield* git.tree.diff({ repository, from: before, to: after, context: 1 })
-      expect(diffs.map((item) => [item.path, item.status])).toEqual([
+      expect(diffs.map((item) => [item.file, item.status])).toEqual([
         [RelativePath.make("scope/added.txt"), "added"],
         [RelativePath.make("scope/tracked.txt"), "modified"],
       ])
 
       const files = new Map([[RelativePath.make("scope/tracked.txt"), before]])
-      const preview = yield* git.tree.preview({ repository, current: after, files, context: 1 })
-      expect(preview).toHaveLength(1)
-      expect(preview[0]?.path).toBe(RelativePath.make("scope/tracked.txt"))
       yield* git.tree.restore({ repository, files })
       expect(yield* read(path.join(root.path, "scope", "tracked.txt"))).toBe("one\n")
       expect(yield* read(path.join(root.path, "scope", "added.txt"))).toBe("added\n")
