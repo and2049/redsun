@@ -10,7 +10,19 @@ type ChromaticHue = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "p
 type V1HueToken = "secondary" | "accent" | "success" | "warning" | "primary" | "error" | "info"
 
 const chromaticHues: readonly ChromaticHue[] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple"]
-const categoricalTokens: readonly V1HueToken[] = ["secondary", "accent", "success", "warning", "primary", "error"]
+// The order V1 handed colours to agents, and the order the categorical scale
+// keeps. Entries are emitted as the literal colours rather than the nearest
+// hue name: `secondary` and `warning` collapse onto the same hue in most
+// themes, and rounding them together loses two distinct agent colours.
+const categoricalTokens: readonly V1HueToken[] = [
+  "secondary",
+  "accent",
+  "success",
+  "warning",
+  "primary",
+  "error",
+  "info",
+]
 const minimumChroma = 0.03
 const lightThreshold = 0.6
 
@@ -46,11 +58,12 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
   const selected = hex(selectedForeground(theme, theme.primary))
   const destructive = hex(selectedForeground(theme, theme.error))
   const hues = inferHues(theme, mode)
+  // A fully transparent semantic colour would hand an agent an invisible label,
+  // so it drops out; a theme that names none of the seven falls back.
   const categorical = categoricalTokens.flatMap((token) => {
-    const hue = hues.byToken[token]
-    return hue ? [hue] : []
+    const color = theme[token]
+    return color && color.toInts()[3] !== 0 ? [hex(color)] : []
   })
-  const uniqueCategorical = categorical.filter((hue, index) => categorical.indexOf(hue) === index)
   const text = mode === "light" ? "$hue.neutral.800" : "$hue.neutral.200"
   const textMuted = mode === "light" ? "$hue.neutral.600" : "$hue.neutral.400"
   const primary = mode === "light" ? "$hue.interactive.800" : "$hue.interactive.200"
@@ -71,7 +84,7 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
       interactive: hues.byToken.primary ? `$hue.${hues.byToken.primary}` : "$hue.gray",
       neutral: "$hue.gray",
     },
-    categorical: uniqueCategorical.length ? uniqueCategorical : DEFAULT_CATEGORICAL,
+    categorical: categorical.length ? categorical : DEFAULT_CATEGORICAL,
     text: {
       default: text,
       subdued: textMuted,
@@ -176,6 +189,11 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
       },
     },
     "@context:overlay": { background: { default: "$background.surface.overlay" } },
+    // Redsun's wordmark gradient. Upstream V1 themes omit it, and a theme with
+    // no gradient of its own falls back to the default document's.
+    ...(theme.logoGradientStart && theme.logoGradientEnd
+      ? { logo: { gradient: { start: color("logoGradientStart"), end: color("logoGradientEnd") } } }
+      : {}),
   })
 }
 

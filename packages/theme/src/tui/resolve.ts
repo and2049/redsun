@@ -15,6 +15,7 @@ import {
 } from "./schema.js"
 import type {
   ActionStateKey,
+  CategoricalDefinition,
   ContextName,
   HueDefinition,
   HueScale,
@@ -61,7 +62,7 @@ export function resolveTheme(definition: ThemeDefinition): ResolvedTheme {
 
 function resolveExpandedTheme(definition: ThemeDefinition): ResolvedTheme {
   const hue = resolveHue(definition.hue)
-  const categorical = (definition.categorical ?? DEFAULT_CATEGORICAL).map((name) => hue[name])
+  const categorical = resolveCategorical(definition.categorical ?? DEFAULT_CATEGORICAL, hue)
   const hueSteps = compileHueSteps(hue)
   const base = tokens(definition)
   const resolved = resolveView(base, hue, categorical, hueSteps)
@@ -165,6 +166,22 @@ function compileHueSteps(
     increase: (color, amount = 1) => shift(color, amount),
     decrease: (color, amount = 1) => shift(color, -amount),
   }
+}
+
+function resolveCategorical(definition: CategoricalDefinition, hue: ResolvedThemeTokens["hue"]) {
+  return definition.map((entry) => {
+    if (isHex(entry)) return pinnedScale(RGBA.fromHex(entry))
+    const reference = /^\$hue\.([^.]+)\.(\d+)$/.exec(entry)
+    if (!reference) return hue[entry as keyof ResolvedThemeTokens["hue"]]
+    return pinnedScale(hue[reference[1] as keyof ResolvedThemeTokens["hue"]][Number(reference[2]) as HueStep])
+  })
+}
+
+// A pinned categorical entry answers with the same colour at every step, so a
+// consumer that indexes by mode (`scale[mode === "light" ? 800 : 200]`) still
+// gets the shade the theme named.
+function pinnedScale(color: RGBA): HueScale {
+  return Object.fromEntries(HueStep.literals.map((step) => [step, color])) as HueScale
 }
 
 function resolveHue(definition: HueDefinition) {

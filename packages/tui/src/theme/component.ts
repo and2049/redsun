@@ -7,6 +7,12 @@ export function createComponentTheme(current: Accessor<ResolvedTheme>, mode: Acc
     get hue() {
       return view().hue
     },
+    // V1's flat `accent` token: the accent hue at the step that reads as a
+    // foreground in the active mode. `generateSyntax` picks the same step for
+    // its `prompt` rule, so accented chrome and accented syntax agree.
+    get accent() {
+      return view().hue.accent[mode() === "light" ? 800 : 200]
+    },
     get categorical() {
       return view().categorical
     },

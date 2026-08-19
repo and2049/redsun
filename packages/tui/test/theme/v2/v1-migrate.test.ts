@@ -9,6 +9,9 @@ import {
 } from "@opencode-ai/theme/tui"
 import { resolveTheme as resolveV1 } from "../../../src/theme"
 import { v1Theme } from "../../fixture/fixture"
+import { RGBA } from "@opentui/core"
+import { parseTheme } from "../../../src/theme"
+import dusk from "../../../src/theme/assets/dusk.json" with { type: "json" }
 
 test("migrates resolved V1 modes into V2 tokens", () => {
   const migrated = migrateV1(v1Theme())
@@ -100,25 +103,46 @@ test("infers chromatic hues, anchors light and dark colors, and aliases ambiguou
   expect(() => resolveThemeDocument(migrated, "dark")).not.toThrow()
 })
 
-test("orders categorical hues by V1 semantic color mapping", () => {
+test("carries the seven V1 semantic colors into categorical, in order and undeduped", () => {
+  // V1 handed agents colours from this list by index. Rounding each to its
+  // nearest hue merged `secondary` with `warning` in most themes and cost two
+  // distinct agent colours, so the literal shades are kept instead.
   const source = v1Theme()
-  const mapped = (name: "red" | "orange" | "yellow" | "green" | "blue" | "purple") => ({
-    light: DEFAULT_THEME.light.hue[name][700],
-    dark: DEFAULT_THEME.dark.hue[name][300],
-  })
-  source.theme.secondary = mapped("purple")
-  source.theme.accent = mapped("orange")
-  source.theme.success = mapped("green")
-  source.theme.warning = mapped("yellow")
-  source.theme.primary = mapped("blue")
-  source.theme.error = mapped("red")
+  source.theme.secondary = "#aa00ff"
+  source.theme.accent = "#ff8800"
+  source.theme.success = "#00aa44"
+  source.theme.warning = "#ffcc00"
+  source.theme.primary = "#0066ff"
+  source.theme.error = "#ff0033"
+  source.theme.info = "#00cccc"
 
+  const expected = ["#aa00ff", "#ff8800", "#00aa44", "#ffcc00", "#0066ff", "#ff0033", "#00cccc"]
   const migrated = migrateV1(source)
-  expect(migrated.light?.categorical).toEqual(["purple", "orange", "green", "yellow", "blue", "red"])
-  expect(migrated.dark?.categorical).toEqual(["purple", "orange", "green", "yellow", "blue", "red"])
+  expect(migrated.light?.categorical).toEqual(expected)
+  expect(migrated.dark?.categorical).toEqual(expected)
 
+  // Two V1 tokens naming the same colour stay two entries: the index a given
+  // agent lands on is part of the palette V1 shipped.
   source.theme.accent = source.theme.secondary
-  expect(migrateV1(source).light?.categorical).toEqual(["purple", "green", "yellow", "blue", "red"])
+  expect(migrateV1(source).light?.categorical).toEqual([
+    "#aa00ff",
+    "#aa00ff",
+    "#00aa44",
+    "#ffcc00",
+    "#0066ff",
+    "#ff0033",
+    "#00cccc",
+  ])
+})
+
+test("drops transparent semantic colors from categorical", () => {
+  const source = v1Theme()
+  source.theme.secondary = "transparent"
+  source.theme.accent = "#ff8800"
+
+  const categorical = migrateV1(source).light?.categorical
+  expect(categorical?.includes("#00000000")).toBe(false)
+  expect(categorical?.[0]).toBe("#ff8800")
 })
 
 test("gives accent and primary ownership of their inferred hues", () => {
@@ -156,6 +180,7 @@ test("uses default categorical hues when V1 semantic colors are ambiguous", () =
   source.theme.warning = "transparent"
   source.theme.primary = "transparent"
   source.theme.error = "transparent"
+  source.theme.info = "transparent"
 
   const migrated = migrateV1(source)
   expect(migrated.light?.categorical).toEqual(DEFAULT_CATEGORICAL)
@@ -264,3 +289,51 @@ function hex(color: { toInts(): [number, number, number, number] }) {
   const byte = (value: number) => value.toString(16).padStart(2, "0")
   return `#${byte(r)}${byte(g)}${byte(b)}${a === 255 ? "" : byte(a)}`
 }
+
+test("carries the redsun wordmark gradient across, and omits it when absent", () => {
+  // Upstream V1 has no gradient token, so a theme without one must not invent
+  // a `logo` block -- it should inherit the default document's.
+  const source = v1Theme()
+  expect(migrateV1(source).light?.logo).toBeUndefined()
+
+  source.theme.logoGradientStart = "#f8cb00"
+  source.theme.logoGradientEnd = "#c3133c"
+  const migrated = migrateV1(source)
+  expect(migrated.light?.logo?.gradient?.start).toBe("#f8cb00")
+  expect(migrated.light?.logo?.gradient?.end).toBe("#c3133c")
+
+  const resolved = resolveThemeDocument(migrated, "light")
+  expect(resolved.logo.gradient.start.equals(RGBA.fromHex("#f8cb00"))).toBeTrue()
+  expect(resolved.logo.gradient.end.equals(RGBA.fromHex("#c3133c"))).toBeTrue()
+})
+
+test("dusk resolves to the same tokens the generated V2 document did", () => {
+  // The shipped assets went back to V1's flat palette; this is the guard that
+  // the format change is a no-op on appearance. The right-hand values are the
+  // hues the generated `dusk` document spelled out (`neutral.200/400/600/700/800`).
+  const resolved = resolveThemeDocument(parseTheme(dusk, "dusk"), "dark")
+  const hex = (color: RGBA) => {
+    const [r, g, b, a] = color.toInts()
+    const byte = (value: number) => value.toString(16).padStart(2, "0")
+    return `#${byte(r)}${byte(g)}${byte(b)}${a === 255 ? "" : byte(a)}`
+  }
+
+  expect(hex(resolved.text.default)).toBe("#e4e4e4")
+  expect(hex(resolved.text.subdued)).toBe("#e4e4e45e")
+  expect(hex(resolved.background.default)).toBe("#181717")
+  expect(hex(resolved.background.surface.offset)).toBe("#242222")
+  expect(hex(resolved.background.surface.overlay)).toBe("#292929")
+  expect(hex(resolved.border.default)).toBe("#e4e4e413")
+  expect(hex(resolved.logo.gradient.start)).toBe("#f8cb00")
+  expect(hex(resolved.logo.gradient.end)).toBe("#c3133c")
+  // V1's seven agent colours, in order, unrounded.
+  expect(resolved.categorical.map((scale) => hex(scale[200]))).toEqual([
+    "#ee9a62",
+    "#fde36f",
+    "#6dab4d",
+    "#f1b467",
+    "#fde36f",
+    "#e34671",
+    "#ee9a62",
+  ])
+})

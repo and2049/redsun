@@ -1,9 +1,18 @@
 import { RGBA, SyntaxStyle } from "@opentui/core"
-import type { Theme, ThemeV1Json } from "@opencode-ai/theme/tui/v1"
+import type { SyntaxTheme, Theme, ThemeV1Json } from "@opencode-ai/theme/tui/v1"
 
-export type { ColorValue, HexColor, RefName, Theme, ThemeColor, ThemeV1Json, Variant } from "@opencode-ai/theme/tui/v1"
+export type {
+  ColorValue,
+  HexColor,
+  RefName,
+  SyntaxTheme,
+  Theme,
+  ThemeColor,
+  ThemeV1Json,
+  Variant,
+} from "@opencode-ai/theme/tui/v1"
 
-export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
+export function selectedForeground(theme: SyntaxTheme, bg?: RGBA): RGBA {
   if (theme._hasSelectedListItemText) return theme.selectedListItemText
 
   if (theme.background.a === 0) {
@@ -16,11 +25,11 @@ export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
   return theme.background
 }
 
-export function generateSyntax(theme: Theme) {
+export function generateSyntax(theme: SyntaxTheme) {
   return SyntaxStyle.fromTheme(getSyntaxRules(theme))
 }
 
-function getSyntaxRules(theme: Theme) {
+function getSyntaxRules(theme: SyntaxTheme) {
   return [
     {
       scope: ["default"],

@@ -25,7 +25,7 @@ import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
 import { PatchDiff } from "../../component/patch-diff"
-import { createSyntaxStyleMemo, ThemeContextProvider, useTheme, useThemes } from "../../context/theme"
+import { ThemeContextProvider, useTheme, useThemes } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, MouseEvent } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
@@ -109,7 +109,6 @@ import { useArgs } from "../../context/args"
 import { withTimestampedFallback } from "@opencode-ai/util/session-title-fallback"
 import { createSingleFlight } from "../../util/single-flight"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
-import { generateThinkingSyntax } from "./thinking-syntax"
 import { createDelayedPresence } from "../../util/delayed-presence"
 import { SessionLocationMissing } from "./location-missing"
 
@@ -1666,12 +1665,7 @@ function SessionReasoningGroupView(props: {
   message: (messageID: string) => SessionMessageInfo | undefined
 }) {
   const ctx = use()
-  const theme = useTheme()
-  const { currentSyntax: syntax } = useThemes()
-  const thinkingSyntax = createSyntaxStyleMemo(() => generateThinkingSyntax(syntax(), theme.text.subdued))
-  const renderer = useRenderer()
   const [expanded, setExpanded] = createSignal(false)
-  const [hover, setHover] = createSignal(false)
   const parts = createMemo(() =>
     props.refs.flatMap((ref) => {
       const message = props.message(ref.messageID)
@@ -1681,6 +1675,11 @@ function SessionReasoningGroupView(props: {
       return [{ message, part }]
     }),
   )
+  const content = createMemo(() =>
+    parts()
+      .map((item) => reasoningContent(item.part))
+      .join("\n\n"),
+  )
   const latest = createMemo((previous: string | null) => {
     const item = parts().at(-1)
     if (!item) return previous
@@ -1689,13 +1688,6 @@ function SessionReasoningGroupView(props: {
     if (item.part.time?.completed !== undefined || item.message.time.completed !== undefined) return null
     return previous
   }, null)
-  const duration = createMemo(() =>
-    parts().reduce((total, item) => {
-      const start = item.part.time?.created
-      const end = item.part.time?.completed
-      return total + (start === undefined || end === undefined ? 0 : Math.max(0, end - start))
-    }, 0),
-  )
 
   return (
     <Show when={parts().length > 0}>
@@ -1703,83 +1695,89 @@ function SessionReasoningGroupView(props: {
         when={ctx.thinkingMode() === "hide"}
         fallback={<For each={props.refs}>{(ref) => <SessionPartView partRef={ref} message={props.message} />}</For>}
       >
-        <box flexDirection="column" flexShrink={0}>
-          <InlineToolRow
-            icon={expanded() ? "▼" : "▶"}
-            color={
-              !props.completed
-                ? theme.text.default
-                : hover() || expanded()
-                  ? theme.text.feedback.warning.default
-                  : RGBA.fromValues(
-                      theme.text.feedback.warning.default.r,
-                      theme.text.feedback.warning.default.g,
-                      theme.text.feedback.warning.default.b,
-                      0.6,
-                    )
-            }
-            complete={props.completed}
-            pending={latest() ? `Thinking: ${latest()}` : "Thinking"}
-            spinner={!props.completed}
-            onMouseOver={() => setHover(true)}
-            onMouseOut={() => setHover(false)}
-            onMouseUp={() => {
-              if (renderer.getSelection()?.getSelectedText()) return
-              setExpanded((value) => !value)
-            }}
-          >
-            {props.completed ? "Thought" : latest() ? `Thinking: ${latest()}` : "Thinking"}
-            <Show when={props.completed && !expanded() && latest()}>: {latest()}</Show>
-            <Show when={props.completed && parts().length > 1}> · {parts().length} steps</Show>
-            <Show when={props.completed && duration()}> · {Locale.duration(duration())}</Show>
-          </InlineToolRow>
-          <Show when={expanded()}>
-            <box paddingLeft={TRANSCRIPT_GUTTER}>
-              <For each={props.refs}>
-                {(ref) => {
-                  const message = createMemo(() => {
-                    const item = props.message(ref.messageID)
-                    return item?.type === "assistant" ? item : undefined
-                  })
-                  const part = createMemo(() => {
-                    const item = message()
-                    if (!item) return undefined
-                    const part = resolvePart(item, ref.partID)
-                    return part?.type === "reasoning" ? part : undefined
-                  })
-                  const content = createMemo(() => {
-                    const item = part()
-                    return item ? reasoningContent(item) : ""
-                  })
-                  return (
-                    <Show when={content()}>
-                      <box marginTop={1}>
-                        <box
-                          border={["left"]}
-                          customBorderChars={SplitBorder.customBorderChars}
-                          borderColor={theme.raise(theme.background.surface.offset)}
-                          paddingLeft={1}
-                        >
-                          <code
-                            filetype="markdown"
-                            drawUnstyledText={false}
-                            streaming={part()?.time?.completed === undefined && message()?.time.completed === undefined}
-                            syntaxStyle={thinkingSyntax()}
-                            content={content()}
-                            conceal={ctx.markdownMode() === "rendered"}
-                            fg={theme.text.subdued}
-                          />
-                        </box>
-                      </box>
-                    </Show>
-                  )
-                }}
-              </For>
-            </box>
-          </Show>
-        </box>
+        <ThinkingDisclosure
+          content={content()}
+          title={latest()}
+          done={props.completed}
+          toggleable={true}
+          open={expanded()}
+          onToggle={() => setExpanded((value) => !value)}
+        />
       </Show>
     </Show>
+  )
+}
+
+const THINKING_LABEL = "▶ Thinking: "
+
+// The collapsed thinking row shows the *end* of the trace, not its start: what
+// the model concluded is more useful at a glance than how it opened. Sized so
+// the row never wraps -- the chevron, the label and the gutters come off the
+// available width before the tail is taken.
+export function thinkingTeaser(content: string, width: number) {
+  const available = Math.max(10, width - 3 - THINKING_LABEL.length - 4)
+  const flat = content.replace(/\s+/g, " ").trim()
+  if (flat.length <= available) return flat
+  return "..." + flat.slice(flat.length - available)
+}
+
+// Collapsed thinking is a single "▶ Thinking: …tail" line showing the end of the
+// trace; clicking flips the chevron down and reveals the full italic trace flush
+// beneath it. The show mode (`session.toggle.thinking`) renders the same look
+// pinned open. Muted italic throughout -- reasoning is an aside, and colouring
+// it competes with the tool rows for attention.
+function ThinkingDisclosure(props: {
+  content: string
+  title: string | null
+  done: boolean
+  toggleable: boolean
+  open: boolean
+  onToggle: () => void
+}) {
+  const ctx = use()
+  const theme = useTheme()
+  const renderer = useRenderer()
+  const [hover, setHover] = createSignal(false)
+  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width))
+
+  return (
+    <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER} flexDirection="column" flexShrink={0}>
+      <Show
+        when={props.done}
+        fallback={
+          <box flexDirection="row">
+            <Spinner color={theme.text.feedback.warning.default}>
+              {props.title ? "Thinking: " + props.title : "Thinking"}
+            </Spinner>
+          </box>
+        }
+      >
+        <box
+          onMouseOver={() => props.toggleable && setHover(true)}
+          onMouseOut={() => setHover(false)}
+          onMouseUp={() => {
+            if (!props.toggleable) return
+            if (renderer.getSelection()?.getSelectedText()) return
+            props.onToggle()
+          }}
+        >
+          <text
+            fg={hover() ? theme.text.default : theme.text.subdued}
+            wrapMode="none"
+            attributes={TextAttributes.ITALIC}
+          >
+            {props.open ? "▼ Thinking:" : THINKING_LABEL + teaser()}
+          </text>
+        </box>
+      </Show>
+      <Show when={props.open && props.content}>
+        <box paddingLeft={2}>
+          <text fg={theme.text.subdued} attributes={TextAttributes.ITALIC}>
+            {props.content}
+          </text>
+        </box>
+      </Show>
+    </box>
   )
 }
 
@@ -1814,7 +1812,7 @@ function SessionGroupView(props: {
         <Show when={grouped().length > 0}>
           <InlineToolRow
             icon={expanded() ? "−" : "✱"}
-            iconColor={theme.hue.accent[500]}
+            iconColor={theme.accent}
             color={hover() ? theme.text.default : theme.text.subdued}
             complete={props.completed}
             pending={label()}
@@ -1826,7 +1824,7 @@ function SessionGroupView(props: {
               setExpanded((value) => !value)
             }}
           >
-            <span style={{ fg: theme.hue.accent[500], bold: true }}>{label()}</span>
+            <span style={{ fg: theme.accent, bold: true }}>{label()}</span>
             {expanded() ? "" : " (click to expand)"}
           </InlineToolRow>
         </Show>
@@ -2299,12 +2297,9 @@ function ReasoningPart(props: {
   part: SessionMessageAssistantReasoning
   message: SessionMessageAssistant
 }) {
-  const theme = useTheme()
-  const { currentSyntax: syntax } = useThemes()
-  const thinkingSyntax = createSyntaxStyleMemo(() => generateThinkingSyntax(syntax(), theme.text.subdued))
   const ctx = use()
-  // Collapsed by default in hide mode: a single line throughout, so the
-  // layout never shifts. Click to open the full markdown block, click to close.
+  // Collapsed by default in hide mode: a single line throughout, so the layout
+  // never shifts. Click to open the full trace, click to close.
   const [expanded, setExpanded] = createSignal(false)
 
   const content = createMemo(() => reasoningContent(props.part))
@@ -2312,57 +2307,18 @@ function ReasoningPart(props: {
     () => props.part.time?.completed !== undefined || props.message.time.completed !== undefined,
   )
   const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
-  const duration = createMemo(() => {
-    const end = props.part.time?.completed ?? props.message.time.completed
-    const start = props.part.time?.created ?? props.message.time.created
-    return end === undefined ? 0 : Math.max(0, end - start)
-  })
   const summary = createMemo(() => reasoningSummary(content()))
-  const toggle = () => {
-    if (!inMinimal()) return
-    setExpanded((prev) => !prev)
-  }
 
   return (
     <Show when={content()}>
-      <box paddingLeft={TRANSCRIPT_GUTTER} flexDirection="column" flexShrink={0}>
-        <box
-          border={!inMinimal() || expanded() ? ["left"] : undefined}
-          customBorderChars={SplitBorder.customBorderChars}
-          borderColor={theme.raise(theme.background.default)}
-          paddingLeft={!inMinimal() || expanded() ? 1 : 0}
-        >
-          <box onMouseUp={toggle}>
-            <ReasoningHeader
-              toggleable={inMinimal()}
-              open={!inMinimal() || expanded()}
-              done={isDone()}
-              title={inMinimal() && !expanded() ? summary().title : null}
-              duration={isDone() ? Locale.duration(duration()) : undefined}
-            />
-          </box>
-        </box>
-        <Show when={!inMinimal() || expanded()}>
-          <box marginTop={1}>
-            <box
-              border={["left"]}
-              customBorderChars={SplitBorder.customBorderChars}
-              borderColor={theme.raise(theme.background.default)}
-              paddingLeft={inMinimal() ? 3 : 1}
-            >
-              <code
-                filetype="markdown"
-                drawUnstyledText={false}
-                streaming={true}
-                syntaxStyle={thinkingSyntax()}
-                content={content()}
-                conceal={ctx.markdownMode() === "rendered"}
-                fg={theme.text.subdued}
-              />
-            </box>
-          </box>
-        </Show>
-      </box>
+      <ThinkingDisclosure
+        content={content()}
+        title={summary().title}
+        done={isDone()}
+        toggleable={inMinimal()}
+        open={!inMinimal() || expanded()}
+        onToggle={() => setExpanded((prev) => !prev)}
+      />
     </Show>
   )
 }
@@ -2370,55 +2326,6 @@ function ReasoningPart(props: {
 function reasoningContent(part: SessionMessageAssistantReasoning) {
   // OpenRouter encrypts some reasoning blocks; drop the placeholder.
   return part.text.replace("[REDACTED]", "").trim()
-}
-
-function ReasoningHeader(props: {
-  toggleable: boolean
-  open: boolean
-  done: boolean
-  title: string | null
-  duration?: string
-}) {
-  const theme = useTheme()
-  const fg = () =>
-    props.open
-      ? RGBA.fromValues(
-          theme.text.feedback.warning.default.r,
-          theme.text.feedback.warning.default.g,
-          theme.text.feedback.warning.default.b,
-          0.6,
-        )
-      : theme.text.feedback.warning.default
-
-  return (
-    <Switch>
-      <Match when={!props.done}>
-        <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
-        </box>
-      </Match>
-      <Match when={true}>
-        <text fg={fg()} wrapMode="none">
-          <Show when={props.toggleable}>
-            <span>{props.open ? "- " : "+ "}</span>
-          </Show>
-          <span>Thought</span>
-          <Show when={props.title || props.duration}>
-            <span>: </span>
-          </Show>
-          <Show when={props.title}>
-            <span>{props.title}</span>
-          </Show>
-          <Show when={props.duration}>
-            <span>
-              {props.title ? " · " : ""}
-              {props.duration}
-            </span>
-          </Show>
-        </text>
-      </Match>
-    </Switch>
-  )
 }
 
 function TextPart(props: { last: boolean; part: SessionMessageAssistantText }) {
@@ -2622,10 +2529,11 @@ function GenericTool(props: ToolProps) {
         complete={props.part.state.status === "completed"}
         pending={props.tool}
         spinner={loading()}
+        name={props.tool}
         part={props.part}
         onClick={expandable() ? () => setExpanded((value) => !value) : undefined}
       >
-        {genericToolSummary(props.tool, props.input)}
+        {primitiveInputSummary(props.input).replace(/\s+/g, " ")}
       </InlineTool>
       <Show when={expanded()}>
         <box paddingLeft={3 + INLINE_TOOL_ICON_WIDTH}>
@@ -2659,11 +2567,6 @@ function GenericTool(props: ToolProps) {
   )
 }
 
-export function genericToolSummary(tool: string, input: Record<string, unknown>) {
-  const args = primitiveInputSummary(input).replace(/\s+/g, " ")
-  return `${tool}${args ? ` ${args}` : ""}`
-}
-
 function useToolPermission(part: () => SessionMessageAssistantTool | undefined) {
   const ctx = use()
   const data = useData()
@@ -2678,6 +2581,7 @@ function useToolPermission(part: () => SessionMessageAssistantTool | undefined) 
 function InlineTool(props: {
   icon: string
   iconColor?: RGBA
+  name?: string
   color?: RGBA
   complete: unknown
   pending: string
@@ -2711,13 +2615,26 @@ function InlineTool(props: {
     if (permission()) return theme.text.feedback.warning.default
     if (failed()) return theme.text.feedback.error.default
     if (hover() && props.onClick) return theme.text.default
-    return theme.text.subdued
+    if (props.complete) return theme.text.subdued
+    return theme.text.default
+  })
+  // The icon and the tool name carry the theme accent so a tool row reads as a
+  // call, not as more grey prose. State colours still win -- a pending
+  // permission, a failure or an explicit override paints the whole row.
+  const accent = createMemo(() => {
+    if (props.color) return props.color
+    if (permission()) return theme.text.feedback.warning.default
+    if (failed()) return theme.text.feedback.error.default
+    if (denied()) return theme.text.subdued
+    return theme.accent
   })
 
   return (
     <InlineToolRow
       icon={props.icon}
-      iconColor={props.iconColor}
+      iconColor={props.iconColor ?? accent()}
+      name={props.name}
+      nameColor={accent()}
       color={fg()}
       errorColor={theme.text.feedback.error.default}
       failed={failed()}
@@ -2748,6 +2665,8 @@ function InlineTool(props: {
 export function InlineToolRow(props: {
   icon: string
   iconColor?: RGBA
+  name?: string
+  nameColor?: RGBA
   color?: RGBA
   errorColor?: RGBA
   failed?: boolean
@@ -2773,11 +2692,19 @@ export function InlineToolRow(props: {
     >
       <Switch>
         <Match when={props.spinner}>
-          <Show when={props.status} fallback={<Spinner color={props.color} children={props.children} />}>
+          <Show
+            when={props.status}
+            fallback={
+              <Spinner color={props.color}>
+                <ToolName name={props.name} color={props.nameColor ?? props.color} />
+                {props.children}
+              </Spinner>
+            }
+          >
             {(status) => (
               <box flexDirection="row" gap={1}>
                 <Spinner color={props.color} />
-                <InlineToolLabel color={props.color} status={status()}>
+                <InlineToolLabel color={props.color} name={props.name} nameColor={props.nameColor} status={status()}>
                   {props.children}
                 </InlineToolLabel>
               </box>
@@ -2802,6 +2729,10 @@ export function InlineToolRow(props: {
                     fg={props.failed ? props.errorColor : props.color}
                     attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
                   >
+                    <ToolName
+                      name={props.name}
+                      color={props.failed ? props.errorColor : (props.nameColor ?? props.color)}
+                    />
                     {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
                   </text>
                 }
@@ -2809,6 +2740,8 @@ export function InlineToolRow(props: {
                 {(status) => (
                   <InlineToolLabel
                     color={props.failed ? props.errorColor : props.color}
+                    name={props.name}
+                    nameColor={props.failed ? props.errorColor : props.nameColor}
                     denied={props.denied}
                     status={status()}
                   >
@@ -2829,7 +2762,14 @@ export function InlineToolRow(props: {
   )
 }
 
-function InlineToolLabel(props: { color?: RGBA; denied?: boolean; status: JSX.Element; children: JSX.Element }) {
+function InlineToolLabel(props: {
+  color?: RGBA
+  name?: string
+  nameColor?: RGBA
+  denied?: boolean
+  status: JSX.Element
+  children: JSX.Element
+}) {
   return (
     <box flexDirection="row" flexWrap="wrap" columnGap={1} flexGrow={1}>
       <text
@@ -2838,10 +2778,22 @@ function InlineToolLabel(props: { color?: RGBA; denied?: boolean; status: JSX.El
         fg={props.color}
         attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
       >
+        <ToolName name={props.name} color={props.nameColor ?? props.color} />
         {props.children}
       </text>
       {props.status}
     </box>
+  )
+}
+
+// The tool name that leads an inline row, in bold accent: the row reads as
+// `Name args` with only the name coloured, so it registers as a call rather
+// than another line of muted prose.
+function ToolName(props: { name?: string; color?: RGBA }) {
+  return (
+    <Show when={props.name}>
+      <span style={{ fg: props.color, bold: true }}>{props.name}</span>{" "}
+    </Show>
   )
 }
 
@@ -3127,8 +3079,14 @@ function Write(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="←" pending="Preparing write..." complete={stringValue(props.input.path)} part={props.part}>
-          Write {pathFormatter.format(stringValue(props.input.path))}
+        <InlineTool
+          icon="←"
+          name="Write"
+          pending="Preparing write..."
+          complete={stringValue(props.input.path)}
+          part={props.part}
+        >
+          {pathFormatter.format(stringValue(props.input.path))}
         </InlineTool>
       </Match>
     </Switch>
@@ -3138,8 +3096,14 @@ function Write(props: ToolProps) {
 function Glob(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Finding files..." complete={stringValue(props.input.pattern)} part={props.part}>
-      Glob "{stringValue(props.input.pattern)}"{" "}
+    <InlineTool
+      icon="✱"
+      name="Glob"
+      pending="Finding files..."
+      complete={stringValue(props.input.pattern)}
+      part={props.part}
+    >
+      "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={finiteNumber(props.metadata.count)}>
         ({finiteNumber(props.metadata.count)} {finiteNumber(props.metadata.count) === 1 ? "match" : "matches"})
@@ -3162,12 +3126,13 @@ function Read(props: ToolProps) {
     <>
       <InlineTool
         icon="→"
+        name="Read"
         pending="Reading file..."
         complete={stringValue(props.input.path)}
         spinner={isRunning()}
         part={props.part}
       >
-        Read {pathFormatter.format(stringValue(props.input.path))}
+        {pathFormatter.format(stringValue(props.input.path))}
       </InlineTool>
       <For each={loaded()}>
         {(filepath) => (
@@ -3185,8 +3150,14 @@ function Read(props: ToolProps) {
 function Grep(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
-    <InlineTool icon="✱" pending="Searching content..." complete={stringValue(props.input.pattern)} part={props.part}>
-      Grep "{stringValue(props.input.pattern)}"{" "}
+    <InlineTool
+      icon="✱"
+      name="Grep"
+      pending="Searching content..."
+      complete={stringValue(props.input.pattern)}
+      part={props.part}
+    >
+      "{stringValue(props.input.pattern)}"{" "}
       <Show when={stringValue(props.input.path)}>in {pathFormatter.format(stringValue(props.input.path))} </Show>
       <Show when={finiteNumber(props.metadata.matches)}>
         ({finiteNumber(props.metadata.matches)} {finiteNumber(props.metadata.matches) === 1 ? "match" : "matches"})
@@ -3197,16 +3168,28 @@ function Grep(props: ToolProps) {
 
 function WebFetch(props: ToolProps) {
   return (
-    <InlineTool icon="%" pending="Fetching from the web..." complete={stringValue(props.input.url)} part={props.part}>
-      WebFetch {stringValue(props.input.url)}
+    <InlineTool
+      icon="%"
+      name="WebFetch"
+      pending="Fetching from the web..."
+      complete={stringValue(props.input.url)}
+      part={props.part}
+    >
+      {stringValue(props.input.url)}
     </InlineTool>
   )
 }
 
 function WebSearch(props: ToolProps) {
   return (
-    <InlineTool icon="◈" pending="Searching web..." complete={stringValue(props.input.query)} part={props.part}>
-      {webSearchProviderLabel(props.metadata.provider)} "{stringValue(props.input.query)}"
+    <InlineTool
+      icon="◈"
+      name={webSearchProviderLabel(props.metadata.provider)}
+      pending="Searching web..."
+      complete={stringValue(props.input.query)}
+      part={props.part}
+    >
+      "{stringValue(props.input.query)}"
     </InlineTool>
   )
 }
@@ -3336,12 +3319,13 @@ function Execute(props: ToolProps) {
       <InlineTool
         icon={hasRuntimeError() ? "✗" : props.part.state.status === "completed" ? "✓" : "│"}
         color={hasRuntimeError() ? theme.text.feedback.error.default : undefined}
+        name="execute"
         spinner={isLoading()}
         pending="execute"
         complete={true}
         part={props.part}
       >
-        execute
+        {""}
       </InlineTool>
       <Index each={calls()}>{(call) => <ExecuteCallView call={call} />}</Index>
       <Show when={showOutput()}>
@@ -3581,8 +3565,8 @@ function Question(props: ToolProps) {
 function Skill(props: ToolProps) {
   const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
   return (
-    <InlineTool icon="→" pending="Loading skill..." complete={name()} part={props.part}>
-      Skill "{name()}"
+    <InlineTool icon="→" name="Skill" pending="Loading skill..." complete={name()} part={props.part}>
+      "{name()}"
     </InlineTool>
   )
 }

@@ -43,6 +43,24 @@ test("validates and resolves categorical hues in configured order", () => {
   expect(() => resolveSource({ version: 2, light: { categorical: ["magenta"] } }, "light")).toThrow("Invalid theme")
 })
 
+test("pins categorical entries given as a hue step or a literal color", () => {
+  // A bare hue name still contributes the whole scale so a consumer can index
+  // by mode; a pinned entry answers with its one colour at every step.
+  const theme = resolveSource({ version: 2, light: { categorical: ["red", "$hue.blue.400", "#aa00ff"] } }, "light")
+
+  expect(theme.categorical[0]).toBe(theme.hue.red)
+  expect(theme.categorical[1][200]).toBe(theme.hue.blue[400])
+  expect(theme.categorical[1][800]).toBe(theme.hue.blue[400])
+  expect(theme.categorical[2][200].equals(RGBA.fromHex("#aa00ff"))).toBeTrue()
+  expect(theme.categorical[2][800].equals(RGBA.fromHex("#aa00ff"))).toBeTrue()
+  expect(() => resolveSource({ version: 2, light: { categorical: ["$hue.magenta.400"] } }, "light")).toThrow(
+    "Invalid theme",
+  )
+  expect(() => resolveSource({ version: 2, light: { categorical: ["$hue.blue.450"] } }, "light")).toThrow(
+    "Invalid theme",
+  )
+})
+
 test("generates syntax with one categorical hue", () => {
   const theme = resolveSource({ version: 2, light: { categorical: ["red"] } }, "light")
   const syntax = generateSyntax(theme, "light")

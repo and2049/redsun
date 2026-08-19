@@ -1,6 +1,8 @@
 import type { RGBA } from "@opentui/core"
 
 export type Theme = {
+  readonly logoGradientStart: RGBA
+  readonly logoGradientEnd: RGBA
   readonly primary: RGBA
   readonly secondary: RGBA
   readonly accent: RGBA
@@ -58,6 +60,10 @@ export type Theme = {
 }
 
 export type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
+// The syntax table and the selected-foreground rule never read the wordmark
+// gradient, so they accept the plugin-facing theme surface too.
+export type SyntaxTheme = Omit<Theme, "logoGradientStart" | "logoGradientEnd">
+export type ThemeMode = "dark" | "light"
 export type HexColor = `#${string}`
 export type RefName = string
 export type Variant = {
@@ -67,8 +73,21 @@ export type Variant = {
 export type ColorValue = HexColor | RefName | Variant | RGBA | number
 export type ThemeV1Json = {
   $schema?: string
+  // Accepted and ignored. V1 asked a theme to declare its own mode; the
+  // migration classifies by the text/background contrast that actually drives
+  // token selection, which disagrees for exactly one shipped theme (`wave`
+  // declares light but paints light text on mid-blue). Honouring the field
+  // would reintroduce that inconsistency, so it is kept only so existing files
+  // parse.
+  mode?: ThemeMode
   defs?: Record<string, HexColor | RefName>
-  theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu"> & {
+  theme: Omit<
+    Record<ThemeColor, ColorValue>,
+    "logoGradientStart" | "logoGradientEnd" | "selectedListItemText" | "backgroundMenu"
+  > & {
+    // Redsun tokens; upstream V1 themes have no wordmark gradient.
+    logoGradientStart?: ColorValue
+    logoGradientEnd?: ColorValue
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
     thinkingOpacity?: number

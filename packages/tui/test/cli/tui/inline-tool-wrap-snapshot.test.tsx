@@ -5,14 +5,15 @@ import {
   InlineToolRow,
   TRANSCRIPT_GUTTER,
   executeCallSummary,
-  genericToolSummary,
   isBackgroundSubagent,
   parseApplyPatchFiles,
   parseDiagnostics,
   parseQuestionAnswers,
   parseQuestions,
+  thinkingTeaser,
   toolDisplay,
 } from "../../../src/routes/session"
+import { primitiveInputSummary } from "../../../src/util/tool-display"
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined
 
@@ -84,6 +85,14 @@ function FailedCompleteToolFixture() {
   return (
     <InlineToolRow icon="→" complete={true} pending="Reading file..." failed={true} failure="Read failed">
       Read src/index.ts
+    </InlineToolRow>
+  )
+}
+
+function NamedToolFixture(props: { failed?: boolean }) {
+  return (
+    <InlineToolRow icon="✱" name="Grep" complete={true} pending="Searching content..." failed={props.failed}>
+      "database" in packages/core (12 matches)
     </InlineToolRow>
   )
 }
@@ -162,6 +171,30 @@ describe("TUI inline tool wrapping", () => {
     )
   })
 
+  test("leads a named row with the tool name, once, in both states", async () => {
+    // The name is hoisted out of the row body so it can be painted in accent
+    // while the arguments stay muted; the rendered line must still read as one
+    // `Name args` phrase, with no doubled name and no missing separator.
+    expect(await renderFrame(() => <NamedToolFixture />, { width: 60, height: 2 })).toBe(
+      ' ✱ Grep "database" in packages/core (12 matches)',
+    )
+    const failed = await renderFrame(() => <NamedToolFixture failed={true} />, { width: 60, height: 2 })
+    expect(failed).toBe(' ✱ Grep "database" in packages/core (12 matches)')
+  })
+
+  test("teases collapsed thinking with the tail of the trace", () => {
+    // A short trace shows whole, flattened onto one line.
+    expect(thinkingTeaser("  Checking\n\n  the   parser  ", 80)).toBe("Checking the parser")
+    // A long one keeps its end, so the row shows what the model concluded.
+    const long = "start " + "x".repeat(200) + " end"
+    const teased = thinkingTeaser(long, 60)
+    expect(teased.startsWith("...")).toBeTrue()
+    expect(teased.endsWith("end")).toBeTrue()
+    expect(teased.length).toBeLessThanOrEqual(60)
+    // Never narrower than a usable tail, however cramped the terminal.
+    expect(thinkingTeaser(long, 4).length).toBe(13)
+  })
+
   test("filters malformed nested tool wire data", () => {
     expect(
       parseApplyPatchFiles([
@@ -202,18 +235,19 @@ describe("TUI inline tool wrapping", () => {
   })
 
   test("summarizes generic tool arguments on one line", () => {
+    // The tool name leads the row as an accented `name`, so the body is the
+    // argument summary alone.
+    const summary = (input: Record<string, unknown>) => primitiveInputSummary(input).replace(/\s+/g, " ")
     expect(
-      genericToolSummary("demo_search_catalog", {
+      summary({
         query: "wireless keyboard",
         limit: 8,
         includeArchived: false,
         filters: { category: "accessories" },
       }),
-    ).toBe("demo_search_catalog [query=wireless keyboard, limit=8, includeArchived=false]")
-    expect(genericToolSummary("demo_get_weather", { city: "Tokyo", units: "celsius" })).toBe(
-      "demo_get_weather [city=Tokyo, units=celsius]",
-    )
-    expect(genericToolSummary("demo_refresh", {})).toBe("demo_refresh")
+    ).toBe("[query=wireless keyboard, limit=8, includeArchived=false]")
+    expect(summary({ city: "Tokyo", units: "celsius" })).toBe("[city=Tokyo, units=celsius]")
+    expect(summary({})).toBe("")
   })
 
   test("ignores diagnostics with malformed nested ranges", () => {

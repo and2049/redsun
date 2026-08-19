@@ -36,9 +36,12 @@ const ColorValue = Schema.Union([
 
 export const HueName = Schema.Union([BaseHue, HueAlias])
 export type HueName = Schema.Schema.Type<typeof HueName>
-export const CategoricalDefinition = Schema.Array(HueName).check(Schema.isMinLength(1))
-export type CategoricalDefinition = Schema.Schema.Type<typeof CategoricalDefinition>
 const HueColorValue = Schema.Union([HexColor, Schema.TemplateLiteral(["$hue.", HueName, ".", HueStep])])
+// A bare hue name contributes its whole scale, so a consumer can pick the step
+// that suits its mode. A step reference or a literal colour pins one shade --
+// V1 palettes name seven exact colours, several of which round to the same hue.
+export const CategoricalDefinition = Schema.Array(Schema.Union([HueName, HueColorValue])).check(Schema.isMinLength(1))
+export type CategoricalDefinition = Schema.Schema.Type<typeof CategoricalDefinition>
 
 const ContextKey = Schema.Literals(["@context:elevated", "@context:overlay"])
 export type ContextKey = Schema.Schema.Type<typeof ContextKey>
@@ -205,9 +208,7 @@ const DiffDefinition = Schema.Struct({
 export type DiffDefinition = Schema.Schema.Type<typeof DiffDefinition>
 
 const LogoDefinition = Schema.Struct({
-  gradient: Schema.optional(
-    Schema.Struct({ start: Schema.optional(ColorValue), end: Schema.optional(ColorValue) }),
-  ),
+  gradient: Schema.optional(Schema.Struct({ start: Schema.optional(ColorValue), end: Schema.optional(ColorValue) })),
 })
 
 const ThemeTokensDefinition = Schema.Struct({
