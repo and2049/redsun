@@ -1264,7 +1264,9 @@ export function Session() {
                 </box>
               </Show>
             </box>
-            <box flexShrink={0}>
+            {/* The dock keeps its own inset, matching the transcript gutter and the
+                command bar below it -- only the scroll area goes flush. */}
+            <box flexShrink={0} paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
               <Show when={!disabled() && queuedPrompts().length > 0}>
                 <QueuedPromptDock prompts={queuedPrompts()} onOpen={openQueuedPrompts} />
               </Show>
