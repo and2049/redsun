@@ -4,8 +4,6 @@ import { Effect, FileSystem } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Global } from "@opencode-ai/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
-import { rmSync } from "fs"
-import path from "path"
 
 test("SIGHUP clears title and disposes scoped resources once", async () => {
   const setup = await createTestRenderer({ width: 80, height: 24, useThread: false })
@@ -298,9 +296,9 @@ test("session startup prompt is submitted exactly once", async () => {
 })
 
 test("configured app bindings execute settings and permission commands", async () => {
-  // The permission mode is a remembered preference, so a previous run of this
-  // test would otherwise decide which way F7 toggles it.
-  rmSync(path.join(Global.Path.state, "test", "tui", "permission.json"), { force: true })
+  // The permission mode is server state now, and the fixture answers "normal"
+  // on every connect -- so which way F7 toggles is decided by the fixture
+  // rather than by whatever a previous run left on disk.
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
   setup.renderer.start()
   const ready = Promise.withResolvers<void>()

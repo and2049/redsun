@@ -2,11 +2,52 @@ export * as PlanPlugin from "./plan.js"
 
 import { Message, ToolFailure } from "@opencode-ai/ai"
 import { define } from "@opencode-ai/plugin/effect/plugin"
+import { Global } from "@opencode-ai/util/global"
 import { Effect, Stream } from "effect"
+import path from "node:path"
 import { Agent } from "../agent.js"
+import { Location } from "../location.js"
 import { SessionEvent } from "../session/event.js"
 
 const plan = Agent.ID.make("plan")
+
+// REDSUN: the plan agent writes its plan and nothing else.
+//
+// Upstream refuses every edit/write/patch here, which leaves plan mode with
+// nowhere to put a plan. V1 carved out exactly one directory
+// (`agent/agent.ts`'s plan ruleset, path from `session/session.ts` `plan()`),
+// and that is what this restores: read-only everywhere, writable only under the
+// project's plan directory.
+//
+// The carve-out lives in this hook rather than in the agent's permission rules
+// because a rule matches the *resource pattern* the tool asked with, which is
+// relative to the session's directory and goes absolute the moment the plan
+// directory sits outside it. The hook sees the raw input and can resolve it.
+
+/** Where this project's plans live: in-repo when there is a repo, else global. */
+const planDirectory = (location: Location.Interface) =>
+  location.vcs ? path.join(location.project.directory, ".redsun", "plans") : path.join(Global.Path.data, "plans")
+
+const inside = (root: string, base: string, value: unknown) => {
+  if (typeof value !== "string" || value.length === 0) return false
+  const relative = path.relative(root, path.resolve(base, value))
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
+}
+
+/** True when every path a call would touch is inside the plan directory. */
+const writesOnlyPlans = (input: { tool: string; input: unknown; root: string; base: string }) => {
+  const record = typeof input.input === "object" && input.input !== null ? (input.input as Record<string, unknown>) : {}
+  if (input.tool !== "patch") return inside(input.root, input.base, record["path"])
+  const hunks = record["hunks"]
+  if (!Array.isArray(hunks) || hunks.length === 0) return false
+  // A patch is all-or-nothing, so one hunk outside the directory refuses the
+  // whole call rather than applying the rest.
+  return hunks.every((hunk) => {
+    const entry = typeof hunk === "object" && hunk !== null ? (hunk as Record<string, unknown>) : {}
+    if (!inside(input.root, input.base, entry["path"])) return false
+    return entry["movePath"] === undefined || inside(input.root, input.base, entry["movePath"])
+  })
+}
 
 const enter = `<system-reminder>
 You are in Plan mode. You are not allowed to edit or create files, and you may not ask a subagent to do that either.
@@ -21,20 +62,30 @@ You are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. 
 export const Plugin = define({
   id: "opencode.plan",
   effect: Effect.fn(function* (ctx) {
+    const location = yield* Location.Service
+    const plans = planDirectory(location)
+
     yield* ctx.agent.transform((draft) => {
       draft.update(plan, (item) => {
         item.name = Agent.Name.make("Plan")
         item.description = "Read-only agent for exploring the codebase and planning work before implementation."
         item.mode = "primary"
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
+        // REDSUN: read-only that can be delegated around is not read-only. The
+        // hook below only covers this session's own file tools, and a subagent
+        // is a session with its own agent and its own rules.
+        item.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
       })
     })
 
     yield* ctx.tool.hook("execute.before", (event) => {
       if (event.agent !== plan) return Effect.void
       if (event.tool !== "edit" && event.tool !== "write" && event.tool !== "patch") return Effect.void
+      // REDSUN: the plan file is the one thing plan mode is for.
+      if (writesOnlyPlans({ tool: event.tool, input: event.input, root: plans, base: location.directory }))
+        return Effect.void
       return new ToolFailure({
-        message: `Cannot use ${event.tool} in Plan mode. You are in a read-only mode and must not modify files.`,
+        message: `Cannot use ${event.tool} in Plan mode. You are in a read-only mode and must not modify files outside ${plans}.`,
       })
     })
 

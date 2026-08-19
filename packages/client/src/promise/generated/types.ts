@@ -112,6 +112,8 @@ export type FormValue = string | number | boolean | Array<string>
 
 export type PermissionSource = { type: "tool"; messageID: string; id: string }
 
+export type PermissionMode = "normal" | "auto"
+
 export type PermissionSavedInfo = { id: string; projectID: string; action: string; resource: string }
 
 export type FileSystemEntry = { path: string; type: "file" | "directory" }
@@ -5190,6 +5192,12 @@ export type PermissionRequestListOutput = {
   location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
   data: Array<PermissionRequest>
 }
+
+export type PermissionModeGetOutput = { data: { mode: PermissionMode } }["data"]
+
+export type PermissionModeSetInput = { readonly mode: { readonly mode: "normal" | "auto" }["mode"] }
+
+export type PermissionModeSetOutput = void
 
 export type PermissionSavedListInput = { readonly projectID?: { readonly projectID?: string | undefined }["projectID"] }
 

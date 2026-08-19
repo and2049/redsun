@@ -1292,19 +1292,26 @@ export type PermissionRequestListOperation<E = never> = (
   input?: Endpoint15_0Input,
 ) => Effect.Effect<Endpoint15_0Output, E>
 
-export type Endpoint15_1Input = { readonly projectID?: Project.ID | undefined }
-export type Endpoint15_1Output = ReadonlyArray<PermissionSaved.Info>
-export type PermissionSavedListOperation<E = never> = (
-  input?: Endpoint15_1Input,
-) => Effect.Effect<Endpoint15_1Output, E>
+export type Endpoint15_1Output = { readonly mode: Permission.Mode }
+export type PermissionModeGetOperation<E = never> = () => Effect.Effect<Endpoint15_1Output, E>
 
-export type Endpoint15_2Input = { readonly id: PermissionSaved.ID }
+export type Endpoint15_2Input = { readonly mode: Permission.Mode }
 export type Endpoint15_2Output = void
-export type PermissionSavedRemoveOperation<E = never> = (
-  input: Endpoint15_2Input,
-) => Effect.Effect<Endpoint15_2Output, E>
+export type PermissionModeSetOperation<E = never> = (input: Endpoint15_2Input) => Effect.Effect<Endpoint15_2Output, E>
 
-export type Endpoint15_3Input = {
+export type Endpoint15_3Input = { readonly projectID?: Project.ID | undefined }
+export type Endpoint15_3Output = ReadonlyArray<PermissionSaved.Info>
+export type PermissionSavedListOperation<E = never> = (
+  input?: Endpoint15_3Input,
+) => Effect.Effect<Endpoint15_3Output, E>
+
+export type Endpoint15_4Input = { readonly id: PermissionSaved.ID }
+export type Endpoint15_4Output = void
+export type PermissionSavedRemoveOperation<E = never> = (
+  input: Endpoint15_4Input,
+) => Effect.Effect<Endpoint15_4Output, E>
+
+export type Endpoint15_5Input = {
   readonly sessionID: Session.ID
   readonly id?: Permission.ID | undefined
   readonly action: string
@@ -1314,28 +1321,29 @@ export type Endpoint15_3Input = {
   readonly source?: Permission.Source | undefined
   readonly agent?: Agent.ID | undefined
 }
-export type Endpoint15_3Output = { readonly id: Permission.ID; readonly effect: Permission.Effect }
-export type PermissionCreateOperation<E = never> = (input: Endpoint15_3Input) => Effect.Effect<Endpoint15_3Output, E>
+export type Endpoint15_5Output = { readonly id: Permission.ID; readonly effect: Permission.Effect }
+export type PermissionCreateOperation<E = never> = (input: Endpoint15_5Input) => Effect.Effect<Endpoint15_5Output, E>
 
-export type Endpoint15_4Input = { readonly sessionID: Session.ID }
-export type Endpoint15_4Output = ReadonlyArray<Permission.Request>
-export type PermissionListOperation<E = never> = (input: Endpoint15_4Input) => Effect.Effect<Endpoint15_4Output, E>
+export type Endpoint15_6Input = { readonly sessionID: Session.ID }
+export type Endpoint15_6Output = ReadonlyArray<Permission.Request>
+export type PermissionListOperation<E = never> = (input: Endpoint15_6Input) => Effect.Effect<Endpoint15_6Output, E>
 
-export type Endpoint15_5Input = { readonly sessionID: Session.ID; readonly requestID: Permission.ID }
-export type Endpoint15_5Output = Permission.Request
-export type PermissionGetOperation<E = never> = (input: Endpoint15_5Input) => Effect.Effect<Endpoint15_5Output, E>
+export type Endpoint15_7Input = { readonly sessionID: Session.ID; readonly requestID: Permission.ID }
+export type Endpoint15_7Output = Permission.Request
+export type PermissionGetOperation<E = never> = (input: Endpoint15_7Input) => Effect.Effect<Endpoint15_7Output, E>
 
-export type Endpoint15_6Input = {
+export type Endpoint15_8Input = {
   readonly sessionID: Session.ID
   readonly requestID: Permission.ID
   readonly reply: Permission.Reply
   readonly message?: string | undefined
 }
-export type Endpoint15_6Output = void
-export type PermissionReplyOperation<E = never> = (input: Endpoint15_6Input) => Effect.Effect<Endpoint15_6Output, E>
+export type Endpoint15_8Output = void
+export type PermissionReplyOperation<E = never> = (input: Endpoint15_8Input) => Effect.Effect<Endpoint15_8Output, E>
 
 export interface PermissionApi<E = never> {
   readonly request: { readonly list: PermissionRequestListOperation<E> }
+  readonly mode: { readonly get: PermissionModeGetOperation<E>; readonly set: PermissionModeSetOperation<E> }
   readonly saved: { readonly list: PermissionSavedListOperation<E>; readonly remove: PermissionSavedRemoveOperation<E> }
   readonly create: PermissionCreateOperation<E>
   readonly list: PermissionListOperation<E>

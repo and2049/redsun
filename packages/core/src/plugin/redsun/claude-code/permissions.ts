@@ -68,6 +68,26 @@ export const COMPOSE_SUBAGENT_REDIRECT =
   "Compose delegates through redsun so worker model selection, depth limits, " +
   "and background runs apply."
 
+/** redsun's routed delegation tool, as Claude Code sees it. See mcp.ts. */
+export const ROUTED_SUBAGENT_TOOL = "mcp__redsun__subagent"
+
+/** Claude Code's own "the plan is ready" affordance. */
+export const EXIT_PLAN_TOOL = "ExitPlanMode"
+
+/**
+ * Refusal for a plan session reaching for the routed subagent tool.
+ *
+ * Claude Code's plan mode makes *this* session read-only, but a redsun subagent
+ * is a different session with its own agent and its own rules -- so delegating
+ * is a way to write files while redsun still shows plan. Read-only that can be
+ * delegated around is not read-only.
+ */
+export const PLAN_DELEGATION_REFUSED =
+  "Plan mode is read-only. Delegate work after the plan is approved."
+
+/** Refusal when the user is not done planning yet. */
+export const PLAN_KEEP_REFINING = "The user wants to keep refining the plan. Stay in plan mode."
+
 /**
  * The external-directory pattern for a file tool reaching outside the worktree,
  * or undefined when the path is inside it. Asked before the tool's own

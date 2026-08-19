@@ -21,6 +21,23 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           return yield* response(permission.list())
         }),
       )
+      // REDSUN: the auto-approve toggle. Held server-side so it applies to every
+      // client and to headless runs, not only the session on screen.
+      .handle(
+        "permission.mode.get",
+        Effect.fn(function* () {
+          const permission = yield* Permission.Service
+          return { data: { mode: yield* permission.mode() } }
+        }),
+      )
+      .handle(
+        "permission.mode.set",
+        Effect.fn(function* (ctx) {
+          const permission = yield* Permission.Service
+          yield* permission.setMode(ctx.payload.mode)
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
       .handle(
         "session.permission.create",
         Effect.fn(function* (ctx) {

@@ -157,7 +157,6 @@ import type {
   Endpoint14_6Output,
   Endpoint15_0Input,
   Endpoint15_0Output,
-  Endpoint15_1Input,
   Endpoint15_1Output,
   Endpoint15_2Input,
   Endpoint15_2Output,
@@ -169,6 +168,10 @@ import type {
   Endpoint15_5Output,
   Endpoint15_6Input,
   Endpoint15_6Output,
+  Endpoint15_7Input,
+  Endpoint15_7Output,
+  Endpoint15_8Input,
+  Endpoint15_8Output,
   Endpoint16_0Input,
   Endpoint16_0Output,
   Endpoint16_1Input,
@@ -951,9 +954,9 @@ const Endpoint15_0 = (raw: RawClient["server.permission"]) => (input?: Endpoint1
     raw["permission.request.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
-const Endpoint15_1 = (raw: RawClient["server.permission"]) => (input?: Endpoint15_1Input) =>
+const Endpoint15_1 = (raw: RawClient["server.permission"]) => () =>
   preserveEffect<Endpoint15_1Output>()(
-    raw["permission.saved.list"]({ query: { projectID: input?.["projectID"] } }).pipe(
+    raw["permission.mode.get"]({}).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
     ),
@@ -961,11 +964,24 @@ const Endpoint15_1 = (raw: RawClient["server.permission"]) => (input?: Endpoint1
 
 const Endpoint15_2 = (raw: RawClient["server.permission"]) => (input: Endpoint15_2Input) =>
   preserveEffect<Endpoint15_2Output>()(
+    raw["permission.mode.set"]({ payload: { mode: input["mode"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const Endpoint15_3 = (raw: RawClient["server.permission"]) => (input?: Endpoint15_3Input) =>
+  preserveEffect<Endpoint15_3Output>()(
+    raw["permission.saved.list"]({ query: { projectID: input?.["projectID"] } }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
+const Endpoint15_4 = (raw: RawClient["server.permission"]) => (input: Endpoint15_4Input) =>
+  preserveEffect<Endpoint15_4Output>()(
     raw["permission.saved.remove"]({ params: { id: input["id"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
-const Endpoint15_3 = (raw: RawClient["server.permission"]) => (input: Endpoint15_3Input) =>
-  preserveEffect<Endpoint15_3Output>()(
+const Endpoint15_5 = (raw: RawClient["server.permission"]) => (input: Endpoint15_5Input) =>
+  preserveEffect<Endpoint15_5Output>()(
     raw["session.permission.create"]({
       params: { sessionID: input["sessionID"] },
       payload: {
@@ -983,24 +999,24 @@ const Endpoint15_3 = (raw: RawClient["server.permission"]) => (input: Endpoint15
     ),
   )
 
-const Endpoint15_4 = (raw: RawClient["server.permission"]) => (input: Endpoint15_4Input) =>
-  preserveEffect<Endpoint15_4Output>()(
+const Endpoint15_6 = (raw: RawClient["server.permission"]) => (input: Endpoint15_6Input) =>
+  preserveEffect<Endpoint15_6Output>()(
     raw["session.permission.list"]({ params: { sessionID: input["sessionID"] } }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
     ),
   )
 
-const Endpoint15_5 = (raw: RawClient["server.permission"]) => (input: Endpoint15_5Input) =>
-  preserveEffect<Endpoint15_5Output>()(
+const Endpoint15_7 = (raw: RawClient["server.permission"]) => (input: Endpoint15_7Input) =>
+  preserveEffect<Endpoint15_7Output>()(
     raw["session.permission.get"]({ params: { sessionID: input["sessionID"], requestID: input["requestID"] } }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
     ),
   )
 
-const Endpoint15_6 = (raw: RawClient["server.permission"]) => (input: Endpoint15_6Input) =>
-  preserveEffect<Endpoint15_6Output>()(
+const Endpoint15_8 = (raw: RawClient["server.permission"]) => (input: Endpoint15_8Input) =>
+  preserveEffect<Endpoint15_8Output>()(
     raw["session.permission.reply"]({
       params: { sessionID: input["sessionID"], requestID: input["requestID"] },
       payload: { reply: input["reply"], message: input["message"] },
@@ -1009,11 +1025,12 @@ const Endpoint15_6 = (raw: RawClient["server.permission"]) => (input: Endpoint15
 
 const adaptGroup15 = (raw: RawClient["server.permission"]) => ({
   request: { list: Endpoint15_0(raw) },
-  saved: { list: Endpoint15_1(raw), remove: Endpoint15_2(raw) },
-  create: Endpoint15_3(raw),
-  list: Endpoint15_4(raw),
-  get: Endpoint15_5(raw),
-  reply: Endpoint15_6(raw),
+  mode: { get: Endpoint15_1(raw), set: Endpoint15_2(raw) },
+  saved: { list: Endpoint15_3(raw), remove: Endpoint15_4(raw) },
+  create: Endpoint15_5(raw),
+  list: Endpoint15_6(raw),
+  get: Endpoint15_7(raw),
+  reply: Endpoint15_8(raw),
 })
 
 const Endpoint16_0 = (raw: RawClient["server.fs"]) => (input?: Endpoint16_0Input) =>

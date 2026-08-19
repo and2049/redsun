@@ -4,6 +4,7 @@ import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { Permission } from "@opencode-ai/schema/permission"
 import { Bus } from "./bus.js"
+import { KV } from "./kv.js"
 import { Location } from "./location.js"
 import { Agent } from "./agent.js"
 import { SessionErrors } from "./session/error.js"
@@ -98,6 +99,18 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
+// REDSUN: auto-approve is a server-side mode, not a client behaviour.
+//
+// V1 answered pending requests from the TUI, which meant it only worked while
+// the session that owned the request was on screen -- a background subagent
+// asking from another session, or anything at all with no TUI attached, waited
+// forever. Holding it here makes "approve all" true for every client and for
+// headless runs, and it is the only place that can grant without a round trip.
+export const Mode = Permission.Mode
+export type Mode = typeof Mode.Type
+
+const MODE_KEY = "permission.mode"
+
 export interface Interface {
   readonly allowsAll: (input: {
     readonly sessionID: SessionSchema.ID
@@ -110,6 +123,10 @@ export interface Interface {
   readonly get: (id: ID) => Effect.Effect<Request | undefined>
   readonly forSession: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<Request>>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
+  /** REDSUN: the auto-approve mode, persisted across restarts. */
+  readonly mode: () => Effect.Effect<Mode>
+  /** REDSUN: set the auto-approve mode and remember it. */
+  readonly setMode: (mode: Mode) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
@@ -128,7 +145,13 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
+    const kv = yield* KV.Service
     const pending = new Map<ID, Pending>()
+
+    // REDSUN: evaluateInput is synchronous in the hot path, so the durable value
+    // is mirrored in memory and written through on change.
+    const stored = yield* kv.get(MODE_KEY)
+    let autoApprove = stored === "auto"
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new DeclinedError()), {
@@ -191,6 +214,10 @@ const layer = Layer.effect(
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
+      // REDSUN: auto-approve grants what would have prompted and nothing more.
+      // A configured `deny` is policy -- it is what makes the plan agent
+      // read-only -- and read-only that a toggle can switch off is not read-only.
+      if (autoApprove && effect === "ask") return { effect: "allow" as const, rules: all }
       return { effect, rules: all }
     })
 
@@ -338,12 +365,40 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
     })
 
-    return Service.of({ allowsAll, ask, assert, reply, get, forSession, list })
+    const mode = Effect.fn("Permission.mode")(function* () {
+      return (autoApprove ? "auto" : "normal") as Mode
+    })
+
+    // REDSUN: turning auto-approve on has to release what is already waiting.
+    // Those requests were evaluated under the old mode, and leaving them up
+    // would put a dialog on screen that the mode says should never appear.
+    const setMode = Effect.fn("Permission.setMode")(function* (next: Mode) {
+      if (autoApprove === (next === "auto")) return
+      autoApprove = next === "auto"
+      yield* kv.set(MODE_KEY, next)
+      if (!autoApprove) return
+      for (const [id, item] of [...pending]) {
+        const rules = yield* configured(item.request.sessionID, item.agent).pipe(
+          Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
+        )
+        // A denied request stays denied: auto-approve never overrides policy.
+        if (!rules || denied({ ...item.request }, rules)) continue
+        yield* bus.publish(Permission.Event.Replied, {
+          sessionID: item.request.sessionID,
+          requestID: item.request.id,
+          reply: "once",
+        })
+        yield* Deferred.succeed(item.deferred, undefined)
+        pending.delete(id)
+      }
+    })
+
+    return Service.of({ allowsAll, ask, assert, reply, get, forSession, list, mode, setMode })
   }),
 )
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node, Location.node, Agent.node, SessionStore.node, PermissionSaved.node],
+  deps: [Bus.node, KV.node, Location.node, Agent.node, SessionStore.node, PermissionSaved.node],
 })

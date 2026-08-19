@@ -7,26 +7,47 @@ const harness = (input?: {
   readonly deny?: readonly string[]
   readonly agent?: string
   readonly form?: Form.TerminalState | undefined
+  /** Feedback the refusal carries, i.e. a decline the user typed a steer into. */
+  readonly feedback?: string
+  /** Actions whose assert never settles, standing in for an unanswered dialog. */
+  readonly pending?: readonly string[]
+  /** False when the user would rather keep planning. */
+  readonly exitPlan?: boolean
 }) => {
   const asked: { action: string; resource: string }[] = []
   const forms: Form.Field[][] = []
+  let exitPlanCalls = 0
   const bridge = ClaudeCodePermissionBridge.make({
     worktree: "/repo",
     agent: () => input?.agent,
-    ask: async (action, resource) => {
+    assert: (action, resource) => {
       asked.push({ action, resource })
-      return { effect: input?.deny?.includes(action) ? "deny" : "allow" }
+      if (input?.pending?.includes(action)) return new Promise<never>(() => {})
+      if (!input?.deny?.includes(action)) return Promise.resolve({ ok: true as const })
+      return Promise.resolve(
+        input.feedback === undefined ? { ok: false as const } : { ok: false as const, feedback: input.feedback },
+      )
     },
     form: async (fields) => {
       forms.push(fields)
       return input?.form
     },
+    exitPlan: async () => {
+      exitPlanCalls++
+      return input?.exitPlan !== false
+    },
   })
-  return { bridge, asked, forms, actions: () => asked.map((entry) => entry.action) }
+  return {
+    bridge,
+    asked,
+    forms,
+    actions: () => asked.map((entry) => entry.action),
+    exitPlanCalls: () => exitPlanCalls,
+  }
 }
 
-const live = { signal: { aborted: false } as AbortSignal }
-const aborted = { signal: { aborted: true } as AbortSignal }
+const live = { signal: new AbortController().signal }
+const aborted = { signal: AbortSignal.abort() }
 
 describe("ClaudeCodePermissionBridge", () => {
   it("allows read-only tools without asking anything", async () => {
@@ -147,5 +168,85 @@ describe("ClaudeCodePermissionBridge", () => {
     const h = harness()
     await h.bridge("BashOutput", { id: "1" }, live)
     expect(h.asked).toEqual([{ action: "claude_code", resource: "BashOutput" }])
+  })
+
+
+  it("switches redsun out of plan mode when the plan is approved", async () => {
+    // The CLI leaves its own plan mode on ExitPlanMode, but redsun would pin the
+    // session back to `plan` -- and `modes.ts` would force plan permissions
+    // again -- on the very next turn.
+    const h = harness({ agent: "plan" })
+    expect(await h.bridge("ExitPlanMode", { plan: "do the thing" }, live)).toEqual({
+      behavior: "allow",
+      updatedInput: { plan: "do the thing" },
+    })
+    expect(h.exitPlanCalls()).toBe(1)
+  })
+
+  it("stays in plan mode when the user is not done planning", async () => {
+    const h = harness({ agent: "plan", exitPlan: false })
+    expect(await h.bridge("ExitPlanMode", { plan: "draft" }, live)).toEqual({
+      behavior: "deny",
+      message: ClaudeCodePermissions.PLAN_KEEP_REFINING,
+    })
+  })
+
+  it("refuses routed delegation while planning", async () => {
+    // Plan mode makes the CLI's own session read-only, but a redsun subagent is
+    // a different session with different rules -- delegating would write files
+    // while redsun still shows plan.
+    const h = harness({ agent: "plan" })
+    expect(await h.bridge("mcp__redsun__subagent", { agent: "worker" }, live)).toEqual({
+      behavior: "deny",
+      message: ClaudeCodePermissions.PLAN_DELEGATION_REFUSED,
+    })
+    expect(h.asked).toHaveLength(0)
+  })
+
+  it("leaves routed delegation alone for every other agent", async () => {
+    const h = harness({ agent: "compose" })
+    expect(await h.bridge("mcp__redsun__subagent", { agent: "worker" }, live)).toMatchObject({ behavior: "allow" })
+  })
+
+  it("does not decide until the user has answered", async () => {
+    // The regression this guards: `Permission.ask` returns `effect: "ask"` the
+    // moment a request is registered, so a bridge built on it granted every
+    // permission that should have prompted.
+    const h = harness({ pending: ["shell"] })
+    let settled = false
+    void h.bridge("Bash", { command: "rm -rf /" }, live).then(() => {
+      settled = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(settled).toBe(false)
+    expect(h.actions()).toEqual(["shell"])
+  })
+
+  it("releases an unanswered request when the turn is interrupted", async () => {
+    // Interrupting is exactly when a session is sitting on a dialog nobody
+    // answered; without the race the CLI would stay blocked for good.
+    const control = new AbortController()
+    const h = harness({ pending: ["shell"] })
+    const decision = h.bridge("Bash", { command: "sleep 100" }, { signal: control.signal })
+    control.abort()
+    expect(await decision).toEqual({ behavior: "deny", message: "Interrupted" })
+  })
+
+  it("hands a decline with feedback to the model instead of the refusal boilerplate", async () => {
+    const h = harness({ deny: ["shell"], feedback: "use bun test, not npm" })
+    expect(await h.bridge("Bash", { command: "npm test" }, live)).toEqual({
+      behavior: "deny",
+      message: "use bun test, not npm",
+    })
+  })
+
+  it("prefers the user's steer over the compose redirect", async () => {
+    // The redirect explains a policy deny. When the user typed a reason, that is
+    // the more specific thing to say.
+    const h = harness({ deny: ["subagent"], agent: "compose", feedback: "do it inline, it is two lines" })
+    expect(await h.bridge("Agent", { subagent_type: "general" }, live)).toEqual({
+      behavior: "deny",
+      message: "do it inline, it is two lines",
+    })
   })
 })

@@ -6,6 +6,7 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { Bus } from "@opencode-ai/core/bus"
 import { Job } from "@opencode-ai/core/job"
+import { KV } from "@opencode-ai/core/kv"
 import { Location } from "@opencode-ai/core/location"
 import { Permission } from "@opencode-ai/core/permission"
 import { PermissionTable } from "@opencode-ai/core/permission/sql"
@@ -26,7 +27,15 @@ const current = Layer.succeed(
 )
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, Bus.node, SessionStore.node, PermissionSaved.node, Agent.node, Permission.node]),
+    LayerNode.group([
+      Database.node,
+      Bus.node,
+      KV.node,
+      SessionStore.node,
+      PermissionSaved.node,
+      Agent.node,
+      Permission.node,
+    ]),
     [[Location.node, current]],
   ),
 )
@@ -109,6 +118,48 @@ describe("Permission", () => {
       yield* setRules([])
       expect(yield* service.ask(assertion())).toEqual({ id: Permission.ID.create("per_test"), effect: "ask" })
       expect(yield* service.get(Permission.ID.create("per_test"))).toBeDefined()
+    }),
+  )
+
+
+  // REDSUN: auto-approve lives in the service so it holds for every client and
+  // for headless runs, not only the session a TUI happens to be showing.
+  it.effect("auto-approve grants what would prompt and leaves denies alone", () =>
+    Effect.gen(function* () {
+      yield* setup([])
+      const service = yield* Permission.Service
+      expect(yield* service.mode()).toBe("normal")
+      expect(yield* service.ask(assertion())).toMatchObject({ effect: "ask" })
+
+      yield* service.setMode("auto")
+      expect(yield* service.mode()).toBe("auto")
+      expect(yield* service.ask(assertion())).toMatchObject({ effect: "allow" })
+      // Nothing queued, so nothing to answer -- this is what stops the hang.
+      expect(yield* service.list()).toEqual([])
+      // assert resolves without anyone replying.
+      yield* service.assert(assertion())
+
+      // A configured deny is policy. Read-only that a toggle can switch off is
+      // not read-only, which is exactly what the plan agent depends on.
+      yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
+      expect(yield* service.ask(assertion())).toMatchObject({ effect: "deny" })
+
+      yield* service.setMode("normal")
+      yield* setRules([])
+      expect(yield* service.ask(assertion())).toMatchObject({ effect: "ask" })
+    }),
+  )
+
+  it.effect("turning auto-approve on releases what is already waiting", () =>
+    Effect.gen(function* () {
+      yield* setup([])
+      const { service, fiber, request } = yield* waitForRequest()
+      expect(request.id).toBe(Permission.ID.create("per_test"))
+      yield* service.setMode("auto")
+      // The dialog was raised under the old mode; leaving it up would contradict
+      // the mode the user just chose.
+      yield* Fiber.join(fiber)
+      expect(yield* service.list()).toEqual([])
     }),
   )
 

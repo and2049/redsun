@@ -33,6 +33,33 @@ export const makePermissionGroup = <
           }),
         ),
     )
+    // REDSUN: auto-approve is server state (see core `permission.ts`), so it
+    // needs a way in. Config is read-only over this API and the mode is a
+    // runtime toggle, not a config value.
+    .add(
+      HttpApiEndpoint.get("permission.mode.get", "/api/permission/mode", {
+        success: Schema.Struct({ data: Schema.Struct({ mode: Permission.Mode }) }),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.mode.get",
+          summary: "Get auto-approve mode",
+          description: "Retrieve whether permissions that would prompt are approved automatically.",
+        }),
+      ),
+    )
+    .add(
+      HttpApiEndpoint.put("permission.mode.set", "/api/permission/mode", {
+        payload: Schema.Struct({ mode: Permission.Mode }),
+        success: HttpApiSchema.NoContent,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.permission.mode.set",
+          summary: "Set auto-approve mode",
+          description:
+            "Approve every permission that would prompt. Rules that deny still deny, so read-only agents stay read-only.",
+        }),
+      ),
+    )
     .add(
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
         query: Schema.Struct({ projectID: Project.ID.pipe(Schema.optional) }),

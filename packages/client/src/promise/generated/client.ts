@@ -151,6 +151,9 @@ import type {
   FormCancelOutput,
   PermissionRequestListInput,
   PermissionRequestListOutput,
+  PermissionModeGetOutput,
+  PermissionModeSetInput,
+  PermissionModeSetOutput,
   PermissionSavedListInput,
   PermissionSavedListOutput,
   PermissionSavedRemoveInput,
@@ -1357,6 +1360,31 @@ export function make(options: ClientOptions) {
               successStatus: 200,
               declaredStatuses: [401, 400],
               empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      mode: {
+        get: (requestOptions?: RequestOptions) =>
+          request<{ readonly data: PermissionModeGetOutput }>(
+            {
+              method: "GET",
+              path: `/api/permission/mode`,
+              successStatus: 200,
+              declaredStatuses: [401, 400],
+              empty: false,
+            },
+            requestOptions,
+          ).then((value) => value.data),
+        set: (input: PermissionModeSetInput, requestOptions?: RequestOptions) =>
+          request<PermissionModeSetOutput>(
+            {
+              method: "PUT",
+              path: `/api/permission/mode`,
+              body: { mode: input["mode"] },
+              successStatus: 204,
+              declaredStatuses: [401, 400],
+              empty: true,
             },
             requestOptions,
           ),

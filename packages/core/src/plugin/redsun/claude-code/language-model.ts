@@ -28,6 +28,7 @@ import type {
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeTranslate } from "./translate.js"
+import PLAN_WORKFLOW from "./prompt/plan-workflow.txt" with { type: "text" }
 
 export const SESSION_HEADER = "x-opencode-session"
 
@@ -120,6 +121,11 @@ const baseOptions = (config: Config): Options =>
     // Compliance rests on driving the user's installed CLI; the SDK's bundled
     // cli.js fallback must never be spawned.
     pathToClaudeCodeExecutable: config.executablePath,
+    // Replaces the body of the CLI's plan-mode reminder. The CLI keeps wrapping
+    // it with its own read-only preamble and the ExitPlanMode protocol, so this
+    // shapes how a delegated plan session works without weakening what it may
+    // touch. Only consulted when `permissionMode` is "plan".
+    planModeInstructions: PLAN_WORKFLOW,
     ...(config.configDir ? { env: { ...process.env, ...config.env, CLAUDE_CONFIG_DIR: config.configDir } } : {}),
     ...(config.env && !config.configDir ? { env: { ...process.env, ...config.env } } : {}),
     ...(config.extraArgs?.length ? { extraArgs: Object.fromEntries(config.extraArgs.map((a) => [a, null])) } : {}),

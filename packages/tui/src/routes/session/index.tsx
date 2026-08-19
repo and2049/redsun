@@ -275,24 +275,12 @@ export function Session() {
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
   const toast = useToast()
   const client = useClient()
-  const autoApproved = new Set<string>()
-  createEffect(() => {
-    if (local.permission.mode !== "auto") return
-    permissions().forEach((request) => {
-      if (autoApproved.has(request.id)) return
-      autoApproved.add(request.id)
-      void data.session.permission
-        .reply({
-          sessionID: request.sessionID,
-          reply: "once",
-          requestID: request.id,
-        })
-        .catch((error) => {
-          autoApproved.delete(request.id)
-          toast.error(error)
-        })
-    })
-  })
+  // REDSUN: auto-approve used to be answered here, request by request. It is
+  // server state now (core `permission.ts`), which grants before anything is
+  // queued -- so nothing pends and there is nothing to reply to. Answering from
+  // here as well would be a second writer racing the first, and it never
+  // covered a background subagent asking from a session this route is not
+  // showing.
   const editor = useEditorContext()
   const [rowsSynced, setRowsSynced] = createSignal(false)
   const rows = createSessionRows(

@@ -43,6 +43,24 @@ const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
 
 const cursorKey = (sessionID: string) => `redsun.claude-code-session/${sessionID}`
 
+/**
+ * The steer text from a decline that carried one, or undefined for a plain
+ * refusal.
+ *
+ * `Effect.runPromise` rejects with the failure for a typed error and with a
+ * wrapper for a defect, and `permission.assert` produces one of each -- so walk
+ * a short chain rather than assuming which arrived.
+ */
+const correctionFeedback = (error: unknown): string | undefined => {
+  for (let node: unknown = error, depth = 0; node !== undefined && node !== null && depth < 4; depth++) {
+    const candidate = node as { _tag?: unknown; feedback?: unknown; cause?: unknown; error?: unknown }
+    if (candidate._tag === "Permission.CorrectedError" && typeof candidate.feedback === "string")
+      return candidate.feedback
+    node = candidate.cause ?? candidate.error
+  }
+  return undefined
+}
+
 export const Plugin = define({
   id: "redsun.provider.claude-code",
   effect: Effect.fn(function* (ctx) {
@@ -168,16 +186,26 @@ export const Plugin = define({
       ClaudeCodePermissionBridge.make({
         worktree: location.directory,
         agent: () => agents.get(sessionID),
-        ask: (action, resource) =>
+        // `assert`, not `ask`: only assert awaits the user. A decline arrives as
+        // a `CorrectedError` when it carried feedback and as a `DeclinedError`
+        // defect otherwise (permission.ts tunnels it deliberately so a blanket
+        // mapError cannot turn a refusal into model-facing tool output), so both
+        // land here as a rejected promise and are told apart by shape.
+        assert: (action, resource) =>
           Effect.runPromise(
-            permission.ask({
-              action,
-              resources: [resource],
-              save: [resource],
-              sessionID: sessionID as never,
-              ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
-            }),
-          ).catch(() => ({ effect: "deny" as const })),
+            permission
+              .assert({
+                action,
+                resources: [resource],
+                save: [resource],
+                sessionID: sessionID as never,
+                ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
+              })
+              .pipe(Effect.as({ ok: true as const })),
+          ).catch((error) => {
+            const feedback = correctionFeedback(error)
+            return feedback === undefined ? { ok: false as const } : { ok: false as const, feedback }
+          }),
         form: (fields) =>
           Effect.runPromise(
             forms.ask({
@@ -187,6 +215,25 @@ export const Plugin = define({
               fields: fields as never,
             }),
           ).catch(() => undefined),
+        // Ask, then move redsun off the plan agent. Without the switch the CLI
+        // would leave plan mode while `modes.ts` put it straight back next turn.
+        exitPlan: () =>
+          Effect.runPromise(
+            Effect.gen(function* () {
+              yield* permission.assert({
+                action: "plan_exit",
+                resources: ["*"],
+                sessionID: sessionID as never,
+                ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
+              })
+              yield* runtime.session.switchAgent({
+                sessionID: sessionID as never,
+                agent: Agent.ID.make("build"),
+              })
+              agents.set(sessionID, "build")
+              return true
+            }),
+          ).catch(() => false),
       })
 
     /**
