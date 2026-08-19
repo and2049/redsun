@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { ClaudeCodeExecutable } from "@opencode-ai/core/plugin/redsun/claude-code/executable"
 import { ClaudeCodeModels } from "@opencode-ai/core/plugin/redsun/claude-code/models"
+import { Provider } from "@opencode-ai/core/provider"
 
 const fs = (files: readonly string[]) => ({ isFile: (p: string) => files.includes(p) })
 
@@ -27,8 +28,21 @@ describe("ClaudeCodeModels", () => {
   })
 
   it("carries the sentinel package so real SDK resolution can never claim it", () => {
-    expect(ClaudeCodeModels.SENTINEL_PACKAGE).toBe("@redsun/claude-code-delegated")
+    expect(ClaudeCodeModels.SENTINEL_NAME).toBe("@redsun/claude-code-delegated")
     for (const model of ClaudeCodeModels.MODELS) expect(model.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
+  })
+
+  it("routes the sentinel to the aisdk hooks rather than to npm", () => {
+    // The prefix is the whole mechanism. `model-resolver.ts` hands an
+    // `aisdk:`-prefixed package to `AISDK.model`, which fires the `sdk` and
+    // `language` hooks the provider answers; anything else goes to
+    // `Provider.loadPackage`, which tried to import this name from npm and
+    // failed with "Unsupported package for claude-code/sonnet" -- so no
+    // delegated turn could run at all.
+    expect(Provider.isAISDK(ClaudeCodeModels.SENTINEL_PACKAGE)).toBe(true)
+    expect(Provider.packageName(ClaudeCodeModels.SENTINEL_PACKAGE)).toBe(ClaudeCodeModels.SENTINEL_NAME)
+    // Still not a real package name: nothing resolvable may be reachable here.
+    expect(ClaudeCodeModels.SENTINEL_NAME.startsWith("@ai-sdk/")).toBe(false)
   })
 
   it("gives the 1m variants a larger context than the 200k ones", () => {

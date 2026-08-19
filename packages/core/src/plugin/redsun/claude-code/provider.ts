@@ -326,6 +326,25 @@ export const Plugin = define({
         )
       }
 
+    // `AISDK.language` refuses to continue unless some plugin returns an SDK, so
+    // the `language` hook below is unreachable without this one. There is no real
+    // SDK here: Claude Code is a subprocess, not a provider package, and the
+    // `language` hook replaces the model outright. The stub exists to satisfy
+    // the contract, and throws rather than returning a model if anything ever
+    // reaches it -- that would mean the language hook did not run, and a silent
+    // fallback to another provider is exactly what the sentinel prevents.
+    yield* ctx.aisdk.hook(
+      "sdk",
+      Effect.fn(function* (event) {
+        if (event.model.providerID !== ClaudeCodeModels.PROVIDER_ID) return
+        event.sdk = {
+          languageModel: () => {
+            throw new Error(`${ClaudeCodeModels.SENTINEL_NAME} has no SDK model; the language hook must supply it.`)
+          },
+        }
+      }),
+    )
+
     yield* ctx.aisdk.hook(
       "language",
       Effect.fn(function* (event) {

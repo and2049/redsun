@@ -219,6 +219,14 @@ const pre = [
   SkillPlugin.Plugin,
   ...SystemPromptPlugin.Plugins,
   ModelsDevPlugin,
+  // REDSUN: before ProviderPlugins, because the last entry in that list is the
+  // dynamic fallback whose `sdk` hook npm-installs any package no earlier hook
+  // claimed. Hooks run in registration order, so a provider that supplies its
+  // own SDK -- as every entry in ProviderPlugins does, and as this one must,
+  // since Claude Code is a subprocess and its package name is a sentinel -- has
+  // to register ahead of it. Registered here rather than beside the other
+  // redsun plugins in `post` for exactly that reason.
+  ClaudeCodeProviderPlugin.Plugin,
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,
@@ -250,7 +258,6 @@ const post = [
   RedsunComposePlugin.Plugin,
   RedsunWorkerModelTool.Plugin,
   RedsunProjectMemory.Plugin,
-  ClaudeCodeProviderPlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 export const list = Effect.fn("PluginInternal.list")(function* () {

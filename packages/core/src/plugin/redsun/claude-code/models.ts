@@ -12,12 +12,22 @@ import { Provider } from "../../../provider.js"
 /** Provider id exposed to the model picker, agent config, and subagent routing. */
 export const PROVIDER_ID = Provider.ID.make("claude-code")
 
+/** The bare sentinel name, as it appears to the `aisdk` hooks and in errors. */
+export const SENTINEL_NAME = "@redsun/claude-code-delegated"
+
 /**
  * Sentinel package identifier. Requests for this provider are answered by the
  * delegated language model, so this name must never reach real SDK resolution —
  * if it does, the load fails loudly instead of silently using another provider.
+ *
+ * The `aisdk:` prefix is what routes it. `model-resolver.ts` sends an
+ * `aisdk:`-prefixed package to `AISDK.model`, which fires the `sdk` and
+ * `language` hooks this plugin answers; anything else it hands to
+ * `Provider.loadPackage`, which would try to import this name from npm and fail
+ * with "Unsupported package". Without the prefix the `language` hook is
+ * unreachable and no delegated turn can run at all.
  */
-export const SENTINEL_PACKAGE = "@redsun/claude-code-delegated"
+export const SENTINEL_PACKAGE = Provider.aisdk(SENTINEL_NAME)
 
 export const DISPLAY_NAME = "Anthropic (Claude Code)"
 
