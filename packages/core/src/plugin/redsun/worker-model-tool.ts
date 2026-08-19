@@ -1,14 +1,3 @@
-// REDSUN: the surface that reaches the session-scoped worker model.
-//
-// `RedsunWorkerModel.resolve` prefers a per-session override over the agent's
-// configured model, but nothing could set one: upstream's model and variant
-// dialogs are wired to `session.switchModel` (which changes the session's *own*
-// model), and a plugin can add neither an HTTP route nor a KV route, so there is
-// no way to point an existing dialog at a different sink.
-//
-// A tool over `Form.Service` is the way in. The TUI already renders any
-// session-scoped form regardless of who created it, so `/worker-model` costs one
-// model round-trip and no TUI, server, schema, or client-codegen work.
 export * as RedsunWorkerModelTool from "./worker-model-tool.js"
 
 import { ToolFailure } from "@opencode-ai/ai"
@@ -24,7 +13,6 @@ import { RedsunWorkerModel } from "./worker-model.js"
 export const NAME = "worker_model"
 export const FIELD = "model"
 export const CLEAR = RedsunWorkerModel.CLEAR
-/** Marks the form so the TUI answers it with the model menu, not the dock form. */
 export const FORM_KIND = "worker-model"
 
 export const DESCRIPTION =
@@ -32,7 +20,6 @@ export const DESCRIPTION =
   "The choice outranks `agent.worker.model` for this session only. Call this when the user asks to " +
   "change the worker model, or after a worker refuses to run because no model is configured for it."
 
-/** Options for the picker: every available model, plus a way back to config. */
 export const options = (models: readonly Model.Info[]) => [
   ...models.map((model) => ({
     value: `${model.providerID}/${model.id}`,
@@ -47,8 +34,6 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const forms = yield* Form.Service
     const catalog = yield* Catalog.Service
-    // A tool's execute effect must have `never` requirements, so the services it
-    // needs are bound here at plugin scope — the same shape subagent.ts uses.
     const services: RedsunWorkerModel.Services = {
       kv: yield* KV.Service,
       catalog,
@@ -102,8 +87,6 @@ export const Plugin = define({
                 }
               }
 
-              // Validate before storing so a bad value never becomes a warning
-              // on every later delegation.
               const ref = yield* Effect.try(() => Model.Ref.parse(chosen)).pipe(
                 Effect.mapError(() => new ToolFailure({ message: `Not a model reference: ${chosen}` })),
               )
@@ -120,10 +103,5 @@ export const Plugin = define({
       )
       .pipe(Effect.orDie)
 
-    // No slash command. `Command.Info` is a prompt template, so a `/worker-model`
-    // here would spend a turn asking the model to call this tool -- and the TUI
-    // now owns a `worker.model` command that opens the picker outright. This
-    // tool is the model's way in, for when a worker refuses and the user has to
-    // choose before the turn can continue.
   }),
 })

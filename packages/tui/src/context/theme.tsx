@@ -126,7 +126,6 @@ type ThemeContextValue = {
   readonly ready: boolean
 }
 
-/** Last-resort theme: the one redsun ships as its default. */
 const FALLBACK_THEME = "dusk"
 
 const [store, setStore] = createStore<State>({

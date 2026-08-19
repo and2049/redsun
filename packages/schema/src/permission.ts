@@ -54,8 +54,6 @@ export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
 export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "Permission.Effect" })
 export type Effect = typeof Effect.Type
 
-// REDSUN: the server-side auto-approve mode. `auto` grants everything that
-// would have prompted; a rule that denies still denies.
 export const Mode = Schema.Literals(["normal", "auto"]).annotate({ identifier: "Permission.Mode" })
 export type Mode = typeof Mode.Type
 

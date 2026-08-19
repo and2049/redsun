@@ -1,14 +1,3 @@
-// REDSUN: picking the model compose delegates to.
-//
-// It is the model menu pointed at a different sink -- same bottom-anchored
-// list, same providers collapsed behind one row -- because it is the same kind
-// of choice and should not have to be learned twice.
-//
-// Two things open it. `worker.model` opens it directly, which is the ordinary
-// way. The `worker_model` tool opens it too, by raising a form when a worker
-// refuses for lack of a model; answering that form is what makes the choice
-// take effect for the rest of the turn already running, since the TUI's own
-// copy only reaches the backend on the next prompt.
 import { useDialog } from "../ui/dialog"
 import { useLocal } from "../context/local"
 import { useClient } from "../context/client"
@@ -17,24 +6,16 @@ import { DialogModel } from "./dialog-model"
 import { DialogVariant } from "./dialog-variant"
 import { formRequestOptions, isFormAnswerField } from "../util/form"
 
-/** The metadata key the tool stamps on its form, and the prompt on its message. */
 export const WORKER_MODEL_KEY = "redsun.worker-model"
 
 export function isWorkerModelForm(form: FormWithLocation) {
   return form.metadata?.["kind"] === "worker-model"
 }
 
-/** `provider/model#variant`, the shape the backend parses. */
 export function workerModelRef(model: { providerID: string; modelID: string; variant?: string }) {
   return `${model.providerID}/${model.modelID}${model.variant ? `#${model.variant}` : ""}`
 }
 
-/**
- * The inverse of `workerModelRef`.
- *
- * Only the first slash separates the provider, because model ids carry slashes
- * of their own, and only a trailing `#` marks the variant.
- */
 export function parseWorkerModelRef(value: string) {
   const slash = value.indexOf("/")
   if (slash <= 0) return undefined
@@ -73,10 +54,6 @@ export function useWorkerModelDialog() {
   const client = useClient()
   const openVariant = useWorkerVariantDialog()
 
-  /**
-   * @param form the pending `worker_model` form, when the tool is what asked.
-   *   Answering it applies the choice inside the turn already running.
-   */
   return (form?: FormWithLocation) => {
     const current = local.model.worker.current()
     let answered = false
@@ -100,15 +77,11 @@ export function useWorkerModelDialog() {
           onSelect={(model) => {
             local.model.worker.set(model)
             answer(workerModelRef(model))
-            // The variant is a second step; the backend picks it up from the
-            // next prompt, since the form only carries the model.
             if (!openVariant()) dialog.clear()
           }}
         />
       ),
       () => {
-        // Escaping withdraws the tool's ask. Without that the tool waits forever
-        // on a form with nothing left on screen to answer it.
         if (!form || answered) return
         void client.api.form
           .cancel({ sessionID: form.sessionID, formID: form.id }, formRequestOptions(form))

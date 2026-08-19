@@ -1,9 +1,3 @@
-// REDSUN DENSE: the frame's last row.
-//
-// Idle it is a status line — the workspace on the left, the session's context
-// and cost on the right. In command mode it becomes a `:` bar with fuzzy
-// completion. It participates in the dock's column layout rather than floating
-// over the transcript, so opening it never moves anything.
 import { InputRenderable, type KeyEvent } from "@opentui/core"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import fuzzysort from "fuzzysort"
@@ -63,7 +57,6 @@ export function CommandBar() {
     return fitSessionUsage(current, Math.max(0, dimensions().width - left - 4))
   })
 
-  /** Every reachable command, plus its slash name, aliases, and the `:` aliases. */
   const commands = createMemo(() => {
     const result = new Map<string, { target: string; description: string }>()
     for (const command of commandList()) {
@@ -90,9 +83,6 @@ export function CommandBar() {
   })
 
   createEffect(() => {
-    // Read the mode before the ref guard: the <input> only exists while the bar
-    // is in command mode, so an early return that has not tracked the mode
-    // leaves the effect subscribed to nothing and the bar never takes focus.
     const mode = vim.mode
     if (!inputRef) return
     if (mode !== "command") {
@@ -101,7 +91,6 @@ export function CommandBar() {
     }
     inputRef.focus()
     setSelected(-1)
-    // Claim the input mode so no other layer's bindings fire while typing.
     onCleanup(keymap.mode.push("command"))
   })
 
@@ -123,8 +112,6 @@ export function CommandBar() {
       event.preventDefault()
       const command = commands().get(resolveCommand(input()))
       close()
-      // Dispatch after the mode has settled, so a command that opens a dialog
-      // is not immediately closed by the mode change behind it.
       if (command) setTimeout(() => keymap.dispatch(command.target))
       return
     }
@@ -170,8 +157,6 @@ export function CommandBar() {
             cursorColor={theme.text.action.primary.selected}
             flexGrow={1}
           />
-          {/* The menu grows upward out of the bar, over the transcript, so the
-              frame's rows never move when it opens. */}
           <Show when={suggestions().length > 0}>
             <box
               position="absolute"
@@ -222,8 +207,6 @@ export function CommandBar() {
               )}
             </Show>
             <box flexDirection="row" flexShrink={0}>
-              {/* A pending count is only meaningful until the next motion, so it
-                  shows here rather than in the prompt where it would linger. */}
               <Show when={vim.pendingCount()}>
                 {(count) => (
                   <text fg={theme.text.default} wrapMode="none">

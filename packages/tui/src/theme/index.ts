@@ -20,10 +20,6 @@ export { resolveThemeDocument, type ThemeDocument }
 
 export type ThemeDocumentSource = Record<string, unknown>
 
-// REDSUN: the twelve themes redsun ships, as native v2 documents. Each is
-// standalone and single-mode: v0.3.0 deliberately split dark/light pairs into
-// separate themes rather than pairing modes inside one document, and the
-// picker is built around that. `dusk` is the default, `dawn` its light twin.
 export const DEFAULT_THEMES: Record<string, ThemeDocumentSource> = {
   cloud,
   dawn,

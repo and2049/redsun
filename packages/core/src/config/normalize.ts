@@ -199,7 +199,6 @@ export function normalize(input: unknown): Result {
     tool_output: Info.fields.tool_output,
     websearch: Info.fields.websearch,
     warming: Info.fields.warming,
-    // REDSUN: delegated Claude Code provider settings.
     claude_code: Info.fields.claude_code,
   }
   Object.entries(nativeAtomic).forEach(([key, schema]) => {

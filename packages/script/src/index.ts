@@ -17,11 +17,6 @@ if (!semver.satisfies(process.versions.bun, expectedBunVersionRange)) {
   throw new Error(`This script requires bun@${expectedBunVersionRange}, but you are using bun@${process.versions.bun}`)
 }
 
-// REDSUN: `REDSUN_*` wins over `OPENCODE_*`, and `release` is a real channel
-// rather than a preview. Both come from dev, whose release workflow sets
-// `REDSUN_CHANNEL: release` -- without the first, that variable is read by
-// nothing and a release is stamped with the branch name; without the second, it
-// is stamped `0.0.0-release-<timestamp>` rather than the tag.
 const env = {
   REDSUN_CHANNEL: process.env["REDSUN_CHANNEL"],
   REDSUN_VERSION: process.env["REDSUN_VERSION"],
@@ -43,10 +38,6 @@ const VERSION = (() => {
   if (env.REDSUN_VERSION) return env.REDSUN_VERSION
   if (env.OPENCODE_VERSION) return env.OPENCODE_VERSION
   if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${previewBuildNumber()}`
-  // Upstream derived the next version from `@opencode-ai/cli` on npm. Redsun
-  // publishes no npm package, so that path would stamp a redsun release with
-  // upstream OpenCode's version number. A real release always arrives with its
-  // tag, so say so rather than guess.
   throw new Error(
     `Channel ${CHANNEL} needs an explicit version: set REDSUN_VERSION (the release workflow passes the tag).`,
   )
@@ -67,9 +58,6 @@ const team = [
     .text()
     .then((x) => x.split(/\r?\n/).map((x) => x.trim()))
     .then((x) => x.filter((x) => x && !x.startsWith("#")))
-    // REDSUN: `.github/TEAM_MEMBERS` is upstream's reviewer roster and went with
-    // the rest of their repo tooling. Nothing here reads `team`, but a missing
-    // file would throw during module init and take every build script with it.
     .catch(() => [])),
   ...bot,
 ]

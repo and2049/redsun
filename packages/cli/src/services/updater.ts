@@ -7,22 +7,13 @@ import { parse, type ParseError } from "jsonc-parser"
 import path from "node:path"
 import { action, type Policy } from "./updater-action"
 
-// REDSUN: redsun ships through its own installer and GitHub releases, and
-// publishes no npm package. The package-manager upgrade paths are deliberately
-// not advertised: probing for them resolved the main `redsun` build to
-// `@opencode-ai/cli` (the branch only matched `redsun-node`), so an autoupdate
-// installed upstream OpenCode over redsun.
 export type Method = "curl" | "powershell"
 
 export const REPOSITORY = "and2049/redsun"
 export const RELEASE_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`
-// The installers are release assets, the way dev fetched them, not files on a
-// branch: the copy attached to a release matches the binary it installs, and it
-// does not depend on what the default branch happens to be called.
 export const INSTALLER = `https://github.com/${REPOSITORY}/releases/latest/download/install`
 export const INSTALLER_WINDOWS = `https://github.com/${REPOSITORY}/releases/latest/download/install.ps1`
 
-/** The tag of the newest release, without its leading `v`. */
 export function versionFromRelease(data: unknown): string | undefined {
   if (typeof data !== "object" || data === null || !("tag_name" in data)) return undefined
   const tag = data.tag_name
@@ -39,11 +30,6 @@ export type UpgradeResult = {
 
 export interface Interface {
   readonly check: () => Effect.Effect<void>
-  /**
-   * Resolve a target version and run the installer. This is `redsun upgrade`;
-   * `check` is the scheduled one, which honours the autoupdate policy and stays
-   * quiet on failure. An explicit upgrade does neither.
-   */
   readonly upgrade: (input?: {
     readonly target?: string
     readonly method?: Method
@@ -96,8 +82,6 @@ export const layer = Layer.effect(
         )
     })
 
-    // The installer is the only supported upgrade path, so the method is just
-    // the platform's way of running it.
     const method = Effect.fnUntraced(function* () {
       return process.platform === "win32" ? ("powershell" as const) : ("curl" as const)
     })
@@ -127,8 +111,6 @@ export const layer = Layer.effect(
           yield* fs.makeDirectory(global.cache, { recursive: true })
           const directory = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
           if (method === "powershell") {
-            // Windows PowerShell will not run a downloaded script from a pipe,
-            // so it goes to a real .ps1 file first.
             const installer = path.join(directory, "install.ps1")
             const download = yield* run(["curl", "-fsSL", "-o", installer, INSTALLER_WINDOWS], "5 minutes")
             if (download.code !== 0) return download

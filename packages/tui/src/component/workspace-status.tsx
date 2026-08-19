@@ -1,9 +1,3 @@
-// REDSUN DENSE: the auto-approve readout, as the frame's second-to-last row.
-//
-// Cline-style: the permission mode is always on screen rather than something you
-// discover by being interrupted. Shift+Tab or a click toggles it. The
-// project/branch readout that shared this row in earlier iterations lives in the
-// command bar instead, so this row carries one thing.
 import { Show } from "solid-js"
 import { usePermission } from "../context/permission"
 import { useTheme } from "../context/theme"

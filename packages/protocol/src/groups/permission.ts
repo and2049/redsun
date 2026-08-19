@@ -33,9 +33,6 @@ export const makePermissionGroup = <
           }),
         ),
     )
-    // REDSUN: auto-approve is server state (see core `permission.ts`), so it
-    // needs a way in. Config is read-only over this API and the mode is a
-    // runtime toggle, not a config value.
     .add(
       HttpApiEndpoint.get("permission.mode.get", "/api/permission/mode", {
         success: Schema.Struct({ data: Schema.Struct({ mode: Permission.Mode }) }),

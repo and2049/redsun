@@ -1,19 +1,3 @@
-// REDSUN: routes Claude Code's `AskUserQuestion` onto v2's question surface.
-//
-// The tool is gated on the `question` permission like any other (permissions.ts),
-// but a *granted* question still needs somewhere to be answered. Claude Code has
-// no terminal of its own here, so without this the model gets an allow and no
-// answers, and the turn stalls on a question the user never saw.
-//
-// v2's question service is `Form.Service` — `core/src/tool/plugin/question.ts`
-// is a thin tool over it — and the TUI renders any session-scoped form
-// regardless of who created it. So this needs no new UI: build the same fields
-// the question tool builds, ask, and hand the answers back through the SDK's
-// `updatedInput`.
-//
-// The SDK keys answers by the full question text (verified against
-// @anthropic-ai/claude-agent-sdk 0.3.223: `AskUserQuestionInput.answers` is
-// "question text -> answer string; multi-select answers are comma-separated").
 export * as ClaudeCodeQuestions from "./questions.js"
 
 import type { Form } from "../../../form.js"
@@ -30,7 +14,6 @@ export interface Question {
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {}
 
-/** The questions in a tool input, or undefined when the shape is unusable. */
 export const parse = (input: Record<string, unknown>): readonly Question[] | undefined => {
   const raw = input["questions"]
   if (!Array.isArray(raw) || raw.length === 0) return undefined
@@ -60,7 +43,6 @@ export const parse = (input: Record<string, unknown>): readonly Question[] | und
 
 const key = (index: number) => `q${index}`
 
-/** The same field shape `core/src/tool/plugin/question.ts` builds. */
 export const fields = (questions: readonly Question[]): Form.Field[] =>
   questions.map((question, index) => ({
     key: key(index),
@@ -72,11 +54,9 @@ export const fields = (questions: readonly Question[]): Form.Field[] =>
       label: option.label,
       ...(option.description ? { description: option.description } : {}),
     })),
-    // The user may always answer something the model did not offer.
     custom: true,
   })) as Form.Field[]
 
-/** Form answers as the SDK wants them: keyed by question text, joined for multi-select. */
 export const answers = (
   questions: readonly Question[],
   answer: Form.Answer,

@@ -12,7 +12,6 @@ import { Cause, Data, Effect, Exit, Fiber, FiberSet, Layer, Option, Pull, Schedu
 import { Database } from "../../database/database.js"
 import { Bus } from "../../bus.js"
 import { Permission } from "../../permission.js"
-// REDSUN: delegated Claude Code sessions compact themselves inside the CLI.
 import { ClaudeCodeModels } from "../../plugin/redsun/claude-code/models.js"
 import { QuestionTool } from "../../tool/plugin/question.js"
 import { InstructionState } from "../instruction-state.js"
@@ -278,9 +277,6 @@ const layer = Layer.effect(
       // Make room: history must fit the context window before the call. A pending manual
       // compaction owns this instead; the runner executes it between steps.
       const compactionInput = { session, messages: loaded.messages, model, ref: resolved.ref, cost: resolved.cost }
-      // REDSUN: Claude Code owns its own context window and auto-compacts inside
-      // the CLI, so a v2-side auto-compaction would summarize a transcript this
-      // model never reads and replace it with one the CLI has never seen.
       if (!ClaudeCodeModels.isDelegated(resolved.ref) && compaction.required(compactionInput)) {
         const compacted = yield* compaction.compact(compactionInput)
         if (compacted.status === "completed")
@@ -542,17 +538,6 @@ const layer = Layer.effect(
           )
           if (pending?.type !== "compaction") return false
           const session = yield* getSession(sessionID)
-          // REDSUN: forward a manual /compact to the CLI's own command. v2
-          // compaction would summarize through a one-shot process that does not
-          // own the interactive session's history, so nothing would actually be
-          // compacted and the summary would describe the wrong conversation.
-          // translate.ts already renders the resulting compact_boundary frame.
-          //
-          // Keyed on the session's selected model rather than a resolved one:
-          // resolving here would run model resolution before a compaction that
-          // is meant to precede it. Every path that reaches a Claude Code model
-          // sets the session model explicitly (the model picker, and
-          // tool/plugin/subagent.ts for children), so this covers them.
           if (session.model && ClaudeCodeModels.isDelegated(session.model)) {
             yield* bus.publish(SessionEvent.Compaction.Failed, {
               sessionID,

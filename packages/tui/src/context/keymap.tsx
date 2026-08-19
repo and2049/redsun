@@ -169,7 +169,6 @@ export interface Keymap {
   }
   /** Registers a low-level keymap interceptor. */
   intercept: OpenTuiKeymap["intercept"]
-  /** Drops a half-typed key sequence. */
   clearPendingSequence(): void
 }
 

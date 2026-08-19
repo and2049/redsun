@@ -11,15 +11,6 @@ import { SplitBorder } from "./border"
 
 export type DialogSize = "medium" | "large" | "xlarge"
 
-/**
- * REDSUN DENSE: `bottom` is the picker shape -- full terminal width, flush with
- * the last row, no dimming behind it.
- *
- * A model list is something you read against the transcript you were just
- * looking at, not a modal that replaces it, and the full width is what lets a
- * provider's models sit in one column instead of wrapping. It rises out of the
- * same edge the prompt lives on, so the eye does not have to travel.
- */
 export type DialogPlacement = "default" | "bottom"
 
 export function dialogWidth(size: DialogSize) {
@@ -80,9 +71,6 @@ export function Dialog(
         borderColor={bottom() ? theme.border.default : undefined}
         backgroundColor={theme.background.default}
       >
-        {/* The menu runs to the terminal's last row, over the command bar, so it
-            needs a base of its own -- the bar and the transcript would otherwise
-            read through the translucent overlay colour. */}
         <box backgroundColor={bottom() ? theme.background.surface.overlay : undefined} paddingTop={1}>
           {props.children}
         </box>

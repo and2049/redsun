@@ -1,37 +1,16 @@
-// REDSUN: the Claude Code delegated provider's model registry.
-//
-// Mirrors V1: an autodetected "Anthropic (Claude Code)" provider whose model ids
-// are Claude Code CLI aliases passed through verbatim, so they track whatever the
-// user's installed CLI maps them to. Cost is zero because usage is covered by the
-// user's subscription, not API billing.
 export * as ClaudeCodeModels from "./models.js"
 
 import { Model } from "../../../model.js"
 import { Provider } from "../../../provider.js"
 
-/** Provider id exposed to the model picker, agent config, and subagent routing. */
 export const PROVIDER_ID = Provider.ID.make("claude-code")
 
-/** The bare sentinel name, as it appears to the `aisdk` hooks and in errors. */
 export const SENTINEL_NAME = "@redsun/claude-code-delegated"
 
-/**
- * Sentinel package identifier. Requests for this provider are answered by the
- * delegated language model, so this name must never reach real SDK resolution —
- * if it does, the load fails loudly instead of silently using another provider.
- *
- * The `aisdk:` prefix is what routes it. `model-resolver.ts` sends an
- * `aisdk:`-prefixed package to `AISDK.model`, which fires the `sdk` and
- * `language` hooks this plugin answers; anything else it hands to
- * `Provider.loadPackage`, which would try to import this name from npm and fail
- * with "Unsupported package". Without the prefix the `language` hook is
- * unreachable and no delegated turn can run at all.
- */
 export const SENTINEL_PACKAGE = Provider.aisdk(SENTINEL_NAME)
 
 export const DISPLAY_NAME = "Anthropic (Claude Code)"
 
-/** The single predicate every delegated gate keys on. */
 export const isDelegated = (model: { readonly providerID: string }) => model.providerID === PROVIDER_ID
 
 const CONTEXT_200K = { context: 200_000, output: 64_000 }
@@ -46,11 +25,6 @@ const model = (id: string, input: { name: string; family: string; limit: { conte
   limit: input.limit,
 })
 
-/**
- * Hand-maintained subscription model list. `fable` is Max-plan only; Pro accounts
- * selecting it get the CLI's own access error at request time rather than a
- * redsun-side rejection, so the list stays honest about what the CLI accepts.
- */
 export const MODELS = [
   model("fable", { name: "Claude Fable", family: "claude-fable", limit: CONTEXT_1M }),
   model("opus", { name: "Claude Opus", family: "claude-opus", limit: CONTEXT_200K }),
@@ -60,17 +34,8 @@ export const MODELS = [
   model("haiku", { name: "Claude Haiku", family: "claude-haiku", limit: CONTEXT_200K }),
 ] as const
 
-/** Redsun model id -> Claude Code CLI `--model` string. Identity today by design. */
 export const cliModel = (modelID: string) => modelID
 
-/**
- * `enabled`, not `auto`: auth.ts registers a `claude-code` integration, and
- * catalog.ts hides an `auto` provider that has an integration with no
- * connections. Autodetection is the contract here — the provider appears
- * whenever the binary resolves, and connecting is opt-in identity verification
- * rather than a gate. The plugin only registers any of this after the
- * executable resolves, so `enabled` never means "always on".
- */
 export const providerInfo = (): Provider.Info => ({
   id: PROVIDER_ID,
   name: DISPLAY_NAME,

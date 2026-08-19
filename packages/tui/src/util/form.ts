@@ -1,12 +1,6 @@
 import type { FormField, FormValue } from "@opencode-ai/client"
 import type { FormWithLocation } from "@opencode-ai/client/solid"
 
-/**
- * Headers a reply to a global form needs.
- *
- * A session-scoped form is routed by its session; a global one has only the
- * location it was raised in, and the server needs that on the request.
- */
 export function formRequestOptions(form: FormWithLocation) {
   if (form.sessionID !== "global" || !form.location) return undefined
   return {

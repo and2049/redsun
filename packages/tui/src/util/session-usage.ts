@@ -1,8 +1,3 @@
-// REDSUN: the session's cost and context readout, sized to fit.
-//
-// It shares the command bar's idle row with the workspace name, so it has to
-// give ground as the terminal narrows rather than wrapping or truncating
-// mid-number. `fitSessionUsage` picks the longest form that fits.
 import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode-ai/client/promise"
 import { Locale } from "./locale"
 
@@ -32,8 +27,6 @@ export function sessionUsage(input: {
   const limit = input.contextLimit?.(last.model)
   const percent = limit ? `${Math.round((tokens / limit) * 100)}%` : undefined
 
-  // Cache hit ratio is cumulative across the session, not just this turn: a
-  // single turn's ratio swings too hard to read at a glance.
   let cumulativeInput = 0
   let cumulativeRead = 0
   let cumulativeWrite = 0
@@ -57,7 +50,6 @@ export function sessionUsage(input: {
   }
 }
 
-/** The longest form of the readout that fits in `width`, or nothing. */
 export function fitSessionUsage(usage: SessionUsage, width: number) {
   const compact = usage.percent ?? usage.context
   return [

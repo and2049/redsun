@@ -30,8 +30,6 @@ export function Home() {
   const location = useLocation()
   const dimensions = useTerminalDimensions()
   const theme = useTheme()
-  // Wide terminals get a proportionally wider prompt rather than a fixed column
-  // stranded in the middle of the frame.
   const promptMaxWidth = createMemo(() => Math.max(75, Math.floor(dimensions().width * 0.7)))
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
   const currentLocation = () => route.location ?? data.location.default()
@@ -78,22 +76,14 @@ export function Home() {
 
   return (
     <>
-      {/* REDSUN DENSE: the workspace, its branch and the version open the
-          frame rather than closing it. The slot keeps its `home.footer` name
-          because that path is plugin contract; only where it renders moved. */}
       <box width="100%" flexShrink={0}>
         <Slot path="home.footer" />
       </box>
-      {/* The logo and the prompt sit in the middle of the frame with equal air
-          above and below, and a hint row between them naming the three prompt
-          triggers. */}
       <box flexGrow={1} alignItems="center" paddingLeft={1} paddingRight={1}>
         <box flexGrow={1} minHeight={0} />
         <box flexShrink={0}>
           <Logo />
         </box>
-        {/* Content-sized so the column's alignItems="center" centres it under
-            the logo, like the logo itself. */}
         <box height={1} flexShrink={0} marginTop={1}>
           <text fg={theme.text.subdued}>/ commands · ! shell · @ files</text>
         </box>

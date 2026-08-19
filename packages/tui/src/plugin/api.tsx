@@ -169,10 +169,6 @@ export function createPluginContext(input: {
           return host.route.data
         },
       },
-      // REDSUN: there is no tab strip. The domain stays on the contract and
-      // answers as a TUI with tabs disabled, which the contract already
-      // defines, so a plugin written against it still type-checks and still
-      // gets a defined answer instead of a missing property.
       tabs: {
         enabled: () => false,
         list: () => [],

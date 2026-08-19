@@ -1,4 +1,3 @@
-// REDSUN: configuration for the delegated Claude Code provider.
 export * as ConfigClaudeCode from "./claude-code.js"
 
 import { Schema } from "effect"
@@ -20,9 +19,6 @@ export class Info extends Schema.Class<Info>("ConfigClaudeCode.Info")({
   worker_permission_mode: Schema.String.pipe(optional).annotate({
     description: 'Permission mode for delegated worker sessions. Defaults to "inherit".',
   }),
-  // A union because the array form cannot express an argument that carries a
-  // value: V1's shape was the record, and `{"--foo": "bar"}` is the only way to
-  // say `--foo bar`. Both are accepted so an existing config keeps working.
   extra_args: Schema.Union([Schema.Array(Schema.String), Schema.Record(Schema.String, Schema.NullOr(Schema.String))])
     .pipe(optional)
     .annotate({

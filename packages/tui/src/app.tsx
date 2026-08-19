@@ -550,9 +550,6 @@ function App(props: { pair?: DialogPairCredentials }) {
     if (session) active = { id: session.id, title: session.title }
     if (!terminalTitleEnabled()) return
 
-    // REDSUN: the window title is the product name until a session has earned a
-    // real one, and then the title alone behind the prompt arrow -- a tab strip
-    // full of `OC | ...` reads as one repeated word before it reads as anything.
     if (route.data.type === "home") {
       renderer.setTerminalTitle("redsun")
       return
@@ -1219,8 +1216,6 @@ function App(props: { pair?: DialogPairCredentials }) {
           <Slot path="app" />
         </Show>
       </box>
-      {/* REDSUN DENSE: fixed rows that close out the frame. The auto-approve
-          readout is permission state, so it is session-only. */}
       <Show when={route.data.type === "session"}>
         <WorkspaceStatus />
       </Show>

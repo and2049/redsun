@@ -3,9 +3,6 @@ import { INSTALLER, INSTALLER_WINDOWS, RELEASE_API, REPOSITORY, versionFromRelea
 
 describe("updater release resolution", () => {
   it("points every upgrade source at the redsun repository", () => {
-    // The package-manager paths resolved the main `redsun` build to
-    // `@opencode-ai/cli`, so an autoupdate installed upstream OpenCode over
-    // redsun. Nothing here may reference an upstream host.
     expect(REPOSITORY).toBe("and2049/redsun")
     for (const url of [RELEASE_API, INSTALLER, INSTALLER_WINDOWS]) {
       expect(url).toContain(REPOSITORY)

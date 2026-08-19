@@ -144,10 +144,6 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Session transcript presentation settings" }),
-  // REDSUN: there is no tab strip, so `enabled` and `layout` are gone. `scope`
-  // outlived them because the session list reads it for whether to default to
-  // every project or just this directory. The key is kept where it was so an
-  // existing config keeps working.
   tabs: Schema.optional(
     Schema.Struct({
       scope: Schema.optional(Schema.Literals(["global", "cwd"])).annotate({

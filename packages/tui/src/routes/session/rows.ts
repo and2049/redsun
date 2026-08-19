@@ -445,9 +445,6 @@ function partitionPending(rows: SessionRow[], pending: Set<string>) {
   })
 }
 
-// REDSUN DENSE: what a collapsed run *did*, in one sentence -- "Read 3 files,
-// searched for 2 patterns" -- rather than a category name and a tally. `names`
-// are display tool names, in the order the run ran them.
 export function explorationSummary(names: readonly string[]) {
   const counts = new Map<string, number>()
   for (const name of names) {
@@ -464,7 +461,6 @@ export function explorationSummary(names: readonly string[]) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** How each display tool reads in a run summary. */
 const RUN_KINDS: Record<string, string> = {
   read: "read",
   grep: "search",
@@ -488,10 +484,6 @@ const RUN_NOUNS: Record<string, [string, string]> = {
   web: ["web search", "web searches"],
 }
 
-// REDSUN: a run collapses every consecutive tool that only *looks* at
-// something -- reads, searches, directory listings, fetches. Upstream stops at
-// read/glob/grep; the rest produce exactly the same kind of row and reading
-// twenty of them one per line is what the collapse exists to avoid.
 const EXPLORATION_TOOLS = new Set(["read", "glob", "grep", "list", "webfetch", "websearch"])
 
 function exploration(name: string) {

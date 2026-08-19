@@ -59,8 +59,6 @@ export const Plugin = {
     const config = yield* Config.Service
     const permission = yield* Permission.Service
     const scope = yield* Scope.Scope
-    // REDSUN: worker-model resolution needs these; a tool execute effect must carry
-    // `never` requirements, so they are bound here at plugin scope.
     const redsunWorkerModel: RedsunWorkerModel.Services = {
       kv: yield* KV.Service,
       catalog: yield* Catalog.Service,
@@ -219,9 +217,6 @@ export const Plugin = {
               }
 
               // Model selection is policy/config/session state, not an LLM-facing tool argument.
-              // REDSUN: a session-scoped override outranks the agent's configured model, and a
-              // fail-closed agent refuses rather than inheriting the parent's. See
-              // plugin/redsun/worker-model.ts.
               const model = yield* RedsunWorkerModel.resolve({
                 services: redsunWorkerModel,
                 agentID: agent.id,

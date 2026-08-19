@@ -1,43 +1,8 @@
-// REDSUN: mirrors Claude Code's own subagents into real v2 child sessions.
-//
-// Claude Code runs its subagents inside its own process, so without this they
-// are invisible: translate.ts drops every frame carrying `parent_tool_use_id`
-// (that is the main-thread contract) and the parent transcript shows one opaque
-// `subagent` tool call. Mirroring gives each one a real child session, which the
-// TUI already knows how to render — it discovers children from `session.created`
-// with a matching parentID and drives their status from the execution events, so
-// this needs no TUI work at all.
-//
-// Transcript authoring is durable-event publication, v2's replacement for V1's
-// `Session.updateMessage`/`updatePart` no-LLM path: the projector turns
-// step/text/reasoning/tool events into exactly the message rows an ordinary
-// assistant turn would produce.
-//
-// Two rules here are load-bearing and were paid for in V1:
-//
-//   1. Mark, don't delete. The CLI emits `task_notification` for a *foreground*
-//      task BEFORE the main-thread `tool_result` for the same call, and
-//      translate.ts looks the child up at that tool_result to attach
-//      `providerMetadata.redsun`. Deleting on notification loses the link. Only
-//      the turn-end sweep clears entries.
-//   2. `children()` returns the live map, never a copy. language-model.ts reads
-//      it once per turn and hands the reference to `makeState` before any child
-//      exists; a snapshot would always be empty.
-//
-// Accepted limit: the turn-end sweep closes and forgets every entry, so a
-// *background* subagent that outlives the turn loses its tail here. The parent's
-// tool result still reports it was backgrounded. This matches V1, which could
-// not see between-turn frames at all; keeping such entries alive instead would
-// leave a child permanently busy whenever the CLI dies or a turn is interrupted.
-//
-// Kept Effect-free like sessions.ts — the Agent SDK boundary is promises, and
-// the Effect seam lives in provider.ts behind the `Ops` port.
 export * as ClaudeCodeSubagents from "./subagents.js"
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeNativeTools } from "./native-tools.js"
 
-/** A durable event to project into one child session's aggregate. */
 export type ChildEvent =
   | { readonly kind: "execution-started"; readonly sessionID: string }
   | { readonly kind: "execution-succeeded"; readonly sessionID: string }
@@ -75,17 +40,9 @@ export type ChildEvent =
       readonly failed: boolean
     }
 
-/**
- * The Effect-side port. provider.ts supplies the real implementation; tests
- * supply a recording fake, so the whole state machine is exercised without a
- * database or a live CLI.
- */
 export interface Ops {
-  /** Create a child session under the mirrored parent. Undefined on failure. */
   readonly createChild: (input: { title: string; agent: string }) => Promise<string | undefined>
-  /** Project events into child aggregates, in order. */
   readonly publish: (events: readonly ChildEvent[]) => Promise<void>
-  /** Fresh assistant message id. */
   readonly messageID: () => string
 }
 
@@ -94,13 +51,9 @@ interface Entry {
   readonly parentSessionID: string
   readonly description: string
   readonly agent: string
-  /** A terminal `task_notification` arrived; kept until the turn-end sweep. */
   settled: boolean
-  /** The assistant message currently open in the child, if any. */
   open?: { readonly messageID: string; ordinal: number }
-  /** SDK API message ids already mirrored, so repeats do not duplicate. */
   readonly seen: Set<string>
-  /** tool_use id -> the child assistant message that issued it. */
   readonly tools: Map<string, string>
 }
 
@@ -120,18 +73,14 @@ const resultText = (content: unknown): string => {
 }
 
 export interface Mirror {
-  /** Feed one SDK frame. Awaited by the session pump, so calls are serialized. */
   observe(message: SDKMessage): Promise<void>
-  /** The live map translate.ts reads, keyed by subagent tool_use id. */
   children(): ReadonlyMap<string, { sessionID: string; parentSessionID: string; description: string }>
-  /** Close anything still open and clear the map. Runs at turn end. */
   sweep(): Promise<void>
 }
 
 export const make = (input: { readonly parentSessionID: string; readonly ops: Ops }): Mirror => {
   const { parentSessionID, ops } = input
   const entries = new Map<string, Entry>()
-  /** task_id -> tool_use_id, because notifications may carry only the task id. */
   const byTask = new Map<string, string>()
 
   const closeOpen = (entry: Entry, events: ChildEvent[]) => {
@@ -141,19 +90,14 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
   }
 
   const started = async (message: Record<string, unknown>) => {
-    // Ambient housekeeping tasks are explicitly not for the transcript.
     if (message["skip_transcript"] === true) return
     const toolUseID = message["tool_use_id"]
-    // Without a tool_use id there is nothing for translate.ts to correlate the
-    // child against, so the parent's tool call could never link to it.
     if (typeof toolUseID !== "string" || !toolUseID) return
     if (entries.has(toolUseID)) return
 
     const description = typeof message["description"] === "string" ? message["description"] : "subagent"
     const agent = typeof message["subagent_type"] === "string" && message["subagent_type"] ? message["subagent_type"] : "general"
     const sessionID = await ops.createChild({ title: `${description} (@${agent} subagent)`, agent })
-    // A failed child creation degrades to V1's behaviour (an opaque tool call)
-    // rather than failing the parent's turn.
     if (!sessionID) return
 
     const entry: Entry = {
@@ -184,8 +128,6 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
           : undefined
     const entry = toolUseID ? entries.get(toolUseID) : undefined
     if (!entry || entry.settled) return
-    // Mark, never delete — see the header. The parent's tool_result is still
-    // to come for a foreground task, and it needs this entry.
     entry.settled = true
     const events: ChildEvent[] = []
     closeOpen(entry, events)
@@ -286,13 +228,7 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
       const parent = raw["parent_tool_use_id"]
       if (typeof parent !== "string" || !parent) return
       const entry = entries.get(parent)
-      // Nested subagents (a subagent spawning its own) are not mirrored: their
-      // task_started carries no parent linkage, so they would land as siblings
-      // rather than grandchildren. They stay inside the child's tool output.
       if (!entry) return
-      // stream_event deltas are deliberately ignored — the full assistant and
-      // user frames (forwardSubagentText) carry authoritative content, and
-      // reconstructing partial blocks buys no fidelity the child view shows.
       if (raw["type"] === "assistant") return assistant(entry, raw)
       if (raw["type"] === "user") return user(entry, raw)
     },
@@ -301,8 +237,6 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
       const events: ChildEvent[] = []
       for (const entry of entries.values()) {
         if (entry.settled) continue
-        // An interrupted or still-running task settles here so the child never
-        // shows as permanently busy.
         closeOpen(entry, events)
         events.push({ kind: "execution-succeeded", sessionID: entry.sessionID })
       }

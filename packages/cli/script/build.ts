@@ -62,8 +62,6 @@ const targets =
 if (!targets.length) throw new Error(`Unknown build target: ${requestedTarget}`)
 
 if (!skipInstall) await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
-// REDSUN: packages/app is out of scope, so the web UI archive is always empty.
-// buildAppArchive() returns early on skipBuild and never touches ../../app.
 void skipWebUi
 const appArchive = await buildAppArchive(Script.channel, { skipBuild: true })
 const appAssetsPlugin: BunPlugin = {

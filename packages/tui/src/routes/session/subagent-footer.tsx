@@ -1,10 +1,3 @@
-// REDSUN DENSE: the dock of a child session.
-//
-// A child session is a read-only view of a subagent, so its dock carries this
-// row where the parent carries the prompt: which subagent this is, where it sits
-// among its siblings, what it has spent, and the three ways back out. The label
-// is parsed from the title the Claude Code mirror and the native subagent tool
-// both write — `<description> (@<agent> subagent)`.
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import type { SessionMessageAssistant } from "@opencode-ai/client/promise"
@@ -31,7 +24,6 @@ export function SubagentFooter() {
   const keymap = Keymap.use()
   const shortcuts = Keymap.useShortcuts()
   const [hover, setHover] = createSignal<string | undefined>()
-  // Re-measure on resize so the row reflows with the dock.
   useTerminalDimensions()
 
   const session = createMemo(() => data.session.get(route.sessionID))
@@ -76,9 +68,6 @@ export function SubagentFooter() {
 
   return (
     <box flexShrink={0}>
-      {/* The dense dock draws its rows in the prompt box's rounded shape, and
-          like the prompt it takes no fill: a terminal cell cannot clip, so a
-          background would paint square corners behind the rounded border. */}
       <box border borderStyle="rounded" borderColor={theme.border.default} paddingLeft={1} paddingRight={1}>
         <box flexDirection="row" justifyContent="space-between" gap={1}>
           <box flexDirection="row" gap={1}>

@@ -1,18 +1,3 @@
-// REDSUN: in-process MCP server exposing v2's subagent delegation to a Claude
-// Code session.
-//
-// This is what lets a Claude Code model act as a compose coordinator and hand
-// work to workers running on any other configured provider. The handler executes
-// the already-registered upstream `subagent` tool through the ordinary tool
-// snapshot, so permission asserts, subagent-depth limits, worker model and
-// variant resolution, and background semantics are all reused rather than
-// reimplemented.
-//
-// The server is attached unconditionally: `mcpServers` is fixed at process start
-// while the agent can change per turn, so gating attachment on the turn's tools
-// would leave a mid-session switch into compose without delegation. Gating is
-// the permission layer's job — a worker denies `subagent`, so the tool is
-// present but refuses.
 export * as ClaudeCodeMcp from "./mcp.js"
 
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
@@ -29,10 +14,6 @@ const DESCRIPTION = [
 ].join(" ")
 
 export interface Delegate {
-  /**
-   * Execute the upstream subagent tool for this session. Resolves to the text
-   * the subagent returned, or rejects with a message to show the model.
-   */
   (input: {
     readonly agent: string
     readonly description: string

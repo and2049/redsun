@@ -38,9 +38,6 @@ type Definition = {
   description: string
 }
 
-// No v2 binding uses `<leader>` any more -- normal mode makes every bare
-// letter a command, so there is nothing to disambiguate. This survives as the
-// display fallback when a migrated v1 config still names the token.
 export const LeaderDefault = "ctrl+x"
 
 const keybind = (value: Definition["default"], description: string): Definition => ({ default: value, description })
@@ -112,7 +109,6 @@ export const Definitions = {
   "queued_prompt.delete": keybind("ctrl+d", "Delete queued prompt"),
   "session.toggle.exploration_grouping": keybind("none", "Toggle related tool call grouping"),
   "session.child.first": keybind("down", "Go to first child session"),
-  // Belongs to `mini`'s subagent inspector, not the session view.
   "composer.subagent.interrupt": keybind("ctrl+d", "Interrupt subagent"),
   "session.child.next": keybind("right", "Go to next child session"),
   "session.child.previous": keybind("left", "Go to previous child session"),
@@ -256,8 +252,6 @@ export const Definitions = {
 
 type KeybindName = keyof typeof Definitions
 const KeybindNames = new Set<string>(Object.keys(Definitions))
-// Commands that existed in an earlier release. Ignored rather than rejected, so
-// a config written before they went away still loads.
 const RemovedKeybinds = new Set<string>(["leader"])
 
 export const KeybindOverrides = Schema.Struct(

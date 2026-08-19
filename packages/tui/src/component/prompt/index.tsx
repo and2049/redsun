@@ -317,6 +317,45 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const interruptShortcut = createMemo(() => shortcuts.get("session.interrupt"))
+  let workerSyncedSessionID: string | undefined
+  createEffect(() => {
+    const sessionID = props.sessionID
+    if (!sessionID || sessionID === workerSyncedSessionID) return
+    const messages = data.session.message.list(sessionID)
+    if (messages === undefined) return
+    workerSyncedSessionID = sessionID
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]
+      if (message?.type !== "user") continue
+      const value = message.metadata?.[WORKER_MODEL_KEY]
+      if (typeof value !== "string" || value.length === 0) continue
+      local.model.worker.restore(sessionID, parseWorkerModelRef(value))
+      return
+    }
+    local.model.worker.restore(sessionID, undefined)
+  })
+
+  const composeWorker = createMemo(() => local.agent.current()?.id === "compose" && store.mode === "normal")
+  const workerDisplay = createMemo(() => {
+    const value = local.model.worker.current()
+    if (!value) return undefined
+    const ref = currentLocation.ref ?? data.location.default()
+    const provider = data.location.provider.list(ref)?.find((item) => item.id === value.providerID)
+    const info = data.location.model
+      .list(ref)
+      ?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+    return {
+      model: info?.name ?? value.modelID,
+      provider: provider?.name ?? value.providerID,
+      variant: value.variant,
+    }
+  })
+
+  const workerMetadata = createMemo(() => {
+    if (local.agent.current()?.id !== "compose") return undefined
+    const ref = local.model.worker.ref()
+    return ref === undefined ? undefined : { [WORKER_MODEL_KEY]: ref }
+  })
   const connected = useConnected()
   const hasRightContent = createMemo(() => Boolean(props.right))
 
@@ -375,59 +414,6 @@ export function Prompt(props: PromptProps) {
     extmarkToPart: new Map(),
     interrupt: 0,
   })
-  // REDSUN: the worker model rides along on the prompt.
-  //
-  // The TUI owns the picker but has no route to the backend's copy -- a plugin
-  // can add neither an HTTP nor a KV route -- so the choice is stamped on the
-  // user message, which the client can already send and the projector already
-  // persists. `RedsunWorkerModel.sessionOverride` reads it back off the
-  // session's history, which also makes the messages the durable record of what
-  // a session last delegated on.
-  //
-  // These sit below the store because `composeWorker` reads it and a
-  // `createMemo` body runs the moment it is created.
-  let workerSyncedSessionID: string | undefined
-  // Opening a session restores the worker model it last ran with. A session
-  // that never set one falls through to the globally remembered pick, which is
-  // what a fresh session gets too.
-  createEffect(() => {
-    const sessionID = props.sessionID
-    if (!sessionID || sessionID === workerSyncedSessionID) return
-    const messages = data.session.message.list(sessionID)
-    if (messages === undefined) return
-    workerSyncedSessionID = sessionID
-    for (let index = messages.length - 1; index >= 0; index--) {
-      const message = messages[index]
-      if (message?.type !== "user") continue
-      const value = message.metadata?.[WORKER_MODEL_KEY]
-      if (typeof value !== "string" || value.length === 0) continue
-      local.model.worker.restore(sessionID, parseWorkerModelRef(value))
-      return
-    }
-    local.model.worker.restore(sessionID, undefined)
-  })
-
-  const composeWorker = createMemo(() => local.agent.current()?.id === "compose" && store.mode === "normal")
-  const workerDisplay = createMemo(() => {
-    const value = local.model.worker.current()
-    if (!value) return undefined
-    const ref = currentLocation.ref ?? data.location.default()
-    const provider = data.location.provider.list(ref)?.find((item) => item.id === value.providerID)
-    const info = data.location.model
-      .list(ref)
-      ?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
-    return {
-      model: info?.name ?? value.modelID,
-      provider: provider?.name ?? value.providerID,
-      variant: value.variant,
-    }
-  })
-  const workerMetadata = createMemo(() => {
-    if (local.agent.current()?.id !== "compose") return undefined
-    const ref = local.model.worker.ref()
-    return ref === undefined ? undefined : { [WORKER_MODEL_KEY]: ref }
-  })
-
   let disposed = false
   let pasteQueue = Promise.resolve()
 

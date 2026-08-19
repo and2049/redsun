@@ -1,9 +1,3 @@
-// REDSUN: registers the delegated Claude Code provider.
-//
-// Autodetected, matching V1: the provider appears only when the `claude` binary
-// resolves. Sign-in is deliberately NOT probed at startup — that would cost a
-// subprocess on every boot — so an unauthenticated CLI surfaces an actionable
-// error on the first turn instead.
 export * as ClaudeCodeProviderPlugin from "./provider.js"
 
 import { define } from "@opencode-ai/plugin/effect/plugin"
@@ -34,24 +28,10 @@ import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
 
-/**
- * Hidden agents that generate a title, a summary, or a compaction. They must run
- * one-shot: reusing the interactive process would inject their prompt into the
- * user's conversation and, for compaction, ask Claude Code to summarize a
- * transcript it already owns.
- */
 const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
 
 const cursorKey = (sessionID: string) => `redsun.claude-code-session/${sessionID}`
 
-/**
- * The steer text from a decline that carried one, or undefined for a plain
- * refusal.
- *
- * `Effect.runPromise` rejects with the failure for a typed error and with a
- * wrapper for a defect, and `permission.assert` produces one of each -- so walk
- * a short chain rather than assuming which arrived.
- */
 const correctionFeedback = (error: unknown): string | undefined => {
   for (let node: unknown = error, depth = 0; node !== undefined && node !== null && depth < 4; depth++) {
     const candidate = node as { _tag?: unknown; feedback?: unknown; cause?: unknown; error?: unknown }
@@ -89,8 +69,6 @@ export const Plugin = define({
       }
     })
 
-    // Connecting never signs anybody in: it verifies the CLI's existing sign-in
-    // and records the account so the dialog can name it. See auth.ts.
     yield* ctx.integration.transform((draft) => {
       draft.update(ClaudeCodeModels.PROVIDER_ID, (integration) => {
         integration.name = ClaudeCodeModels.DISPLAY_NAME
@@ -112,31 +90,15 @@ export const Plugin = define({
     const bus = yield* Bus.Service
     const agentRegistry = yield* Agent.Service
 
-    // Resume cursors are read synchronously inside doStream, so keep a mirror of
-    // the durable KV values in memory and write through on change.
     const cursors = new Map<string, string>()
-    // Which agent is driving each session's current request, recorded by the
-    // session context hook immediately before the model call for that session.
     const agents = new Map<string, string>()
-    // Sessions that are children of another session, so a delegated worker can
-    // be told not to delegate further. Recorded from the same hook.
     const workers = new Set<string>()
-    // The agent each session last sent a brief for. A custom agent's `system`
-    // is sent once per switch -- the CLI keeps it in conversation history from
-    // then on, and repeating it every turn would break the cached prefix.
     const briefed = new Map<string, string>()
-    // Each agent's mode and system prompt, resolved in the context hook.
     const profiles = new Map<string, { mode?: string; system?: string }>()
-    // Sessions whose next model call is a one-shot the context hook announced.
-    // Consumed by that call; see the hook below for why it is not the agent map.
     const pendingOneShot = new Set<string>()
 
     const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery)
 
-    /**
-     * One mirror per delegated session, built lazily where the turn's model is
-     * known so mirrored children carry the model that actually produced them.
-     */
     const mirrors = new Map<string, ClaudeCodeSubagents.Mirror>()
     const mirrorFor = (sessionID: string, model: Model.Ref) => {
       const existing = mirrors.get(sessionID)
@@ -145,9 +107,6 @@ export const Plugin = define({
         parentSessionID: sessionID,
         ops: {
           messageID: () => SessionMessage.ID.create(),
-          // Mirroring is best-effort: a failure here must degrade to V1's
-          // pre-mirror behaviour (an opaque subagent tool call), never break
-          // the user's turn.
           createChild: (input) =>
             Effect.runPromise(
               runtime.session
@@ -170,18 +129,10 @@ export const Plugin = define({
     yield* ctx.session.hook(
       "context",
       Effect.fn(function* (event) {
-        // A one-shot agent is announced for exactly one request. Recording it in
-        // `agents` would leave the map claiming "summary" for every later turn,
-        // and that map also decides the permission mode, the tool bridge's
-        // agent, and delegation -- none of which want it. Flag the request and
-        // leave the interactive agent standing.
         if (ONE_SHOT_AGENTS.has(event.agent)) {
           pendingOneShot.add(event.sessionID)
         } else {
           agents.set(event.sessionID, event.agent)
-          // Resolved here rather than in `turnBrief` because the agent lookup
-          // and the parent check are async while doStream reads them
-          // synchronously.
           const info = yield* agentRegistry.resolve(event.agent).pipe(Effect.orElseSucceed(() => undefined))
           profiles.set(event.agent, { mode: info?.mode, system: info?.system })
           const session = yield* runtime.session.get(event.sessionID).pipe(Effect.orElseSucceed(() => undefined))
@@ -192,12 +143,6 @@ export const Plugin = define({
       }),
     )
 
-    /**
-     * The brief for this turn, consumed once per model call. See turn-brief.ts:
-     * a delegated turn sends no system prompt, so without this compose is never
-     * told that `mcp__redsun__subagent` is how it delegates, a worker is never
-     * told not to, and a custom agent's own prompt is dropped entirely.
-     */
     const turnBrief = (sessionID: string) => {
       const agentID = agents.get(sessionID)
       if (!agentID) return undefined
@@ -211,13 +156,6 @@ export const Plugin = define({
       })
     }
 
-    /**
-     * Claude Code owns its own read-only mode, so redsun's plan agent maps onto
-     * the SDK's `plan` mode rather than being rebuilt out of tool denies. The
-     * agent's own `mode` is what selects `worker_permission_mode`, so a worker
-     * routed to a Claude Code model can be held to a tighter policy than the
-     * primary session.
-     */
     const permissionMode = async (sessionID: string) => {
       const agentID = agents.get(sessionID)
       const info = agentID ? await Effect.runPromise(agentRegistry.resolve(agentID)).catch(() => undefined) : undefined
@@ -229,16 +167,10 @@ export const Plugin = define({
       })
     }
 
-    /** Bridges the SDK's approvals onto Permission.Service. See permission-bridge.ts. */
     const canUseTool = (sessionID: string) =>
       ClaudeCodePermissionBridge.make({
         worktree: location.directory,
         agent: () => agents.get(sessionID),
-        // `assert`, not `ask`: only assert awaits the user. A decline arrives as
-        // a `CorrectedError` when it carried feedback and as a `DeclinedError`
-        // defect otherwise (permission.ts tunnels it deliberately so a blanket
-        // mapError cannot turn a refusal into model-facing tool output), so both
-        // land here as a rejected promise and are told apart by shape.
         assert: (action, resource) =>
           Effect.runPromise(
             permission
@@ -263,8 +195,6 @@ export const Plugin = define({
               fields: fields as never,
             }),
           ).catch(() => undefined),
-        // Ask, then move redsun off the plan agent. Without the switch the CLI
-        // would leave plan mode while `modes.ts` put it straight back next turn.
         exitPlan: () =>
           Effect.runPromise(
             Effect.gen(function* () {
@@ -284,13 +214,6 @@ export const Plugin = define({
           ).catch(() => false),
       })
 
-    /**
-     * Delegation for a Claude Code coordinator. Executes the upstream subagent
-     * tool through the ordinary snapshot so permission asserts, depth limits and
-     * worker-model resolution are reused. The permission layer does the gating,
-     * so a worker (which denies `subagent`) gets a refusal rather than a missing
-     * tool.
-     */
     const delegate =
       (sessionID: string): ClaudeCodeMcp.Delegate =>
       async (args) => {
@@ -299,8 +222,6 @@ export const Plugin = define({
         return Effect.runPromise(
           Effect.gen(function* () {
             const snapshot = yield* tools.snapshot()
-            // The permission request is attributed to the session's newest
-            // message, matching how an ordinary tool call would appear.
             const messages = yield* runtime.session.messages({ sessionID: sessionID as never, order: "desc", limit: 1 })
             const messageID = messages[0]?.id
             if (!messageID) return yield* Effect.fail(new Error("Session has no message to attribute the task to."))
@@ -326,13 +247,6 @@ export const Plugin = define({
         )
       }
 
-    // `AISDK.language` refuses to continue unless some plugin returns an SDK, so
-    // the `language` hook below is unreachable without this one. There is no real
-    // SDK here: Claude Code is a subprocess, not a provider package, and the
-    // `language` hook replaces the model outright. The stub exists to satisfy
-    // the contract, and throws rather than returning a model if anything ever
-    // reaches it -- that would mean the language hook did not run, and a silent
-    // fallback to another provider is exactly what the sentinel prevents.
     yield* ctx.aisdk.hook(
       "sdk",
       Effect.fn(function* (event) {
@@ -373,8 +287,6 @@ export const Plugin = define({
             }),
             isOneShot: (sessionID) => pendingOneShot.delete(sessionID),
             turnBrief,
-            // The live map, never a copy: translate.ts captures this reference
-            // before any child exists and reads it as children are minted.
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
             observer: (sessionID, message) => mirrorFor(sessionID, modelRef).observe(message),
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),

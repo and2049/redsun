@@ -1,8 +1,3 @@
-// REDSUN: the modal-input context and its keyboard.
-//
-// `VimProvider` holds the mode; `VimKeyHandler` owns the keyboard and mounts
-// below the dialog provider so bare-letter dispatch can be gated on the dialog
-// stack. Mode transitions run globally regardless of focus.
 import { createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
@@ -11,7 +6,6 @@ import { Keymap } from "./keymap"
 import { useDialog } from "../ui/dialog"
 import { NORMAL_LETTER_COMMANDS, pushCount, transition, type VimMode } from "../vim"
 
-/** How long `ctrl+x` holds normal mode before falling back to insert. */
 const TEMP_DURATION_MS = 3000
 const TICK_INTERVAL_MS = 250
 
@@ -29,7 +23,6 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       setPendingCount(null)
     }
 
-    /** The pending count, consumed: defaults to 1 and resets. */
     function takeCount() {
       const count = pendingCount() ?? 1
       setPendingCount(null)
@@ -45,7 +38,6 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       setTempRemaining(null)
     }
 
-    /** Normal mode for one command, then back to insert. The leaderless chord. */
     function enterTempNormal(ms: number = TEMP_DURATION_MS) {
       clearTemp()
       clearCount()
@@ -93,9 +85,6 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
   const keymap = Keymap.use()
   const dialog = useDialog()
 
-  // `ctrl+x` is the one chord that survives from the leader era, and it means
-  // something different now: it borrows normal mode for a single command rather
-  // than opening a sequence.
   onMount(() => {
     onCleanup(
       keymap.intercept(
@@ -117,7 +106,6 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
     if (vim.mode === "command") return
     if (dialog.stack.length > 0 && event.name !== "escape") return
 
-    // Escape out of a borrowed normal mode goes straight back to insert.
     if (vim.mode === "normal" && vim.tempRemaining() !== null && event.name === "escape") {
       event.preventDefault()
       vim.clearTemp()
@@ -134,8 +122,6 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
     }
     if (vim.mode !== "normal") return
 
-    // Count prefix: digits accumulate for the next motion (5j, 12k, 3J). A
-    // digit never ends a borrowed normal mode; only the command it prefixes does.
     if (/^[0-9]$/.test(event.name)) {
       if (event.option || event.shift) return
       if (event.name === "0" && vim.pendingCount() === null) return

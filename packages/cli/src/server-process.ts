@@ -23,25 +23,12 @@ export type Options = {
   readonly port?: number
 }
 
-// REDSUN: there are exactly two databases -- the one a local development build
-// writes, and the one every installed build shares. Upstream derives the name
-// from the channel, which spawns a fresh empty database per branch and per
-// preview; redsun removed the channel as an identity axis, so the only question
-// here is local or installed.
-//
-// The installed name is `redsun-release.db` because that is the file V0.3.0
-// users already have: releases are built with `REDSUN_CHANNEL=release`
-// (`.github/workflows/publish.yml`), and dev's `Database.path()` suffixed
-// anything outside `latest | beta | prod`. V2 opens that file and upgrades it in
-// place, so renaming it here would present every upgrading user with an empty
-// history instead.
 export const INSTALLED_DATABASE = "redsun-release.db"
 export const LOCAL_DATABASE = "redsun-local.db"
 
 export function databaseFilename(channel: string, env: Record<string, string | undefined> = process.env) {
   if (env.OPENCODE_DB) return env.OPENCODE_DB
   if (channel !== "local") return INSTALLED_DATABASE
-  // The flag kept its upstream meaning: do not give this build its own database.
   if (env.OPENCODE_DISABLE_CHANNEL_DB === "1" || env.OPENCODE_DISABLE_CHANNEL_DB === "true") return INSTALLED_DATABASE
   return LOCAL_DATABASE
 }

@@ -275,9 +275,6 @@ const make = (dependencies: Dependencies) => {
         LLM.request({
           model: plan.model,
           promptCacheKey: SessionPromptCacheKey.make(plan.session.id),
-          // REDSUN: not a user turn. A delegated session never reaches here
-          // (runner/llm.ts forwards /compact to the CLI instead), but the marker
-          // keeps that a routing decision rather than a thing this call assumes.
           http: {
             headers: { ...SessionModelHeaders.make(plan.session, dependencies.app), ...SessionModelHeaders.internal },
           },

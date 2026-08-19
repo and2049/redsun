@@ -325,7 +325,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const worker = {
         current: workerSelection,
-        /** `provider/model#variant`, the shape the backend parses. */
         ref() {
           const value = workerSelection()
           if (!value) return undefined
@@ -363,7 +362,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const info = models()?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
           return info?.variants?.map((item) => item.id) ?? []
         },
-        /** Seeds a session's worker model from what it last ran with. */
         restore(sessionID: string, selection: ModelSelection | undefined) {
           setSelectionState("workerBySession", sessionID, selection)
         },

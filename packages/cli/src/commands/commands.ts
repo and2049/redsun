@@ -141,9 +141,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       description: "List all available models",
       params: ServerParams,
     }),
-    // REDSUN: the installer is the only supported upgrade path, and it is the
-    // one dev exposed. Without this command the scheduled check is the only way
-    // an install ever moves forward.
     Spec.make("upgrade", {
       description: "Upgrade redsun to the latest or a specific version",
       params: {

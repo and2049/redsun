@@ -1,17 +1,7 @@
-// REDSUN: modal input.
-//
-// Three modes. `insert` is the default and behaves like an ordinary prompt.
-// `normal` frees every bare letter to be a command, which is what lets redsun
-// drop the leader key entirely — upstream needs `<leader>l` for the session list
-// because `l` has to stay typeable. `command` is the `:` bar.
-//
-// This module is the pure half: the mode machine, the count accumulator, and
-// the `:` alias table. The context owns the keyboard and the dispatching.
 import type { KeyEvent } from "@opentui/core"
 
 export type VimMode = "insert" | "normal" | "command"
 
-/** `:` aliases, in the shape muscle memory expects them. */
 export const commandAliases: Record<string, string> = {
   ls: "session.list",
   session: "session.list",
@@ -93,23 +83,11 @@ export function transition(mode: VimMode, event: Pick<KeyEvent, "name" | "ctrl" 
 
 export const COUNT_MAX = 999
 
-/**
- * Appends a digit to the pending count.
- *
- * `null` means no count is pending. A leading `0` stays inert so `0` keeps its
- * own meaning — vim's `10j`, never `0j`.
- */
 export function pushCount(current: number | null, digit: number): number | null {
   if (digit === 0 && current === null) return null
   return Math.min(COUNT_MAX, (current ?? 0) * 10 + digit)
 }
 
-/**
- * Bare letter to command, in normal mode only.
- *
- * In insert mode these are typed into the prompt; in command mode the bar owns
- * input. Modifier chords stay with the keymap.
- */
 export const NORMAL_LETTER_COMMANDS: Record<string, string> = {
   a: "agent.list",
   b: "session.sidebar.toggle",

@@ -11,9 +11,6 @@ export function homeFooterVisibility(width: number) {
   }
 }
 
-// REDSUN DENSE: the workspace and its branch, in the same shape the command
-// bar uses in a session -- name in the foreground, branch parenthesised and
-// subdued -- so the two readouts read as one thing seen from two screens.
 function Directory(props: { context: Plugin.Context }) {
   const location = createMemo(() => props.context.location)
   const name = createMemo(() => {

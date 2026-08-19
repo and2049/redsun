@@ -1,23 +1,3 @@
-// REDSUN: the Claude Code "connect" flow.
-//
-// This method never signs anybody in. Redsun drives the user's already
-// installed, already signed-in `claude` CLI and never touches Anthropic
-// subscription credentials itself — that is the whole compliance posture (ADR in
-// `.redsun/plans/claude-code.md`), so `claude login` / `setup-token` are not run
-// from here and never should be. Connecting only *verifies* the CLI's existing
-// sign-in and records who it belongs to, so the provider dialog can show the
-// account instead of a static label.
-//
-// Verification is a throwaway `query()` whose prompt never yields: the SDK
-// resolves its init handshake in the constructor, independently of anyone
-// iterating the message stream, so reading the account costs one short-lived
-// process and no model call.
-//
-// The stored credential is a marker, not a secret. A plugin-registered OAuth
-// method must return `Credential.OAuth` (there is no `Credential.Key` path from
-// a plugin), so the marker lives in `access`/`refresh` and the account details
-// live in `metadata`. `expires: 0` with no `refresh` implementation means it is
-// never refreshed, matching github-copilot.ts.
 export * as ClaudeCodeAuth from "./auth.js"
 
 import type { Options } from "@anthropic-ai/claude-agent-sdk"
@@ -34,7 +14,6 @@ export const LABEL = "Claude Code CLI (Pro/Max subscription)"
 export const NOT_SIGNED_IN =
   "The Claude Code CLI is not signed in. Run `claude` in a terminal, sign in with `/login`, then connect again."
 
-/** How long to wait for the CLI's init handshake before giving up. */
 export const TIMEOUT = "20 seconds"
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -42,10 +21,8 @@ const record = (value: unknown): Record<string, unknown> =>
 
 const string = (value: unknown) => (typeof value === "string" && value ? value : undefined)
 
-/** A prompt that never yields: the probe wants the handshake, not a turn. */
 const idlePrompt = { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) } as never
 
-/** Account fields worth showing. Never tokens — `metadata` is displayed. */
 export const accountMetadata = (account: unknown): Record<string, string> | undefined => {
   const value = record(account)
   const metadata = {
@@ -57,11 +34,6 @@ export const accountMetadata = (account: unknown): Record<string, string> | unde
   return Object.keys(metadata).length ? metadata : undefined
 }
 
-/**
- * Verify the CLI's existing sign-in and describe the account behind it.
- * Fails when the CLI cannot report an account, which is what "not signed in"
- * looks like from out here.
- */
 export const probe = (input: {
   readonly createQuery: ClaudeCodeSessions.CreateQuery
   readonly options: Options
@@ -82,9 +54,7 @@ export const probe = (input: {
       } finally {
         try {
           query.close()
-        } catch {
-          // Already gone; nothing to release.
-        }
+        } catch {}
       }
     },
     catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
@@ -98,7 +68,6 @@ export const probe = (input: {
               Credential.OAuth.make({
                 type: "oauth",
                 methodID: METHOD_ID,
-                // Marker, not a secret: redsun holds no Anthropic token.
                 access: "claude-code-cli",
                 refresh: "claude-code-cli",
                 expires: 0,
@@ -108,11 +77,6 @@ export const probe = (input: {
     ),
   )
 
-/**
- * The connect method. v2 has no generic credential-metadata display surface
- * (`Connection.Info` carries `{type, id, label}` only), so `label` is how the
- * account reaches the dialog — one string, and never a token.
- */
 export const oauth = (input: {
   readonly createQuery: ClaudeCodeSessions.CreateQuery
   readonly options: Options

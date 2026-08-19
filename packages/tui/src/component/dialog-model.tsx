@@ -13,7 +13,6 @@ import { groupByProvider, providerRowDescription, providerRowTitle } from "../ut
 
 export function DialogModel(props: {
   providerID?: string
-  /** REDSUN: the worker picker is this menu pointed at a different sink. */
   title?: string
   current?: { providerID: string; modelID: string }
   closeOnSelect?: boolean
@@ -127,16 +126,8 @@ export function DialogModel(props: {
       )
     }
 
-    // A single provider's list, or a disconnected one, is short enough to read
-    // whole -- there is nothing to collapse it against.
     if (!showSections) return [...favoriteOptions, ...recentOptions, ...modelOptions]
 
-    // REDSUN DENSE: browsing with providers connected, each provider is one row
-    // until you open it. Connect four providers and the flat list is hundreds of
-    // models deep, which makes the menu something to scroll rather than
-    // something to read. Typing still searches across every provider regardless
-    // of what is open, so collapsing costs nothing to anyone who knows the name
-    // of the model they want.
     const groups = groupByProvider(modelOptions, (option) => option.providerID)
 
     const providerSections = Array.from(groups, ([providerID, items]) => {
@@ -205,7 +196,6 @@ export function DialogModel(props: {
           command: "model.dialog.favorite",
           title: "Favorite",
           hidden: !connected(),
-          // A provider's own row has no model to favourite.
           disabled: (option) => !option || !(option.value as { modelID?: string }).modelID,
           onTrigger: (option) => {
             const value = option.value as { providerID: string; modelID?: string }

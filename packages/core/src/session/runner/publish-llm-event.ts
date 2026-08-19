@@ -69,21 +69,6 @@ const hostedContent = (result: ToolResultValue): NonEmptyContent => {
   return [{ type: "text", text: stringify(result.value) }]
 }
 
-/**
- * REDSUN: display metadata for a provider-executed tool.
- *
- * `toolExecution` forwards a locally executed tool's `metadata` onto the part,
- * and `state.metadata` is the only channel the per-tool renderers read. The
- * hosted path had no equivalent, so a foreign tool surfaced through a provider
- * facade -- Claude Code's Edit, Write, Agent -- could never reach a native
- * renderer: an edit drew a bare path row with no diff, and a subagent had no
- * session to click through to.
- *
- * A hosted result shaped `{ output, metadata }` is unwrapped into the same
- * content/metadata pair `toolExecution` publishes. Both keys are required and
- * `metadata` must be a plain object, so an ordinary JSON result -- which is any
- * other shape -- keeps going through `hostedContent` untouched.
- */
 const hostedDisplay = (result: ToolResultValue) => {
   if (result.type !== "json") return undefined
   const value = result.value
@@ -508,8 +493,6 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           })
           return
         }
-        // REDSUN: see `hostedDisplay` -- an unwrapped envelope publishes the
-        // same content/metadata pair a locally executed tool does.
         const display = hostedDisplay(event.result)
         yield* bus.publish(SessionEvent.Tool.Success, {
           sessionID: input.sessionID,

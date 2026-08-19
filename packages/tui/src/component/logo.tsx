@@ -1,9 +1,3 @@
-// REDSUN DENSE: the home-screen wordmark.
-//
-// A block-ASCII "REDSUN" painted as a horizontal gradient between the theme's
-// two logo endpoints. Full blocks take the gradient colour directly; the box
-// characters that draw the outline take a 40%-toward-background wash of the same
-// colour, which is what gives the letters their bevelled edge.
 import { RGBA, TextAttributes } from "@opentui/core"
 import { For, Show, createMemo } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -24,8 +18,6 @@ const SHADOW_ALPHA = 0.4
 export function Logo() {
   const theme = useTheme()
   const dimensions = useTerminalDimensions()
-  // Below the wordmark's own width there is nothing to shrink to — the art is
-  // fixed — so it gives up its rows rather than wrapping into noise.
   const visible = createMemo(() => dimensions().height >= 12 && dimensions().width >= LOGO_WIDTH)
 
   const mix = (a: RGBA, b: RGBA, t: number) =>

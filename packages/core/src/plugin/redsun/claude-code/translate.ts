@@ -1,17 +1,3 @@
-// REDSUN: pure state machine turning Claude Agent SDK messages into
-// LanguageModelV3 stream parts.
-//
-// Claude Code runs its own agentic loop and executes its own tools, so every
-// tool part carries `providerExecuted: true`. core/src/aisdk.ts maps that onto
-// completed foreign tool parts, and the session runner never tries to continue
-// them — which is what makes a provider-side agent expressible as a plain
-// LanguageModelV3 (the same shape gitlab.ts uses for its duo-workflow models).
-//
-// Streaming fidelity comes from `stream_event` frames (includePartialMessages),
-// while full `assistant` messages supply authoritative tool_use inputs and full
-// `user` messages supply tool_results. Subagent-attributed frames
-// (parent_tool_use_id set) are dropped here; subagents.ts mirrors them into real
-// child sessions instead.
 export * as ClaudeCodeTranslate from "./translate.js"
 
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
@@ -30,21 +16,13 @@ export interface TaskChild {
 }
 
 export interface State {
-  /** Emitted tool name and mapped input, keyed by tool_use id. */
   toolCalls: Map<string, { name: string; input: Record<string, unknown> }>
   openBlocks: Map<number, OpenBlock>
   messageId: string
   claudeSessionID?: string
   result?: SDKResultMessage
-  /** Raw API usage of the turn's most recent main-thread assistant message. */
   lastCallUsage?: Record<string, unknown>
-  /**
-   * Final output_tokens of the turn's most recent completed main-thread API
-   * call, from its message_delta frame. Assistant frames snapshot output_tokens
-   * before the message finishes streaming, so they cannot be trusted for this.
-   */
   lastCallOutput?: number
-  /** Mirrored subagent sessions keyed by subagent tool_use id. */
   taskChildren?: ReadonlyMap<string, TaskChild>
 }
 
@@ -91,7 +69,6 @@ const isInterruptedResult = (result: SDKResultMessage): boolean => {
 
 export const resultErrorMessage = (result: SDKResultMessage): string => {
   const errors = "errors" in result && Array.isArray(result.errors) ? result.errors.map(String) : []
-  // CLI-internal diagnostics must never become the user-facing error banner.
   const visible = errors.filter((error) => !error.startsWith("[ede_diagnostic]"))
   if (visible.length) return visible[0]!
   switch (result.subtype) {
@@ -189,13 +166,6 @@ const assistantMessage = (state: State, content: unknown): LanguageModelV3Stream
     const raw = item.input && typeof item.input === "object" ? (item.input as Record<string, unknown>) : {}
     const input = ClaudeCodeNativeTools.toolInput(item.name, raw)
     state.toolCalls.set(item.id, { name, input })
-    // The child link rides the *result*, not the call: `providerMetadata` is
-    // keyed by the provider's own metadata key and lands in the part's
-    // `providerState` (a provider round-trip channel), while the renderers read
-    // `state.metadata` -- and `session.tool.called` hardcodes that to `{}` for
-    // the running state regardless. So a delegated subagent becomes clickable
-    // when it settles; until then the child session is already listed in its
-    // own right, minted by the mirror at `task_started`.
     parts.push({
       type: "tool-call",
       toolCallId: item.id,
@@ -221,10 +191,6 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
     const text = toolResultText(item.content)
 
     if (child && !item.is_error) {
-      // `{ output, metadata }` is the envelope `publish-llm-event.ts` unwraps
-      // into a part's content and `state.metadata`, which is where the subagent
-      // renderer reads `sessionID` to make the row clickable. AgentOutput totals
-      // ride along when the SDK attached them.
       const output =
         message.tool_use_result && typeof message.tool_use_result === "object"
           ? (message.tool_use_result as Record<string, any>)
@@ -234,8 +200,6 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
         type: "tool-result",
         toolCallId: item.tool_use_id,
         toolName: call.name,
-        // A stream tool-result is provider-executed by definition; aisdk.ts sets
-        // the flag when it lowers this into an LLMEvent.
         result: {
           output: text,
           metadata: {
@@ -250,8 +214,6 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
       continue
     }
 
-    // Same envelope for a native tool whose result carries something a renderer
-    // needs -- today, an edit's or write's diff.
     const metadata = item.is_error
       ? undefined
       : ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result)
@@ -266,18 +228,6 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
   return parts
 }
 
-/**
- * Usage for the turn's finish part.
- *
- * `result.usage` sums every API call in the turn, so its cache reads count the
- * whole context once per tool round-trip — a long turn would report millions of
- * "context" tokens. The last main-thread assistant message carries the final
- * call's real input-side usage; output tokens come from that call's
- * message_delta frame. `result.usage.output_tokens` is only a fallback when no
- * stream events arrived: it is cumulative across calls, and intermediate outputs
- * are already re-counted inside the final call's input/cache tokens, so using it
- * otherwise would double-count them.
- */
 const turnUsage = (state: State, result: SDKResultMessage) => {
   const resultUsage =
     "usage" in result && result.usage && typeof result.usage === "object"
@@ -318,11 +268,6 @@ const resultMessage = (state: State, result: SDKResultMessage): LanguageModelV3S
   return [{ type: "error", error: new Error(resultErrorMessage(result)) }]
 }
 
-/**
- * A manual `/compact` renders as a short text part. Auto-compaction happens
- * mid-turn inside Claude Code and stays silent — the next turn's usage reflects
- * it.
- */
 const compactBoundary = (state: State, message: Record<string, any>): LanguageModelV3StreamPart[] => {
   const meta = message.compact_metadata
   if (!meta || typeof meta !== "object" || meta.trigger !== "manual") return []
@@ -340,7 +285,6 @@ const compactBoundary = (state: State, message: Record<string, any>): LanguageMo
   ]
 }
 
-/** Translate one SDK message into zero or more LanguageModelV3 stream parts. */
 export const translate = (state: State, message: SDKMessage): LanguageModelV3StreamPart[] => {
   if ("session_id" in message && typeof message.session_id === "string" && message.session_id)
     state.claudeSessionID = message.session_id

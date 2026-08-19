@@ -1,7 +1,3 @@
-// REDSUN: compose-mode agents. Rebuilt on the v2 agent/subagent primitives —
-// V1 carried its own `task` tool, whereas delegation here runs through upstream
-// SubagentTool, which already owns child sessions, resume-by-sessionID,
-// background runs, and permission gating.
 export * as RedsunComposePlugin from "./compose.js"
 
 import { define } from "@opencode-ai/plugin/effect/plugin"
@@ -16,7 +12,6 @@ export const Plugin = define({
   id: "redsun.agent.compose",
   effect: Effect.fn(function* (ctx) {
     yield* ctx.agent.transform((draft) => {
-      // Rules are resolved with findLast, so later pushes override the defaults.
       draft.update(Agent.ID.make("compose"), (item) => {
         item.name = Agent.Name.make("Compose")
         item.description =
@@ -25,8 +20,6 @@ export const Plugin = define({
         item.mode = "primary"
         item.permissions.push(
           { action: "question", resource: "*", effect: "allow" },
-          // Compose may delegate only to worker and explore. A blanket deny first
-          // keeps a newly added upstream subagent from silently becoming reachable.
           { action: "subagent", resource: "*", effect: "deny" },
           { action: "subagent", resource: "worker", effect: "allow" },
           { action: "subagent", resource: "explore", effect: "allow" },
@@ -39,7 +32,6 @@ export const Plugin = define({
         item.system = PROMPT_WORKER
         item.mode = "subagent"
         item.permissions.push(
-          // A worker never questions the user and never nests further subagents.
           { action: "question", resource: "*", effect: "deny" },
           { action: "subagent", resource: "*", effect: "deny" },
         )

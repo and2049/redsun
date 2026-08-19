@@ -3,18 +3,6 @@ export * as ClaudeCodeExecutable from "./executable.js"
 import fs from "node:fs"
 import path from "node:path"
 
-/**
- * Resolves the `claude` binary into a path the Claude Agent SDK can spawn
- * directly via `pathToClaudeCodeExecutable`.
- *
- * The SDK spawns the given path without a shell and without Windows
- * PATH/PATHEXT resolution, so a bare `claude` fails outright and an npm
- * `claude.cmd` shim fails with `spawn EINVAL` (Node >= 20.12). On Windows the
- * command is resolved against PATH/PATHEXT and, when the hit is an npm
- * launcher shim, followed to the real package entry (`bin/claude.exe`, or
- * `cli.js` which the SDK runs with a JavaScript runtime).
- */
-
 const WINDOWS_SHIM_EXTENSIONS = new Set([".cmd", ".bat", ".ps1"])
 
 const NPM_PACKAGE_ENTRY_CANDIDATES = [
@@ -51,7 +39,6 @@ function pathCandidates(command: string, env: Record<string, string | undefined>
   return dirs.flatMap((dir) => names.map((name) => p.join(dir, name)))
 }
 
-/** Follow a Windows npm launcher shim to the real package entry beside it. */
 function followShim(shimPath: string, filesystem: Filesystem): string | undefined {
   const shimDirectory = path.win32.dirname(shimPath)
   for (const segments of NPM_PACKAGE_ENTRY_CANDIDATES) {
@@ -104,7 +91,6 @@ export function resolveWith(input: {
 
 let cached: { key: string; result: Resolution } | undefined
 
-/** Cached production resolution keyed on the configured binary path. */
 export function resolve(binaryPath?: string): Resolution {
   const key = binaryPath ?? ""
   if (cached?.key === key) return cached.result

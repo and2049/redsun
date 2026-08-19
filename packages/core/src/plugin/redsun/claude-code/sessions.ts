@@ -1,34 +1,16 @@
-// REDSUN: persistent Claude Code session processes.
-//
-// Ported from V1 unchanged apart from the v2 self-export convention. Kept
-// Effect-free on purpose: the Agent SDK boundary is promises and async
-// iterables, and the Effect seam lives in the language model.
 export * as ClaudeCodeSessions from "./sessions.js"
 
 import type { Options, PermissionMode, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-
-/**
- * Plain-TS manager for persistent Claude Code sessions. One live `query()`
- * process per redsun session, fed through a streaming prompt queue; each
- * redsun turn is a bounded window over the process's message stream that ends
- * at the turn's `result` message.
- *
- * Kept Effect-free on purpose: the Agent SDK boundary is promises and async
- * iterables, and the Effect seam lives in runtime.ts.
- */
 
 export interface QueryLike extends AsyncIterable<SDKMessage> {
   interrupt(): Promise<unknown>
   setModel(model?: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
   close(): void
-  /** Init handshake (account/commands/models); the auth probe's fallback. */
   initializationResult?(): Promise<unknown>
-  /** Signed-in account, resolved from the same init handshake. */
   accountInfo?(): Promise<unknown>
 }
 
-/** Injectable so tests can run against fixture message streams. */
 export type CreateQuery = (input: {
   prompt: string | AsyncIterable<SDKUserMessage>
   options: Options
@@ -79,15 +61,6 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 export interface SessionOptions {
   readonly model: string
   readonly permissionMode: PermissionMode
-  /**
-   * Called for every SDK message the process emits, in stream order, before
-   * the message is (maybe) delivered to the turn queue. `inTurn` is false for
-   * frames that arrive between turn windows — async-launched subagent
-   * activity, task notifications, and main-thread auto-continuations — which
-   * the turn queue would otherwise drop on the floor. The callback persists
-   * across turns (each turn() call replaces it) and is awaited so downstream
-   * turn consumers always observe its effects; failures are swallowed.
-   */
   readonly observer?: (message: SDKMessage, inTurn: boolean) => Promise<void> | void
   readonly options: Omit<
     Options,
@@ -99,7 +72,6 @@ interface LiveSession {
   query: QueryLike
   model: string
   permissionMode: PermissionMode
-  /** Whether the process was spawned with `allowDangerouslySkipPermissions`. */
   bypassAllowed: boolean
   prompt: AsyncQueue<SDKUserMessage>
   turn?: AsyncQueue<SDKMessage>
@@ -125,8 +97,6 @@ export class SessionManager {
         permissionMode: input.permissionMode,
         ...(input.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
         includePartialMessages: true,
-        // Full subagent conversations (text/thinking, not just tool frames)
-        // so subagents.ts can mirror them into redsun child sessions.
         forwardSubagentText: true,
       },
     })
@@ -143,15 +113,11 @@ export class SessionManager {
     session.pump = (async () => {
       try {
         for await (const message of query) {
-          // Snapshot the turn before the (async) observer runs so a turn that
-          // starts mid-await cannot receive frames that predate its prompt.
           const turn = session.turn
           if (session.observer) {
             try {
               await session.observer(message, turn !== undefined)
-            } catch {
-              // Observer failures must never stall or kill the pump.
-            }
+            } catch {}
           }
           turn?.push(message)
           if (message.type === "result") {
@@ -185,11 +151,6 @@ export class SessionManager {
     return this.sessions.get(sessionID)?.turn !== undefined
   }
 
-  /**
-   * Run one turn: deliver the prompt to the session's live process (creating
-   * or re-creating it as needed) and return a bounded stream of SDK messages
-   * ending at the turn's `result`.
-   */
   async turn(
     sessionID: string,
     prompt: SDKUserMessage["message"]["content"],
@@ -201,13 +162,6 @@ export class SessionManager {
       session = undefined
     }
     if (session?.turn) throw new Error("Claude Code session is already processing a turn")
-    // `allowDangerouslySkipPermissions` is a spawn-time flag, so it can be
-    // neither raised nor lowered by control request. Raising matters for the
-    // obvious reason; lowering matters because `setPermissionMode("plan")` on a
-    // process that still carries the skip flag leaves permissions bypassed —
-    // which would make plan mode weakenable in practice, exactly what modes.ts
-    // refuses to allow. Restart in both directions; `input.options.resume`
-    // carries the conversation across.
     const bypassing = input.permissionMode === "bypassPermissions"
     if (session && bypassing !== session.bypassAllowed) {
       this.stop(sessionID)
@@ -215,7 +169,6 @@ export class SessionManager {
     }
     if (!session) session = this.start(sessionID, input)
     else {
-      // Refresh LRU position.
       this.sessions.delete(sessionID)
       this.sessions.set(sessionID, session)
       session.observer = input.observer
@@ -255,9 +208,7 @@ export class SessionManager {
     session.turn = undefined
     try {
       session.query.close()
-    } catch {
-      // process already gone
-    }
+    } catch {}
   }
 
   stopAll(): void {

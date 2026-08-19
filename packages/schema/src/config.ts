@@ -106,7 +106,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(optional),
   experimental: ConfigExperimental.Info.pipe(optional),
-  // REDSUN: delegated Claude Code provider settings.
   claude_code: ConfigClaudeCode.Info.pipe(optional).annotate({
     description: "Delegated Claude Code provider settings",
   }),

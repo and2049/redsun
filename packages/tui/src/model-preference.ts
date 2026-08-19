@@ -6,7 +6,6 @@ export type ModelPreferenceModel = {
   modelID: string
 }
 
-/** A model plus the variant it was last picked with. */
 export type ModelPreferenceSelection = ModelPreferenceModel & { variant?: string }
 
 export type ModelPreference = {

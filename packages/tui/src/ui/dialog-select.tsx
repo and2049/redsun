@@ -96,7 +96,6 @@ export type DialogSelectRef<T> = {
   moveTo(value: T): void
 }
 
-/** Rows a bottom-anchored menu shows before it scrolls. */
 const BOTTOM_MENU_ROWS = 12
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
@@ -244,9 +243,6 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dimensions = useTerminalDimensions()
   const height = createMemo(() => {
     const cap = Math.floor(dimensions().height / 2) - 6
-    // REDSUN DENSE: a bottom-anchored menu stays as short as the prompt's own
-    // autocomplete popup. It covers the transcript rather than dimming it, so
-    // the less of it it covers the better.
     if (dialog.placement === "bottom") return Math.min(rows(), cap, BOTTOM_MENU_ROWS)
     return Math.min(rows(), cap)
   })
