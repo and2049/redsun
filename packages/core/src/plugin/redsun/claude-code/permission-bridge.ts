@@ -103,6 +103,14 @@ export const make =
     if (toolName === ClaudeCodePermissions.ROUTED_SUBAGENT_TOOL && ports.agent() === ClaudeCodeModes.PLAN_AGENT)
       return { behavior: "deny", message: ClaudeCodePermissions.PLAN_DELEGATION_REFUSED }
 
+    // Compose's built-in subagent tool is refused outright rather than through
+    // the rules. Compose allows `subagent/worker` and `subagent/explore`, so a
+    // native call naming one of those would map onto an allow and run the
+    // subagent *inside* Claude Code -- bypassing worker-model routing, which is
+    // the entire point of compose. This is policy, not something a rule tunes.
+    if (ClaudeCodePermissions.SUBAGENT_TOOLS.has(toolName) && ports.agent() === ClaudeCodePermissions.COMPOSE_AGENT)
+      return { behavior: "deny", message: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT }
+
     // A granted question still needs somewhere to be answered: Claude Code has
     // no terminal here, so an allow without answers stalls the turn.
     if (toolName === ClaudeCodeQuestions.TOOL_NAME) {
@@ -138,10 +146,6 @@ export const make =
       // A decline that came with a steer is the user talking to the model, so it
       // outranks the boilerplate refusal text.
       if (outcome.feedback) return { behavior: "deny", message: outcome.feedback }
-      // Compose denies the native subagent tool by design, so point the model at
-      // the routed one rather than leaving it at a dead end.
-      if (mapped.action === "subagent" && ports.agent() === "compose")
-        return { behavior: "deny", message: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT }
       return { behavior: "deny", message: `Permission denied: ${mapped.action} ${mapped.resource}` }
     }
     return allow

@@ -84,7 +84,9 @@ const make = (dependencies: Dependencies) => {
       .stream(
         LLM.request({
           model: resolved.model,
-          http: { headers: SessionModelHeaders.make(session, dependencies.app) },
+          // REDSUN: not a user turn. Without the marker a delegated session's
+          // title request is delivered into the live Claude Code conversation.
+          http: { headers: { ...SessionModelHeaders.make(session, dependencies.app), ...SessionModelHeaders.internal } },
           system: agent.system,
           messages: [Message.user(firstUser.text)],
           tools: [],

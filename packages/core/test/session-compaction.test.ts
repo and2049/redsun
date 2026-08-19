@@ -245,6 +245,8 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
       "x-opencode-project": Project.ID.global,
       "x-opencode-session": sessionID,
       "x-opencode-client": "opencode",
+      // REDSUN: not a user turn. See session/model-headers.ts.
+      "x-opencode-internal": "1",
     })
     expect(requests[0]?.generation).toBeUndefined()
     expect(JSON.stringify(requests[0]?.messages)).toContain("Manual compaction should include this short conversation.")

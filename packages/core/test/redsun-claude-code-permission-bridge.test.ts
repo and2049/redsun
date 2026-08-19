@@ -103,12 +103,20 @@ describe("ClaudeCodePermissionBridge", () => {
     })
   })
 
-  it("redirects a denied compose delegation to the routed tool", async () => {
-    const h = harness({ deny: ["subagent"], agent: "compose" })
-    expect(await h.bridge("Agent", { subagent_type: "general" }, live)).toEqual({
-      behavior: "deny",
-      message: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT,
-    })
+  it("refuses compose's built-in subagent tool before asking anyone", async () => {
+    // Compose allows `subagent/worker` and `subagent/explore`, so a native call
+    // naming one of those would map onto an allow and run the subagent inside
+    // Claude Code -- bypassing the worker-model routing compose exists for.
+    // Policy, so it never reaches the rules.
+    const h = harness({ agent: "compose" })
+    for (const subagent_type of ["general", "worker", "explore"]) {
+      expect(await h.bridge("Agent", { subagent_type }, live)).toEqual({
+        behavior: "deny",
+        message: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT,
+      })
+      expect(await h.bridge("Task", { subagent_type }, live)).toMatchObject({ behavior: "deny" })
+    }
+    expect(h.asked).toHaveLength(0)
   })
 
   it("leaves a non-compose subagent deny as a plain refusal", async () => {
@@ -240,13 +248,11 @@ describe("ClaudeCodePermissionBridge", () => {
     })
   })
 
-  it("prefers the user's steer over the compose redirect", async () => {
-    // The redirect explains a policy deny. When the user typed a reason, that is
-    // the more specific thing to say.
-    const h = harness({ deny: ["subagent"], agent: "compose", feedback: "do it inline, it is two lines" })
-    expect(await h.bridge("Agent", { subagent_type: "general" }, live)).toEqual({
-      behavior: "deny",
-      message: "do it inline, it is two lines",
-    })
+  it("leaves the built-in subagent tool alone for every other agent", async () => {
+    // Build has no compose routing to bypass, so its native delegation is an
+    // ordinary permission question.
+    const h = harness({ agent: "build" })
+    expect(await h.bridge("Agent", { subagent_type: "general" }, live)).toMatchObject({ behavior: "allow" })
+    expect(h.asked).toEqual([{ action: "subagent", resource: "general" }])
   })
 })

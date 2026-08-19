@@ -153,6 +153,10 @@ it.effect("generates a title from the sole user message and renames the session"
       "x-opencode-project": Project.ID.global,
       "x-opencode-session": sessionID,
       "x-opencode-client": "opencode",
+      // REDSUN: a title is redsun's own question, not a user turn. The delegated
+      // Claude Code provider reads this to run it one-shot instead of injecting
+      // it into the user's live CLI conversation.
+      "x-opencode-internal": "1",
     })
     expect(JSON.stringify(requests[0]?.messages)).toContain("Help me debug the failing build")
     const renamed = yield* store.get(sessionID)

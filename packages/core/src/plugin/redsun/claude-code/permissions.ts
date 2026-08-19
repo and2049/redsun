@@ -68,6 +68,12 @@ export const COMPOSE_SUBAGENT_REDIRECT =
   "Compose delegates through redsun so worker model selection, depth limits, " +
   "and background runs apply."
 
+/** The coordinator agent whose delegation must stay routed through redsun. */
+export const COMPOSE_AGENT = "compose"
+
+/** Claude Code's own subagent tool, re-exported so the bridge reads in one voice. */
+export const SUBAGENT_TOOLS = ClaudeCodeNativeTools.SUBAGENT_TOOLS
+
 /** redsun's routed delegation tool, as Claude Code sees it. See mcp.ts. */
 export const ROUTED_SUBAGENT_TOOL = "mcp__redsun__subagent"
 

@@ -18,13 +18,15 @@ const iterable = (messages: readonly unknown[]): AsyncIterable<SDKMessage> => ({
 /** Records what the manager was asked to run and replays a fixture stream. */
 const fakeManager = (messages: readonly unknown[]) => {
   const calls: { sessionID: string; prompt: unknown; options: any }[] = []
+  const interrupted: string[] = []
   const manager = {
     turn: async (sessionID: string, prompt: unknown, options: any) => {
       calls.push({ sessionID, prompt, options })
       return iterable(messages)
     },
+    interrupt: async (sessionID: string) => void interrupted.push(sessionID),
   } as unknown as ClaudeCodeSessions.SessionManager
-  return { manager, calls }
+  return { manager, calls, interrupted }
 }
 
 const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
@@ -44,18 +46,62 @@ const call = (input: Partial<LanguageModelV3CallOptions>): LanguageModelV3CallOp
 const config = { executablePath: "/usr/bin/claude", cwd: "/repo" }
 
 describe("ClaudeCodeLanguageModel.promptDelta", () => {
+  const text = (prompt: Parameters<typeof ClaudeCodeLanguageModel.promptDelta>[0]) =>
+    ClaudeCodeLanguageModel.promptDelta(prompt).text
+
   it("sends only what Claude Code has not seen since the last assistant turn", () => {
-    expect(
-      ClaudeCodeLanguageModel.promptDelta([user("first"), assistant("reply"), user("second"), user("third")]),
-    ).toBe("second\n\nthird")
+    expect(text([user("first"), assistant("reply"), user("second"), user("third")])).toBe("second\n\nthird")
   })
 
   it("sends the whole first turn when there is no assistant message yet", () => {
-    expect(ClaudeCodeLanguageModel.promptDelta([user("only")])).toBe("only")
+    expect(text([user("only")])).toBe("only")
   })
 
   it("falls back to the last user message when nothing follows the assistant", () => {
-    expect(ClaudeCodeLanguageModel.promptDelta([user("earlier"), assistant("reply")])).toBe("earlier")
+    expect(text([user("earlier"), assistant("reply")])).toBe("earlier")
+  })
+
+  it("carries attachments through, which the text-only delta dropped silently", () => {
+    const png = {
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: "what is this" },
+        { type: "file" as const, mediaType: "image/png", data: "AAAA", filename: "shot.png" },
+      ],
+    }
+    expect(ClaudeCodeLanguageModel.promptDelta([png])).toEqual({
+      text: "what is this",
+      blocks: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } }],
+    })
+  })
+
+  it("sends a PDF as a document and anything else as a placeholder", () => {
+    const file = (mediaType: string) => ({
+      role: "user" as const,
+      content: [{ type: "file" as const, mediaType, data: "AAAA", filename: "f" }],
+    })
+    expect(ClaudeCodeLanguageModel.promptDelta([file("application/pdf")]).blocks).toEqual([
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "AAAA" }, title: "f" },
+    ])
+    // The CLI rejects an image media_type outside Anthropic's union, so an
+    // unsupported type degrades to text rather than failing the turn.
+    expect(ClaudeCodeLanguageModel.promptDelta([file("image/tiff")]).blocks).toEqual([
+      { type: "text", text: "[Attached image/tiff: f]" },
+    ])
+  })
+
+  it("encodes binary attachment data", () => {
+    const bytes = new Uint8Array([1, 2, 3])
+    const message = {
+      role: "user" as const,
+      content: [{ type: "file" as const, mediaType: "image/png", data: bytes }],
+    }
+    expect(ClaudeCodeLanguageModel.promptDelta([message]).blocks).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: Buffer.from(bytes).toString("base64") },
+      },
+    ])
   })
 })
 
@@ -83,6 +129,150 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
     expect(calls[0]!.sessionID).toBe("ses_1")
     expect(calls[0]!.prompt).toEqual([{ type: "text", text: "hello" }])
     expect(parts.map((part) => part.type)).toEqual(["stream-start", "text-start", "text-delta", "finish"])
+  })
+
+  it("prepends the turn brief, which is the only way an agent's instructions arrive", async () => {
+    // A delegated turn sends no system prompt, so `agent.system` never reaches
+    // the CLI. See turn-brief.ts.
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: { turnBrief: () => "[redsun compose mode] delegate" },
+    })
+    await collect((await created.doStream(call({ prompt: [user("build it")] }))).stream)
+    expect(calls[0]!.prompt).toEqual([{ type: "text", text: "[redsun compose mode] delegate\n\nbuild it" }])
+  })
+
+  it("sends the prompt unchanged when there is no brief", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: { turnBrief: () => undefined },
+    })
+    await collect((await created.doStream(call({ prompt: [user("build it")] }))).stream)
+    expect(calls[0]!.prompt).toEqual([{ type: "text", text: "build it" }])
+  })
+
+  it("sends the CLI's own system prompt and settings for an interactive turn", async () => {
+    // Without the preset the SDK sends no Claude Code system prompt at all, and
+    // without settingSources the CLI reads neither CLAUDE.md nor user settings.
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
+    await collect((await created.doStream(call({ prompt: [user("hi")] }))).stream)
+    expect(calls[0]!.options.options).toMatchObject({
+      systemPrompt: { type: "preset", preset: "claude_code" },
+      settingSources: ["user", "project", "local"],
+    })
+    expect(calls[0]!.options.options.planModeInstructions).toContain("Plan Workflow")
+  })
+
+  it("treats a request marked internal as one-shot without being told", async () => {
+    // Title generation has its own path and never fires the session context
+    // hook, so before the header it ran through the live CLI process --
+    // delivering "generate a title" into the user's Claude Code conversation.
+    const { manager, calls } = fakeManager([])
+    const oneShot: any[] = []
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: (input: any) => {
+        oneShot.push(input)
+        return iterable([{ type: "result", subtype: "success", usage: {} }]) as never
+      },
+    })
+    await collect(
+      (
+        await created.doStream(
+          call({
+            prompt: [user("name this")],
+            headers: { "x-opencode-session": "ses_1", "x-opencode-internal": "1" },
+          }),
+        )
+      ).stream,
+    )
+    expect(calls).toHaveLength(0)
+    expect(oneShot[0].options).toMatchObject({ maxTurns: 1, allowedTools: [], persistSession: false })
+    // Not a coding turn, so no preset and no project settings.
+    expect(oneShot[0].options.systemPrompt).toBeUndefined()
+    expect(oneShot[0].options.settingSources).toBeUndefined()
+  })
+
+  it("interrupts the CLI when the turn is aborted", async () => {
+    // Tearing down this stream only ends redsun's view of the turn. Without the
+    // control request the Claude Code process keeps running its loop, editing
+    // files for a turn the user already stopped.
+    const { manager, interrupted } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
+    const control = new AbortController()
+    const { stream } = await created.doStream(call({ prompt: [user("go")], abortSignal: control.signal }))
+    await collect(stream)
+    expect(interrupted).toEqual([])
+    control.abort()
+    // The listener is detached once the turn finishes on its own, so a later
+    // abort does not interrupt whatever turn is running by then.
+    expect(interrupted).toEqual([])
+  })
+
+  it("interrupts a turn that is still running", async () => {
+    const { manager, interrupted } = fakeManager([])
+    // A turn that never produces its `result`, i.e. one still working.
+    ;(manager as any).turn = async () => ({
+      async *[Symbol.asyncIterator]() {
+        await new Promise(() => {})
+      },
+    })
+    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
+    const control = new AbortController()
+    await created.doStream(call({ prompt: [user("go")], abortSignal: control.signal }))
+    control.abort()
+    expect(interrupted).toEqual(["ses_1"])
+  })
+
+  it("interrupts immediately when the signal was already aborted", async () => {
+    const { manager, interrupted } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
+    await created.doStream(call({ prompt: [user("go")], abortSignal: AbortSignal.abort() }))
+    expect(interrupted).toEqual(["ses_1"])
+  })
+
+  it("interrupts when the reader is cancelled", async () => {
+    const { manager, interrupted } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
+    const { stream } = await created.doStream(call({ prompt: [user("go")] }))
+    await stream.cancel()
+    expect(interrupted).toEqual(["ses_1"])
+  })
+
+  it("passes extra args that carry a value", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({
+      modelID: "sonnet",
+      // The list form cannot say `--mcp-config path`; V1's record form can.
+      config: { ...config, extraArgs: { "--mcp-config": "/tmp/mcp.json", "--verbose": null } },
+      manager,
+      createQuery: () => ({}) as never,
+    })
+    await collect((await created.doStream(call({ prompt: [user("go")] }))).stream)
+    expect(calls[0]!.options.options.extraArgs).toEqual({ "--mcp-config": "/tmp/mcp.json", "--verbose": null })
+  })
+
+  it("still accepts a plain list of flags", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({
+      modelID: "sonnet",
+      config: { ...config, extraArgs: ["--verbose"] },
+      manager,
+      createQuery: () => ({}) as never,
+    })
+    await collect((await created.doStream(call({ prompt: [user("go")] }))).stream)
+    expect(calls[0]!.options.options.extraArgs).toEqual({ "--verbose": null })
   })
 
   it("errors instead of guessing when the request carries no session", async () => {

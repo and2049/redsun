@@ -32,6 +32,7 @@ import { ClaudeCodeQuestions } from "./questions.js"
 import { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
+import { ClaudeCodeTurnBrief } from "./turn-brief.js"
 
 /**
  * Hidden agents that generate a title, a summary, or a compaction. They must run
@@ -117,6 +118,18 @@ export const Plugin = define({
     // Which agent is driving each session's current request, recorded by the
     // session context hook immediately before the model call for that session.
     const agents = new Map<string, string>()
+    // Sessions that are children of another session, so a delegated worker can
+    // be told not to delegate further. Recorded from the same hook.
+    const workers = new Set<string>()
+    // The agent each session last sent a brief for. A custom agent's `system`
+    // is sent once per switch -- the CLI keeps it in conversation history from
+    // then on, and repeating it every turn would break the cached prefix.
+    const briefed = new Map<string, string>()
+    // Each agent's mode and system prompt, resolved in the context hook.
+    const profiles = new Map<string, { mode?: string; system?: string }>()
+    // Sessions whose next model call is a one-shot the context hook announced.
+    // Consumed by that call; see the hook below for why it is not the agent map.
+    const pendingOneShot = new Set<string>()
 
     const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery)
 
@@ -157,11 +170,46 @@ export const Plugin = define({
     yield* ctx.session.hook(
       "context",
       Effect.fn(function* (event) {
-        agents.set(event.sessionID, event.agent)
+        // A one-shot agent is announced for exactly one request. Recording it in
+        // `agents` would leave the map claiming "summary" for every later turn,
+        // and that map also decides the permission mode, the tool bridge's
+        // agent, and delegation -- none of which want it. Flag the request and
+        // leave the interactive agent standing.
+        if (ONE_SHOT_AGENTS.has(event.agent)) {
+          pendingOneShot.add(event.sessionID)
+        } else {
+          agents.set(event.sessionID, event.agent)
+          // Resolved here rather than in `turnBrief` because the agent lookup
+          // and the parent check are async while doStream reads them
+          // synchronously.
+          const info = yield* agentRegistry.resolve(event.agent).pipe(Effect.orElseSucceed(() => undefined))
+          profiles.set(event.agent, { mode: info?.mode, system: info?.system })
+          const session = yield* runtime.session.get(event.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+          if (session?.parentID) workers.add(event.sessionID)
+        }
         const stored = yield* kv.get(cursorKey(event.sessionID))
         if (typeof stored === "string" && stored) cursors.set(event.sessionID, stored)
       }),
     )
+
+    /**
+     * The brief for this turn, consumed once per model call. See turn-brief.ts:
+     * a delegated turn sends no system prompt, so without this compose is never
+     * told that `mcp__redsun__subagent` is how it delegates, a worker is never
+     * told not to, and a custom agent's own prompt is dropped entirely.
+     */
+    const turnBrief = (sessionID: string) => {
+      const agentID = agents.get(sessionID)
+      if (!agentID) return undefined
+      const agentChanged = briefed.get(sessionID) !== agentID
+      briefed.set(sessionID, agentID)
+      const profile = profiles.get(agentID)
+      return ClaudeCodeTurnBrief.make({
+        agent: { id: agentID, mode: profile?.mode, system: profile?.system },
+        isWorker: workers.has(sessionID),
+        agentChanged,
+      })
+    }
 
     /**
      * Claude Code owns its own read-only mode, so redsun's plan agent maps onto
@@ -304,7 +352,8 @@ export const Plugin = define({
             turnOptions: (sessionID) => ({
               mcpServers: { redsun: ClaudeCodeMcp.makeSubagentServer(delegate(sessionID)) },
             }),
-            isOneShot: (sessionID) => ONE_SHOT_AGENTS.has(agents.get(sessionID) ?? ""),
+            isOneShot: (sessionID) => pendingOneShot.delete(sessionID),
+            turnBrief,
             // The live map, never a copy: translate.ts captures this reference
             // before any child exists and reads it as children are minted.
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
