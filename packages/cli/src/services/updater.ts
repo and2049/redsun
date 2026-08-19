@@ -12,12 +12,15 @@ import { action, type Policy } from "./updater-action"
 // not advertised: probing for them resolved the main `redsun` build to
 // `@opencode-ai/cli` (the branch only matched `redsun-node`), so an autoupdate
 // installed upstream OpenCode over redsun.
-type Method = "curl" | "powershell"
+export type Method = "curl" | "powershell"
 
 export const REPOSITORY = "and2049/redsun"
 export const RELEASE_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`
-export const INSTALLER = `https://raw.githubusercontent.com/${REPOSITORY}/main/install`
-export const INSTALLER_WINDOWS = `https://raw.githubusercontent.com/${REPOSITORY}/main/install.ps1`
+// The installers are release assets, the way dev fetched them, not files on a
+// branch: the copy attached to a release matches the binary it installs, and it
+// does not depend on what the default branch happens to be called.
+export const INSTALLER = `https://github.com/${REPOSITORY}/releases/latest/download/install`
+export const INSTALLER_WINDOWS = `https://github.com/${REPOSITORY}/releases/latest/download/install.ps1`
 
 /** The tag of the newest release, without its leading `v`. */
 export function versionFromRelease(data: unknown): string | undefined {
@@ -27,8 +30,24 @@ export function versionFromRelease(data: unknown): string | undefined {
   return tag.replace(/^v/, "")
 }
 
+export type UpgradeResult = {
+  readonly status: "current" | "upgraded"
+  readonly from: string
+  readonly to: string
+  readonly method: Method
+}
+
 export interface Interface {
   readonly check: () => Effect.Effect<void>
+  /**
+   * Resolve a target version and run the installer. This is `redsun upgrade`;
+   * `check` is the scheduled one, which honours the autoupdate policy and stays
+   * quiet on failure. An explicit upgrade does neither.
+   */
+  readonly upgrade: (input?: {
+    readonly target?: string
+    readonly method?: Method
+  }) => Effect.Effect<UpgradeResult, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/cli/Updater") {}
@@ -166,7 +185,15 @@ export const layer = Layer.effect(
       Effect.catchCause((cause) => Effect.logWarning("automatic update failed", { cause })),
     )
 
-    return Service.of({ check })
+    const request = Effect.fnUntraced(function* (input: { target?: string; method?: Method } = {}) {
+      const to = input.target ? input.target.replace(/^v/, "") : yield* latest()
+      const detected = input.method ?? (yield* method())
+      if (to === OPENCODE_VERSION) return { status: "current" as const, from: OPENCODE_VERSION, to, method: detected }
+      yield* upgrade(detected, to)
+      return { status: "upgraded" as const, from: OPENCODE_VERSION, to, method: detected }
+    })
+
+    return Service.of({ check, upgrade: request })
   }),
 )
 

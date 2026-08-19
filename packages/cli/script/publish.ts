@@ -1,97 +1,87 @@
 #!/usr/bin/env bun
+// REDSUN: releases are GitHub release assets, not npm packages.
+//
+// Upstream publishes `@opencode-ai/cli-<target>` to npm and lets the package
+// manager do the install. Redsun cannot: probing for a package-manager upgrade
+// path resolved the main `redsun` build to `@opencode-ai/cli`, so an autoupdate
+// installed upstream OpenCode over redsun. So this produces exactly the archives
+// dev produced -- `redsun-<target>.zip`, or `.tar.gz` on linux, each holding the
+// single compiled binary -- which is what `install` and `install.ps1` download.
+//
+// The asset name is a contract with those two scripts: they compute
+// `<os>-<arch>[-baseline][-musl]` themselves and fetch `redsun-<target><ext>`.
+// The build writes to `dist/cli-<target>/`, keeping upstream's directory naming,
+// so the only translation is the leading segment.
 import { $ } from "bun"
-import pkg from "../package.json"
-import { Script } from "@opencode-ai/script"
-import { fileURLToPath } from "url"
 import { existsSync } from "fs"
-import { UpdateArtifact } from "../../../script/update-artifact"
+import path from "path"
+import { fileURLToPath } from "url"
 
 const dir = fileURLToPath(new URL("..", import.meta.url))
 process.chdir(dir)
 
-async function published(name: string, version: string) {
-  return (await $`npm view ${name}@${version} version`.nothrow()).exitCode === 0
-}
+const binary = "redsun"
+const skipBuild = process.argv.includes("--skip-build")
 
-async function publish(dir: string, name: string, version: string) {
-  if (process.platform !== "win32") await $`chmod -R 755 .`.cwd(dir)
-  const exists = await published(name, version)
-  if (exists) console.log(`already published ${name}@${version}`)
-  if (!exists) {
-    await $`bun pm pack`.cwd(dir)
-    await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(dir)
+if (!skipBuild) await import("./build.ts")
+
+const targets: string[] = []
+for (const filepath of new Bun.Glob("*/package.json").scanSync({ cwd: "./dist" })) {
+  // Bun.Glob yields platform separators, so do not split on "/" by hand.
+  const directory = path.dirname(filepath)
+  if (!directory.startsWith("cli-")) continue
+  targets.push(directory)
+}
+if (!targets.length) throw new Error("No build output found in dist; run script/build.ts first")
+
+{
+  const platform = process.platform === "win32" ? "windows" : process.platform
+  const host = `cli-${platform}-${process.arch}`
+  const executable = process.platform === "win32" ? `${binary}.exe` : binary
+  const smoke = `./dist/${host}/bin/${executable}`
+  if (!existsSync(smoke)) {
+    // A cross-compiled-only build (a single foreign --target=) has nothing this
+    // machine can execute; that is fine, but say so rather than passing quietly.
+    console.log(`smoke test skipped: ${smoke} was not built on this host`)
+  } else {
+    console.log(`smoke test: running ${smoke} --version`)
+    await $`${smoke} --version`
   }
 }
 
-async function publishDistribution(input: { root: string; name: string; binary: string; packagePrefix: string }) {
-  const binaries: Record<string, string> = {}
-  for (const filepath of new Bun.Glob("*/package.json").scanSync({ cwd: input.root })) {
-    const item = await Bun.file(`${input.root}/${filepath}`).json()
-    if (!item.name.startsWith(input.packagePrefix)) continue
-    binaries[item.name] = item.version
+// CI runs on ubuntu, where `zip` is present, but a maintainer checking the
+// archives on Windows has no such thing. Compress-Archive covers that case.
+async function zip(cwd: string, out: string, file: string) {
+  if (Bun.which("zip")) return void (await $`zip -qr ${out} ${file}`.cwd(cwd))
+  await $`powershell -NoProfile -NonInteractive -Command ${`Compress-Archive -Path '${file}' -DestinationPath '${out}' -Force`}`.cwd(
+    cwd,
+  )
+}
+
+const archives: string[] = []
+for (const target of targets) {
+  const asset = target.replace(/^cli-/, `${binary}-`)
+  const executable = target.includes("windows") ? `${binary}.exe` : binary
+  const source = `./dist/${target}/bin/${executable}`
+  if (!existsSync(source)) throw new Error(`Missing ${source}`)
+  if (process.platform !== "win32") await $`chmod 755 ${executable}`.cwd(`dist/${target}/bin`)
+  // Only the executable goes in. `bin/` also holds the split chunks' sourcemaps,
+  // which are debug output -- shipping them would multiply the download for
+  // files the installers never move out of the temp directory.
+  if (target.includes("linux")) {
+    await $`tar -czf ../../${asset}.tar.gz ${executable}`.cwd(`dist/${target}/bin`)
+    archives.push(`${asset}.tar.gz`)
+  } else {
+    await zip(`dist/${target}/bin`, `../../${asset}.zip`, executable)
+    archives.push(`${asset}.zip`)
   }
-  console.log(input.name, "binaries", binaries)
-  const versions = new Set(Object.values(binaries))
-  if (versions.size > 1) throw new Error(`Binary package versions do not match for ${input.name}`)
-  const version = versions.values().next().value
-  if (!version) throw new Error(`No binary packages found for ${input.name}`)
-
-  await $`mkdir -p ${input.root}/${input.name}/bin`
-  await $`cp ./script/postinstall.mjs ${input.root}/${input.name}/postinstall.mjs`
-  await Bun.file(`${input.root}/${input.name}/bin/${input.binary}.exe`).write(
-    [
-      `echo "Error: ${input.name}'s postinstall script was not run." >&2`,
-      'echo "" >&2',
-      'echo "This occurs when installation scripts are disabled." >&2',
-      'echo "Run the package postinstall script or reinstall with scripts enabled." >&2',
-      "exit 1",
-      "",
-    ].join("\n"),
-  )
-  await Bun.file(`${input.root}/${input.name}/package.json`).write(
-    JSON.stringify(
-      {
-        name: input.name,
-        bin: { [input.binary]: `./bin/${input.binary}.exe` },
-        scripts: { postinstall: "node ./postinstall.mjs" },
-        version,
-        license: pkg.license,
-        repository: { type: "git", url: "git+https://github.com/anomalyco/opencode.git" },
-        os: ["darwin", "linux", "win32"],
-        cpu: ["arm64", "x64"],
-        optionalDependencies: binaries,
-      },
-      null,
-      2,
-    ),
-  )
-
-  await Promise.all(
-    Object.entries(binaries).map(([name, version]) =>
-      publish(`${input.root}/${name.replace("@opencode-ai/", "")}`, name, version),
-    ),
-  )
-  await publish(`${input.root}/${input.name}`, input.name, version)
 }
 
-await publishDistribution({
-  root: "./dist",
-  name: pkg.name,
-  binary: "redsun",
-  packagePrefix: "@opencode-ai/cli-",
-})
-if (existsSync("./dist/node")) {
-  await publishDistribution({
-    root: "./dist/node",
-    name: "opencode-node",
-    binary: "redsun-node",
-    packagePrefix: "@opencode-ai/cli-node-",
-  })
+console.log("Created release archives:")
+for (const archive of archives) {
+  const contents = archive.endsWith(".tar.gz")
+    ? await $`tar -tzf dist/${archive}`.text()
+    : await $`unzip -l dist/${archive}`.text()
+  if (!contents.includes(binary)) throw new Error(`Archive ${archive} does not contain ${binary}`)
+  console.log(`  validated ${archive}`)
 }
-await UpdateArtifact.publish({
-  channel: Script.channel,
-  name: "cli",
-  distribution: "npm",
-  version: Script.version,
-  metadata: {},
-})

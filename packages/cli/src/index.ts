@@ -53,6 +53,7 @@ const Handlers = Runtime.handlers(Commands, {
     unset: () => import("./commands/handlers/service/unset"),
   },
   serve: () => import("./commands/handlers/serve"),
+  upgrade: () => import("./commands/handlers/upgrade"),
 })
 
 Effect.gen(function* () {

@@ -9,26 +9,23 @@ NC='\033[0m' # No Color
 
 usage() {
     cat <<EOF
-OpenCode Installer
+Redsun Installer
 
 Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version (e.g., 0.0.0-beta-17236)
-    -b, --binary <path>     Install from a local binary instead of downloading
+    -v, --version <version> Install a specific version (e.g., 1.0.205)
         --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
 
 Examples:
-    curl -fsSL https://opencode.ai/v2/install | bash
-    curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 0.0.0-beta-17236
-    ./install --binary /path/to/opencode2
+    curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash
+    curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash -s -- --version 1.0.205
 EOF
 }
 
 requested_version=${VERSION:-}
 no_modify_path=false
-binary_path=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -45,15 +42,6 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
-        -b|--binary)
-            if [[ -n "${2:-}" ]]; then
-                binary_path="$2"
-                shift 2
-            else
-                echo -e "${RED}Error: --binary requires a path argument${NC}"
-                exit 1
-            fi
-            ;;
         --no-modify-path)
             no_modify_path=true
             shift
@@ -65,137 +53,116 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+raw_os=$(uname -s)
+os=$(echo "$raw_os" | tr '[:upper:]' '[:lower:]')
+case "$raw_os" in
+  Darwin*) os="darwin" ;;
+  Linux*) os="linux" ;;
+  MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+esac
+
+arch=$(uname -m)
+if [[ "$arch" == "aarch64" ]]; then
+  arch="arm64"
+fi
+if [[ "$arch" == "x86_64" ]]; then
+  arch="x64"
+fi
+
+if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
+  rosetta_flag=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
+  if [ "$rosetta_flag" = "1" ]; then
+    arch="arm64"
+  fi
+fi
+
+combo="$os-$arch"
+case "$combo" in
+  linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64|windows-arm64)
+    ;;
+  *)
+    echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}"
+    exit 1
+    ;;
+esac
+
+archive_ext=".tar.gz"
+if [ "$os" != "linux" ]; then
+  archive_ext=".zip"
+fi
+
+is_musl=false
+if [ "$os" = "linux" ]; then
+  if [ -f /etc/alpine-release ]; then
+    is_musl=true
+  fi
+
+  if command -v ldd >/dev/null 2>&1; then
+    if ldd --version 2>&1 | grep -qi musl; then
+      is_musl=true
+    fi
+  fi
+fi
+
+needs_baseline=false
+if [ "$arch" = "x64" ]; then
+  if [ "$os" = "linux" ]; then
+    if ! grep -qi avx2 /proc/cpuinfo 2>/dev/null; then
+      needs_baseline=true
+    fi
+  fi
+
+  if [ "$os" = "darwin" ]; then
+    avx2=$(sysctl -n hw.optional.avx2_0 2>/dev/null || echo 0)
+    if [ "$avx2" != "1" ]; then
+      needs_baseline=true
+    fi
+  fi
+fi
+
+target="$os-$arch"
+if [ "$needs_baseline" = "true" ]; then
+  target="$target-baseline"
+fi
+if [ "$is_musl" = "true" ]; then
+  target="$target-musl"
+fi
+
+filename="$APP-$target$archive_ext"
+
+
+if ! command -v tar >/dev/null 2>&1; then
+    echo -e "${RED}Error: 'tar' is required but not installed.${NC}"
+    exit 1
+fi
+if [ "$os" != "linux" ]; then
+    if ! command -v unzip >/dev/null 2>&1; then
+        echo -e "${RED}Error: 'unzip' is required but not installed.${NC}"
+        exit 1
+    fi
+fi
+
 INSTALL_DIR=$HOME/.redsun/bin
 mkdir -p "$INSTALL_DIR"
 
-# If --binary is provided, skip all download/detection logic
-if [ -n "$binary_path" ]; then
-    if [ ! -f "$binary_path" ]; then
-        echo -e "${RED}Error: Binary not found at ${binary_path}${NC}"
+if [ -z "$requested_version" ]; then
+    url="https://github.com/and2049/redsun/releases/latest/download/$filename"
+    specific_version=$(curl -s https://api.github.com/repos/and2049/redsun/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+
+    if [[ $? -ne 0 || -z "$specific_version" ]]; then
+        echo -e "${RED}Failed to fetch version information${NC}"
         exit 1
     fi
-    specific_version="local"
 else
-    raw_os=$(uname -s)
-    os=$(echo "$raw_os" | tr '[:upper:]' '[:lower:]')
-    case "$raw_os" in
-      Darwin*) os="darwin" ;;
-      Linux*) os="linux" ;;
-      MINGW*|MSYS*|CYGWIN*) os="windows" ;;
-    esac
+    requested_version="${requested_version#v}"
+    url="https://github.com/and2049/redsun/releases/download/v${requested_version}/$filename"
+    specific_version=$requested_version
 
-    arch=$(uname -m)
-    if [[ "$arch" == "aarch64" ]]; then
-      arch="arm64"
-    fi
-    if [[ "$arch" == "x86_64" ]]; then
-      arch="x64"
-    fi
-
-    if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
-      rosetta_flag=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
-      if [ "$rosetta_flag" = "1" ]; then
-        arch="arm64"
-      fi
-    fi
-
-    combo="$os-$arch"
-    case "$combo" in
-      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
-        ;;
-      *)
-        echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}"
-        exit 1
-        ;;
-    esac
-
-    is_musl=false
-    if [ "$os" = "linux" ]; then
-      if [ -f /etc/alpine-release ]; then
-        is_musl=true
-      fi
-
-      if command -v ldd >/dev/null 2>&1; then
-        if ldd --version 2>&1 | grep -qi musl; then
-          is_musl=true
-        fi
-      fi
-    fi
-
-    needs_baseline=false
-    if [ "$arch" = "x64" ]; then
-      if [ "$os" = "linux" ]; then
-        if ! grep -qwi avx2 /proc/cpuinfo 2>/dev/null; then
-          needs_baseline=true
-        fi
-      fi
-
-      if [ "$os" = "darwin" ]; then
-        avx2=$(sysctl -n hw.optional.avx2_0 2>/dev/null || echo 0)
-        if [ "$avx2" != "1" ]; then
-          needs_baseline=true
-        fi
-      fi
-
-      if [ "$os" = "windows" ]; then
-        ps="(Add-Type -MemberDefinition \"[DllImport(\"\"kernel32.dll\"\")] public static extern bool IsProcessorFeaturePresent(int ProcessorFeature);\" -Name Kernel32 -Namespace Win32 -PassThru)::IsProcessorFeaturePresent(40)"
-        out=""
-        if command -v powershell.exe >/dev/null 2>&1; then
-          out=$(powershell.exe -NoProfile -NonInteractive -Command "$ps" 2>/dev/null || true)
-        elif command -v pwsh >/dev/null 2>&1; then
-          out=$(pwsh -NoProfile -NonInteractive -Command "$ps" 2>/dev/null || true)
-        fi
-        out=$(echo "$out" | tr -d '\r' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-        if [ "$out" != "true" ] && [ "$out" != "1" ]; then
-          needs_baseline=true
-        fi
-      fi
-    fi
-
-    target="$os-$arch"
-    if [ "$needs_baseline" = "true" ]; then
-      target="$target-baseline"
-    fi
-    if [ "$is_musl" = "true" ]; then
-      target="$target-musl"
-    fi
-
-    if ! command -v tar >/dev/null 2>&1; then
-        echo -e "${RED}Error: 'tar' is required but not installed.${NC}"
-        exit 1
-    fi
-
-    if [ -z "$requested_version" ]; then
-        metadata=$(curl -fsSL https://registry.npmjs.org/@opencode-ai%2fcli/beta || true)
-        specific_version=$(echo "$metadata" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
-
-        if [ -z "$specific_version" ]; then
-            echo -e "${RED}Failed to fetch version information${NC}"
-            exit 1
-        fi
-    else
-        # Strip leading 'v' if present
-        requested_version="${requested_version#v}"
-        specific_version=$requested_version
-    fi
-
-    package_name="@opencode-ai/cli-$target"
-    http_status=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/@opencode-ai%2fcli-$target/$specific_version" || true)
+    http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/and2049/redsun/releases/tag/v${requested_version}")
     if [ "$http_status" = "404" ]; then
-        echo -e "${RED}Error: Version ${specific_version} is not available for $target${NC}"
-        echo -e "${MUTED}Available versions: https://www.npmjs.com/package/$package_name?activeTab=versions${NC}"
+        echo -e "${RED}Error: Release v${requested_version} not found${NC}"
+        echo -e "${MUTED}Available releases: https://github.com/and2049/redsun/releases${NC}"
         exit 1
-    fi
-    if [ "$http_status" != "200" ]; then
-        echo -e "${RED}Failed to fetch package information${NC}"
-        exit 1
-    fi
-
-    filename="cli-$target-$specific_version.tgz"
-    url="https://registry.npmjs.org/$package_name/-/$filename"
-    binary_name="$APP"
-    if [ "$os" = "windows" ]; then
-        binary_name="$APP.exe"
     fi
 fi
 
@@ -214,13 +181,13 @@ print_message() {
 }
 
 check_version() {
-    if command -v "$APP" >/dev/null 2>&1; then
-        opencode_path=$(which "$APP")
+    if command -v redsun >/dev/null 2>&1; then
+        redsun_path=$(which redsun)
 
-        ## Check the installed version
-        installed_version=$("$APP" --version 2>/dev/null || echo "")
-        installed_version="${installed_version##* }"
-        installed_version="${installed_version#v}"
+        installed_version=$(redsun --version 2>/dev/null || echo "0.0.0")
+        # `redsun --version` prints "redsun v<version>"; the tag it is compared
+        # against carries no leading v.
+        installed_version=$(echo $installed_version | awk '{print $2}' | sed 's/^v//')
 
         if [[ "$installed_version" != "$specific_version" ]]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."
@@ -272,19 +239,18 @@ download_with_progress() {
     fi
 
     local tmp_dir=${TMPDIR:-/tmp}
-    local basename="${tmp_dir}/opencode_install_$$"
+    local basename="${tmp_dir}/redsun_install_$$"
     local tracefile="${basename}.trace"
 
     rm -f "$tracefile"
     mkfifo "$tracefile"
 
-    # Hide cursor
     printf "\033[?25l" >&4
 
     trap "trap - RETURN; rm -f \"$tracefile\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
     (
-        curl --trace-ascii "$tracefile" -fsL -o "$output" "$url"
+        curl --trace-ascii "$tracefile" -s -L -o "$output" "$url"
     ) &
     local curl_pid=$!
 
@@ -296,11 +262,11 @@ download_with_progress() {
     {
         local length=0
         local bytes=0
-
+        
         while IFS=" " read -r -a line; do
             [ "${#line[@]}" -lt 2 ] && continue
             local tag="${line[0]} ${line[1]}"
-
+            
             if [ "$tag" = "0000: content-length:" ]; then
                 length="${line[2]}"
                 length=$(echo "$length" | tr -d '\r')
@@ -322,33 +288,37 @@ download_with_progress() {
 }
 
 download_and_install() {
-    print_message info "\n${MUTED}Installing ${NC}$APP ${MUTED}version: ${NC}$specific_version"
-    local tmp_dir="${TMPDIR:-/tmp}/opencode_install_$$"
+    print_message info "\n${MUTED}Installing ${NC}redsun ${MUTED}version: ${NC}$specific_version"
+    local tmp_dir="${TMPDIR:-/tmp}/redsun_install_$$"
     mkdir -p "$tmp_dir"
 
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
-        # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        curl -f -# -L -o "$tmp_dir/$filename" "$url"
+        curl -# -L -o "$tmp_dir/$filename" "$url"
     fi
 
-    tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
-    mv "$tmp_dir/package/bin/$binary_name" "$INSTALL_DIR"
-    chmod 755 "${INSTALL_DIR}/$binary_name"
+    if [ "$os" = "linux" ]; then
+        tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
+    else
+        unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
+    fi
+
+    binary_file="$APP"
+    if [ "$os" = "windows" ]; then
+        binary_file="$APP.exe"
+        if [ -f "$tmp_dir/$APP" ] && [ ! -f "$tmp_dir/$APP.exe" ]; then
+            mv "$tmp_dir/$APP" "$tmp_dir/$APP.exe"
+        fi
+    fi
+
+    mv "$tmp_dir/$binary_file" "$INSTALL_DIR/"
+    if [ "$os" != "windows" ]; then
+        chmod 755 "${INSTALL_DIR}/$binary_file"
+    fi
     rm -rf "$tmp_dir"
 }
 
-install_from_binary() {
-    print_message info "\n${MUTED}Installing ${NC}$APP ${MUTED}from: ${NC}$binary_path"
-    cp "$binary_path" "${INSTALL_DIR}/$APP"
-    chmod 755 "${INSTALL_DIR}/$APP"
-}
-
-if [ -n "$binary_path" ]; then
-    install_from_binary
-else
-    check_version
-    download_and_install
-fi
+check_version
+download_and_install
 
 
 add_to_path() {
@@ -358,9 +328,9 @@ add_to_path() {
     if grep -Fxq "$command" "$config_file"; then
         print_message info "Command already exists in $config_file, skipping write."
     elif [[ -w $config_file ]]; then
-        echo -e "\n# opencode" >> "$config_file"
+        echo -e "\n# redsun" >> "$config_file"
         echo "$command" >> "$config_file"
-        print_message info "${MUTED}Successfully added ${NC}opencode ${MUTED}to \$PATH in ${NC}$config_file"
+        print_message info "${MUTED}Successfully added ${NC}redsun ${MUTED}to \$PATH in ${NC}$config_file"
     else
         print_message warning "Manually add the directory to $config_file (or similar):"
         print_message info "  $command"
@@ -375,7 +345,7 @@ case $current_shell in
         config_files="$HOME/.config/fish/config.fish"
     ;;
     zsh)
-        config_files="${ZDOTDIR:-$HOME}/.zshrc ${ZDOTDIR:-$HOME}/.zshenv $XDG_CONFIG_HOME/zsh/.zshrc $XDG_CONFIG_HOME/zsh/.zshenv"
+        config_files="$HOME/.zshrc $HOME/.zshenv $XDG_CONFIG_HOME/zsh/.zshrc $XDG_CONFIG_HOME/zsh/.zshenv"
     ;;
     bash)
         config_files="$HOME/.bashrc $HOME/.bash_profile $HOME/.profile $XDG_CONFIG_HOME/bash/.bashrc $XDG_CONFIG_HOME/bash/.bash_profile"
@@ -387,7 +357,6 @@ case $current_shell in
         config_files="$HOME/.ashrc $HOME/.profile /etc/profile"
     ;;
     *)
-        # Default case if none of the above matches
         config_files="$HOME/.bashrc $HOME/.bash_profile $XDG_CONFIG_HOME/bash/.bashrc $XDG_CONFIG_HOME/bash/.bash_profile"
     ;;
 esac
@@ -436,17 +405,12 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
 fi
 
 echo -e ""
-echo -e "${MUTED}                    ${NC}             ▄     "
-echo -e "${MUTED}█▀▀█ █▀▀█ █▀▀█ █▀▀▄ ${NC}█▀▀▀ █▀▀█ █▀▀█ █▀▀█"
-echo -e "${MUTED}█░░█ █░░█ █▀▀▀ █░░█ ${NC}█░░░ █░░█ █░░█ █▀▀▀"
-echo -e "${MUTED}▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ${NC}▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"
+print_message info "redsun installed successfully!"
 echo -e ""
+echo -e "${MUTED}To start using redsun:${NC}"
 echo -e ""
-echo -e "${MUTED}OpenCode includes free models, to start:${NC}"
+echo -e "cd <project>  ${MUTED}# Open a project directory${NC}"
+echo -e "redsun        ${MUTED}# Run redsun${NC}"
 echo -e ""
-echo -e "cd <project>  ${MUTED}# Open directory${NC}"
-echo -e "opencode2     ${MUTED}# Run command${NC}"
-echo -e ""
-echo -e "${MUTED}For more information visit ${NC}https://opencode.ai/v2/docs"
-echo -e ""
+echo -e "${MUTED}For more information visit ${NC}https://github.com/and2049/redsun"
 echo -e ""
