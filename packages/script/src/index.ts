@@ -66,7 +66,11 @@ const team = [
   ...(await Bun.file(teamPath)
     .text()
     .then((x) => x.split(/\r?\n/).map((x) => x.trim()))
-    .then((x) => x.filter((x) => x && !x.startsWith("#")))),
+    .then((x) => x.filter((x) => x && !x.startsWith("#")))
+    // REDSUN: `.github/TEAM_MEMBERS` is upstream's reviewer roster and went with
+    // the rest of their repo tooling. Nothing here reads `team`, but a missing
+    // file would throw during module init and take every build script with it.
+    .catch(() => [])),
   ...bot,
 ]
 
