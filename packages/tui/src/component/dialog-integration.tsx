@@ -1,4 +1,4 @@
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type RGBA } from "@opentui/core"
 import type {
   ConnectionInfo,
   IntegrationCommandConnectOutput,
@@ -112,7 +112,9 @@ export function DialogIntegration(
         disabled: methods.length === 0 && credentials.length === 0,
         gutter:
           integration.connections.length > 0
-            ? () => <text fg={theme.text.feedback.success.default}>✓</text>
+            ? (color: RGBA, active: boolean) => (
+                <text fg={active ? color : theme.text.feedback.success.default}>✓</text>
+              )
             : undefined,
         onSelect: () => {
           if (credentials.length) return manageConnections(integration, methods, dialog, props.onConnected)

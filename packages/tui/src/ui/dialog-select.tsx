@@ -80,7 +80,7 @@ export interface DialogSelectOption<T = any> {
   disabled?: boolean
   bg?: RGBA
   fg?: RGBA
-  gutter?: (color: RGBA) => JSX.Element
+  gutter?: (color: RGBA, active: boolean) => JSX.Element
   margin?: JSX.Element
   onSelect?: (ctx: DialogContext) => void
 }
@@ -822,7 +822,7 @@ function Option(props: {
   footerColor?: RGBA
   titleWidth?: number
   truncateTitle?: boolean | "left"
-  gutter?: (color: RGBA) => JSX.Element
+  gutter?: (color: RGBA, active: boolean) => JSX.Element
   activeColor?: RGBA
   onMouseOver?: () => void
 }) {
@@ -843,7 +843,7 @@ function Option(props: {
       </Show>
       <Show when={props.gutter}>
         <box flexShrink={0} marginRight={0}>
-          {props.gutter?.(text())}
+          {props.gutter?.(text(), Boolean(props.active) && !props.muted)}
         </box>
       </Show>
       <text
