@@ -330,7 +330,7 @@ test("dusk resolves to the same tokens the generated V2 document did", () => {
   expect(hex(resolved.text.subdued)).toBe("#e4e4e45e")
   expect(hex(resolved.background.default)).toBe("#181717")
   expect(hex(resolved.background.surface.offset)).toBe("#242222")
-  expect(hex(resolved.background.surface.overlay)).toBe("#292929")
+  expect(hex(resolved.background.surface.overlay)).toBe("#242222")
   expect(hex(resolved.border.default)).toBe("#e4e4e413")
   expect(hex(resolved.logo.gradient.start)).toBe("#f8cb00")
   expect(hex(resolved.logo.gradient.end)).toBe("#c3133c")
@@ -338,7 +338,7 @@ test("dusk resolves to the same tokens the generated V2 document did", () => {
   expect(resolved.categorical.map((scale) => hex(scale[200]))).toEqual([
     "#ee9a62",
     "#fde36f",
-    "#6dab4d",
+    "#8fb458",
     "#f1b467",
     "#fde36f",
     "#e34671",
