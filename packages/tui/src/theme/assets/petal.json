@@ -2,8 +2,8 @@
   "$schema": "https://opencode.ai/theme.json",
   "mode": "light",
   "theme": {
-    "logoGradientStart": "#9ccfd8",
-    "logoGradientEnd": "#c4a7e7",
+    "logoGradientStart": "#7ebec9",
+    "logoGradientEnd": "#ab8cd0",
     "primary": "#31748f",
     "secondary": "#907aa9",
     "accent": "#d7827e",
