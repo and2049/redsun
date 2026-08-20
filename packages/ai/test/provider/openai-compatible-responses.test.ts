@@ -56,6 +56,28 @@ describe("Open Responses-compatible route", () => {
     }),
   )
 
+  it.effect("lowers chronological system updates as standard developer messages", () =>
+    Effect.gen(function* () {
+      const model = configure({
+        apiKey: "test-key",
+        baseURL: "https://responses.example.test/v1",
+        provider: "example",
+      }).model("example-model")
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [Message.user("Before."), Message.system("Operator update."), Message.assistant("After.")],
+        }),
+      )
+
+      expect(prepared.body.input).toEqual([
+        { role: "user", content: [{ type: "input_text", text: "Before." }] },
+        { role: "developer", content: "Operator update." },
+        { role: "assistant", content: [{ type: "output_text", text: "After." }] },
+      ])
+    }),
+  )
+
   it.effect("rejects OpenAI-native tools", () =>
     Effect.gen(function* () {
       const model = configure({
@@ -101,13 +123,14 @@ describe("Open Responses-compatible route", () => {
       const model = configure({
         apiKey: "test-key",
         baseURL: "https://responses.example.test/v1",
-        providerOptions: { openresponses: { reasoningEffort: "low", store: true } },
+        providerOptions: { openresponses: { reasoningEffort: "low", store: true, truncation: "auto" } },
       }).model("example-model")
       const prepared = yield* compileRequest(LLM.request({ model, prompt: "Think." }))
 
       expect(prepared.body).toMatchObject({
         reasoning: { effort: "low" },
         store: true,
+        truncation: "auto",
       })
     }),
   )
