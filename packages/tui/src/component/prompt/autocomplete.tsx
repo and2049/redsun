@@ -880,10 +880,14 @@ export function Autocomplete(props: {
       zIndex={100}
       {...SplitBorder}
       borderColor={theme.border.default}
+      // REDSUN DENSE: opaque base under the translucent menu surface. The popup
+      // draws over whatever sits above the prompt; without the base layer that
+      // content bleeds through every unselected row (dialog.tsx stacks the same way).
+      backgroundColor={theme.background.default}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => (scroll = r)}
-        backgroundColor={theme.background.default}
+        backgroundColor={theme.background.surface.overlay}
         height={height()}
         scrollbarOptions={{ visible: false }}
         scrollAcceleration={scrollAcceleration()}

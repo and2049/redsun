@@ -231,7 +231,8 @@ export const Plugin = {
                 (yield* runtime.session
                   .create({
                     parentID: context.sessionID,
-                    title: input.description,
+                    // REDSUN: same title format as the Claude Code subagent mirror.
+                    title: `${input.description} (@${input.agent} subagent)`,
                     agent: Agent.ID.make(input.agent),
                     model,
                   })
