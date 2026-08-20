@@ -81,6 +81,7 @@ function resolveExpandedTheme(definition: ThemeDefinition): ResolvedTheme {
 
 function tokens(definition: ThemeDefinition): ThemeTokensDefinition {
   return {
+    agents: definition.agents ?? {},
     text: definition.text,
     background: definition.background,
     border: definition.border,

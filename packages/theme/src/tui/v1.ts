@@ -55,11 +55,19 @@ export type Theme = {
   readonly syntaxType: RGBA
   readonly syntaxOperator: RGBA
   readonly syntaxPunctuation: RGBA
+  // Redsun tokens: explicit colours for the primary agent modes; absent keys
+  // fall back to the positional categorical assignment.
+  readonly agentBuild?: RGBA
+  readonly agentPlan?: RGBA
+  readonly agentCompose?: RGBA
   readonly thinkingOpacity: number
   _hasSelectedListItemText: boolean
 }
 
-export type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
+export type ThemeColor = Exclude<
+  keyof Theme,
+  "thinkingOpacity" | "_hasSelectedListItemText" | "agentBuild" | "agentPlan" | "agentCompose"
+>
 // The syntax table and the selected-foreground rule never read the wordmark
 // gradient, so they accept the plugin-facing theme surface too.
 export type SyntaxTheme = Omit<Theme, "logoGradientStart" | "logoGradientEnd">
@@ -88,6 +96,9 @@ export type ThemeV1Json = {
     logoGradientEnd?: ColorValue
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
+    agentBuild?: ColorValue
+    agentPlan?: ColorValue
+    agentCompose?: ColorValue
     thinkingOpacity?: number
   }
 }

@@ -17,6 +17,10 @@ const THEME_PAIRS: Record<string, string | undefined> = {
   lotus: "kanagawa",
   rosepine: "petal",
   petal: "rosepine",
+  cloud: "nimbus",
+  nimbus: "cloud",
+  wave: "tide",
+  tide: "wave",
 }
 
 export function DialogThemeList() {

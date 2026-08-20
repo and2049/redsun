@@ -22,6 +22,7 @@ export type FormfieldColor = StatefulColor
 export type ResolvedThemeTokens = {
   readonly hue: Hue
   readonly categorical: Categorical
+  readonly agents: Readonly<Record<string, RGBA>>
   readonly source: (color: RGBA) => HueSource | undefined
   readonly increase: (color: RGBA, amount?: number) => RGBA
   readonly decrease: (color: RGBA, amount?: number) => RGBA
