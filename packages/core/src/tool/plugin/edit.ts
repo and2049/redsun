@@ -102,6 +102,16 @@ const findLineOccurrences = (content: string, search: string) => {
   }, [])
 }
 
+// REDSUN: the exact -> unicode-normalized -> trailing-whitespace-tolerant cascade,
+// shared with the multiedit plugin so both tools match identically.
+export const findMatches = (source: string, search: string) => {
+  const exact = findOccurrences(source, search)
+  // These one-to-one mappings preserve offsets into the original source.
+  const unicode = exact.length > 0 ? [] : findOccurrences(normalizeForMatch(source), normalizeForMatch(search))
+  const trailing = exact.length > 0 || unicode.length > 0 ? [] : findLineOccurrences(source, search)
+  return exact.length > 0 ? exact : unicode.length > 0 ? unicode : trailing
+}
+
 /** Deferred edit behavior and UX integrations remain visible at the model-facing seam. */
 // TODO: Publish watcher/file-edit events after watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
@@ -169,12 +179,7 @@ export const Plugin = {
               const ending = source.includes(crlf) ? crlf : "\n"
               const oldString = input.oldString.replaceAll(crlf, "\n").replaceAll("\n", ending)
               const newString = input.newString.replaceAll(crlf, "\n").replaceAll("\n", ending)
-              const exact = findOccurrences(source, oldString)
-              // These one-to-one mappings preserve offsets into the original source.
-              const unicode =
-                exact.length > 0 ? [] : findOccurrences(normalizeForMatch(source), normalizeForMatch(oldString))
-              const trailing = exact.length > 0 || unicode.length > 0 ? [] : findLineOccurrences(source, oldString)
-              const matches = exact.length > 0 ? exact : unicode.length > 0 ? unicode : trailing
+              const matches = findMatches(source, oldString)
               const replacements = matches.length
               const replaced = (input.replaceAll === true ? matches : matches.slice(0, 1))
                 .toReversed()

@@ -315,6 +315,8 @@ export const Plugin = {
         if (usePatch) {
           delete event.tools.edit
           delete event.tools.write
+          // REDSUN: multiedit is an edit-shaped tool; it goes with edit.
+          delete event.tools.multiedit
           return
         }
         delete event.tools.patch

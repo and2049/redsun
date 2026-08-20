@@ -26,10 +26,14 @@ const WORKER = [
 export const make = (input: Input): string | undefined => {
   const parts: string[] = []
 
-  if (input.agent.id === "compose") parts.push(COMPOSE)
-  else if (input.isWorker || input.agent.mode === "subagent") parts.push(WORKER)
-
-  if (input.agentChanged && input.agent.system) parts.push(input.agent.system)
+  // Mode briefs are standing instructions, not per-turn state: re-sending them on
+  // every delegated turn breaks the CLI's prompt-cache prefix and buys nothing. They
+  // ride only when the agent claims the session or changes, like agent.system.
+  if (input.agentChanged) {
+    if (input.agent.id === "compose") parts.push(COMPOSE)
+    else if (input.isWorker || input.agent.mode === "subagent") parts.push(WORKER)
+    if (input.agent.system) parts.push(input.agent.system)
+  }
 
   if (!parts.length) return undefined
   return parts.join("\n\n")
