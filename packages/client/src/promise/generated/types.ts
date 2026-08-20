@@ -1571,6 +1571,13 @@ export type ConfigEntry =
           keep_recent?: number
           max_tool_results?: number
         }
+        advisor?: {
+          enabled?: boolean
+          model?: string
+          mode?: "auto" | "aside-only"
+          cooldown_turns?: number
+          guidance?: string
+        }
         skills?: Array<string>
         commands?: {
           [x: string]: {
