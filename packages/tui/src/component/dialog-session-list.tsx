@@ -175,7 +175,9 @@ export function DialogSessionList() {
             ? (color: RGBA) => <Spinner color={color} />
             : slot === undefined
               ? undefined
-              : () => <text fg={theme.hue.accent[mode() === "light" ? 800 : 200]}>{slot}</text>,
+              : (color: RGBA, active: boolean) => (
+                  <text fg={active ? color : theme.hue.accent[mode() === "light" ? 800 : 200]}>{slot}</text>
+                ),
       }
     }
 
