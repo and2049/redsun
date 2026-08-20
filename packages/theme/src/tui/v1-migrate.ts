@@ -1,5 +1,5 @@
 import { RGBA } from "@opentui/core"
-import { oklchToHex, rgbToOklch } from "./color.js"
+import { rgbToOklch } from "./color.js"
 import { DEFAULT_CATEGORICAL, DEFAULT_THEME } from "./defaults.js"
 import type { FileThemeDefinition, Mode, ThemeDocument } from "./index.js"
 import { HueStep } from "./schema.js"
@@ -70,13 +70,13 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
   const backgroundPanel = mode === "light" ? "$hue.neutral.300" : "$hue.neutral.700"
   const backgroundMenu = mode === "light" ? "$hue.neutral.400" : "$hue.neutral.600"
 
-  return referenceHues({
+  return referenceHues(mode, {
     hue: {
       gray: neutralScale(theme, mode),
       ...Object.fromEntries(
         chromaticHues.map((name) => {
           const match = hues.byHue[name]
-          return [name, match ? hueScale(match.color, mode) : "$hue.gray"]
+          return [name, match ? hueScale(match.color) : "$hue.gray"]
         }),
       ),
       accent: hues.byToken.accent ? `$hue.${hues.byToken.accent}` : "$hue.gray",
@@ -196,7 +196,7 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
   })
 }
 
-function referenceHues(theme: FileThemeDefinition): FileThemeDefinition {
+function referenceHues(mode: Mode, theme: FileThemeDefinition): FileThemeDefinition {
   const definitions = theme.hue as Record<string, string | Partial<Record<HueStep, string>>> | undefined
   if (!definitions) return theme
   const scales = new Map<string, Partial<Record<HueStep, string>>>()
@@ -218,14 +218,23 @@ function referenceHues(theme: FileThemeDefinition): FileThemeDefinition {
     return scale
   }
 
+  // A snapped scale repeats one colour across a run of steps, so the anchor is
+  // indexed first: a token keeps a reference to the step its colour was
+  // actually declared for rather than to whichever duplicate sorts lowest.
+  const anchor: HueStep = mode === "light" ? 800 : 200
+  const order = [anchor, ...HueStep.literals.filter((step) => step !== anchor)]
   const references = new Map<string, string>()
   const index = (name: string, overwrite: boolean) => {
     const scale = resolve(name)
     if (!scale) return
-    HueStep.literals.forEach((step) => {
+    const seen = new Set<string>()
+    order.forEach((step) => {
       const color = scale[step]
-      if (!color || (!overwrite && references.has(color.toLowerCase()))) return
-      references.set(color.toLowerCase(), `$hue.${name}.${step}`)
+      if (!color) return
+      const key = color.toLowerCase()
+      if (seen.has(key) || (!overwrite && references.has(key))) return
+      seen.add(key)
+      references.set(key, `$hue.${name}.${step}`)
     })
   }
   chromaticHues.forEach((name) => index(name, false))
@@ -359,40 +368,20 @@ function selectedForeground(theme: Theme, background: RGBA) {
     : RGBA.fromInts(255, 255, 255)
 }
 
-function hueScale(color: RGBA, mode: "light" | "dark") {
-  const value = toOklch(color)
-  const anchor = mode === "light" ? 800 : 200
-  const endpoint = mode === "light" ? Math.max(0.97, value.l) : Math.min(0.18, value.l)
-  const alpha = color.toInts()[3]
-  return Object.fromEntries(
-    HueStep.literals.map((step) => {
-      if (step === anchor) return [step, hex(color)]
-      const progress = mode === "light" ? (anchor - step) / (anchor - 100) : (step - anchor) / (900 - anchor)
-      const generated = oklchToHex({
-        l: value.l + (endpoint - value.l) * progress,
-        c: value.c * (1 - progress * 0.5),
-        h: value.h,
-      })
-      return [step, alpha === 255 ? generated : `${generated}${byte(alpha)}`]
-    }),
-  ) as Record<HueStep, string>
+// A migrated ramp only ever answers with a colour the V1 file named. Each step
+// takes the nearest anchor at or below it, and a step below the lowest anchor
+// takes that lowest anchor. A chromatic hue declares exactly one anchor, so its
+// scale is pinned to that colour.
+function hueScale(color: RGBA) {
+  return Object.fromEntries(HueStep.literals.map((step) => [step, hex(color)])) as Record<HueStep, string>
 }
 
 function neutralScale(theme: Theme, mode: "light" | "dark") {
   const anchors = neutralAnchors(theme, mode)
   return Object.fromEntries(
     HueStep.literals.map((step) => {
-      const exact = anchors.find((anchor) => anchor.step === step)
-      if (exact) return [step, hex(exact.color)]
-      const first = anchors[0]!
-      const last = anchors.at(-1)!
-      const [lower, upper] =
-        step < first.step
-          ? [first, anchors[1]!]
-          : step > last.step
-            ? [anchors.at(-2)!, last]
-            : [anchors.filter((anchor) => anchor.step < step).at(-1)!, anchors.find((anchor) => anchor.step > step)!]
-      return [step, interpolate(lower.color, upper.color, (step - lower.step) / (upper.step - lower.step))]
+      const anchor = anchors.findLast((entry) => entry.step <= step) ?? anchors[0]!
+      return [step, hex(anchor.color)]
     }),
   ) as Record<HueStep, string>
 }
@@ -407,24 +396,6 @@ function neutralAnchors(theme: Theme, mode: "light" | "dark") {
   ]
   if (mode === "light") return light
   return light.toReversed().map((source) => ({ ...source, step: (1000 - source.step) as HueStep }))
-}
-
-function interpolate(first: RGBA, second: RGBA, amount: number) {
-  const start = toOklch(first)
-  const end = toOklch(second)
-  const startHue = Number.isFinite(start.h) ? start.h : Number.isFinite(end.h) ? end.h : 0
-  const endHue = Number.isFinite(end.h) ? end.h : startHue
-  const hue = ((((endHue - startHue) % 360) + 540) % 360) - 180
-  const generated = oklchToHex({
-    l: start.l + (end.l - start.l) * amount,
-    c: start.c + (end.c - start.c) * amount,
-    h: startHue + hue * amount,
-  })
-  const alpha = Math.max(
-    0,
-    Math.min(255, Math.round(first.toInts()[3] + (second.toInts()[3] - first.toInts()[3]) * amount)),
-  )
-  return alpha === 255 ? generated : `${generated}${byte(alpha)}`
 }
 
 function toOklch(color: RGBA) {

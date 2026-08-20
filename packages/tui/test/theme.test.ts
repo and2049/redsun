@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { TerminalColors } from "@opentui/core"
+import { RGBA, type TerminalColors } from "@opentui/core"
 import {
   addTheme,
   allThemes,
@@ -199,7 +199,8 @@ test("theme directories include global config before project directories", async
 test("ships the twelve redsun themes, each resolving in the mode it declares", () => {
   // v0.3.0 split dark/light pairs into standalone single-mode themes rather
   // than pairing modes inside one document, and the picker is built around
-  // that. Each is a native v2 document, so this also catches a malformed one.
+  // that. Each is a flat v1 document run through migrateV1, so this also
+  // catches a malformed one.
   expect(Object.keys(DEFAULT_THEMES).toSorted()).toEqual([
     "cloud",
     "dawn",
@@ -227,5 +228,46 @@ test("ships the twelve redsun themes, each resolving in the mode it declares", (
     // falls back to the generic default and the theme reads as unfinished.
     expect(resolved.logo.gradient.start, name).toBeDefined()
     expect(resolved.logo.gradient.end, name).toBeDefined()
+  }
+})
+
+test("shipped themes resolve only to colours they declare", () => {
+  // The TUI must never paint a shade a theme file did not name. Migration snaps
+  // every hue step to a declared anchor rather than interpolating between them,
+  // so this covers the whole hue block and every semantic slot in the base,
+  // elevated and overlay views. It is an invariant of the shipped twelve, not
+  // of the format: `selectedForeground` still falls back to pure black or white
+  // for a theme that declares a transparent background and no
+  // `selectedListItemText`, and none of these do.
+  const hex = (color: RGBA) => {
+    const [r, g, b, a] = color.toInts()
+    const byte = (value: number) => value.toString(16).padStart(2, "0")
+    return `#${byte(r)}${byte(g)}${byte(b)}${a === 255 ? "" : byte(a)}`
+  }
+
+  function* colors(value: unknown, path = ""): Generator<[string, RGBA]> {
+    if (value instanceof RGBA) {
+      yield [path, value]
+      return
+    }
+    if (!value || typeof value !== "object") return
+    for (const [key, entry] of Object.entries(value)) {
+      yield* colors(entry, path ? `${path}.${key}` : key)
+    }
+  }
+
+  for (const [name, source] of Object.entries(DEFAULT_THEMES)) {
+    const document = parseTheme(source, name)
+    const mode = document.light ? "light" : "dark"
+    // resolveTheme answers with exactly the colours the file names, having
+    // already walked `defs`, mode forks and ANSI codes.
+    const declared = new Set([...colors(resolveTheme(source as never, mode))].map(([, color]) => hex(color)))
+    expect(declared.size, name).toBeGreaterThan(0)
+
+    for (const [path, color] of colors(resolveThemeDocument(document, mode))) {
+      // A token may opt out of painting entirely.
+      if (color.toInts()[3] === 0) continue
+      expect(declared, `${name}.${path}`).toContain(hex(color))
+    }
   }
 })
