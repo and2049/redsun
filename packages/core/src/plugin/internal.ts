@@ -52,6 +52,7 @@ import { RedsunComposePlugin } from "./redsun/compose.js"
 import { RedsunProjectMemory } from "./redsun/project-memory.js"
 import { RedsunContextOptimizer } from "./redsun/context-optimizer.js"
 import { RedsunGoal } from "./redsun/goal.js"
+import { RedsunTodo } from "./redsun/todo.js"
 import { RedsunWorkerModelTool } from "./redsun/worker-model-tool.js"
 import { ClaudeCodeProviderPlugin } from "./redsun/claude-code/provider.js"
 import { EditTool } from "../tool/plugin/edit.js"
@@ -253,6 +254,7 @@ const post = [
   RedsunProjectMemory.Plugin,
   RedsunContextOptimizer.Plugin,
   RedsunGoal.Plugin,
+  RedsunTodo.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 export const list = Effect.fn("PluginInternal.list")(function* () {

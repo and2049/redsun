@@ -2467,6 +2467,9 @@ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }
       <Match when={display() === "skill"}>
         <Skill {...toolprops} />
       </Match>
+      <Match when={display() === "todowrite"}>
+        <TodoWrite {...toolprops} />
+      </Match>
       <Match when={true}>
         <GenericTool {...toolprops} />
       </Match>
@@ -3141,6 +3144,73 @@ function Write(props: ToolProps) {
   )
 }
 
+type TodoItem = { content: string; status: string }
+
+function todoItems(value: unknown): TodoItem[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (item): item is TodoItem =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as TodoItem).content === "string" &&
+      typeof (item as TodoItem).status === "string",
+  )
+}
+
+const TODO_GLYPHS: Record<string, string> = {
+  pending: "◻",
+  in_progress: "◐",
+  completed: "◼",
+  cancelled: "✗",
+}
+
+function TodoWrite(props: ToolProps) {
+  const theme = useTheme()
+  // Both writers land here: redsun's todowrite metadata and Claude Code's mirrored
+  // TodoWrite input. Fall back to the call input while the result is streaming.
+  const todos = createMemo(() => {
+    const fromMetadata = todoItems(props.metadata.todos)
+    return fromMetadata.length > 0 ? fromMetadata : todoItems(props.input.todos)
+  })
+  const open = createMemo(
+    () => todos().filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length,
+  )
+  const [expanded, setExpanded] = createSignal(true)
+  const color = (status: string) => {
+    if (status === "in_progress") return theme.accent
+    if (status === "completed" || status === "cancelled") return theme.text.subdued
+    return theme.text.default
+  }
+  return (
+    <>
+      <InlineTool
+        icon="☰"
+        name="Tasks"
+        pending="Updating tasks..."
+        complete={todos().length > 0}
+        part={props.part}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {todos().length} task{todos().length === 1 ? "" : "s"} ({open()} open)
+      </InlineTool>
+      <Show when={expanded() && todos().length > 0}>
+        <box paddingLeft={TRANSCRIPT_GUTTER + INLINE_TOOL_ICON_WIDTH}>
+          <For each={todos()}>
+            {(todo) => (
+              <text
+                fg={color(todo.status)}
+                attributes={todo.status === "cancelled" ? TextAttributes.STRIKETHROUGH : undefined}
+              >
+                {TODO_GLYPHS[todo.status] ?? "◻"} {todo.content}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
+    </>
+  )
+}
+
 function Glob(props: ToolProps) {
   const pathFormatter = usePathFormatter()
   return (
@@ -3663,6 +3733,7 @@ const toolDisplays = new Set([
   "patch",
   "question",
   "skill",
+  "todowrite",
 ])
 
 export function toolDisplay(tool: string) {
