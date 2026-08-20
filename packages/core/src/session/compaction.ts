@@ -5,8 +5,10 @@ import type { StreamOptions } from "@opencode-ai/ai/route"
 import { SessionError } from "@opencode-ai/schema/session-error"
 import { Document, type Entry } from "@opencode-ai/schema/config"
 import { Context, Effect, Layer, Stream } from "effect"
+import { ConfigCompaction } from "@opencode-ai/schema/config/compaction"
 import { Config } from "../config.js"
 import { Bus } from "../bus.js"
+import { CompactionExtractor } from "./compaction-extractor.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { llmClient } from "../effect/app-node-platform.js"
 import { SessionEvent } from "./event.js"
@@ -60,10 +62,14 @@ Rules:
 - Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers when known.
 - Do not mention the summary process or that context was compacted.`
 
+// REDSUN: strategy selection (hybrid default) with the v1 inventory extractor.
 type Settings = {
   readonly auto: boolean
   readonly buffer: number
   readonly tokens: number
+  readonly strategy: ConfigCompaction.Strategy
+  readonly keepRecent: number
+  readonly maxToolResults: number
 }
 
 type Dependencies = {
@@ -172,13 +178,20 @@ const settings = (documents: readonly Entry[]) => {
     auto: configured.findLast((value) => value.auto !== undefined)?.auto ?? true,
     buffer: configured.findLast((value) => value.buffer !== undefined)?.buffer ?? DEFAULT_BUFFER,
     tokens: configured.findLast((value) => value.keep?.tokens !== undefined)?.keep?.tokens ?? DEFAULT_KEEP_TOKENS,
+    strategy: configured.findLast((value) => value.strategy !== undefined)?.strategy ?? "hybrid",
+    keepRecent:
+      configured.findLast((value) => value.keep_recent !== undefined)?.keep_recent ??
+      CompactionExtractor.DEFAULT_KEEP_RECENT,
+    maxToolResults:
+      configured.findLast((value) => value.max_tool_results !== undefined)?.max_tool_results ??
+      CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS,
   }
 }
 
 const select = (
   messages: readonly SessionMessage.Info[],
   tokens: number,
-): { readonly head: string; readonly recent: string } | undefined => {
+): { readonly head: readonly { message: SessionMessage.Info; text: string }[]; readonly recent: string } | undefined => {
   const conversation = messages
     .filter((message) => message.type !== "compaction" && message.type !== "system")
     .flatMap((message) => {
@@ -200,10 +213,7 @@ const select = (
     if (latestUser > 0) split = latestUser
   }
   return {
-    head: conversation
-      .slice(0, split)
-      .map((item) => item.text)
-      .join("\n\n"),
+    head: conversation.slice(0, split),
     recent: conversation
       .slice(split)
       .map((item) => item.text)
@@ -211,28 +221,72 @@ const select = (
   }
 }
 
-export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
+const headText = (head: readonly { message: SessionMessage.Info; text: string }[]) =>
+  head.map((item) => item.text).join("\n\n")
+
+export const buildPrompt = (input: {
+  readonly previousSummary?: string
+  readonly inventory?: string
+  readonly context: readonly string[]
+}) =>
   [
     input.previousSummary
       ? `Update the anchored summary below using the conversation history above.\nPreserve still-true details, remove stale details, and merge in the new facts.\n<previous-summary>\n${input.previousSummary}\n</previous-summary>`
       : "Create a new anchored summary from the conversation history.",
     SUMMARY_TEMPLATE,
+    ...(input.inventory
+      ? [
+          `The structured inventory below already records files, tool results, failures, and explicit requirements from the earlier conversation. Fold it into the summary, preserving the semantic context it cannot capture — decisions and reasoning, relationships between work items, constraints, current state, and concrete next steps — without repeating it verbatim.\n\n## Structured Inventory\n\n${input.inventory}`,
+        ]
+      : []),
     "The following is the conversation history:",
     ...input.context,
   ].join("\n\n")
 
-const planContent = (messages: readonly SessionMessage.Info[], tokens: number) => {
-  const selected = select(messages, tokens)
+// REDSUN: strategy-aware content planning. "hybrid" (default) represents the older head
+// through the deterministic inventory and serializes only the newest keepRecent head
+// messages; "algorithmic" produces the summary with no LLM call at all; "llm" is
+// upstream behavior untouched.
+type PlanContent =
+  | { readonly kind: "llm"; readonly prompt: string; readonly recent: string }
+  | { readonly kind: "algorithmic"; readonly summary: string; readonly recent: string }
+
+const planContent = (messages: readonly SessionMessage.Info[], config: Settings): PlanContent | undefined => {
+  const selected = select(messages, config.tokens)
   if (!selected) return
-  const previousSummary = messages.findLast(
-    (message) => message.type === "compaction" && message.status === "completed",
-  )
-  const previousRecent = previousSummary?.type === "compaction" ? previousSummary.recent : ""
-  const summarizeRecent = !previousRecent && !selected.head
+  const previous = messages.findLast((message) => message.type === "compaction" && message.status === "completed")
+  const previousSummary = previous?.type === "compaction" ? previous.summary : undefined
+  const previousRecent = previous?.type === "compaction" ? previous.recent : ""
+  const summarizeRecent = !previousRecent && selected.head.length === 0
+  if (config.strategy === "algorithmic") {
+    const inventory = CompactionExtractor.serialize(
+      CompactionExtractor.extract(
+        selected.head.map((item) => item.message),
+        config.maxToolResults,
+      ),
+    )
+    const summary = [previousSummary && `## Previous Summary\n\n${previousSummary}`, inventory]
+      .filter(Boolean)
+      .join("\n\n")
+    if (!summary.trim()) return
+    return { kind: "algorithmic", summary, recent: selected.recent }
+  }
+  const hybrid = config.strategy === "hybrid" && !summarizeRecent && selected.head.length > 0
+  const inventory = hybrid
+    ? CompactionExtractor.serialize(
+        CompactionExtractor.extract(
+          selected.head.map((item) => item.message),
+          config.maxToolResults,
+        ),
+      )
+    : undefined
+  const conversation = hybrid ? headText(selected.head.slice(-config.keepRecent)) : headText(selected.head)
   return {
+    kind: "llm",
     prompt: buildPrompt({
-      previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
-      context: summarizeRecent ? [selected.recent] : [previousRecent, selected.head].filter(Boolean),
+      previousSummary,
+      inventory: inventory || undefined,
+      context: summarizeRecent ? [selected.recent] : [previousRecent, conversation].filter(Boolean),
     }),
     recent: summarizeRecent ? "" : selected.recent,
   }
@@ -348,8 +402,41 @@ const make = (dependencies: Dependencies) => {
     })
     return { status: "completed" as const }
   })
+  // REDSUN: the algorithmic strategy publishes the deterministic summary through the same
+  // Started/Ended event pair as the LLM path, so the projection is identical — with no
+  // model call, no usage, and no failure surface beyond "nothing to compact".
+  const executeAlgorithmic = Effect.fn("SessionCompaction.executeAlgorithmic")(function* (input: {
+    readonly session: SessionSchema.Info
+    readonly reason: SessionMessage.Compaction["reason"]
+    readonly summary: string
+    readonly recent: string
+    readonly inputID?: SessionMessage.ID
+    readonly started?: boolean
+  }) {
+    if (!input.started)
+      yield* dependencies.bus.publish(SessionEvent.Compaction.Started, {
+        sessionID: input.session.id,
+        reason: input.reason,
+        recent: input.recent,
+        inputID: input.inputID,
+      })
+    yield* dependencies.bus.publish(SessionEvent.Compaction.Ended, {
+      sessionID: input.session.id,
+      reason: input.reason,
+      text: input.summary,
+      recent: input.recent,
+    })
+    return { status: "completed" as const }
+  })
   const compact = Effect.fn("SessionCompaction.compact")(function* (input: AutoInput) {
-    const content = planContent(input.messages, config.tokens)
+    const content = planContent(input.messages, config)
+    if (content?.kind === "algorithmic")
+      return yield* executeAlgorithmic({
+        session: input.session,
+        reason: "auto",
+        summary: content.summary,
+        recent: content.recent,
+      })
     if (content)
       return yield* execute({
         session: input.session,
@@ -357,7 +444,8 @@ const make = (dependencies: Dependencies) => {
         ref: input.ref,
         cost: input.cost,
         reason: "auto",
-        ...content,
+        prompt: content.prompt,
+        recent: content.recent,
       })
     const error = { type: "compaction.unavailable" as const, message: "Nothing to compact yet" }
     return yield* failed({
@@ -387,13 +475,22 @@ const make = (dependencies: Dependencies) => {
     return used >= promptCeiling
   }
   const compactManual = Effect.fn("SessionCompaction.compactManual")(function* (input: ManualInput) {
-    const content = planContent(input.messages, config.tokens)
+    const content = planContent(input.messages, config)
     if (!content)
       return yield* failed({
         sessionID: input.session.id,
         reason: "manual",
         error: { type: "compaction.unavailable", message: "Nothing to compact yet" },
         inputID: input.inputID,
+      })
+    if (content.kind === "algorithmic")
+      return yield* executeAlgorithmic({
+        session: input.session,
+        reason: "manual",
+        summary: content.summary,
+        recent: content.recent,
+        inputID: input.inputID,
+        started: input.started,
       })
     const resolved = yield* dependencies.models.resolve(input.session).pipe(
       Effect.catch((cause) =>
@@ -414,7 +511,8 @@ const make = (dependencies: Dependencies) => {
       reason: "manual",
       inputID: input.inputID,
       started: input.started,
-      ...content,
+      prompt: content.prompt,
+      recent: content.recent,
     })
   })
   return Service.of({

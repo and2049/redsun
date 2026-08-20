@@ -365,6 +365,24 @@ function normalizeCompaction(
     : undefined
   const buffer = prefer(legacyBuffer, nativeBuffer, ["compaction", "buffer"], diagnostics)
   if (buffer !== undefined) result.buffer = buffer
+  unsupportedIfPresent(input.compaction, "triggerThreshold", ["compaction", "triggerThreshold"], diagnostics)
+  unsupportedIfPresent(input.compaction, "resetThreshold", ["compaction", "resetThreshold"], diagnostics)
+  for (const [key, legacyKey] of [
+    ["strategy", undefined],
+    ["keep_recent", "keepRecent"],
+    ["max_tool_results", "maxToolResults"],
+  ] as const) {
+    const field = ConfigCompaction.Info.fields[key]
+    const legacy =
+      legacyKey && own(input.compaction, legacyKey)
+        ? decodeEncoded(field, input.compaction[legacyKey], ["compaction", legacyKey], diagnostics)
+        : undefined
+    const native = own(input.compaction, key)
+      ? decodeEncoded(field, input.compaction[key], ["compaction", key], diagnostics)
+      : undefined
+    const value = prefer(legacy, native, ["compaction", key], diagnostics)
+    if (value !== undefined) result[key] = value
+  }
   if (Object.keys(result).length || !Object.keys(input.compaction).length) encoded.compaction = result
 }
 

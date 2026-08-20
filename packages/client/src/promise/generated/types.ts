@@ -1563,7 +1563,14 @@ export type ConfigEntry =
                 }
           }
         }
-        compaction?: { auto?: boolean; keep?: { tokens?: number }; buffer?: number }
+        compaction?: {
+          auto?: boolean
+          keep?: { tokens?: number }
+          buffer?: number
+          strategy?: "hybrid" | "algorithmic" | "llm"
+          keep_recent?: number
+          max_tool_results?: number
+        }
         skills?: Array<string>
         commands?: {
           [x: string]: {
@@ -1639,7 +1646,7 @@ export type ConfigEntry =
           config_dir?: string
           permission_mode?: string
           worker_permission_mode?: string
-          extra_args?: Array<string>
+          extra_args?: Array<string> | { [x: string]: string | null }
           env?: { [x: string]: string }
         }
       }
