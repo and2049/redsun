@@ -128,6 +128,8 @@ const GOAL_METADATA_KEY = "redsun.goal"
 const GOAL_BUDGET_KEY = "redsun.goal.budget"
 const GOAL_VERDICT_KEY = "redsun.goal.verdict"
 const GOAL_CLEAR = "__clear__"
+// Message-metadata key stamped on advisor asides (core/src/plugin/redsun/advisor.ts).
+const ADVISOR_METADATA_KEY = "redsun.advisor"
 type PendingAction = "steer" | "queue" | "cancel"
 
 const context = createContext<{
@@ -1983,11 +1985,29 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
     if (state() === "cancelled") return theme.text.feedback.warning.default
     return theme.text.feedback.info.default
   }
+  // REDSUN: goal verdicts and advisor notes carry metadata that colors the notice row.
+  const goalVerdict = () =>
+    metadata()?.[GOAL_VERDICT_KEY] as
+      | { ok?: boolean; impossible?: boolean; error?: boolean; cleared?: string }
+      | undefined
+  const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
+  const noticeLabel = () => (goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : "Notice")
+  const noticeIcon = () => (goalVerdict() ? "◎" : "◈")
+  const noticeColor = () => {
+    const verdict = goalVerdict()
+    if (verdict) {
+      if (verdict.ok) return theme.text.feedback.success.default
+      if (verdict.error || verdict.impossible) return theme.text.feedback.error.default
+      return theme.text.feedback.warning.default
+    }
+    if (advisorNote()) return theme.text.feedback.info.default
+    return theme.text.subdued
+  }
   return (
     <Show
       when={completion()}
       fallback={
-        <InlineToolRow icon="◈" color={theme.text.subdued} pending="Notice" complete={true}>
+        <InlineToolRow icon={noticeIcon()} color={noticeColor()} pending={noticeLabel()} complete={true}>
           {text()}
         </InlineToolRow>
       }
