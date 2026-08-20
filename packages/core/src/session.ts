@@ -232,6 +232,11 @@ export interface Interface {
   readonly generate: (input: {
     sessionID: SessionSchema.ID
     prompt: string
+    // REDSUN: judge/advisor controls — see SessionGenerate.Interface.
+    system?: string
+    temperature?: number
+    model?: Model.Ref
+    tools?: boolean
   }) => Effect.Effect<string, NotFoundError | SessionGenerate.Error>
   readonly command: (input: {
     id?: SessionMessage.ID

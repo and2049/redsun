@@ -848,7 +848,13 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/generate`,
-            body: { prompt: input["prompt"] },
+            body: {
+              prompt: input["prompt"],
+              system: input["system"],
+              temperature: input["temperature"],
+              model: input["model"],
+              tools: input["tools"],
+            },
             successStatus: 200,
             declaredStatuses: [404, 503, 400, 401],
             empty: false,

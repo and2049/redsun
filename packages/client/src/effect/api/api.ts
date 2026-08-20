@@ -302,7 +302,14 @@ export type SessionInstructionsEntryRemoveOperation<E = never> = (
   input: Endpoint5_29Input,
 ) => Effect.Effect<Endpoint5_29Output, E>
 
-export type Endpoint5_30Input = { readonly sessionID: Session.ID; readonly prompt: string }
+export type Endpoint5_30Input = {
+  readonly sessionID: Session.ID
+  readonly prompt: string
+  readonly system?: string | undefined
+  readonly temperature?: number | undefined
+  readonly model?: Model.Ref | undefined
+  readonly tools?: boolean | undefined
+}
 export type Endpoint5_30Output = { readonly text: string }
 export type SessionGenerateOperation<E = never> = (input: Endpoint5_30Input) => Effect.Effect<Endpoint5_30Output, E>
 

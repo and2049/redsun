@@ -30,24 +30,31 @@ export const layer = Layer.effect(
     return SessionGenerate.Service.of({
       generate: Effect.fn("SessionGenerate.generate")(function* (input) {
         const selection = yield* context.select(input.sessionID)
-        const model = yield* models.resolve(selection.session)
+        // REDSUN: judge/advisor controls — optional model override, replacement system
+        // prompt, tool suppression, and temperature for transient evaluation calls.
+        const model = yield* models.resolve(
+          input.model ? { ...selection.session, model: input.model } : selection.session,
+        )
         const history = yield* SessionHistory.preview(database.db, selection.session.id, selection.instructions)
         const providerMetadataKey = model.model.route.providerMetadataKey ?? model.model.provider
         const tools = selection.tools
-        const toolDefinitions = tools.definitions
+        const toolDefinitions = input.tools === false ? [] : tools.definitions
         const toolsByName = new Map(toolDefinitions.map((tool) => [tool.name, tool]))
         const contextEvent = yield* hooks.trigger("session", "context", {
           sessionID: selection.session.id,
           agent: selection.agent.id,
           model: model.ref,
-          system: [
-            selection.agent.info.system
-              ? selection.agent.info.system
-              : SessionSystemPrompt.make(toolDefinitions.map((tool) => tool.name)),
-            history.initial,
-          ]
-            .filter((part) => part.length > 0)
-            .map(SystemPart.make),
+          system:
+            input.system !== undefined
+              ? [SystemPart.make(input.system)]
+              : [
+                  selection.agent.info.system
+                    ? selection.agent.info.system
+                    : SessionSystemPrompt.make(toolDefinitions.map((tool) => tool.name)),
+                  history.initial,
+                ]
+                  .filter((part) => part.length > 0)
+                  .map(SystemPart.make),
           messages: [
             ...toLLMMessages(history.messages, model.ref, providerMetadataKey),
             ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
@@ -79,6 +86,8 @@ export const layer = Layer.effect(
             system: contextEvent.system,
             messages: contextEvent.messages,
             tools: hookedTools,
+            ...(input.tools === false ? { toolChoice: "none" as const } : {}),
+            ...(input.temperature !== undefined ? { generation: { temperature: input.temperature } } : {}),
           }),
           {
             http: SessionModelHttp.middleware(hooks, {
