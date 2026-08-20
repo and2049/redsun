@@ -87,6 +87,7 @@ import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { formatGoalBudget, parseGoalArgs } from "../../util/goal"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { useLocation } from "../../context/location"
@@ -124,6 +125,8 @@ const TRANSCRIPT_BACKFILL_CHUNK = 60
 
 // Prompt-metadata contract with the redsun goal plugin (core/src/plugin/redsun/goal.ts).
 const GOAL_METADATA_KEY = "redsun.goal"
+const GOAL_BUDGET_KEY = "redsun.goal.budget"
+const GOAL_VERDICT_KEY = "redsun.goal.verdict"
 const GOAL_CLEAR = "__clear__"
 type PendingAction = "steer" | "queue" | "cancel"
 
@@ -788,23 +791,35 @@ export function Session() {
         arguments: true as const,
       },
       run: async (input?: string) => {
-        const condition = input?.trim() ?? ""
+        const raw = input?.trim() ?? ""
         const selection = local.model.current()
         // A delegated Claude Code session runs its own /goal loop: forward the
-        // literal command text so the CLI handles it, and store nothing here.
+        // literal command text (flags included) so the CLI handles it, and store
+        // nothing here.
         if (selection?.providerID === "claude-code") {
           await client.api.session.prompt({
             sessionID: route.sessionID,
-            text: condition ? `/goal ${condition}` : "/goal",
+            text: raw ? `/goal ${raw}` : "/goal",
           })
           dialog.clear()
           return
         }
-        if (!condition) {
+        const parsed = parseGoalArgs(raw)
+        if (parsed.error) {
+          toast.show({ message: `/goal: ${parsed.error}`, variant: "error" })
+          return
+        }
+        if (!parsed.condition) {
+          // resume: false keeps the clear from waking the session for a model turn.
           await client.api.session.synthetic({
             sessionID: route.sessionID,
             text: "Goal cleared.",
-            metadata: { [GOAL_METADATA_KEY]: GOAL_CLEAR },
+            description: "Goal cleared.",
+            resume: false,
+            metadata: {
+              [GOAL_METADATA_KEY]: GOAL_CLEAR,
+              [GOAL_VERDICT_KEY]: { ok: false, reason: "cleared by user", attempt: 0, cleared: "manual" },
+            },
           })
           toast.show({ message: "Goal cleared", variant: "info" })
           dialog.clear()
@@ -814,10 +829,16 @@ export function Session() {
         // the redsun goal plugin reads to arm the judge loop.
         await client.api.session.prompt({
           sessionID: route.sessionID,
-          text: condition,
-          metadata: { [GOAL_METADATA_KEY]: condition },
+          text: parsed.condition,
+          metadata: {
+            [GOAL_METADATA_KEY]: parsed.condition,
+            ...(parsed.budget ? { [GOAL_BUDGET_KEY]: parsed.budget as { [key: string]: number } } : {}),
+          },
         })
-        toast.show({ message: "Goal set", variant: "info" })
+        toast.show({
+          message: parsed.budget ? `Goal set (budget: ${formatGoalBudget(parsed.budget)})` : "Goal set",
+          variant: "info",
+        })
         dialog.clear()
       },
     },
