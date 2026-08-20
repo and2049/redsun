@@ -2,6 +2,8 @@ export function canonicalToolName(name: string) {
   if (name === "bash") return "shell"
   if (name === "task") return "subagent"
   if (name === "apply_patch") return "patch"
+  // Claude Code's delegated task-list tool renders through the same checklist row.
+  if (name === "TodoWrite") return "todowrite"
   return name
 }
 
