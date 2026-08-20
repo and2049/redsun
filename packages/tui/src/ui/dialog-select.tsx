@@ -571,47 +571,41 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   }
 
   function FooterAction(action: { item: VisibleAction }) {
-    if (!isActionItem(action.item))
+    if (!isActionItem(action.item)) {
+      const hint = action.item
       return (
-        <text>
-          <span style={{ fg: theme.text.default }}>
-            <b>{action.item.title}</b>{" "}
-          </span>
-          <span style={{ fg: theme.text.subdued }}>{action.item.label}</span>
-        </text>
+        <box flexDirection="column" flexShrink={0}>
+          <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
+            {hint.title}
+          </text>
+          <text fg={theme.text.subdued}>{hint.label}</text>
+        </box>
       )
+    }
     const item = action.item
     const active = createMemo(() => isActionFocused(item))
     const disabled = createMemo(() => isActionDisabled(item))
     return (
-      <box
-        flexDirection="row"
-        backgroundColor={active() ? theme.background.action.primary.focused : RGBA.fromInts(0, 0, 0, 0)}
-        onMouseUp={() => trigger(item)}
-      >
-        <text
-          fg={
-            disabled()
-              ? theme.text.action.primary.disabled
-              : active()
-                ? theme.text.action.primary.focused
-                : theme.text.default
-          }
-          attributes={active() ? TextAttributes.BOLD : undefined}
+      <box flexDirection="column" flexShrink={0}>
+        <box
+          flexDirection="row"
+          backgroundColor={active() ? theme.background.action.primary.focused : RGBA.fromInts(0, 0, 0, 0)}
+          onMouseUp={() => trigger(item)}
         >
-          {item.title}
-        </text>
-        <text
-          fg={
-            disabled()
-              ? theme.text.action.primary.disabled
-              : active()
-                ? theme.text.action.primary.focused
-                : theme.text.subdued
-          }
-        >
-          {" " + item.label}
-        </text>
+          <text
+            fg={
+              disabled()
+                ? theme.text.action.primary.disabled
+                : active()
+                  ? theme.text.action.primary.focused
+                  : theme.text.default
+            }
+            attributes={active() ? TextAttributes.BOLD : undefined}
+          >
+            {item.title}
+          </text>
+        </box>
+        <text fg={disabled() ? theme.text.action.primary.disabled : theme.text.subdued}>{item.label}</text>
       </box>
     )
   }
