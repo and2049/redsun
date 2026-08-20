@@ -1,3 +1,4 @@
+import GoalStatus from "../feature-plugins/goal/status"
 import HomeFooter from "../feature-plugins/home/footer"
 import PromptFooter from "../feature-plugins/prompt/footer"
 import SidebarContext from "../feature-plugins/sidebar/context"
@@ -10,6 +11,7 @@ import Storybook from "../feature-plugins/system/storybook"
 import Merman from "@opencode-ai/merman/plugin"
 
 export const builtins = [
+  GoalStatus,
   HomeFooter,
   PromptFooter,
   SidebarContext,
