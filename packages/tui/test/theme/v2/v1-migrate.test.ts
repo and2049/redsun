@@ -70,7 +70,7 @@ test("references generated hues from matching token colors", () => {
   expect(migrated.light.markdown?.emphasis).toBe("#123456")
 })
 
-test("infers chromatic hues, anchors light and dark colors, and aliases ambiguous hues to gray", () => {
+test("infers chromatic hues, pins them to the declared colour, and aliases ambiguous hues to gray", () => {
   const source = v1Theme()
   const ambiguous = { light: "#808080", dark: "#808080" }
   source.theme.accent = ambiguous
@@ -87,10 +87,12 @@ test("infers chromatic hues, anchors light and dark colors, and aliases ambiguou
   const darkRed = migrated.dark.hue?.red
   if (typeof lightRed !== "object" || typeof darkRed !== "object") throw new Error("Expected generated red scales")
 
+  // A chromatic hue declares exactly one colour, so every step answers with it
+  // rather than an interpolation the theme never named.
   expect(lightRed[800]).toBe("#ff6666")
   expect(darkRed[200]).toBe("#450000")
-  expect(lightRed[900]).not.toBe(lightRed[800])
-  expect(darkRed[100]).not.toBe(darkRed[200])
+  expect(new Set(Object.values(lightRed))).toEqual(new Set(["#ff6666"]))
+  expect(new Set(Object.values(darkRed))).toEqual(new Set(["#450000"]))
   expect(migrated.light.hue?.orange).toBe("$hue.gray")
   expect(migrated.light.hue?.yellow).toBe("$hue.gray")
   expect(migrated.light.hue?.green).toBe("$hue.gray")
@@ -187,7 +189,7 @@ test("uses default categorical hues when V1 semantic colors are ambiguous", () =
   expect(migrated.dark?.categorical).toEqual(DEFAULT_CATEGORICAL)
 })
 
-test("builds and extrapolates gray from V1 surfaces and text without using menus or borders", () => {
+test("builds gray from V1 surfaces and text without using menus or borders", () => {
   const source = v1Theme()
   source.theme.background = { light: "#eeeeee", dark: "#111111" }
   source.theme.backgroundPanel = { light: "#dddddd", dark: "#222222" }
@@ -203,20 +205,26 @@ test("builds and extrapolates gray from V1 surfaces and text without using menus
   const darkGray = migrated.dark.hue?.gray
   if (typeof lightGray !== "object" || typeof darkGray !== "object") throw new Error("Expected concrete gray scales")
 
-  expect(lightGray[100]).not.toBe(lightGray[200])
+  // Five steps per mode are the colours the file names; the other four take the
+  // nearest anchor at or below them, so no step invents a shade.
   expect(lightGray[200]).toBe(hex(light.background))
   expect(lightGray[300]).toBe(hex(light.backgroundPanel))
   expect(lightGray[400]).toBe(hex(light.backgroundElement))
   expect(lightGray[600]).toBe(hex(light.textMuted))
   expect(lightGray[800]).toBe(hex(light.text))
-  expect(lightGray[900]).not.toBe(lightGray[800])
-  expect(darkGray[100]).not.toBe(darkGray[200])
+  expect(lightGray[100]).toBe(lightGray[200])
+  expect(lightGray[500]).toBe(lightGray[400])
+  expect(lightGray[700]).toBe(lightGray[600])
+  expect(lightGray[900]).toBe(lightGray[800])
   expect(darkGray[200]).toBe(hex(dark.text))
   expect(darkGray[400]).toBe(hex(dark.textMuted))
   expect(darkGray[600]).toBe(hex(dark.backgroundElement))
   expect(darkGray[700]).toBe(hex(dark.backgroundPanel))
   expect(darkGray[800]).toBe(hex(dark.background))
-  expect(darkGray[900]).not.toBe(darkGray[800])
+  expect(darkGray[100]).toBe(darkGray[200])
+  expect(darkGray[300]).toBe(darkGray[200])
+  expect(darkGray[500]).toBe(darkGray[400])
+  expect(darkGray[900]).toBe(darkGray[800])
 
   source.theme.borderSubtle = "#ff00ff"
   source.theme.border = "#00ff00"

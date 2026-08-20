@@ -2285,7 +2285,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
                   <text fg={theme.text.default}>
                     <span
                       style={{
-                        bg: theme.hue.accent[mode() === "light" ? 700 : 200],
+                        bg: theme.accent,
                         fg: theme.background.default,
                         bold: true,
                       }}
@@ -2309,7 +2309,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
                     <text fg={theme.text.default}>
                       <span
                         style={{
-                          bg: theme.hue.accent[mode() === "light" ? 700 : 200],
+                          bg: theme.accent,
                           fg: theme.background.default,
                           bold: true,
                         }}

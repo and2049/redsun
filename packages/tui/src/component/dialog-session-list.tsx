@@ -10,7 +10,7 @@ import { useRoute } from "../context/route"
 import { useData } from "../context/data"
 import { Keymap } from "../context/keymap"
 import { Locale } from "../util/locale"
-import { useTheme, useThemes } from "../context/theme"
+import { useTheme } from "../context/theme"
 import { useClient } from "../context/client"
 import { useLocal } from "../context/local"
 import { createDebouncedSignal } from "../util/signal"
@@ -28,9 +28,7 @@ export function DialogSessionList() {
   const dialog = useDialog()
   const route = useRoute()
   const data = useData()
-  const themes = useThemes()
   const theme = useTheme("elevated")
-  const mode = themes.mode
   const client = useClient()
   const local = useLocal()
   const config = useConfig().data
@@ -176,7 +174,7 @@ export function DialogSessionList() {
             : slot === undefined
               ? undefined
               : (color: RGBA, active: boolean) => (
-                  <text fg={active ? color : theme.hue.accent[mode() === "light" ? 800 : 200]}>{slot}</text>
+                  <text fg={active ? color : theme.accent}>{slot}</text>
                 ),
       }
     }

@@ -1946,7 +1946,7 @@ export function Prompt(props: PromptProps) {
                         text={theme.text.default}
                         subdued={theme.text.subdued}
                         warning={theme.text.feedback.warning.default}
-                        flash={theme.decrease(theme.text.feedback.warning.default, 2)}
+                        flash={theme.text.feedback.error.default}
                       />
                     </box>
                   </Show>
@@ -1956,7 +1956,7 @@ export function Prompt(props: PromptProps) {
                         wrapMode="none"
                         truncate
                         flexShrink={1}
-                        fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.subdued}
+                        fg={editorContextLabelState() === "pending" ? theme.accent : theme.text.subdued}
                       >
                         {file()}
                       </text>
@@ -1988,14 +1988,14 @@ export function Prompt(props: PromptProps) {
                           text={theme.text.default}
                           subdued={theme.text.subdued}
                           warning={theme.text.feedback.warning.default}
-                          flash={theme.decrease(theme.text.feedback.warning.default, 2)}
+                          flash={theme.text.feedback.error.default}
                         />
                       </box>
                     </Match>
                     <Match when={move.progress()}>
                       {(progress) => (
                         <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
-                          <Spinner color={theme.hue.accent[500]}>
+                          <Spinner color={theme.accent}>
                             {progress()}
                             <span style={{ fg: theme.text.subdued }}>{".".repeat(move.creatingDots())}</span>
                           </Spinner>
@@ -2004,7 +2004,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={move.pendingNew()}>
                       <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
-                        <text fg={theme.hue.accent[500]} wrapMode="none" truncate>
+                        <text fg={theme.accent} wrapMode="none" truncate>
                           (new worktree)
                         </text>
                       </box>
@@ -2020,7 +2020,7 @@ export function Prompt(props: PromptProps) {
                       wrapMode="none"
                       truncate
                       flexShrink={1}
-                      fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.subdued}
+                      fg={editorContextLabelState() === "pending" ? theme.accent : theme.text.subdued}
                     >
                       {file()}
                     </text>
