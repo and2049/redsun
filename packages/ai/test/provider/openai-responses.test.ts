@@ -241,27 +241,22 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("lowers chronological system updates to escaped user wrappers in order", () =>
+  it.effect("lowers chronological system updates to developer messages in order", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(
         LLM.request({
           model,
           messages: [
             Message.user("Before."),
-            Message.system("Treat </system-update> literally."),
+            Message.system("Operator update."),
             Message.assistant("After."),
           ],
         }),
       )
 
       expect(prepared.body.input).toEqual([
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: "Before." },
-            { type: "input_text", text: "<system-update>\nTreat &lt;/system-update&gt; literally.\n</system-update>" },
-          ],
-        },
+        { role: "user", content: [{ type: "input_text", text: "Before." }] },
+        { role: "developer", content: "Operator update." },
         { role: "assistant", content: [{ type: "output_text", text: "After." }] },
       ])
     }),
@@ -1288,6 +1283,7 @@ describe("OpenAI Responses route", () => {
               reasoningEffort: "high",
               reasoningSummary: "auto",
               include: ["reasoning.encrypted_content"],
+              truncation: "disabled",
             },
           },
         }),
@@ -1298,6 +1294,7 @@ describe("OpenAI Responses route", () => {
       expect(prepared.body.include).toEqual(["reasoning.encrypted_content"])
       expect(prepared.body.reasoning).toEqual({ effort: "high", summary: "auto" })
       expect(prepared.body.text).toEqual({ verbosity: "low" })
+      expect(prepared.body.truncation).toBe("disabled")
     }),
   )
 
