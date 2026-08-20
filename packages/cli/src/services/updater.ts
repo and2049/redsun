@@ -137,7 +137,10 @@ export const layer = Layer.effect(
         }),
       )
       if (result.code === 0) return
-      return yield* Effect.fail(new Error(result.stderr.trim() || `Failed to update with ${method}`))
+      // install.ps1 prints its failure reasons to stdout (Write-Host), so fall
+      // back to stdout before the generic message.
+      const detail = result.stderr.trim() || result.stdout.trim()
+      return yield* Effect.fail(new Error(detail || `Failed to update with ${method}`))
     })
 
     const check = Effect.fn("cli.updater.check")(
