@@ -51,6 +51,7 @@ import { PatchTool } from "../tool/plugin/patch.js"
 import { RedsunComposePlugin } from "./redsun/compose.js"
 import { RedsunProjectMemory } from "./redsun/project-memory.js"
 import { RedsunContextOptimizer } from "./redsun/context-optimizer.js"
+import { RedsunAdvisor } from "./redsun/advisor.js"
 import { RedsunGoal } from "./redsun/goal.js"
 import { RedsunTodo } from "./redsun/todo.js"
 import { RedsunMultiedit } from "./redsun/multiedit.js"
@@ -255,6 +256,7 @@ const post = [
   RedsunProjectMemory.Plugin,
   RedsunContextOptimizer.Plugin,
   RedsunGoal.Plugin,
+  RedsunAdvisor.Plugin,
   RedsunTodo.Plugin,
   RedsunMultiedit.Plugin,
 ] as const satisfies readonly InternalPlugin[]
