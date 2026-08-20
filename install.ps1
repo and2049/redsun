@@ -71,7 +71,9 @@ if ($Version) {
     $specificVersion = $Version
     $tagUrl = "https://github.com/$Repo/releases/tag/v$Version"
     try {
-        $resp = Invoke-WebRequest -Uri $tagUrl -Method Head -ErrorAction Stop
+        # -UseBasicParsing: without it PS 5.1 uses the IE engine, which throws
+        # under -NonInteractive (how `redsun upgrade` invokes this script).
+        $resp = Invoke-WebRequest -Uri $tagUrl -Method Head -UseBasicParsing -ErrorAction Stop
     } catch {
         Write-Error "Release v$Version not found"
         Write-Info "Available releases: https://github.com/$Repo/releases"
@@ -125,7 +127,7 @@ if (-not (Test-Path $tmpDir)) {
 $archivePath = Join-Path $tmpDir $filename
 
 try {
-    Invoke-WebRequest -Uri $url -OutFile $archivePath -ErrorAction Stop
+    Invoke-WebRequest -Uri $url -OutFile $archivePath -UseBasicParsing -ErrorAction Stop
 } catch {
     Write-Error "Failed to download $filename"
     exit 1
