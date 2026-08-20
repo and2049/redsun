@@ -6,6 +6,7 @@ import { Permission } from "./permission.js"
 import { AbsolutePath, optional } from "./schema.js"
 import { ConfigAgent } from "./config/agent.js"
 import { ConfigMedia } from "./config/media.js"
+import { ConfigAdvisor } from "./config/advisor.js"
 import { ConfigCompaction } from "./config/compaction.js"
 import { ConfigCommand } from "./config/command.js"
 import { ConfigClaudeCode } from "./config/claude-code.js"
@@ -82,6 +83,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   compaction: ConfigCompaction.Info.pipe(optional).annotate({
     description: "Conversation compaction behavior",
+  }),
+  advisor: ConfigAdvisor.Info.pipe(optional).annotate({
+    description: "Redsun watchdog advisor that reviews completed session turns with a second model",
   }),
   skills: Schema.String.pipe(Schema.Array, optional).annotate({
     description: "Additional paths or URLs to discover skills from",
