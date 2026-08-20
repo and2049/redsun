@@ -17,6 +17,7 @@ import { SessionStore } from "@opencode-ai/core/session/store"
 import { Session } from "@opencode-ai/core/session"
 import { Project } from "@opencode-ai/core/project"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Document, Info as ConfigInfo } from "@opencode-ai/schema/config"
 import { Money } from "@opencode-ai/schema/money"
 import { Effect, Layer, Schema, Stream } from "effect"
@@ -136,7 +137,7 @@ const seedSession = (suffix: string) =>
     const sessionID = Session.ID.make(`ses_redsun_compaction_${suffix}`)
     yield* db
       .insert(ProjectTable)
-      .values({ id: Project.ID.global, worktree: "/project", sandboxes: [] })
+      .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
       .onConflictDoNothing()
       .run()
       .pipe(Effect.orDie)
