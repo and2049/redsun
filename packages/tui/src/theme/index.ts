@@ -6,7 +6,6 @@ import {
   themeDecodeError,
   themeModes,
 } from "@opencode-ai/theme/tui"
-import { resolveThemeColors } from "./resolve"
 import { type Theme, type ThemeV1Json } from "./v1"
 import cloud from "./assets/cloud.json" with { type: "json" }
 import dawn from "./assets/dawn.json" with { type: "json" }
@@ -143,14 +142,7 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
-export function resolveTheme(theme: ThemeV1Json, mode: "dark" | "light"): Theme {
-  const resolved = resolveThemeColors(theme, mode)
-  return {
-    ...resolved.theme,
-    _hasSelectedListItemText: resolved.hasSelectedListItemText,
-    thinkingOpacity: resolved.thinkingOpacity,
-  }
-}
+export { resolveV1 as resolveTheme } from "@opencode-ai/theme/tui/v1"
 
 function decodeV2Theme(source: ThemeDocumentSource, name: string) {
   try {

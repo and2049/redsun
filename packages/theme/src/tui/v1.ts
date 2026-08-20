@@ -1,4 +1,4 @@
-import type { RGBA } from "@opentui/core"
+import { RGBA } from "@opentui/core"
 
 export type Theme = {
   readonly logoGradientStart: RGBA
@@ -122,4 +122,112 @@ export type ThemeV1Json = {
     agentCompose?: ColorValue
     thinkingOpacity?: number
   }
+}
+
+export function ansiToRgba(code: number): RGBA {
+  if (code < 16) {
+    const colors = [
+      "#000000",
+      "#800000",
+      "#008000",
+      "#808000",
+      "#000080",
+      "#800080",
+      "#008080",
+      "#c0c0c0",
+      "#808080",
+      "#ff0000",
+      "#00ff00",
+      "#ffff00",
+      "#0000ff",
+      "#ff00ff",
+      "#00ffff",
+      "#ffffff",
+    ]
+    return RGBA.fromHex(colors[code] ?? "#000000")
+  }
+  if (code < 232) {
+    const index = code - 16
+    const value = (part: number) => (part === 0 ? 0 : part * 40 + 55)
+    return RGBA.fromInts(value(Math.floor(index / 36)), value(Math.floor(index / 6) % 6), value(index % 6))
+  }
+  if (code < 256) {
+    const gray = (code - 232) * 10 + 8
+    return RGBA.fromInts(gray, gray, gray)
+  }
+  return RGBA.fromInts(0, 0, 0)
+}
+
+const DIFF_HIGHLIGHT_ALPHA = 0.2
+
+function diffHighlightBg(color: RGBA) {
+  return RGBA.fromValues(color.r, color.g, color.b, color.a * DIFF_HIGHLIGHT_ALPHA)
+}
+
+// The one V1 resolver: walks defs, mode forks and ANSI codes, then applies the
+// derivations the flat format leans on (selection fallback, panel-backed
+// surfaces, diff washes). Both the V2 migration and the mini renderer resolve
+// through here, so the derivations can never drift between them.
+export function resolveV1(
+  theme: ThemeV1Json,
+  mode: "dark" | "light",
+  resolveAnsi: (code: number) => RGBA = ansiToRgba,
+): Theme {
+  const defs = theme.defs ?? {}
+
+  function resolveColor(value: unknown, chain: string[] = []): RGBA {
+    if (value instanceof RGBA) return value
+    if (typeof value === "string") {
+      if (value === "transparent" || value === "none") return RGBA.fromInts(0, 0, 0, 0)
+      if (value.startsWith("#")) return RGBA.fromHex(value)
+      if (chain.includes(value)) throw new Error(`Circular color reference: ${[...chain, value].join(" -> ")}`)
+      const next = defs[value] ?? theme.theme[value as ThemeColor]
+      if (next === undefined) throw new Error(`Color reference "${value}" not found in defs or theme`)
+      return resolveColor(next, [...chain, value])
+    }
+    if (typeof value === "number") return resolveAnsi(value)
+    if (!value || typeof value !== "object" || !(mode in value)) throw new Error("Invalid V1 theme color")
+    return resolveColor((value as Record<"dark" | "light", unknown>)[mode], chain)
+  }
+
+  const resolved = Object.fromEntries(
+    Object.entries(theme.theme)
+      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "thinkingOpacity")
+      .map(([key, value]) => [key, resolveColor(value)]),
+  ) as Partial<Record<Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">, RGBA>>
+  const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
+  resolved.selectedListItemText = hasSelectedListItemText
+    ? resolveColor(theme.theme.selectedListItemText)
+    : resolved.background
+  // Element surfaces and the diff context band reuse the panel colour;
+  // declared values are ignored.
+  resolved.backgroundElement = resolved.backgroundPanel
+  resolved.diffContextBg = resolved.backgroundPanel
+  resolved.backgroundMenu = theme.theme.backgroundMenu
+    ? resolveColor(theme.theme.backgroundMenu)
+    : resolved.backgroundElement
+  // Diff row highlights wash the declared diff colours over the background, so
+  // retinting `diffAdded`/`diffRemoved` retints the highlights with them. The
+  // line-number gutter shares the wash; declared values are ignored.
+  const addedBg = diffHighlightBg(resolved.diffAdded!)
+  const removedBg = diffHighlightBg(resolved.diffRemoved!)
+  resolved.diffAddedBg = addedBg
+  resolved.diffRemovedBg = removedBg
+  resolved.diffAddedLineNumberBg = addedBg
+  resolved.diffRemovedLineNumberBg = removedBg
+
+  return {
+    ...resolved,
+    _hasSelectedListItemText: hasSelectedListItemText,
+    thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,
+  } as Theme
+}
+
+export function selectedForeground(theme: SyntaxTheme, background?: RGBA): RGBA {
+  if (theme._hasSelectedListItemText) return theme.selectedListItemText
+  if (theme.background.a !== 0) return theme.background
+  const target = background ?? theme.primary
+  return 0.299 * target.r + 0.587 * target.g + 0.114 * target.b > 0.5
+    ? RGBA.fromInts(0, 0, 0)
+    : RGBA.fromInts(255, 255, 255)
 }
