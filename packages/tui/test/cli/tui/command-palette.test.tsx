@@ -54,7 +54,7 @@ test("searches settings globally and opens the matching setting", async () => {
       <TestTuiContexts>
         <ConfigProvider config={resolve(current, { terminalSuspend: true })} service={service}>
           <Keymap.Provider>
-            <ThemeProvider mode="dark" source={emptyThemeSource}>
+            <ThemeProvider source={emptyThemeSource}>
               <ToastProvider>
                 <DialogProvider>
                   <Fixture />

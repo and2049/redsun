@@ -559,16 +559,9 @@ function monoTheme(mode: "dark" | "light"): RunTheme {
 export const RUN_THEME_MONO = monoTheme("dark")
 const RUN_THEME_MONO_LIGHT = monoTheme("light")
 
-export async function resolveRunTheme(
-  renderer: CliRenderer,
-  config?: RunTuiConfig["theme"],
-  mono = false,
-): Promise<RunTheme> {
+export async function resolveRunTheme(renderer: CliRenderer, mono = false): Promise<RunTheme> {
   if (mono) {
-    const mode =
-      config?.mode === "light" || config?.mode === "dark"
-        ? config.mode
-        : (renderer.themeMode ?? (await renderer.waitForThemeMode(300)))
+    const mode = renderer.themeMode ?? (await renderer.waitForThemeMode(300))
     return mode === "light" ? RUN_THEME_MONO_LIGHT : RUN_THEME_MONO
   }
   try {
@@ -582,10 +575,7 @@ export async function resolveRunTheme(
 
     // Palette-only terminal reloads can leave renderer.themeMode stale, but
     // ANSI slot zero is not the terminal background when OSC 11 is absent.
-    const pick =
-      config?.mode === "dark" || config?.mode === "light"
-        ? config.mode
-        : (terminalMode(colors) ?? renderer.themeMode ?? colorMode(RGBA.fromHex(bg)))
+    const pick = terminalMode(colors) ?? renderer.themeMode ?? colorMode(RGBA.fromHex(bg))
     const { generateSyntax } = await import("../theme")
     const indexed = indexedPalette(colors, 256)
     const footerTheme = resolveTheme(generateSystem(colors, pick), pick)

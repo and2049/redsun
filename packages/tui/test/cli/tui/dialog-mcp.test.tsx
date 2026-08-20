@@ -99,7 +99,7 @@ async function renderMcp() {
             <ToastProvider>
               <ClientProvider api={createApi(calls.fetch)}>
                 <DataProvider>
-                  <ThemeProvider mode="dark" source={emptyThemeSource}>
+                  <ThemeProvider source={emptyThemeSource}>
                     <DialogProvider>
                       <Probe />
                     </DialogProvider>

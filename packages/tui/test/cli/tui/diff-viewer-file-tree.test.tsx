@@ -150,7 +150,7 @@ function withTheme(component: () => JSX.Element, onReady = () => {}) {
   return (
     <TestTuiContexts>
       <ConfigProvider config={createTuiResolvedConfig()}>
-        <ThemeProvider mode="dark" source={emptyThemeSource}>
+        <ThemeProvider source={emptyThemeSource}>
           <Ready onReady={onReady}>{component()}</Ready>
         </ThemeProvider>
       </ConfigProvider>

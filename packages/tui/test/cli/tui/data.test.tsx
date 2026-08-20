@@ -1997,7 +1997,7 @@ test("keeps shell state scoped to location", async () => {
     return (
       <RouteProvider initialRoute={{ type: "session", sessionID: "ses_shared" }}>
         <Keymap.Provider>
-          <ThemeProvider mode="dark" source={emptyThemeSource} />
+          <ThemeProvider source={emptyThemeSource} />
         </Keymap.Provider>
       </RouteProvider>
     )

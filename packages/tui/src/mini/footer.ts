@@ -1004,7 +1004,7 @@ export class RunFooter implements FooterApi {
   }
 
   private handlePalette = (): void => {
-    void resolveRunTheme(this.renderer, this.options.tuiConfig.theme).then((theme) => {
+    void resolveRunTheme(this.renderer).then((theme) => {
       if (this.isGone) {
         theme.block.syntax?.destroy()
         return

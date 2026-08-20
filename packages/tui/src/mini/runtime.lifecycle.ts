@@ -182,7 +182,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
     renderer.setTerminalTitle(`> ${title.length > 40 ? title.slice(0, 37) + "..." : title}`)
   }
   setTitle(input.sessionTitle)
-  const theme = await resolveRunTheme(renderer, tuiConfig.theme, mono)
+  const theme = await resolveRunTheme(renderer, mono)
   renderer.setBackgroundColor(theme.background)
   const state: SplashState = {
     entry: false,

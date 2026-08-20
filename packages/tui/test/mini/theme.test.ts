@@ -63,8 +63,8 @@ function spread(color: RGBA) {
 
 test("falls back when palette lookup fails", async () => {
   expect(await resolveRunTheme(renderer({ fail: true }))).toBe(RUN_THEME_FALLBACK)
-  expect(await resolveRunTheme(renderer({ fail: true }), undefined, true)).toBe(RUN_THEME_MONO)
-  const light = await resolveRunTheme(renderer({ resolvedThemeMode: "light" }), undefined, true)
+  expect(await resolveRunTheme(renderer({ fail: true }), true)).toBe(RUN_THEME_MONO)
+  const light = await resolveRunTheme(renderer({ resolvedThemeMode: "light" }), true)
   expect(expectRgba(light.footer.text).toInts().slice(0, 3)).toEqual([0, 0, 0])
   expect(RUN_THEME_MONO.block.syntax).toBeUndefined()
   for (const color of [

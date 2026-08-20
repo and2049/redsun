@@ -16,7 +16,7 @@ async function wait(fn: () => boolean) {
   }
 }
 
-test("uses an available mode while retaining the pinned preference", async () => {
+test("takes its mode from the selected theme", async () => {
   const lightOnly = v1Theme()
   lightOnly.theme.background = "#eeeeee"
   lightOnly.theme.text = "#111111"
@@ -42,9 +42,8 @@ test("uses an available mode while retaining the pinned preference", async () =>
 
   const app = await testRender(
     () => (
-      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "light-only", mode: "dark" } })}>
+      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "light-only" } })}>
         <ThemeProvider
-          mode="dark"
           source={{ discover: () => Promise.resolve({ "light-only": lightOnly, "dark-only": darkOnly, dual, native }) }}
         >
           <Probe />
@@ -58,20 +57,16 @@ test("uses an available mode while retaining the pinned preference", async () =>
   try {
     await wait(() => themes?.ready === true)
     expect(current().mode()).toBe("light")
-    expect(current().modes()).toEqual(["light"])
-    expect(current().supports("dark")).toBeFalse()
-    expect(current().setMode("dark")).toBeFalse()
     expect(current().set("dark-only")).toBeTrue()
     await wait(() => current().mode() === "dark")
-    expect(current().modes()).toEqual(["dark"])
     expect(current().set("light-only")).toBeTrue()
     await wait(() => current().mode() === "light")
+    // A document carrying both modes declares no side of its own, so it reads as dark.
     expect(current().set("dual")).toBeTrue()
     await wait(() => current().mode() === "dark")
-    expect(current().modes()).toEqual(["light", "dark"])
     expect(current().set("native")).toBeTrue()
     await wait(() => current().selected === "native")
-    expect(current().modes()).toEqual(["dark"])
+    expect(current().mode()).toBe("dark")
     expect(current().current.text.default.equals(RGBA.fromHex("#abcdef"))).toBeTrue()
   } finally {
     app.renderer.destroy()
@@ -98,7 +93,7 @@ test.each([
   const app = await testRender(
     () => (
       <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "invalid" } })}>
-        <ThemeProvider mode="dark" source={{ discover: () => discovery.promise }}>
+        <ThemeProvider source={{ discover: () => discovery.promise }}>
           <Probe />
         </ThemeProvider>
       </ConfigProvider>
@@ -150,8 +145,8 @@ test("contextual hooks resolve overrides and fall back to a standalone theme's b
 
   const app = await testRender(
     () => (
-      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "standalone", mode: "dark" } })}>
-        <ThemeProvider mode="dark" source={{ discover: () => Promise.resolve({ standalone }) }}>
+      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "standalone" } })}>
+        <ThemeProvider source={{ discover: () => Promise.resolve({ standalone }) }}>
           <Probe />
         </ThemeProvider>
       </ConfigProvider>

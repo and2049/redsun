@@ -82,8 +82,6 @@ export const Definitions = {
 
   "prompt.editor": keybind("none", "Open external editor"),
   "theme.switch": keybind("none", "List available themes"),
-  "theme.switch_mode": keybind("none", "Switch between light and dark theme mode"),
-  "theme.mode.lock": keybind("none", "Lock or unlock theme mode"),
   "session.sidebar.toggle": keybind("none", "Toggle sidebar"),
   "session.toggle.scrollbar": keybind("none", "Toggle session scrollbar"),
   "opencode.status": keybind("none", "View status"),

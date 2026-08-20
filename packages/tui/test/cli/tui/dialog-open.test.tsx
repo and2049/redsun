@@ -319,7 +319,7 @@ async function renderOpen(
                     <ClientProvider api={createApi(calls.fetch)}>
                       <DataProvider>
                         <LocationProvider>
-                            <ThemeProvider mode="dark" source={emptyThemeSource}>
+                            <ThemeProvider source={emptyThemeSource}>
                               <DialogProvider>
                                 <Probe />
                               </DialogProvider>

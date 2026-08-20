@@ -73,12 +73,10 @@ export type Variant = {
 export type ColorValue = HexColor | RefName | Variant | RGBA | number
 export type ThemeV1Json = {
   $schema?: string
-  // Accepted and ignored. V1 asked a theme to declare its own mode; the
-  // migration classifies by the text/background contrast that actually drives
-  // token selection, which disagrees for exactly one shipped theme (`wave`
-  // declares light but paints light text on mid-blue). Honouring the field
-  // would reintroduce that inconsistency, so it is kept only so existing files
-  // parse.
+  // A theme declares which half of the picker it belongs to. Themes that omit
+  // it are classified by text/background contrast, which disagrees for exactly
+  // one shipped theme (`wave` declares light but paints light text on
+  // mid-blue) -- the declaration wins there.
   mode?: ThemeMode
   defs?: Record<string, HexColor | RefName>
   theme: Omit<

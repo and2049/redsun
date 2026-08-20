@@ -88,7 +88,7 @@ test("scopes sessions to the active session location", async () => {
                         <PermissionProvider>
                           <DataProvider>
                             <LocationProvider>
-                              <ThemeProvider mode="dark" source={emptyThemeSource}>
+                              <ThemeProvider source={emptyThemeSource}>
                                 <LocalProvider>
                                   <DialogProvider>
                                     <Probe />

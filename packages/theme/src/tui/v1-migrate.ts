@@ -30,12 +30,11 @@ export function migrateV1(theme: ThemeV1Json): ThemeDocument {
   const light = resolveV1(theme, "light")
   const dark = resolveV1(theme, "dark")
   if (light.background.a > 0 && dark.background.a > 0 && light.background.equals(dark.background)) {
-    const lightMode = detectMode(light)
-    const darkMode = detectMode(dark)
-    if (lightMode === darkMode) {
-      if (lightMode === "light") return { version: 2, standalone: true, light: migrateMode(light, "light") }
-      return { version: 2, standalone: true, dark: migrateMode(dark, "dark") }
-    }
+    const declared = theme.mode === "light" || theme.mode === "dark" ? theme.mode : undefined
+    const detected = detectMode(light) === detectMode(dark) ? detectMode(light) : undefined
+    const mode = declared ?? detected
+    if (mode === "light") return { version: 2, standalone: true, light: migrateMode(light, "light") }
+    if (mode === "dark") return { version: 2, standalone: true, dark: migrateMode(dark, "dark") }
   }
   return {
     version: 2,
