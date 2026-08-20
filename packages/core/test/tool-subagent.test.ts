@@ -390,7 +390,8 @@ describe("SubagentTool", () => {
 
           expect(outputSessionID(second.metadata)).toBe(childID)
           expect((yield* sessions.list({ parentID: parent.id })).data).toHaveLength(1)
-          expect((yield* sessions.get(childID)).title).toBe("review")
+          // REDSUN: child sessions carry the same title suffix as the Claude Code mirror.
+          expect((yield* sessions.get(childID)).title).toBe("review (@reviewer subagent)")
           expect(
             (yield* sessions.inbox(childID)).flatMap((message) =>
               message.type === "user" ? [message.payload.text] : [],
