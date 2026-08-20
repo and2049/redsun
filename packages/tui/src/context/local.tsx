@@ -562,15 +562,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (state.pending) save()
         })
 
-      const slots = createMemo(() => {
-        const existing = new Set(
-          data.session
-            .list()
-            .filter((x) => x.parentID === undefined)
-            .map((x) => x.id),
-        )
-        return sessionStore.pinned.filter((id) => existing.has(id)).slice(0, 9)
-      })
+      const slots = createMemo(() =>
+        sessionStore.pinned.filter((id) => data.session.get(id)?.parentID === undefined).slice(0, 9),
+      )
 
       function prune(sessionID: string) {
         batch(() => {
