@@ -8,7 +8,7 @@
 import { RGBA, SyntaxStyle, type CliRenderer, type ColorInput, type TerminalColors } from "@opentui/core"
 import type { TuiThemeCurrent } from "@opencode-ai/plugin/v1/tui"
 import { ansiToRgba } from "../theme/color"
-import { resolveThemeColors } from "../theme/resolve"
+import { resolveV1 } from "@opencode-ai/theme/tui/v1"
 import { terminalMode } from "../theme/system"
 import type { ThemeV1Json } from "../theme/v1"
 import type { EntryKind, RunTuiConfig } from "./types"
@@ -185,11 +185,11 @@ function splashShadow(indexed: RGBA[], base: RGBA, overlay: RGBA, value: number)
 }
 
 export function resolveTheme(theme: ThemeV1Json, pick: "dark" | "light"): TuiThemeCurrent {
-  const resolved = resolveThemeColors(theme, pick, (code) => RGBA.fromIndex(code, ansiToRgba(code)))
-  return {
-    ...resolved.theme,
-    thinkingOpacity: resolved.thinkingOpacity,
-  }
+  // Mini's theme shape leaves the resolver-internal selection flag behind.
+  const { _hasSelectedListItemText, ...resolved } = resolveV1(theme, pick, (code) =>
+    RGBA.fromIndex(code, ansiToRgba(code)),
+  )
+  return resolved
 }
 
 function generateGrayScale(bg: RGBA, isDark: boolean, map: (rgba: RGBA) => RGBA): Record<number, RGBA> {

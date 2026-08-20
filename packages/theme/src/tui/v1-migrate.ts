@@ -3,6 +3,7 @@ import { rgbToOklch } from "./color.js"
 import { DEFAULT_CATEGORICAL, DEFAULT_THEME } from "./defaults.js"
 import type { FileThemeDefinition, Mode, ThemeDocument } from "./index.js"
 import { HueStep } from "./schema.js"
+import { resolveV1, selectedForeground } from "./v1.js"
 import type { Theme, ThemeV1Json } from "./v1.js"
 
 type ThemeColor = Exclude<
@@ -335,71 +336,6 @@ function hueDistance(first: number, second: number) {
 
 function ambiguous(color: RGBA, chroma = toOklch(color).c) {
   return color.toInts()[3] === 0 || chroma < minimumChroma
-}
-
-function resolveV1(theme: ThemeV1Json, mode: "dark" | "light"): Theme {
-  const defs = theme.defs ?? {}
-
-  function resolveColor(value: unknown, chain: string[] = []): RGBA {
-    if (value instanceof RGBA) return value
-    if (typeof value === "string") {
-      if (value === "transparent" || value === "none") return RGBA.fromInts(0, 0, 0, 0)
-      if (value.startsWith("#")) return RGBA.fromHex(value)
-      if (chain.includes(value)) throw new Error(`Circular color reference: ${[...chain, value].join(" -> ")}`)
-      const next = defs[value] ?? theme.theme[value as ThemeColor]
-      if (next === undefined) throw new Error(`Color reference "${value}" not found in defs or theme`)
-      return resolveColor(next, [...chain, value])
-    }
-    if (typeof value === "number") return ansi(value)
-    if (!value || typeof value !== "object" || !(mode in value)) throw new Error("Invalid V1 theme color")
-    return resolveColor((value as Record<"dark" | "light", unknown>)[mode], chain)
-  }
-
-  const resolved = Object.fromEntries(
-    Object.entries(theme.theme)
-      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "thinkingOpacity")
-      .map(([key, value]) => [key, resolveColor(value)]),
-  ) as Partial<Record<ThemeColor, RGBA>>
-  const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
-  resolved.selectedListItemText = hasSelectedListItemText
-    ? resolveColor(theme.theme.selectedListItemText)
-    : resolved.background
-  // Element surfaces and the diff context band reuse the panel colour;
-  // declared values are ignored.
-  resolved.backgroundElement = resolved.backgroundPanel
-  resolved.diffContextBg = resolved.backgroundPanel
-  resolved.backgroundMenu = theme.theme.backgroundMenu
-    ? resolveColor(theme.theme.backgroundMenu)
-    : resolved.backgroundElement
-  // Diff row highlights wash the declared diff colours over the background, so
-  // retinting `diffAdded`/`diffRemoved` retints the highlights with them. The
-  // line-number gutter shares the wash; declared values are ignored.
-  const addedBg = diffHighlightBg(resolved.diffAdded!)
-  const removedBg = diffHighlightBg(resolved.diffRemoved!)
-  resolved.diffAddedBg = addedBg
-  resolved.diffRemovedBg = removedBg
-  resolved.diffAddedLineNumberBg = addedBg
-  resolved.diffRemovedLineNumberBg = removedBg
-
-  return {
-    ...resolved,
-    _hasSelectedListItemText: hasSelectedListItemText,
-    thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,
-  } as Theme
-}
-
-const DIFF_HIGHLIGHT_ALPHA = 0.2
-
-function diffHighlightBg(color: RGBA) {
-  return RGBA.fromValues(color.r, color.g, color.b, color.a * DIFF_HIGHLIGHT_ALPHA)
-}
-
-function selectedForeground(theme: Theme, background: RGBA) {
-  if (theme._hasSelectedListItemText) return theme.selectedListItemText
-  if (theme.background.a !== 0) return theme.background
-  return 0.299 * background.r + 0.587 * background.g + 0.114 * background.b > 0.5
-    ? RGBA.fromInts(0, 0, 0)
-    : RGBA.fromInts(255, 255, 255)
 }
 
 // A migrated ramp only ever answers with a colour the V1 file named. Each step
