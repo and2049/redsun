@@ -132,9 +132,22 @@ async function render(input: {
     }
     if (!ready) throw new Error(`timed out waiting for the ${input.screen} screen; last frame:\n${last}`)
 
+    // Labels fade in over ~0.16s tweens; capturing immediately freezes them
+    // half-faded (greyed agent/model line and text). Freeze the spinners so
+    // their frames stop moving, then keep rendering until the colors settle.
     freezeSpinners(setup.renderer.root)
-    await setup.renderOnce()
-    await setup.renderOnce()
+    const signature = () =>
+      JSON.stringify(
+        setup.renderer.currentRenderBuffer.getSpanLines().map((line) => line.spans.map((span) => span.fg.toInts())),
+      )
+    let previous = ""
+    for (let pass = 0; pass < 30; pass++) {
+      await setup.renderOnce()
+      const current = signature()
+      if (current === previous) break
+      previous = current
+      await new Promise((resolve) => setTimeout(resolve, 80))
+    }
     const buffer = setup.renderer.currentRenderBuffer
     return {
       cols: input.cols,

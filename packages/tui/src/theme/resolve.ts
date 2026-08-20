@@ -36,16 +36,28 @@ export function resolveThemeColors(
   ) as Partial<Record<ThemeColor, RGBA>>
 
   const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
+  // Diff row highlights wash the declared diff colours over the background;
+  // the line-number gutter shares the wash. Declared values are ignored so the
+  // highlights always follow `diffAdded`/`diffRemoved`.
+  const diffHighlightBg = (color: RGBA) => RGBA.fromValues(color.r, color.g, color.b, color.a * 0.2)
+  const diffAddedBg = diffHighlightBg(resolved.diffAdded!)
+  const diffRemovedBg = diffHighlightBg(resolved.diffRemoved!)
+  // Element surfaces and the diff context band reuse the panel colour.
+  const backgroundElement = resolved.backgroundPanel!
   return {
     theme: {
       ...(resolved as Record<ThemeColor, RGBA>),
       selectedListItemText: hasSelectedListItemText
         ? resolveColor(theme.theme.selectedListItemText!)
         : resolved.background!,
+      backgroundElement,
+      diffContextBg: backgroundElement,
       backgroundMenu:
-        theme.theme.backgroundMenu === undefined
-          ? resolved.backgroundElement!
-          : resolveColor(theme.theme.backgroundMenu),
+        theme.theme.backgroundMenu === undefined ? backgroundElement : resolveColor(theme.theme.backgroundMenu),
+      diffAddedBg,
+      diffRemovedBg,
+      diffAddedLineNumberBg: diffAddedBg,
+      diffRemovedLineNumberBg: diffRemovedBg,
     } satisfies Omit<Theme, "_hasSelectedListItemText" | "thinkingOpacity">,
     hasSelectedListItemText,
     thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,

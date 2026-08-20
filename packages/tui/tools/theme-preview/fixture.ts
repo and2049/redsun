@@ -1,7 +1,21 @@
 import { directory, json, worktree, type FetchHandler } from "../../test/fixture/tui-client"
 
-// The transcript settles once this line is on screen; render.ts waits for it.
-export const SESSION_MARKER = "Add dark pairs for the cloud and wave themes"
+// The transcript auto-scrolls to the newest row, so render.ts waits for the
+// bottom-most block (the in-flight edit) rather than the first user message.
+export const SESSION_MARKER = "Preparing edit"
+
+const EDIT_PATCH = `--- a/src/version.ts
++++ b/src/version.ts
+@@ -1,8 +1,8 @@
+ declare const OPENCODE_VERSION: string
+ declare const OPENCODE_CHANNEL: string
+ 
+-const debug = process.env.REDSUN_DEBUG === "1"
++const version = typeof OPENCODE_VERSION === "string" ? OPENCODE_VERSION : "local"
+ const channel = typeof OPENCODE_CHANNEL === "string" ? OPENCODE_CHANNEL : "local"
+ 
+ export { version as OPENCODE_VERSION, channel as OPENCODE_CHANNEL }
+ export const OPENCODE_LOCAL = channel === "local"`
 
 const location = { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } }
 
@@ -73,7 +87,7 @@ export function sessionFixture(): FetchHandler {
     {
       type: "user",
       id: "user-1",
-      text: SESSION_MARKER,
+      text: "Add dark pairs for the cloud and wave themes",
       time: { created: 1_000 },
     },
     {
@@ -104,6 +118,29 @@ export function sessionFixture(): FetchHandler {
         {
           type: "text",
           text: "The registry lives in `packages/tui/src/theme/index.ts`. I will add **nimbus** and **tide** next to their light pairs.",
+        },
+        {
+          type: "tool",
+          id: "tool-edit-1",
+          name: "edit",
+          state: {
+            status: "completed",
+            input: { path: "src/version.ts" },
+            content: [{ type: "text", text: "Edited src/version.ts" }],
+            metadata: {
+              files: [
+                {
+                  file: "src/version.ts",
+                  filePath: `${directory}/src/version.ts`,
+                  status: "modified",
+                  patch: EDIT_PATCH,
+                  additions: 1,
+                  deletions: 1,
+                },
+              ],
+            },
+          },
+          time: { created: 5_000, completed: 6_000 },
         },
       ],
     },
