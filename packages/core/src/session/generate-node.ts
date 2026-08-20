@@ -11,6 +11,7 @@ import { SessionContext } from "./context.js"
 import { SessionGenerate } from "./generate.js"
 import { SessionHistory } from "./history.js"
 import { SessionModelHeaders } from "./model-headers.js"
+import { SessionModelHook } from "./model-hook.js"
 import { SessionModelHttp } from "./model-http.js"
 import { SessionPromptCacheKey } from "./prompt-cache-key.js"
 import { SessionRunnerModel } from "./runner/model.js"
@@ -78,7 +79,9 @@ export const layer = Layer.effect(
           providerID: model.ref.providerID,
           modelID: model.ref.id,
         })
-        const response = yield* llm.generate(
+        const request = yield* SessionModelHook.apply(
+          hooks,
+          { sessionID: selection.session.id, agent: selection.agent.id, model: model.ref },
           LLM.request({
             model: model.model,
             http: { headers: SessionModelHeaders.make(selection.session, app) },
@@ -89,14 +92,14 @@ export const layer = Layer.effect(
             ...(input.tools === false ? { toolChoice: "none" as const } : {}),
             ...(input.temperature !== undefined ? { generation: { temperature: input.temperature } } : {}),
           }),
-          {
-            http: SessionModelHttp.middleware(hooks, {
-              sessionID: selection.session.id,
-              agent: selection.agent.id,
-              model: model.ref,
-            }),
-          },
         )
+        const response = yield* llm.generate(request, {
+          http: SessionModelHttp.middleware(hooks, {
+            sessionID: selection.session.id,
+            agent: selection.agent.id,
+            model: model.ref,
+          }),
+        })
         yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })
         return response.text
       }),

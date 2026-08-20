@@ -204,6 +204,29 @@ test("calculates step cost using the matching context tier", () => {
   ).toBeCloseTo(0.0002926)
 })
 
+test("ignores malformed model cost fields", () => {
+  const costs = [
+    {
+      input: Money.USDPerMillionTokens.make(3),
+      output: Money.USDPerMillionTokens.make(15),
+      cache: {
+        read: Money.USDPerMillionTokens.make(0.3),
+        write: Money.USDPerMillionTokens.make(3.75),
+      },
+    },
+  ]
+  Object.assign(costs[0], { input: {} })
+
+  expect(
+    SessionUsage.calculateCost(costs, {
+      input: 1_000_000,
+      output: 100_000,
+      reasoning: 0,
+      cache: { read: 0, write: 0 },
+    }),
+  ).toBe(Money.USD.make(1.5))
+})
+
 test("does not apply an ineligible tier without base pricing", () => {
   expect(
     SessionUsage.calculateCost(
@@ -1001,6 +1024,36 @@ describe("SessionRunnerLLM", () => {
           ],
         },
       ])
+    }),
+  )
+
+  it.effect("keeps WebSocket eligibility after model request hooks", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const hooks = yield* PluginHooks.Service
+      yield* hooks.register("session", "model.request", (event) =>
+        Effect.sync(() => {
+          event.headers["x-model-request-hook"] = "active"
+        }),
+      )
+      yield* hooks.register("session", "http.request", () => Effect.die("Other-provider HTTP hook should not apply"), {
+        providerID: Provider.ID.githubCopilot,
+      })
+      const context = yield* SessionContext.Service
+      const modelRequests = yield* SessionModelRequest.Service
+      const selected = yield* context.select(sessionID)
+      const database = yield* Database.Service
+      const bus = yield* Bus.Service
+      yield* InstructionState.prepare(database.db, bus, selected.instructions, sessionID)
+
+      const prepared = yield* modelRequests.prepare({
+        context: yield* context.load(selected),
+        step: 1,
+      })
+
+      expect(prepared.request.http?.headers?.["x-model-request-hook"]).toBe("active")
+      expect(prepared.webSocketEligible).toBe(true)
+      expect(prepared.options.http).toBeUndefined()
     }),
   )
 
@@ -4165,13 +4218,49 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("persists raw finish reasons and provider state", () =>
+    Effect.gen(function* () {
+      const session = yield* setup
+      yield* TestLLM.push(
+        TestLLM.complete(
+          {
+            reason: { normalized: "stop", raw: "end_turn" },
+            providerMetadata: { openai: { responseId: "response-1", serviceTier: "priority" } },
+          },
+          LLMEvent.textStart({ id: "answer" }),
+          LLMEvent.textDelta({ id: "answer", text: "Complete" }),
+          LLMEvent.textEnd({ id: "answer" }),
+        ),
+      )
+
+      yield* runPrompt(session, "Keep provider finish details")
+
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user" },
+        {
+          type: "assistant",
+          finish: "stop",
+          rawFinish: "end_turn",
+          providerState: { responseId: "response-1", serviceTier: "priority" },
+          content: [{ type: "text", text: "Complete" }],
+        },
+      ])
+    }),
+  )
+
   it.effect("projects content-filter finishes as visible terminal failures", () =>
     Effect.gen(function* () {
       const session = yield* setup
       yield* TestLLM.push(
         TestLLM.complete(
           {
-            reason: { normalized: "content-filter" },
+            reason: { normalized: "content-filter", raw: "SAFETY" },
+            providerMetadata: {
+              openai: {
+                responseId: "response-blocked",
+                refusal: { category: "safety", explanation: "Prompt blocked" },
+              },
+            },
             usage: { nonCachedInputTokens: 8, outputTokens: 3, reasoningTokens: 1 },
           },
           LLMEvent.textStart({ id: "partial" }),
@@ -4186,7 +4275,12 @@ describe("SessionRunnerLLM", () => {
         { type: "user" },
         {
           type: "assistant",
-          finish: "error",
+          finish: "content-filter",
+          rawFinish: "SAFETY",
+          providerState: {
+            responseId: "response-blocked",
+            refusal: { category: "safety", explanation: "Prompt blocked" },
+          },
           error: { type: "provider.content-filter" },
           cost: 0,
           tokens: { input: 8, output: 2, reasoning: 1, cache: { read: 0, write: 0 } },

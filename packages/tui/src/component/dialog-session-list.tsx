@@ -22,6 +22,7 @@ import { useStorage } from "../context/storage"
 import { useConfig } from "../config"
 import { withTimestampedFallback } from "@opencode-ai/util/session-title-fallback"
 import { projectName } from "../util/project"
+import { useLocation } from "../context/location"
 
 export function DialogSessionList() {
   const dialog = useDialog()
@@ -34,6 +35,7 @@ export function DialogSessionList() {
   const local = useLocal()
   const config = useConfig().data
   const toast = useToast()
+  const activeLocation = useLocation()
   const [filter, setFilter] = createSignal("")
   const shortcuts = Keymap.useShortcuts()
   const [search, setSearch] = createDebouncedSignal("", 150)
@@ -42,13 +44,21 @@ export function DialogSessionList() {
     initial: { allProjects: config.tabs?.scope !== "cwd" },
   })
   const allProjects = () => prefs.allProjects
+  const pickerLocation = () =>
+    (route.data.type === "session" ? data.session.get(route.data.sessionID)?.location : undefined) ??
+    activeLocation.ref ??
+    data.location.default()
 
   const [searchResults, { mutate: setSearchResults }] = createResource(
-    () => ({ query: search().trim(), allProjects: allProjects() }),
-    async ({ query, allProjects }) => {
+    () => ({
+      query: search().trim(),
+      allProjects: allProjects(),
+      location: pickerLocation(),
+    }),
+    async ({ query, allProjects, location }) => {
       try {
-        if (!data.location.info()) await data.location.sync()
-        const current = data.location.info()
+        if (!data.location.info(location)) await data.location.sync(location)
+        const current = data.location.info(location)
         if (!current) throw new Error("Location unavailable")
         const response = await client.api.session.list({
           ...(allProjects
@@ -76,7 +86,7 @@ export function DialogSessionList() {
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
   const localSessions = createMemo(() => {
     const query = filter().trim().toLowerCase()
-    const current = data.location.info()
+    const current = data.location.info(pickerLocation())
     const sessions = data.session
       .list()
       .filter(
@@ -122,7 +132,7 @@ export function DialogSessionList() {
     return hint && local.session.slots().length > 0 ? [{ title: "switch", label: hint }] : []
   })
   const currentProjectName = createMemo(() => {
-    const current = data.location.info()
+    const current = data.location.info(pickerLocation())
     if (!current) return ""
     const project = data.project.get(current.project.id)
     return projectName(project) ?? ""

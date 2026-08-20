@@ -2,8 +2,6 @@ export type JsonValue = null | boolean | number | string | Array<JsonValue> | { 
 
 export type ServiceHealth = { healthy: true; version: string; pid: number }
 
-export type ServiceStopResponse = { accepted: boolean }
-
 export type ModelRef = { id: string; providerID: string; variant?: string }
 
 export type ProviderSettings = { [x: string]: any }
@@ -12,7 +10,11 @@ export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
 
-export type PluginInfo = { id: string }
+export type PluginSource =
+  | { type: "builtin" }
+  | { type: "package"; package: string }
+  | { type: "local"; path: string }
+  | { type: "sdk" }
 
 export type SessionForkBoundary = { type: "before"; messageID: string } | { type: "through"; messageID: string }
 
@@ -199,6 +201,10 @@ export type ProviderRequest = {
 }
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
+
+export type PluginInfo =
+  | { id: string; source: PluginSource; status: "active"; tui: boolean }
+  | { id?: string; source: PluginSource; status: "failed"; error: string; tui: boolean }
 
 export type TokenUsageInfo = {
   input: number
@@ -1104,6 +1110,8 @@ export type SessionStepEnded = {
     sessionID: string
     assistantMessageID: string
     finish: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
+    rawFinish?: string
+    providerState?: SessionMessageProviderState1
     cost: MoneyUSD
     tokens: TokenUsageInfo
     snapshot?: string
@@ -1141,6 +1149,9 @@ export type SessionStepFailed = {
     sessionID: string
     assistantMessageID: string
     error: SessionStructuredError
+    finish?: "content-filter"
+    rawFinish?: string
+    providerState?: SessionMessageProviderState1
     cost?: MoneyUSD
     tokens?: TokenUsageInfo
     snapshot?: string
@@ -1941,6 +1952,8 @@ export type SessionMessageAssistant = {
   content: Array<SessionMessageAssistantText | SessionMessageAssistantReasoning | SessionMessageAssistantTool>
   snapshot?: { start?: string; end?: string; files?: Array<string> }
   finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
+  rawFinish?: string
+  providerState?: SessionMessageProviderState
   cost?: MoneyUSD
   tokens?: TokenUsageInfo
   error?: SessionStructuredError
@@ -2298,10 +2311,6 @@ export const isWorktreeError = (value: unknown): value is WorktreeError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "WorktreeError"
 
 export type HealthGetOutput = ServiceHealth
-
-export type HealthStopInput = { readonly instanceID: { readonly instanceID: string }["instanceID"] }
-
-export type HealthStopOutput = ServiceStopResponse
 
 export type ServerGetOutput = { urls: Array<string> }
 
@@ -2715,6 +2724,8 @@ export type SessionImportInput = {
           >
           readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
           readonly finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
+          readonly rawFinish?: string
+          readonly providerState?: { readonly [x: string]: JsonValue }
           readonly cost?: number
           readonly tokens?: {
             readonly input: number
@@ -2982,6 +2993,8 @@ export type SessionImportInput = {
           >
           readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
           readonly finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
+          readonly rawFinish?: string
+          readonly providerState?: { readonly [x: string]: JsonValue }
           readonly cost?: number
           readonly tokens?: {
             readonly input: number
@@ -3249,6 +3262,8 @@ export type SessionImportInput = {
           >
           readonly snapshot?: { readonly start?: string; readonly end?: string; readonly files?: ReadonlyArray<string> }
           readonly finish?: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
+          readonly rawFinish?: string
+          readonly providerState?: { readonly [x: string]: JsonValue }
           readonly cost?: number
           readonly tokens?: {
             readonly input: number
