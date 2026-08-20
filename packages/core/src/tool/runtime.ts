@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@opencode-ai/ai"
 import { Tool } from "@opencode-ai/schema/tool"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
 import { Effect, JsonSchema, Schema } from "effect"
+import { ToolInputRepair } from "./input-repair.js"
 
 export const definition = (tool: Tool.Info<any, any>): ToolDefinition => ({
   name: effectiveName(tool),
@@ -12,7 +13,15 @@ export const definition = (tool: Tool.Info<any, any>): ToolDefinition => ({
 
 export const execute = (tool: Tool.Info<any, any>, input: unknown, context: Tool.Context) =>
   Effect.gen(function* () {
-    const decoded = yield* decodeInput(tool.input, input)
+    // REDSUN: repair recognizably malformed arguments (double-encoded values, legacy
+    // shapes) and retry the decode once before surfacing the original error.
+    const decoded = yield* decodeInput(tool.input, input).pipe(
+      Effect.catch((error) => {
+        const repaired = ToolInputRepair.repair(input, inputJsonSchema(tool.input))
+        if (repaired === undefined) return Effect.fail(error)
+        return decodeInput(tool.input, repaired).pipe(Effect.catch(() => Effect.fail(error)))
+      }),
+    )
     const result = yield* tool.execute(decoded, context)
     if (tool.output === undefined) {
       if ("output" in result) return yield* Effect.die("Tool result declared output without an output schema")

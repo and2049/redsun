@@ -6,7 +6,7 @@ const brief = (input: Partial<ClaudeCodeTurnBrief.Input> = {}) =>
   ClaudeCodeTurnBrief.make({
     agent: { id: "build" },
     isWorker: false,
-    agentChanged: false,
+    agentChanged: true,
     ...input,
   })
 
@@ -36,16 +36,22 @@ describe("ClaudeCodeTurnBrief", () => {
     expect(brief({ agent: { id: "plan" } })).toBeUndefined()
   })
 
+  it("sends briefs once per agent switch, never per turn", () => {
+    // The CLI keeps everything in conversation history: re-sending a standing
+    // brief on every turn would break the cached prefix and add nothing.
+    expect(brief({ agent: { id: "compose" }, agentChanged: false })).toBeUndefined()
+    expect(brief({ isWorker: true, agentChanged: false })).toBeUndefined()
+    expect(brief({ agent: { id: "reviewer", system: "You review diffs." }, agentChanged: false })).toBeUndefined()
+  })
+
   it("sends a custom agent's prompt once per switch", () => {
     const agent = { id: "reviewer", system: "You review diffs." }
-    expect(brief({ agent, agentChanged: true })).toBe("You review diffs.")
-    // The CLI keeps it in conversation history, and repeating it every turn
-    // would break the cached prefix.
+    expect(brief({ agent })).toBe("You review diffs.")
     expect(brief({ agent, agentChanged: false })).toBeUndefined()
   })
 
   it("carries both the mode brief and the agent prompt on a switch", () => {
-    const text = brief({ agent: { id: "compose", system: "Prefer small diffs." }, agentChanged: true })
+    const text = brief({ agent: { id: "compose", system: "Prefer small diffs." } })
     expect(text).toContain(ClaudeCodePermissions.ROUTED_SUBAGENT_TOOL)
     expect(text?.endsWith("Prefer small diffs.")).toBe(true)
   })
