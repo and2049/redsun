@@ -1582,6 +1582,7 @@ export type ConfigEntry =
           }
         }
         instructions?: Array<string>
+        instruction_max_chars?: number
         references?: {
           [x: string]:
             | string

@@ -92,6 +92,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   instructions: Schema.String.pipe(Schema.Array, optional).annotate({
     description: "Additional paths or URLs supplying ambient instructions",
   }),
+  instruction_max_chars: Schema.Int.check(Schema.isGreaterThan(0))
+    .pipe(optional)
+    .annotate({
+      description:
+        "Maximum characters of each instruction file (AGENTS.md, .redsun/memory.md, ...) included in model context before truncation (default: 24000)",
+    }),
   references: ConfigReference.Info.pipe(optional).annotate({
     description: "Named local directories or Git repositories available as external context",
   }),
