@@ -29,12 +29,12 @@ describe("run runtime boot", () => {
   test("preserves shared config while resolving independent Mini defaults", async () => {
     const result = await resolveRunTuiConfig(
       createTuiResolvedConfig({
-        theme: { mode: "light" },
+        theme: { name: "gruvbox" },
         leader: { timeout: 450 },
       }),
     )
 
-    expect(result.theme).toEqual({ mode: "light" })
+    expect(result.theme).toEqual({ name: "gruvbox" })
     expect(result.leader.timeout).toBe(450)
     expect(resolveMiniSettings(result)).toEqual({
       thinking: "hide",

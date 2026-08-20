@@ -164,7 +164,6 @@ export function migrateV1(legacy: TuiConfigV1.Info | undefined, kv: Record<strin
     ...Object.entries(legacy?.plugin_enabled ?? {}).map(([id, enabled]) => (enabled ? id : `-${id}`)),
   ]
   const themeName = legacy?.theme ?? kv.theme
-  const themeMode = kv.theme_mode_lock
   const attentionSoundPack = kv.attention_sound_pack
   const diffView = kv.diff_viewer_view ?? (legacy?.diff_style === "stacked" ? "unified" : undefined)
   const thinking =
@@ -181,14 +180,7 @@ export function migrateV1(legacy: TuiConfigV1.Info | undefined, kv: Record<strin
         )
 
   return {
-    ...(themeName !== undefined || themeMode !== undefined
-      ? {
-          theme: {
-            ...(themeName === undefined ? {} : { name: themeName }),
-            ...(themeMode === undefined ? {} : { mode: themeMode }),
-          },
-        }
-      : {}),
+    ...(themeName === undefined ? {} : { theme: { name: themeName } }),
     ...(keybinds === undefined ? {} : { keybinds }),
     ...(plugins.length ? { plugins } : {}),
     ...(legacy?.leader_timeout === undefined ? {} : { leader: { timeout: legacy.leader_timeout } }),

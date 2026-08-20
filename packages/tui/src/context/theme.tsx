@@ -1,12 +1,6 @@
-import { CliRenderEvents, SyntaxStyle, type TerminalColors } from "@opentui/core"
+import { SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import {
-  generateSyntax,
-  resolveThemeDocument,
-  themeModes,
-  type ResolvedTheme,
-  type ContextName,
-} from "@opencode-ai/theme/tui"
+import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type ContextName } from "@opencode-ai/theme/tui"
 import {
   DEFAULT_THEMES,
   addTheme,
@@ -15,13 +9,12 @@ import {
   parseTheme,
   selectedForeground,
   setCustomThemes,
-  setSystemTheme,
   subscribeThemes,
+  themeMode,
   upsertTheme,
   type Theme,
   type ThemeDocumentSource,
 } from "../theme"
-import { generateSystem, terminalMode } from "../theme/system"
 import { discoverThemes } from "../theme/discovery"
 import { createComponentTheme, type ComponentTheme } from "../theme/component"
 import { createEffect, createMemo, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
@@ -87,16 +80,15 @@ export {
   generateSyntax,
   hasTheme,
   selectedForeground,
+  themeMode,
   upsertTheme,
   type Theme,
 } from "../theme"
 
-const THEME_REFRESH_DELAYS = [250, 1000] as const
+const THEME_REFRESH_DELAY = 1000
 
 type State = {
   themes: Record<string, ThemeDocumentSource>
-  mode: "dark" | "light"
-  lock: "dark" | "light" | undefined
   active: string
   ready: boolean
 }
@@ -109,12 +101,6 @@ type Themes = {
   has: typeof hasTheme
   currentSyntax: Accessor<SyntaxStyle>
   mode: Accessor<"dark" | "light">
-  modes: Accessor<readonly ("dark" | "light")[]>
-  supports(mode: "dark" | "light"): boolean
-  locked: Accessor<boolean>
-  lock(): void
-  unlock(): void
-  setMode(mode?: "dark" | "light", persist?: boolean): boolean
   set(theme: string): boolean
   onError(handler: ThemeErrorHandler): () => void
   readonly ready: boolean
@@ -130,8 +116,6 @@ const FALLBACK_THEME = "dusk"
 
 const [store, setStore] = createStore<State>({
   themes: allThemes(),
-  mode: "dark",
-  lock: undefined,
   active: FALLBACK_THEME,
   ready: false,
 })
@@ -140,22 +124,14 @@ subscribeThemes((themes) => setStore("themes", themes))
 
 const themeContext = createSimpleContext({
   name: "Theme",
-  init: (props: { mode: "dark" | "light"; source: ThemeSource }): ThemeContextValue => {
+  init: (props: { source: ThemeSource }): ThemeContextValue => {
     const renderer = useRenderer()
     const configState = useConfig()
     const config = configState.data
     const themes = props.source
-    const pick = (value: unknown) => {
-      if (value === "dark" || value === "light") return value
-      return
-    }
 
     setStore(
       produce((draft) => {
-        const lock = pick(config.theme?.mode)
-        const mode = lock ?? pick(renderer.themeMode) ?? props.mode
-        draft.mode = mode
-        draft.lock = lock
         const active = config.theme?.name ?? FALLBACK_THEME
         draft.active = typeof active === "string" ? active : FALLBACK_THEME
         draft.ready = false
@@ -165,15 +141,6 @@ const themeContext = createSimpleContext({
     createEffect(() => {
       const theme = config.theme?.name
       if (theme) setStore("active", theme)
-    })
-
-    createEffect(() => {
-      const mode = config.theme?.mode
-      if (mode === "dark" || mode === "light") {
-        pin(mode, false)
-        return
-      }
-      if (mode === "system" && store.lock !== undefined) free(false)
     })
 
     function syncCustomThemes() {
@@ -186,137 +153,37 @@ const themeContext = createSimpleContext({
     }
 
     onMount(() => {
-      void Promise.allSettled([resolveSystemTheme(store.mode), syncCustomThemes()]).finally(() => {
+      void syncCustomThemes().finally(() => {
         valuesV2()
         setStore("ready", true)
       })
     })
 
-    let systemThemeSignature: string | undefined
-    let systemThemeMode: "dark" | "light" | undefined
-    let hasResolvedSystemTheme = false
-    function resolveSystemTheme(mode: "dark" | "light" = store.mode) {
-      return renderer
-        .getPalette({ size: 16 })
-        .then((colors: TerminalColors) => {
-          if (!colors.palette[0]) {
-            if (hasResolvedSystemTheme) return
-            setSystemTheme(undefined)
-            if (store.active === "system") setStore("active", FALLBACK_THEME)
-            return
-          }
-          const next = store.lock ?? terminalMode(colors) ?? mode
-          if (store.mode !== next) setStore("mode", next)
-          const signature = JSON.stringify(colors)
-          hasResolvedSystemTheme = true
-          if (store.themes.system && systemThemeSignature === signature && systemThemeMode === next) return
-          systemThemeSignature = signature
-          systemThemeMode = next
-          setSystemTheme(generateSystem(colors, next))
-        })
-        .catch(() => {
-          if (hasResolvedSystemTheme) return
-          setSystemTheme(undefined)
-          if (store.active === "system") setStore("active", FALLBACK_THEME)
-        })
-    }
-
-    let systemRefreshRunning = false
-    let systemRefreshQueued = false
-    let systemRefreshMode = store.mode
-    function refreshSystemTheme(mode: "dark" | "light" = store.mode) {
-      systemRefreshMode = mode
-      if (systemRefreshRunning) {
-        systemRefreshQueued = true
-        return
-      }
-
-      systemRefreshRunning = true
-      const retry = renderer.paletteDetectionStatus === "detecting"
-      renderer.clearPaletteCache()
-      void resolveSystemTheme(mode).finally(() => {
-        systemRefreshRunning = false
-        if (!retry && !systemRefreshQueued) return
-        systemRefreshQueued = false
-        refreshSystemTheme(systemRefreshMode)
-      })
-    }
-
-    function apply(mode: "dark" | "light") {
-      if (store.mode === mode) return
-      setStore("mode", mode)
-      refreshSystemTheme(mode)
-    }
-
-    function pin(mode: "dark" | "light" = store.mode, persist = true) {
-      setStore("lock", mode)
-      apply(mode)
-      if (!persist) return
-      void configState
-        .update((draft) => {
-          draft.theme = { ...draft.theme, mode }
-        })
-        .catch(() => {})
-    }
-
-    function free(persist = true) {
-      setStore("lock", undefined)
-      refreshSystemTheme(renderer.themeMode ?? store.mode)
-      if (!persist) return
-      void configState
-        .update((draft) => {
-          draft.theme = { ...draft.theme, mode: "system" }
-        })
-        .catch(() => {})
-    }
-
-    const handle = (mode: "dark" | "light") => {
-      if (store.lock) return
-      apply(mode)
-    }
-    renderer.on(CliRenderEvents.THEME_MODE, handle)
-
-    const handleThemeNotification = (sequence: string) => {
-      if (sequence !== "\x1b[?997;1n" && sequence !== "\x1b[?997;2n") return false
-      queueMicrotask(() => refreshSystemTheme())
-      return false
-    }
-    renderer.prependInputHandler(handleThemeNotification)
-
-    let themeRefreshTimeouts: ReturnType<typeof setTimeout>[] = []
+    let themeRefreshTimeout: ReturnType<typeof setTimeout> | undefined
     const refresh = () => {
-      for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
-      themeRefreshTimeouts = THEME_REFRESH_DELAYS.map((delay) =>
-        setTimeout(() => {
-          refreshSystemTheme()
-          if (delay === THEME_REFRESH_DELAYS[THEME_REFRESH_DELAYS.length - 1]) void syncCustomThemes()
-        }, delay),
-      )
+      clearTimeout(themeRefreshTimeout)
+      themeRefreshTimeout = setTimeout(() => void syncCustomThemes(), THEME_REFRESH_DELAY)
     }
     let unsubscribeRefresh: (() => void) | undefined
     unsubscribeRefresh = themes.subscribeRefresh?.(refresh)
 
     onCleanup(() => {
-      renderer.off(CliRenderEvents.THEME_MODE, handle)
-      renderer.removeInputHandler(handleThemeNotification)
       unsubscribeRefresh?.()
-      for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
-      themeRefreshTimeouts.length = 0
+      clearTimeout(themeRefreshTimeout)
     })
 
     const initStarted = performance.now()
     const selected = createMemo(() => {
       const name = store.themes[store.active] ? store.active : FALLBACK_THEME
       try {
-        return loadTheme(store.themes[name], name, store.mode)
+        return loadTheme(store.themes[name], name)
       } catch (error) {
         if (name === FALLBACK_THEME) throw error
         themeErrors.emit(name, error)
         setStore("active", FALLBACK_THEME)
-        return loadTheme(store.themes[FALLBACK_THEME], FALLBACK_THEME, store.mode)
+        return loadTheme(store.themes[FALLBACK_THEME], FALLBACK_THEME)
       }
     })
-    const modes = () => selected().modes
     const mode = () => selected().mode
     const valuesV2 = () => selected().theme
     valuesV2()
@@ -336,16 +203,6 @@ const themeContext = createSimpleContext({
       all: allThemes,
       has: hasTheme,
       mode,
-      modes,
-      supports: (requested) => modes().includes(requested),
-      locked: () => store.lock !== undefined,
-      lock: () => pin(mode()),
-      unlock: free,
-      setMode(requested = mode(), persist = true) {
-        if (!modes().includes(requested)) return false
-        pin(requested, persist)
-        return true
-      },
       set(theme: string) {
         if (!hasTheme(theme)) return false
         setStore("active", theme)
@@ -393,11 +250,10 @@ export function ThemeContextProvider(props: ParentProps<{ context: ContextName }
   )
 }
 
-function loadTheme(source: ThemeDocumentSource, name: string, requested: "dark" | "light") {
+function loadTheme(source: ThemeDocumentSource, name: string) {
   const document = parseTheme(source, name)
-  const modes = themeModes(document)
-  const mode = modes.includes(requested) ? requested : (modes[0] ?? requested)
-  return { modes, mode, theme: resolveThemeDocument(document, mode) }
+  const mode = themeMode(source, name)
+  return { mode, theme: resolveThemeDocument(document, mode) }
 }
 
 export function createSyntaxStyleMemo(factory: () => SyntaxStyle) {

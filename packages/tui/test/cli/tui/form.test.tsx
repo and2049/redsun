@@ -69,7 +69,7 @@ async function mountForm(root: string, width = 80, fields?: FormWithLocation["fi
         <ConfigProvider config={config}>
           <Keymap.Provider>
             <ClientProvider api={createApi(transport.fetch)}>
-              <ThemeProvider mode="dark" source={emptyThemeSource}>
+              <ThemeProvider source={emptyThemeSource}>
                 <ToastProvider>
                   <FormPrompt form={form} />
                 </ToastProvider>

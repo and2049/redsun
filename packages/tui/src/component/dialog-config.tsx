@@ -27,14 +27,6 @@ export const settings: Setting[] = [
     keywords: ["color scheme", "colors"],
   },
   {
-    title: "Color mode",
-    category: "Appearance",
-    path: ["theme", "mode"],
-    default: "system",
-    values: ["system", "dark", "light"],
-    keywords: ["dark mode", "light mode", "system theme"],
-  },
-  {
     title: "Animations",
     category: "Appearance",
     path: ["animations"],

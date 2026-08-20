@@ -235,7 +235,7 @@ async function renderDiffViewer(
         <ConfigProvider config={config}>
           <Keymap.Provider>
             <ToastProvider>
-              <ThemeProvider mode="dark" source={emptyThemeSource}>
+              <ThemeProvider source={emptyThemeSource}>
                 <DialogProvider>
                   <Content />
                 </DialogProvider>

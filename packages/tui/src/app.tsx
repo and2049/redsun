@@ -141,8 +141,6 @@ const appBindingCommands = [
   "service.restart",
   "opencode.debug",
   "theme.switch",
-  "theme.switch_mode",
-  "theme.mode.lock",
   "help.show",
   "docs.open",
   "diff.open",
@@ -267,8 +265,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
       )
       renderer.once("destroy", () => Deferred.doneUnsafe(shutdown, Effect.void))
       yield* Effect.tryPromise(async () => {
-        // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
-        void renderer.getPalette({ size: 16 }).catch(() => undefined)
         const mode = handoff?.mode ?? (await renderer.waitForThemeMode(1000)) ?? "dark"
         if (renderer.isDestroyed) return
 
@@ -363,10 +359,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                 <DataProvider>
                                                   <LocationProvider>
                                                     <VimProvider>
-                                                      <ThemeProvider
-                                                        mode={mode}
-                                                        source={createThemeSource(global.config)}
-                                                      >
+                                                      <ThemeProvider source={createThemeSource(global.config)}>
                                                         <ThemeErrorToast />
                                                         <LocalProvider>
                                                           <PromptStashProvider>
@@ -461,7 +454,7 @@ function App(props: { pair?: DialogPairCredentials }) {
   const tabsTheme = useTheme("elevated")
   const openWorkerModel = useWorkerModelDialog()
   const openWorkerVariant = useWorkerVariantDialog()
-  const { mode, supports, setMode, locked, lock, unlock } = useThemes()
+  const { mode } = useThemes()
   const data = useData()
   const location = useLocation()
   const exit = useExit()
@@ -910,28 +903,6 @@ function App(props: { pair?: DialogPairCredentials }) {
         slash: { name: "themes" },
         run: () => {
           dialog.replace(() => <DialogThemeList />)
-        },
-        category: "System",
-      },
-      {
-        name: "theme.switch_mode",
-        title: mode() === "dark" ? "Switch to light mode" : "Switch to dark mode",
-        palette: undefined,
-        enabled: () => supports(mode() === "dark" ? "light" : "dark"),
-        run: () => {
-          setMode(mode() === "dark" ? "light" : "dark")
-          dialog.clear()
-        },
-        category: "System",
-      },
-      {
-        name: "theme.mode.lock",
-        title: locked() ? "Unlock theme mode" : "Lock theme mode",
-        palette: undefined,
-        run: () => {
-          if (locked()) unlock()
-          else lock()
-          dialog.clear()
         },
         category: "System",
       },

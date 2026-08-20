@@ -1,5 +1,11 @@
 import { Schema } from "effect"
-import { migrateV1, resolveThemeDocument, ThemeDocument, themeDecodeError } from "@opencode-ai/theme/tui"
+import {
+  migrateV1,
+  resolveThemeDocument,
+  ThemeDocument,
+  themeDecodeError,
+  themeModes,
+} from "@opencode-ai/theme/tui"
 import { resolveThemeColors } from "./resolve"
 import { type Theme, type ThemeV1Json } from "./v1"
 import cloud from "./assets/cloud.json" with { type: "json" }
@@ -37,22 +43,16 @@ export const DEFAULT_THEMES: Record<string, ThemeDocumentSource> = {
 
 const pluginThemes: Record<string, ThemeDocumentSource> = {}
 let customThemes: Record<string, ThemeDocumentSource> = {}
-let systemTheme: ThemeDocumentSource | undefined
 const listeners = new Set<(themes: Record<string, ThemeDocumentSource>) => void>()
 const parsed = new WeakMap<object, ThemeDocument>()
 const decodeThemeDocument = Schema.decodeUnknownSync(ThemeDocument, { reportInput: true })
 
-function listThemes() {
-  // Priority: defaults < plugin installs < custom files < generated system.
-  const themes: Record<string, ThemeDocumentSource> = {
+function listThemes(): Record<string, ThemeDocumentSource> {
+  // Priority: defaults < plugin installs < custom files.
+  return {
     ...DEFAULT_THEMES,
     ...pluginThemes,
     ...customThemes,
-  }
-  if (!systemTheme) return themes
-  return {
-    ...themes,
-    system: systemTheme,
   }
 }
 
@@ -98,9 +98,19 @@ export function setCustomThemes(themes: Record<string, unknown>) {
   syncThemes()
 }
 
-export function setSystemTheme(theme: ThemeDocumentSource | undefined) {
-  systemTheme = theme
-  syncThemes()
+// A theme belongs to one half of the picker. A document that provides both
+// modes declares no side of its own, so it reads as dark -- the side the
+// fallback theme sits on.
+export function themeMode(source: ThemeDocumentSource, name?: string): "dark" | "light" {
+  try {
+    const modes = themeModes(parseTheme(source, name))
+    return modes.length === 1 ? modes[0]! : "dark"
+  } catch {
+    // Listing a theme must not depend on it parsing -- a broken plugin or user
+    // document still belongs somewhere, and selecting it is what surfaces the
+    // error.
+    return "dark"
+  }
 }
 
 export function hasTheme(name: string) {

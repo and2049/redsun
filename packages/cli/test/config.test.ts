@@ -43,7 +43,6 @@ test("migrates tui and kv config into cli.json", async () => {
   await Bun.write(
     path.join(directory, "kv.json"),
     JSON.stringify({
-      theme_mode_lock: "light",
       attention_sound_pack: "custom.pack",
       diff_wrap_mode: "none",
       diff_viewer_show_file_tree: false,
@@ -73,7 +72,7 @@ test("migrates tui and kv config into cli.json", async () => {
     )
 
     expect(config).toMatchObject({
-      theme: { name: "legacy", mode: "light" },
+      theme: { name: "legacy" },
       keybinds: {
         leader: "ctrl+o",
         "app.exit": "ctrl+q",

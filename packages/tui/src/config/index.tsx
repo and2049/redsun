@@ -48,9 +48,6 @@ export const Info = Schema.Struct({
   theme: Schema.optional(
     Schema.Struct({
       name: Schema.optional(Schema.String).annotate({ description: "Theme name" }),
-      mode: Schema.optional(Schema.Literals(["system", "dark", "light"])).annotate({
-        description: "Color mode; 'system' follows the terminal",
-      }),
     }),
   ).annotate({ description: "Color theme settings" }),
   keybinds: Schema.optional(TuiKeybind.KeybindOverrides).annotate({ description: "Custom key bindings" }),
