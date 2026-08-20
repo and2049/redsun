@@ -121,6 +121,10 @@ const BACKGROUND_TOOL_HINT_DELAY = 3_000
 // The tail comfortably overfills a tall viewport; older rows mount as the reader approaches them.
 const TRANSCRIPT_TAIL_ROWS = 40
 const TRANSCRIPT_BACKFILL_CHUNK = 60
+
+// Prompt-metadata contract with the redsun goal plugin (core/src/plugin/redsun/goal.ts).
+const GOAL_METADATA_KEY = "redsun.goal"
+const GOAL_CLEAR = "__clear__"
 type PendingAction = "steer" | "queue" | "cancel"
 
 const context = createContext<{
@@ -773,6 +777,48 @@ export function Session() {
             }}
           />
         ))
+      },
+    },
+    {
+      title: "Set or clear a session goal",
+      id: "session.goal",
+      group: "Session",
+      slash: {
+        name: "goal",
+        arguments: true as const,
+      },
+      run: async (input?: string) => {
+        const condition = input?.trim() ?? ""
+        const selection = local.model.current()
+        // A delegated Claude Code session runs its own /goal loop: forward the
+        // literal command text so the CLI handles it, and store nothing here.
+        if (selection?.providerID === "claude-code") {
+          await client.api.session.prompt({
+            sessionID: route.sessionID,
+            text: condition ? `/goal ${condition}` : "/goal",
+          })
+          dialog.clear()
+          return
+        }
+        if (!condition) {
+          await client.api.session.synthetic({
+            sessionID: route.sessionID,
+            text: "Goal cleared.",
+            metadata: { [GOAL_METADATA_KEY]: GOAL_CLEAR },
+          })
+          toast.show({ message: "Goal cleared", variant: "info" })
+          dialog.clear()
+          return
+        }
+        // The condition rides as a real user turn; the metadata is the write path
+        // the redsun goal plugin reads to arm the judge loop.
+        await client.api.session.prompt({
+          sessionID: route.sessionID,
+          text: condition,
+          metadata: { [GOAL_METADATA_KEY]: condition },
+        })
+        toast.show({ message: "Goal set", variant: "info" })
+        dialog.clear()
       },
     },
     {
