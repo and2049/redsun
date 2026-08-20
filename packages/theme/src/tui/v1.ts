@@ -15,6 +15,7 @@ export type Theme = {
   readonly selectedListItemText: RGBA
   readonly background: RGBA
   readonly backgroundPanel: RGBA
+  // Derived, not declared: element surfaces reuse the panel colour.
   readonly backgroundElement: RGBA
   readonly backgroundMenu: RGBA
   readonly border: RGBA
@@ -26,6 +27,8 @@ export type Theme = {
   readonly diffHunkHeader: RGBA
   readonly diffHighlightAdded: RGBA
   readonly diffHighlightRemoved: RGBA
+  // Derived, not declared: diff row highlights are `diffAdded`/`diffRemoved`
+  // at 20% alpha, and the line-number gutter shares them.
   readonly diffAddedBg: RGBA
   readonly diffRemovedBg: RGBA
   readonly diffContextBg: RGBA
@@ -66,7 +69,17 @@ export type Theme = {
 
 export type ThemeColor = Exclude<
   keyof Theme,
-  "thinkingOpacity" | "_hasSelectedListItemText" | "agentBuild" | "agentPlan" | "agentCompose"
+  | "thinkingOpacity"
+  | "_hasSelectedListItemText"
+  | "agentBuild"
+  | "agentPlan"
+  | "agentCompose"
+  | "diffAddedBg"
+  | "diffRemovedBg"
+  | "diffAddedLineNumberBg"
+  | "diffRemovedLineNumberBg"
+  | "diffContextBg"
+  | "backgroundElement"
 >
 // The syntax table and the selected-foreground rule never read the wordmark
 // gradient, so they accept the plugin-facing theme surface too.
@@ -91,6 +104,14 @@ export type ThemeV1Json = {
     Record<ThemeColor, ColorValue>,
     "logoGradientStart" | "logoGradientEnd" | "selectedListItemText" | "backgroundMenu"
   > & {
+    // Ignored if declared: these four are always derived from
+    // `diffAdded`/`diffRemoved` (upstream V1 themes may still carry them).
+    diffAddedBg?: ColorValue
+    diffRemovedBg?: ColorValue
+    diffAddedLineNumberBg?: ColorValue
+    diffRemovedLineNumberBg?: ColorValue
+    diffContextBg?: ColorValue
+    backgroundElement?: ColorValue
     // Redsun tokens; upstream V1 themes have no wordmark gradient.
     logoGradientStart?: ColorValue
     logoGradientEnd?: ColorValue

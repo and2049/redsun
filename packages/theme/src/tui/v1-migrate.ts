@@ -156,16 +156,16 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
         hunkHeader: color("diffHunkHeader"),
       },
       background: {
-        added: color("diffAddedBg"),
-        removed: color("diffRemovedBg"),
-        context: color("diffContextBg"),
+        added: hex(theme.diffAddedBg),
+        removed: hex(theme.diffRemovedBg),
+        context: hex(theme.diffContextBg),
       },
       highlight: { added: color("diffHighlightAdded"), removed: color("diffHighlightRemoved") },
       lineNumber: {
         text: color("diffLineNumber"),
         background: {
-          added: color("diffAddedLineNumberBg"),
-          removed: color("diffRemovedLineNumberBg"),
+          added: hex(theme.diffAddedLineNumberBg),
+          removed: hex(theme.diffRemovedLineNumberBg),
         },
       },
     },
@@ -364,15 +364,34 @@ function resolveV1(theme: ThemeV1Json, mode: "dark" | "light"): Theme {
   resolved.selectedListItemText = hasSelectedListItemText
     ? resolveColor(theme.theme.selectedListItemText)
     : resolved.background
+  // Element surfaces and the diff context band reuse the panel colour;
+  // declared values are ignored.
+  resolved.backgroundElement = resolved.backgroundPanel
+  resolved.diffContextBg = resolved.backgroundPanel
   resolved.backgroundMenu = theme.theme.backgroundMenu
     ? resolveColor(theme.theme.backgroundMenu)
     : resolved.backgroundElement
+  // Diff row highlights wash the declared diff colours over the background, so
+  // retinting `diffAdded`/`diffRemoved` retints the highlights with them. The
+  // line-number gutter shares the wash; declared values are ignored.
+  const addedBg = diffHighlightBg(resolved.diffAdded!)
+  const removedBg = diffHighlightBg(resolved.diffRemoved!)
+  resolved.diffAddedBg = addedBg
+  resolved.diffRemovedBg = removedBg
+  resolved.diffAddedLineNumberBg = addedBg
+  resolved.diffRemovedLineNumberBg = removedBg
 
   return {
     ...resolved,
     _hasSelectedListItemText: hasSelectedListItemText,
     thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,
   } as Theme
+}
+
+const DIFF_HIGHLIGHT_ALPHA = 0.2
+
+function diffHighlightBg(color: RGBA) {
+  return RGBA.fromValues(color.r, color.g, color.b, color.a * DIFF_HIGHLIGHT_ALPHA)
 }
 
 function selectedForeground(theme: Theme, background: RGBA) {
