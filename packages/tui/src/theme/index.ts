@@ -16,9 +16,11 @@ import glade from "./assets/glade.json" with { type: "json" }
 import gruvbox from "./assets/gruvbox.json" with { type: "json" }
 import kanagawa from "./assets/kanagawa.json" with { type: "json" }
 import lotus from "./assets/lotus.json" with { type: "json" }
+import nimbus from "./assets/nimbus.json" with { type: "json" }
 import parchment from "./assets/parchment.json" with { type: "json" }
 import petal from "./assets/petal.json" with { type: "json" }
 import rosepine from "./assets/rosepine.json" with { type: "json" }
+import tide from "./assets/tide.json" with { type: "json" }
 import wave from "./assets/wave.json" with { type: "json" }
 
 export { generateSyntax, selectedForeground, type Theme, type ThemeV1Json } from "./v1"
@@ -35,9 +37,11 @@ export const DEFAULT_THEMES: Record<string, ThemeDocumentSource> = {
   gruvbox,
   kanagawa,
   lotus,
+  nimbus,
   parchment,
   petal,
   rosepine,
+  tide,
   wave,
 }
 

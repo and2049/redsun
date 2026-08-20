@@ -43,6 +43,12 @@ const HueColorValue = Schema.Union([HexColor, Schema.TemplateLiteral(["$hue.", H
 export const CategoricalDefinition = Schema.Array(Schema.Union([HueName, HueColorValue])).check(Schema.isMinLength(1))
 export type CategoricalDefinition = Schema.Schema.Type<typeof CategoricalDefinition>
 
+// Per-agent colours keyed by agent id. An agent named here always paints with
+// its declared colour; agents a theme does not name keep their positional
+// assignment from the categorical scale.
+export const AgentsDefinition = Schema.Record(Schema.String, ColorValue)
+export type AgentsDefinition = Schema.Schema.Type<typeof AgentsDefinition>
+
 const ContextKey = Schema.Literals(["@context:elevated", "@context:overlay"])
 export type ContextKey = Schema.Schema.Type<typeof ContextKey>
 
@@ -212,6 +218,7 @@ const LogoDefinition = Schema.Struct({
 })
 
 const ThemeTokensDefinition = Schema.Struct({
+  agents: Schema.optional(AgentsDefinition),
   text: Schema.optional(TextDefinition),
   background: Schema.optional(BackgroundDefinition),
   border: Schema.optional(Schema.Struct({ default: Schema.optional(ColorValue) })),

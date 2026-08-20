@@ -5,7 +5,10 @@ import type { FileThemeDefinition, Mode, ThemeDocument } from "./index.js"
 import { HueStep } from "./schema.js"
 import type { Theme, ThemeV1Json } from "./v1.js"
 
-type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
+type ThemeColor = Exclude<
+  keyof Theme,
+  "thinkingOpacity" | "_hasSelectedListItemText" | "agentBuild" | "agentPlan" | "agentCompose"
+>
 type ChromaticHue = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple"
 type V1HueToken = "secondary" | "accent" | "success" | "warning" | "primary" | "error" | "info"
 
@@ -63,6 +66,17 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
     const color = theme[token]
     return color && color.toInts()[3] !== 0 ? [hex(color)] : []
   })
+  // Declared agent-mode colours; a transparent declaration would paint an
+  // invisible label, so it drops out like a transparent categorical entry.
+  const agents = Object.fromEntries(
+    (
+      [
+        ["build", theme.agentBuild],
+        ["plan", theme.agentPlan],
+        ["compose", theme.agentCompose],
+      ] as const
+    ).flatMap(([id, color]) => (color && color.toInts()[3] !== 0 ? [[id, hex(color)] as const] : [])),
+  )
   const text = mode === "light" ? "$hue.neutral.800" : "$hue.neutral.200"
   const textMuted = mode === "light" ? "$hue.neutral.600" : "$hue.neutral.400"
   const primary = mode === "light" ? "$hue.interactive.800" : "$hue.interactive.200"
@@ -84,6 +98,7 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
       neutral: "$hue.gray",
     },
     categorical: categorical.length ? categorical : DEFAULT_CATEGORICAL,
+    ...(Object.keys(agents).length ? { agents } : {}),
     text: {
       default: text,
       subdued: textMuted,

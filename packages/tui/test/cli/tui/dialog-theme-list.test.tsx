@@ -58,6 +58,9 @@ test("lists dark themes first and swaps to the light tab", async () => {
     expect(dark).toContain("Dark")
     expect(dark).toContain("Light")
     expect(dark).toContain("gruvbox")
+    // `tide` also lands here but can scroll out of view when other test files
+    // leak plugin themes into the shared registry, so only `nimbus` is pinned.
+    expect(dark).toContain("nimbus")
     expect(dark).not.toContain("parchment")
 
     app.mockInput.pressTab()
@@ -66,7 +69,9 @@ test("lists dark themes first and swaps to the light tab", async () => {
     expect(light).toContain("dawn")
     // `wave` declares itself light even though it paints light text on mid-blue.
     expect(light).toContain("wave")
+    expect(light).toContain("cloud")
     expect(light).not.toContain("gruvbox")
+    expect(light).not.toContain("nimbus")
   } finally {
     app.renderer.destroy()
   }

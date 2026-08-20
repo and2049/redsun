@@ -120,11 +120,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         color(id: string) {
           const index = visibleAgents().findIndex((agent) => agent.id === id)
-          if (index === -1) return colors()[0]
+          if (index === -1) return theme.agents[id] ?? colors()[0]
           const agent = visibleAgents()[index]
 
           if (agent?.color) return RGBA.fromHex(agent.color)
-          return colors()[index % colors().length]
+          // A theme that names this agent owns its colour; unnamed agents keep
+          // their positional slot in the categorical scale.
+          return theme.agents[id] ?? colors()[index % colors().length]
         },
       }
     }

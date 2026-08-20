@@ -196,7 +196,7 @@ test("theme directories include global config before project directories", async
   })
 })
 
-test("ships the twelve redsun themes, each resolving in the mode it declares", () => {
+test("ships the fourteen redsun themes, each resolving in the mode it declares", () => {
   // v0.3.0 split dark/light pairs into standalone single-mode themes rather
   // than pairing modes inside one document, and the picker is built around
   // that. Each is a flat v1 document run through migrateV1, so this also
@@ -210,9 +210,11 @@ test("ships the twelve redsun themes, each resolving in the mode it declares", (
     "gruvbox",
     "kanagawa",
     "lotus",
+    "nimbus",
     "parchment",
     "petal",
     "rosepine",
+    "tide",
     "wave",
   ])
 
@@ -228,6 +230,9 @@ test("ships the twelve redsun themes, each resolving in the mode it declares", (
     // falls back to the generic default and the theme reads as unfinished.
     expect(resolved.logo.gradient.start, name).toBeDefined()
     expect(resolved.logo.gradient.end, name).toBeDefined()
+    // Every theme names the three primary agent modes so their colours are
+    // customizable individually instead of assigned positionally.
+    expect(Object.keys(resolved.agents).toSorted(), name).toEqual(["build", "compose", "plan"])
   }
 })
 
@@ -235,7 +240,7 @@ test("shipped themes resolve only to colours they declare", () => {
   // The TUI must never paint a shade a theme file did not name. Migration snaps
   // every hue step to a declared anchor rather than interpolating between them,
   // so this covers the whole hue block and every semantic slot in the base,
-  // elevated and overlay views. It is an invariant of the shipped twelve, not
+  // elevated and overlay views. It is an invariant of the shipped fourteen, not
   // of the format: `selectedForeground` still falls back to pure black or white
   // for a theme that declares a transparent background and no
   // `selectedListItemText`, and none of these do.

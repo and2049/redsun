@@ -16,6 +16,9 @@ export function createComponentTheme(current: Accessor<ResolvedTheme>, mode: Acc
     get categorical() {
       return view().categorical
     },
+    get agents() {
+      return view().agents
+    },
     get text() {
       return view().text
     },
