@@ -575,7 +575,16 @@ const Endpoint5_29 = (raw: RawClient["server.session"]) => (input: Endpoint5_29I
 
 const Endpoint5_30 = (raw: RawClient["server.session"]) => (input: Endpoint5_30Input) =>
   preserveEffect<Endpoint5_30Output>()(
-    raw["session.generate"]({ params: { sessionID: input["sessionID"] }, payload: { prompt: input["prompt"] } }).pipe(
+    raw["session.generate"]({
+      params: { sessionID: input["sessionID"] },
+      payload: {
+        prompt: input["prompt"],
+        system: input["system"],
+        temperature: input["temperature"],
+        model: input["model"],
+        tools: input["tools"],
+      },
+    }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
     ),

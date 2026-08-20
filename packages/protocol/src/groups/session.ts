@@ -612,7 +612,15 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
     .add(
       HttpApiEndpoint.post("session.generate", "/api/session/:sessionID/generate", {
         params: { sessionID: Session.ID },
-        payload: Schema.Struct({ prompt: Schema.String }),
+        // REDSUN: optional judge/advisor controls — own system prompt, temperature, model
+        // override, and tool suppression for transient evaluation calls.
+        payload: Schema.Struct({
+          prompt: Schema.String,
+          system: Schema.String.pipe(Schema.optional),
+          temperature: Schema.Number.pipe(Schema.optional),
+          model: Model.Ref.pipe(Schema.optional),
+          tools: Schema.Boolean.pipe(Schema.optional),
+        }),
         success: Schema.Struct({
           data: Schema.Struct({ text: Schema.String }),
         }).annotate({ identifier: "SessionGenerateResponse" }),

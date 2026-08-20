@@ -1,6 +1,7 @@
 export * as SessionGenerate from "./generate.js"
 
 import type { AIError } from "@opencode-ai/ai"
+import type { Model } from "@opencode-ai/schema/model"
 import { Context, type Effect } from "effect"
 import type { Instructions } from "../instructions/index.js"
 import type { AgentNotFoundError } from "./error.js"
@@ -14,6 +15,13 @@ export interface Interface {
   readonly generate: (input: {
     readonly sessionID: SessionSchema.ID
     readonly prompt: string
+    /** REDSUN: replaces the base system parts (agent system + history initial) when set. */
+    readonly system?: string
+    readonly temperature?: number
+    /** REDSUN: model override for judge/advisor calls; defaults to the session model. */
+    readonly model?: Model.Ref
+    /** REDSUN: `false` sends the request with no tools and toolChoice "none". */
+    readonly tools?: boolean
   }) => Effect.Effect<string, Error>
 }
 

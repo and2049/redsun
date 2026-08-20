@@ -3938,7 +3938,41 @@ export type SessionInstructionsEntryRemoveOutput = void
 
 export type SessionGenerateInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly prompt: { readonly prompt: string }["prompt"]
+  readonly prompt: {
+    readonly prompt: string
+    readonly system?: string | null
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["prompt"]
+  readonly system?: {
+    readonly prompt: string
+    readonly system?: string | null
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["system"]
+  readonly temperature?: {
+    readonly prompt: string
+    readonly system?: string | null
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["temperature"]
+  readonly model?: {
+    readonly prompt: string
+    readonly system?: string | null
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["model"]
+  readonly tools?: {
+    readonly prompt: string
+    readonly system?: string | null
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["tools"]
 }
 
 export type SessionGenerateOutput = SessionGenerateResponse["data"]
