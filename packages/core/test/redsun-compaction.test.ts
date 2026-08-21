@@ -30,7 +30,7 @@ let requests: LLMRequest[] = []
 const model = LanguageModel.make({
   id: "summary-model",
   provider: "test",
-  route: OpenAIChat.route.with({ limits: { context: 10_000, output: 1_000 } }),
+  route: OpenAIChat.route,
 })
 const cost = [
   {
@@ -58,6 +58,7 @@ const models = Layer.mock(SessionRunnerModel.Service)({
       SessionRunnerModel.resolved(model, {
         capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
         cost,
+        limit: { context: 10_000, output: 1_000 },
       }),
     ),
 })
@@ -82,6 +83,15 @@ const harness = (compaction: Record<string, unknown>) => {
 // keep.tokens: 0 forces everything except the newest user turn into the head.
 const hybrid = harness({ strategy: "hybrid", keep: { tokens: 0 }, keep_recent: 1 })
 const algorithmic = harness({ strategy: "algorithmic", keep: { tokens: 0 } })
+
+// Settings reach the service through ConfigCompactionPlugin's transform in production;
+// these tests drive the same configure seam directly.
+const configured = (settings: Partial<SessionCompaction.Settings>) =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.transform((draft) => draft.configure(settings))
+    return compaction
+  })
 
 const message = (value: Record<string, unknown>) => decodeMessage({ time: { created: 0 }, ...value })
 
@@ -227,7 +237,7 @@ test("buildPrompt folds the inventory in without repeating it downstream", () =>
 hybrid.effect("hybrid compaction sends the inventory and only the recent head slice", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* SessionCompaction.Service
+    const compaction = yield* configured({ strategy: "hybrid", tokens: 0, keepRecent: 1 })
     const { session } = yield* seedSession("hybrid")
     expect(
       yield* compaction.compactManual({
@@ -249,7 +259,7 @@ hybrid.effect("hybrid compaction sends the inventory and only the recent head sl
 algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* SessionCompaction.Service
+    const compaction = yield* configured({ strategy: "algorithmic", tokens: 0 })
     const { session, store } = yield* seedSession("algorithmic")
     expect(
       yield* compaction.compactManual({
@@ -271,7 +281,7 @@ algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
 algorithmic.effect("algorithmic compaction carries the previous summary forward", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* SessionCompaction.Service
+    const compaction = yield* configured({ strategy: "algorithmic", tokens: 0 })
     const { session, store } = yield* seedSession("carry")
     const previous = message({
       id: "msg_previous_compaction",

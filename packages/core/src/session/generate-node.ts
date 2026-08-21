@@ -1,32 +1,24 @@
 export * as SessionGenerateNode from "./generate-node.js"
 
-import { LLM, LLMClient, Message, SystemPart } from "@opencode-ai/ai"
+import { LLMClient, Message, SystemPart } from "@opencode-ai/ai"
 import { Effect, Layer } from "effect"
 import { Database } from "../database/database.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { App } from "../app.js"
 import { llmClient } from "../effect/app-node-platform.js"
-import { PluginHooks } from "../plugin/hooks.js"
 import { SessionContext } from "./context.js"
 import { SessionGenerate } from "./generate.js"
 import { SessionHistory } from "./history.js"
-import { SessionModelHeaders } from "./model-headers.js"
-import { SessionModelHook } from "./model-hook.js"
-import { SessionModelHttp } from "./model-http.js"
-import { SessionPromptCacheKey } from "./prompt-cache-key.js"
+import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
-import { SessionSystemPrompt } from "./system-prompt.js"
-import { toLLMMessages } from "./runner/to-llm-message.js"
 
 export const layer = Layer.effect(
   SessionGenerate.Service,
   Effect.gen(function* () {
     const context = yield* SessionContext.Service
     const database = yield* Database.Service
-    const hooks = yield* PluginHooks.Service
     const llm = yield* LLMClient.Service
     const models = yield* SessionRunnerModel.Service
-    const app = yield* App.Metadata
+    const modelRequests = yield* SessionModelRequest.Service
 
     return SessionGenerate.Service.of({
       generate: Effect.fn("SessionGenerate.generate")(function* (input) {
@@ -37,69 +29,38 @@ export const layer = Layer.effect(
           input.model ? { ...selection.session, model: input.model } : selection.session,
         )
         const history = yield* SessionHistory.preview(database.db, selection.session.id, selection.instructions)
-        const providerMetadataKey = model.model.route.providerMetadataKey ?? model.model.provider
-        const tools = selection.tools
-        const toolDefinitions = input.tools === false ? [] : tools.definitions
-        const toolsByName = new Map(toolDefinitions.map((tool) => [tool.name, tool]))
-        const contextEvent = yield* hooks.trigger("session", "context", {
-          sessionID: selection.session.id,
-          agent: selection.agent.id,
-          model: model.ref,
-          system:
-            input.system !== undefined
-              ? [SystemPart.make(input.system)]
-              : [
-                  selection.agent.info.system
-                    ? selection.agent.info.system
-                    : SessionSystemPrompt.make(toolDefinitions.map((tool) => tool.name)),
-                  history.initial,
-                ]
-                  .filter((part) => part.length > 0)
-                  .map(SystemPart.make),
-          messages: [
-            ...toLLMMessages(history.messages, model.ref, providerMetadataKey),
-            ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
-            Message.user(input.prompt),
-          ],
-          tools: Object.fromEntries(
-            toolDefinitions.map((tool) => [
-              tool.name,
-              { description: tool.description, input: { ...tool.inputSchema } },
-            ]),
-          ),
+        // REDSUN: tool suppression empties the toolset and forces toolChoice "none"; a
+        // replacement system prompt substitutes wholesale.
+        const tools = input.tools === false ? { ...selection.tools, definitions: [] } : selection.tools
+        const transcript = SessionModelRequest.baseTranscript({
+          agent: selection.agent.info,
+          model,
+          tools,
+          initial: history.initial,
+          messages: history.messages,
         })
-        const hookedTools = Object.entries(contextEvent.tools).flatMap(([name, tool]) => {
-          const registered = toolsByName.get(name)
-          return registered
-            ? [Object.assign({}, registered, { description: tool.description, inputSchema: tool.input })]
-            : []
+        const prepared = yield* modelRequests.prepare({
+          scope: { session: selection.session, agentID: selection.agent.id, model, tools },
+          transcript: {
+            system: input.system !== undefined ? [SystemPart.make(input.system)] : transcript.system,
+            messages: [
+              ...transcript.messages,
+              ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
+              Message.user(input.prompt),
+            ],
+          },
+          ...(input.tools === false ? { toolChoice: "none" as const } : {}),
         })
         yield* Effect.logInfo("sending session generation request", {
           sessionID: selection.session.id,
           providerID: model.ref.providerID,
           modelID: model.ref.id,
         })
-        const request = yield* SessionModelHook.apply(
-          hooks,
-          { sessionID: selection.session.id, agent: selection.agent.id, model: model.ref },
-          LLM.request({
-            model: model.model,
-            http: { headers: SessionModelHeaders.make(selection.session, app) },
-            promptCacheKey: SessionPromptCacheKey.make(selection.session.id),
-            system: contextEvent.system,
-            messages: contextEvent.messages,
-            tools: hookedTools,
-            ...(input.tools === false ? { toolChoice: "none" as const } : {}),
-            ...(input.temperature !== undefined ? { generation: { temperature: input.temperature } } : {}),
-          }),
-        )
-        const response = yield* llm.generate(request, {
-          http: SessionModelHttp.middleware(hooks, {
-            sessionID: selection.session.id,
-            agent: selection.agent.id,
-            model: model.ref,
-          }),
-        })
+        const request =
+          input.temperature !== undefined
+            ? { ...prepared.request, generation: { ...prepared.request.generation, temperature: input.temperature } }
+            : prepared.request
+        const response = yield* llm.generate(request, prepared.options)
         yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })
         return response.text
       }),
@@ -110,5 +71,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: SessionGenerate.Service,
   layer,
-  deps: [SessionContext.node, Database.node, PluginHooks.node, SessionRunnerModel.node, App.node, llmClient],
+  deps: [SessionContext.node, Database.node, SessionModelRequest.node, SessionRunnerModel.node, llmClient],
 })

@@ -1,31 +1,24 @@
 export * as SessionCompaction from "./compaction.js"
 
-import { LLM, LLMClient, AIError, LLMEvent, Message, type LLMRequest, type LanguageModel } from "@opencode-ai/ai"
+import { LLMClient, AIError, LLMEvent, Message, type LLMRequest } from "@opencode-ai/ai"
 import type { StreamOptions } from "@opencode-ai/ai/route"
 import { SessionError } from "@opencode-ai/schema/session-error"
-import { Document, type Entry } from "@opencode-ai/schema/config"
 import { Context, Effect, Layer, Stream } from "effect"
 import { ConfigCompaction } from "@opencode-ai/schema/config/compaction"
-import { Config } from "../config.js"
 import { Bus } from "../bus.js"
 import { CompactionExtractor } from "./compaction-extractor.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { llmClient } from "../effect/app-node-platform.js"
 import { SessionEvent } from "./event.js"
 import type { SessionMessage } from "./message.js"
-import { SessionModelHeaders } from "./model-headers.js"
-import { SessionModelHook } from "./model-hook.js"
-import { SessionModelHttp } from "./model-http.js"
-import { SessionPromptCacheKey } from "./prompt-cache-key.js"
-import { App } from "../app.js"
+import { SessionModelRequest } from "./model-request.js"
 import { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { toSessionError } from "./to-session-error.js"
 import { Token } from "../util/token.js"
-import type { Info, Ref } from "../model.js"
 import { SessionUsage } from "./usage.js"
-import { PluginHooks } from "../plugin/hooks.js"
 import { Agent } from "../agent.js"
+import { State } from "../state.js"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 15_000
@@ -64,33 +57,35 @@ Rules:
 - Do not mention the summary process or that context was compacted.`
 
 // REDSUN: strategy selection (hybrid default) with the v1 inventory extractor.
-type Settings = {
-  readonly auto: boolean
-  readonly buffer: number
-  readonly tokens: number
-  readonly strategy: ConfigCompaction.Strategy
-  readonly keepRecent: number
-  readonly maxToolResults: number
+export type Settings = {
+  auto: boolean
+  buffer: number
+  tokens: number
+  strategy: ConfigCompaction.Strategy
+  keepRecent: number
+  maxToolResults: number
+}
+
+export type Draft = {
+  configure: (settings: Partial<Settings>) => void
 }
 
 type Dependencies = {
-  readonly app: App.Info
   readonly bus: Bus.Interface
   readonly llm: {
     readonly stream: (request: LLMRequest, options?: StreamOptions) => Stream.Stream<LLMEvent, AIError>
   }
   readonly models: SessionRunnerModel.Interface
-  readonly config: Settings
-  readonly hooks: PluginHooks.Interface
+  readonly modelRequests: SessionModelRequest.Interface
 }
 
 export type AutoInput = {
   readonly session: SessionSchema.Info
   readonly messages: readonly SessionMessage.Info[]
-  readonly model: LanguageModel
-  readonly ref: Ref
-  readonly cost: Info["cost"]
+  readonly resolved: SessionRunnerModel.Resolved
 }
+
+type RequiredInput = Pick<AutoInput, "messages" | "resolved">
 
 export type ManualInput = {
   readonly session: SessionSchema.Info
@@ -99,13 +94,9 @@ export type ManualInput = {
   readonly started?: boolean
 }
 
-type RequiredInput = Omit<AutoInput, "ref">
-
 type Plan = {
   readonly session: SessionSchema.Info
-  readonly model: LanguageModel
-  readonly ref: Ref
-  readonly cost: Info["cost"]
+  readonly resolved: SessionRunnerModel.Resolved
   readonly reason: SessionMessage.Compaction["reason"]
   readonly prompt: string
   readonly recent: string
@@ -117,7 +108,7 @@ export type Outcome =
   | Pick<SessionMessage.CompactionCompleted, "status">
   | Pick<SessionMessage.CompactionFailed, "status" | "error">
 
-export interface Interface {
+export interface Interface extends State.Transformable<Draft> {
   readonly required: (input: RequiredInput) => boolean
   readonly compact: (input: AutoInput) => Effect.Effect<Outcome>
   readonly compactManual: (input: ManualInput) => Effect.Effect<Outcome>
@@ -125,8 +116,19 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionCompaction") {}
 
-const truncate = (value: string) =>
-  value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
+export const truncateToolOutput = (value: string) => {
+  if (value.length <= TOOL_OUTPUT_MAX_CHARS) return value
+  let end = 0
+  for (let count = 0; count < TOOL_OUTPUT_MAX_CHARS && end < value.length; count++) {
+    const code = value.charCodeAt(end)
+    end +=
+      code >= 0xd800 && code <= 0xdbff && value.charCodeAt(end + 1) >= 0xdc00 && value.charCodeAt(end + 1) <= 0xdfff
+        ? 2
+        : 1
+  }
+  if (end === value.length) return value
+  return `${value.slice(0, end)}\n[truncated]`
+}
 
 export const serializeToolContent = (content: SessionMessage.ToolStateCompleted["content"]) =>
   content
@@ -142,8 +144,7 @@ const serialize = (message: SessionMessage.Info) => {
         (file) =>
           `[Attached ${file.mime}: ${file.name ?? (file.source.type === "uri" ? file.source.uri : "inline attachment")}]`,
       ) ?? []
-    const skills = message.skills?.map((skill) => `[Attached skill: ${skill.name}]\n${skill.text}`) ?? []
-    return [`[User]: ${message.text}`, ...skills, ...files].join("\n")
+    return [`[User]: ${message.text}`, ...files].join("\n")
   }
   if (message.type === "location-switched")
     return `[User]: The working directory has been changed to ${message.location.directory}.`
@@ -156,7 +157,7 @@ const serialize = (message: SessionMessage.Info) => {
         if (part.state.status === "completed")
           return [
             `[Assistant tool call]: ${part.name}(${input})`,
-            `[Tool result]: ${truncate(serializeToolContent(part.state.content))}`,
+            `[Tool result]: ${truncateToolOutput(serializeToolContent(part.state.content))}`,
           ]
         if (part.state.status === "error")
           return [`[Assistant tool call]: ${part.name}(${input})`, `[Tool error]: ${part.state.error.message}`]
@@ -167,26 +168,9 @@ const serialize = (message: SessionMessage.Info) => {
   if (message.type === "system") return `[System update]: ${message.text}`
   if (message.type === "synthetic") return `[Synthetic context]: ${message.text}`
   if (message.type === "skill") return `[Skill activated: ${message.name}]\n${message.text}`
-  if (message.type === "shell") return `[Shell]: ${message.command}\n${truncate(message.output?.output ?? "")}`
+  if (message.type === "shell")
+    return `[Shell]: ${message.command}\n${truncateToolOutput(message.output?.output ?? "")}`
   return ""
-}
-
-const settings = (documents: readonly Entry[]) => {
-  const configured = documents
-    .filter((entry): entry is Document => entry.type === "document")
-    .flatMap((entry) => (entry.info.compaction ? [entry.info.compaction] : []))
-  return {
-    auto: configured.findLast((value) => value.auto !== undefined)?.auto ?? true,
-    buffer: configured.findLast((value) => value.buffer !== undefined)?.buffer ?? DEFAULT_BUFFER,
-    tokens: configured.findLast((value) => value.keep?.tokens !== undefined)?.keep?.tokens ?? DEFAULT_KEEP_TOKENS,
-    strategy: configured.findLast((value) => value.strategy !== undefined)?.strategy ?? "hybrid",
-    keepRecent:
-      configured.findLast((value) => value.keep_recent !== undefined)?.keep_recent ??
-      CompactionExtractor.DEFAULT_KEEP_RECENT,
-    maxToolResults:
-      configured.findLast((value) => value.max_tool_results !== undefined)?.max_tool_results ??
-      CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS,
-  }
 }
 
 const select = (
@@ -294,7 +278,27 @@ const planContent = (messages: readonly SessionMessage.Info[], config: Settings)
 }
 
 const make = (dependencies: Dependencies) => {
-  const config = dependencies.config
+  const state = State.create<Settings, Draft>({
+    name: "session-compaction",
+    initial: () => ({
+      auto: true,
+      buffer: DEFAULT_BUFFER,
+      tokens: DEFAULT_KEEP_TOKENS,
+      strategy: "hybrid",
+      keepRecent: CompactionExtractor.DEFAULT_KEEP_RECENT,
+      maxToolResults: CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS,
+    }),
+    draft: (draft) => ({
+      configure: (settings) => {
+        if (settings.auto !== undefined) draft.auto = settings.auto
+        if (settings.buffer !== undefined) draft.buffer = settings.buffer
+        if (settings.tokens !== undefined) draft.tokens = settings.tokens
+        if (settings.strategy !== undefined) draft.strategy = settings.strategy
+        if (settings.keepRecent !== undefined) draft.keepRecent = settings.keepRecent
+        if (settings.maxToolResults !== undefined) draft.maxToolResults = settings.maxToolResults
+      },
+    }),
+  })
   const failed = Effect.fnUntraced(function* (input: {
     readonly sessionID: SessionSchema.ID
     readonly reason: SessionMessage.Compaction["reason"]
@@ -325,67 +329,51 @@ const make = (dependencies: Dependencies) => {
           })
         : Effect.void,
     )
-    const request = yield* SessionModelHook.apply(
-      dependencies.hooks,
-      { sessionID: plan.session.id, agent: Agent.ID.make("compaction"), model: plan.ref },
-      LLM.request({
-        model: plan.model,
-        promptCacheKey: SessionPromptCacheKey.make(plan.session.id),
-        http: {
-          headers: { ...SessionModelHeaders.make(plan.session, dependencies.app), ...SessionModelHeaders.internal },
-        },
-        messages: [Message.user(plan.prompt)],
-        tools: [],
+    const prepared = yield* dependencies.modelRequests.prepare({
+      scope: { session: plan.session, agentID: Agent.ID.make("compaction"), model: plan.resolved },
+      transcript: { system: [], messages: [Message.user(plan.prompt)] },
+      contextHooks: false,
+    })
+    yield* dependencies.llm.stream(prepared.request, prepared.options).pipe(
+      Stream.runForEach((event) => {
+        if (LLMEvent.is.providerError(event))
+          failure = {
+            type: event.classification === "context-overflow" ? "provider.invalid-request" : "provider.error",
+            message: event.message,
+          }
+        if (LLMEvent.is.textDelta(event)) {
+          chunks.push(event.text)
+          return dependencies.bus.publish(SessionEvent.Compaction.Delta, {
+            sessionID: plan.session.id,
+            text: event.text,
+          })
+        }
+        if (LLMEvent.is.stepFinish(event)) {
+          const step = SessionUsage.record(event.usage, plan.resolved.cost)
+          usage = usage ? SessionUsage.add(usage, step) : step
+        }
+        return Effect.void
       }),
-    )
-    yield* dependencies.llm
-      .stream(request, {
-        http: SessionModelHttp.middleware(dependencies.hooks, {
-          sessionID: plan.session.id,
-          agent: Agent.ID.make("compaction"),
-          model: plan.ref,
+      Effect.catchTag("AI.Error", (error) =>
+        Effect.sync(() => {
+          failure = toSessionError(error)
         }),
-      })
-      .pipe(
-        Stream.runForEach((event) => {
-          if (LLMEvent.is.providerError(event))
-            failure = {
-              type: event.classification === "context-overflow" ? "provider.invalid-request" : "provider.error",
-              message: event.message,
-            }
-          if (LLMEvent.is.textDelta(event)) {
-            chunks.push(event.text)
-            return dependencies.bus.publish(SessionEvent.Compaction.Delta, {
-              sessionID: plan.session.id,
-              text: event.text,
-            })
-          }
-          if (LLMEvent.is.stepFinish(event)) {
-            const step = SessionUsage.record(event.usage, plan.cost)
-            usage = usage ? SessionUsage.add(usage, step) : step
-          }
-          return Effect.void
-        }),
-        Effect.catchTag("AI.Error", (error) =>
-          Effect.sync(() => {
-            failure = toSessionError(error)
-          }),
-        ),
-        Effect.onInterrupt(() =>
-          recordUsage.pipe(
-            Effect.andThen(
-              plan.reason === "auto"
-                ? failed({
-                    sessionID: plan.session.id,
-                    reason: plan.reason,
-                    error: { type: "compaction.interrupted", message: "Compaction was interrupted" },
-                    inputID: plan.inputID,
-                  }).pipe(Effect.asVoid)
-                : Effect.void,
-            ),
+      ),
+      Effect.onInterrupt(() =>
+        recordUsage.pipe(
+          Effect.andThen(
+            plan.reason === "auto"
+              ? failed({
+                  sessionID: plan.session.id,
+                  reason: plan.reason,
+                  error: { type: "compaction.interrupted", message: "Compaction was interrupted" },
+                  inputID: plan.inputID,
+                }).pipe(Effect.asVoid)
+              : Effect.void,
           ),
         ),
-      )
+      ),
+    )
     yield* recordUsage
     const summary = chunks.join("")
     if (failure || !summary.trim()) {
@@ -432,7 +420,7 @@ const make = (dependencies: Dependencies) => {
     return { status: "completed" as const }
   })
   const compact = Effect.fn("SessionCompaction.compact")(function* (input: AutoInput) {
-    const content = planContent(input.messages, config)
+    const content = planContent(input.messages, state.get())
     if (content?.kind === "algorithmic")
       return yield* executeAlgorithmic({
         session: input.session,
@@ -443,9 +431,7 @@ const make = (dependencies: Dependencies) => {
     if (content)
       return yield* execute({
         session: input.session,
-        model: input.model,
-        ref: input.ref,
-        cost: input.cost,
+        resolved: input.resolved,
         reason: "auto",
         prompt: content.prompt,
         recent: content.recent,
@@ -458,18 +444,19 @@ const make = (dependencies: Dependencies) => {
     })
   })
   const required = (input: RequiredInput) => {
+    const config = state.get()
     if (!config.auto) return false
-    const context = input.model.route.defaults.limits?.context
-    if (context === undefined || context <= 0) return false
+    const limit = input.resolved.limit
+    const context = limit.context
+    if (context <= 0) return false
     const last = input.messages.findLast(
       (message): message is SessionMessage.Assistant & { tokens: NonNullable<SessionMessage.Assistant["tokens"]> } =>
         message.type === "assistant" && message.tokens !== undefined,
     )
     if (!last) return false
-    const limits = input.model.route.defaults.limits
-    const output = Math.min(limits?.output ?? 0, OUTPUT_TOKEN_MAX)
+    const output = Math.min(limit.output, OUTPUT_TOKEN_MAX)
     const promptCeiling = Math.min(
-      limits?.input === undefined ? Number.POSITIVE_INFINITY : limits.input - config.buffer,
+      limit.input === undefined ? Number.POSITIVE_INFINITY : limit.input - config.buffer,
       context - Math.max(output, config.buffer),
     )
     const used =
@@ -478,7 +465,7 @@ const make = (dependencies: Dependencies) => {
     return used >= promptCeiling
   }
   const compactManual = Effect.fn("SessionCompaction.compactManual")(function* (input: ManualInput) {
-    const content = planContent(input.messages, config)
+    const content = planContent(input.messages, state.get())
     if (!content)
       return yield* failed({
         sessionID: input.session.id,
@@ -508,9 +495,7 @@ const make = (dependencies: Dependencies) => {
     if ("status" in resolved) return resolved
     return yield* execute({
       session: input.session,
-      model: resolved.model,
-      ref: resolved.ref,
-      cost: resolved.cost,
+      resolved,
       reason: "manual",
       inputID: input.inputID,
       started: input.started,
@@ -519,6 +504,8 @@ const make = (dependencies: Dependencies) => {
     })
   })
   return Service.of({
+    transform: state.transform,
+    reload: state.reload,
     required,
     compact,
     compactManual,
@@ -530,16 +517,14 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const bus = yield* Bus.Service
     const llm = yield* LLMClient.Service
-    const config = yield* Config.Service
     const models = yield* SessionRunnerModel.Service
-    const app = yield* App.Metadata
-    const hooks = yield* PluginHooks.Service
-    return make({ bus, llm, models, config: settings(yield* config.entries()), app, hooks })
+    const modelRequests = yield* SessionModelRequest.Service
+    return make({ bus, llm, models, modelRequests })
   }),
 )
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node, llmClient, Config.node, SessionRunnerModel.node, App.node, PluginHooks.node],
+  deps: [Bus.node, llmClient, SessionRunnerModel.node, SessionModelRequest.node],
 })
