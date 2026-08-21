@@ -31,11 +31,13 @@ describe("run runtime boot", () => {
       createTuiResolvedConfig({
         theme: { name: "gruvbox" },
         leader: { timeout: 450 },
+        cursor: { style: "underline", blinking: false },
       }),
     )
 
     expect(result.theme).toEqual({ name: "gruvbox" })
     expect(result.leader.timeout).toBe(450)
+    expect(result.cursor).toEqual({ style: "underline", blinking: false })
     expect(resolveMiniSettings(result)).toEqual({
       thinking: "hide",
       shell_output: "hide",

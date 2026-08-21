@@ -16,6 +16,7 @@ it.effect("todowrite registers through the real entry point and persists the lis
       get: (k) => Effect.succeed(kvStore.get(k) as never),
       set: (k, value) => Effect.sync(() => void kvStore.set(k, value)),
       remove: (k) => Effect.sync(() => void kvStore.delete(k)),
+      scan: () => Effect.succeed({ entries: [] }),
     }
     let definition: {
       name: string
