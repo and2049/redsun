@@ -190,16 +190,14 @@ export const OpenAIPlugin = define({
     })
     yield* load()
     yield* ctx.catalog.transform((evt) => {
-      for (const item of evt.provider.list()) {
-        if (!Provider.isAISDK(item.provider.package)) continue
-        if (Provider.packageName(item.provider.package) !== "@ai-sdk/openai") continue
-        evt.provider.update(item.provider.id, (provider) => {
-          provider.package = "@opencode-ai/ai/providers/openai"
+      const item = evt.provider.get(Provider.ID.openai)
+      if (!item) return
+      for (const model of item.models.values()) {
+        evt.model.update(item.provider.id, model.id, (draft) => {
+          draft.capabilities.responsesWebsockets = true
         })
       }
       if (!chatgpt) return
-      const item = evt.provider.get(Provider.ID.openai)
-      if (!item) return
       item.provider.settings = Provider.mergeOverlay(item.provider.settings, { baseURL: codexBaseURL })
       const account = chatgpt.metadata?.accountID
       item.provider.headers = Provider.mergeHeaders(item.provider.headers, {
