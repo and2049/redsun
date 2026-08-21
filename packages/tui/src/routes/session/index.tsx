@@ -99,6 +99,7 @@ import {
   messageBoundaryIDs,
   explorationSummary,
   resolvePart,
+  turnDuration,
   type CacheUsage,
   type PartRef,
   type SessionRow,
@@ -1931,9 +1932,33 @@ function SessionGroupView(props: {
   )
 }
 
+// Turn-completion line, Claude Code style: "✳ Cooked for 35m 43s". The verb is picked
+// by message id so it stays put across re-renders instead of reshuffling.
+const COMPLETION_VERBS = ["Cooked", "Baked", "Brewed", "Simmered", "Whisked", "Stewed", "Toasted", "Percolated"]
+
+function completionVerb(id: string) {
+  let hash = 0
+  for (let index = 0; index < id.length; index++) hash = (hash * 31 + id.charCodeAt(index)) | 0
+  return COMPLETION_VERBS[Math.abs(hash) % COMPLETION_VERBS.length]
+}
+
+// Whole-second turn clock; hours appear only past the first one.
+function completionDuration(ms: number) {
+  const total = Math.round(ms / 1000)
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
 function AssistantFooter(props: { message: SessionMessageAssistant }) {
+  const ctx = use()
+  const data = useData()
   const theme = useTheme("elevated")
   const interrupted = createMemo(() => props.message.error?.message === "Step interrupted")
+  const duration = createMemo(() => turnDuration(props.message, data.session.message.list(ctx.sessionID)))
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
@@ -1945,6 +1970,13 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
       <Show when={interrupted()}>
         <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={props.message.retry ? 1 : 0}>
           <text fg={theme.text.subdued}>Interrupted</text>
+        </box>
+      </Show>
+      <Show when={!props.message.error && duration() > 0}>
+        <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={1}>
+          <text fg={theme.text.subdued}>
+            ✳ {completionVerb(props.message.id)} for {completionDuration(duration())}
+          </text>
         </box>
       </Show>
     </>
