@@ -1932,7 +1932,7 @@ function SessionGroupView(props: {
   )
 }
 
-// Turn-completion line, Claude Code style: "✳ Cooked for 35m 43s". The verb is picked
+// Turn-completion line, Claude Code style: "■ Cooked for 35m 43s". The verb is picked
 // by message id so it stays put across re-renders instead of reshuffling.
 const COMPLETION_VERBS = ["Cooked", "Baked", "Brewed", "Simmered", "Whisked", "Stewed", "Toasted", "Percolated"]
 
@@ -1973,9 +1973,10 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
         </box>
       </Show>
       <Show when={!props.message.error && duration() > 0}>
-        <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={1}>
+        <box paddingLeft={TRANSCRIPT_GUTTER}>
+          {/* U+25A0 keeps text presentation everywhere; U+2733 turns emoji on Windows. */}
           <text fg={theme.text.subdued}>
-            ✳ {completionVerb(props.message.id)} for {completionDuration(duration())}
+            ■ {completionVerb(props.message.id)} for {completionDuration(duration())}
           </text>
         </box>
       </Show>
