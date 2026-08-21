@@ -1932,7 +1932,7 @@ function SessionGroupView(props: {
   )
 }
 
-// Turn-completion line, Claude Code style: "■ Cooked for 35m 43s". The verb is picked
+// Turn-completion line, Claude Code style: "▣ Cooked for 35m 43s". The verb is picked
 // by message id so it stays put across re-renders instead of reshuffling.
 const COMPLETION_VERBS = ["Cooked", "Baked", "Brewed", "Simmered", "Whisked", "Stewed", "Toasted", "Percolated"]
 
@@ -1956,6 +1956,7 @@ function completionDuration(ms: number) {
 function AssistantFooter(props: { message: SessionMessageAssistant }) {
   const ctx = use()
   const data = useData()
+  const local = useLocal()
   const theme = useTheme("elevated")
   const interrupted = createMemo(() => props.message.error?.message === "Step interrupted")
   const duration = createMemo(() => turnDuration(props.message, data.session.message.list(ctx.sessionID)))
@@ -1974,9 +1975,13 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
       </Show>
       <Show when={!props.message.error && duration() > 0}>
         <box paddingLeft={TRANSCRIPT_GUTTER}>
-          {/* U+25A0 keeps text presentation everywhere; U+2733 turns emoji on Windows. */}
-          <text fg={theme.text.subdued}>
-            ■ {completionVerb(props.message.id)} for {completionDuration(duration())}
+          {/* U+25A3 keeps text presentation everywhere; U+2733 turns emoji on Windows.
+              The icon carries the agent's color as a finished-in-this-mode indicator. */}
+          <text>
+            <span style={{ fg: local.agent.color(props.message.agent) }}>▣ </span>
+            <span style={{ fg: theme.text.subdued }}>
+              {completionVerb(props.message.id)} for {completionDuration(duration())}
+            </span>
           </text>
         </box>
       </Show>
