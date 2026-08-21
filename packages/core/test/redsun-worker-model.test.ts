@@ -25,6 +25,7 @@ const services = (input?: {
       get: (key) => Effect.sync(() => kv.get(key) as never),
       set: (key, value) => Effect.sync(() => void kv.set(key, value)),
       remove: (key) => Effect.sync(() => void kv.delete(key)),
+      scan: () => Effect.succeed({ entries: [] }),
     },
     catalog: {
       model: {

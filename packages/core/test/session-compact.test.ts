@@ -28,7 +28,7 @@ const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 const model = LanguageModel.make({
   id: "summary-model",
   provider: "test",
-  route: OpenAIChat.route.with({ limits: { context: 10_000, output: 1_000 } }),
+  route: OpenAIChat.route,
 })
 let requests: LLMRequest[] = []
 const client = Layer.mock(LLMClient.Service)({
@@ -45,6 +45,7 @@ const models = Layer.mock(SessionRunnerModel.Service)({
       SessionRunnerModel.resolved(model, {
         capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
         cost: [],
+        limit: { context: 10_000, output: 1_000 },
       }),
     ),
 })
@@ -105,13 +106,13 @@ describe("Session.compact", () => {
       expect(second.id).toBe(first.id)
       expect(requests).toHaveLength(0)
       expect(yield* session.inbox(created.id)).toEqual([
-        expect.objectContaining({ id: first.id, type: "compaction", delivery: "queue" }),
+        expect.objectContaining({ id: first.id, type: "compaction", delivery: "steer" }),
       ])
       expect((yield* session.context(created.id)).find((message) => message.id === first.id)).toBeUndefined()
 
-      const steered = yield* session.create({ location })
-      const steer = yield* session.compact({ sessionID: steered.id, delivery: "steer" })
-      expect(steer).toMatchObject({ type: "compaction", delivery: "steer" })
+      const queued = yield* session.create({ location })
+      const queue = yield* session.compact({ sessionID: queued.id, delivery: "queue" })
+      expect(queue).toMatchObject({ type: "compaction", delivery: "queue" })
     }),
   )
 
