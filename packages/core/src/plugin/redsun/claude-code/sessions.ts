@@ -62,6 +62,7 @@ export interface SessionOptions {
   readonly model: string
   readonly permissionMode: PermissionMode
   readonly observer?: (message: SDKMessage, inTurn: boolean) => Promise<void> | void
+  readonly onExit?: () => Promise<void> | void
   readonly options: Omit<
     Options,
     "model" | "permissionMode" | "allowDangerouslySkipPermissions" | "includePartialMessages" | "forwardSubagentText"
@@ -76,16 +77,34 @@ interface LiveSession {
   prompt: AsyncQueue<SDKUserMessage>
   turn?: AsyncQueue<SDKMessage>
   observer?: SessionOptions["observer"]
+  onExit?: SessionOptions["onExit"]
+  exited: boolean
   dead: boolean
   pump: Promise<void>
 }
 
 const MAX_LIVE_SESSIONS = 4
+const INTERRUPT_GRACE_MS = 15_000
 
 export class SessionManager {
   private sessions = new Map<string, LiveSession>()
+  private interruptGraceMs: number
 
-  constructor(private createQuery: CreateQuery) {}
+  constructor(
+    private createQuery: CreateQuery,
+    options?: { interruptGraceMs?: number },
+  ) {
+    this.interruptGraceMs = options?.interruptGraceMs ?? INTERRUPT_GRACE_MS
+  }
+
+  private async exit(session: LiveSession) {
+    if (session.exited) return
+    session.exited = true
+    try {
+      await session.onExit?.()
+    } catch {
+    }
+  }
 
   private start(sessionID: string, input: SessionOptions): LiveSession {
     const prompt = new AsyncQueue<SDKUserMessage>()
@@ -107,6 +126,8 @@ export class SessionManager {
       bypassAllowed: input.permissionMode === "bypassPermissions",
       prompt,
       observer: input.observer,
+      onExit: input.onExit,
+      exited: false,
       dead: false,
       pump: Promise.resolve(),
     }
@@ -129,10 +150,12 @@ export class SessionManager {
         session.dead = true
         session.turn?.fail(new Error("Claude Code process exited before the turn completed"))
         session.turn = undefined
+        await this.exit(session)
       } catch (error) {
         session.dead = true
         session.turn?.fail(error)
         session.turn = undefined
+        await this.exit(session)
       }
     })()
     this.sessions.set(sessionID, session)
@@ -173,6 +196,7 @@ export class SessionManager {
       this.sessions.delete(sessionID)
       this.sessions.set(sessionID, session)
       session.observer = input.observer
+      session.onExit = input.onExit
       if (session.model !== input.model) {
         await session.query.setModel(input.model)
         session.model = input.model
@@ -196,7 +220,21 @@ export class SessionManager {
   async interrupt(sessionID: string): Promise<void> {
     const session = this.sessions.get(sessionID)
     if (!session || session.dead) return
-    await session.query.interrupt()
+    const turn = session.turn
+    try {
+      await session.query.interrupt()
+    } catch {
+      this.stop(sessionID)
+      return
+    }
+    // The CLI acknowledges an interrupt by ending the turn with a result frame.
+    // If that never arrives the turn queue stays open and busy() is true until
+    // process death — bound it by killing the process after a grace period.
+    if (turn === undefined || session.turn !== turn) return
+    const timer = setTimeout(() => {
+      if (!session.dead && session.turn === turn && this.sessions.get(sessionID) === session) this.stop(sessionID)
+    }, this.interruptGraceMs)
+    timer.unref?.()
   }
 
   stop(sessionID: string): void {
@@ -211,6 +249,7 @@ export class SessionManager {
       session.query.close()
     } catch {
     }
+    void this.exit(session)
   }
 
   stopAll(): void {

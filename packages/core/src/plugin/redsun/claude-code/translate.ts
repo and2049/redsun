@@ -18,6 +18,7 @@ export interface TaskChild {
 export interface State {
   toolCalls: Map<string, { name: string; input: Record<string, unknown> }>
   openBlocks: Map<number, OpenBlock>
+  calledToolIds: Set<string>
   messageId: string
   claudeSessionID?: string
   result?: SDKResultMessage
@@ -29,6 +30,7 @@ export interface State {
 export const makeState = (taskChildren?: ReadonlyMap<string, TaskChild>): State => ({
   toolCalls: new Map(),
   openBlocks: new Map(),
+  calledToolIds: new Set(),
   messageId: "claude",
   taskChildren,
 })
@@ -92,6 +94,13 @@ const contentBlockStart = (state: State, index: number, block: Record<string, an
       return [{ type: "reasoning-start", id: blockId }]
     default:
       if (TOOL_USE_TYPES.has(block.type) && typeof block.id === "string" && typeof block.name === "string") {
+        // The aggregate assistant message can outrun the partial stream; once a
+        // tool-call for this id has gone out, the runner treats a late
+        // start/delta/end for it as a protocol violation.
+        if (state.calledToolIds.has(block.id)) {
+          state.openBlocks.set(index, { kind: "ignored" })
+          return []
+        }
         const name = emittedToolName(block.name)
         state.toolCalls.set(block.id, { name, input: {} })
         state.openBlocks.set(index, { kind: "tool", id: block.id, name })
@@ -166,6 +175,9 @@ const assistantMessage = (state: State, content: unknown): LanguageModelV3Stream
     const raw = item.input && typeof item.input === "object" ? (item.input as Record<string, unknown>) : {}
     const input = ClaudeCodeNativeTools.toolInput(item.name, raw)
     state.toolCalls.set(item.id, { name, input })
+    state.calledToolIds.add(item.id)
+    for (const [index, open] of state.openBlocks)
+      if (open.kind === "tool" && open.id === item.id) state.openBlocks.set(index, { kind: "ignored" })
     parts.push({
       type: "tool-call",
       toolCallId: item.id,

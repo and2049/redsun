@@ -52,6 +52,7 @@ interface Entry {
   readonly description: string
   readonly agent: string
   settled: boolean
+  resolution?: "async" | "done"
   open?: { readonly messageID: string; ordinal: number }
   readonly seen: Set<string>
   readonly tools: Map<string, string>
@@ -73,9 +74,10 @@ const resultText = (content: unknown): string => {
 }
 
 export interface Mirror {
-  observe(message: SDKMessage): Promise<void>
+  observe(message: SDKMessage, inTurn?: boolean): Promise<void>
   children(): ReadonlyMap<string, { sessionID: string; parentSessionID: string; description: string }>
   sweep(): Promise<void>
+  finalize(): Promise<void>
 }
 
 export const make = (input: { readonly parentSessionID: string; readonly ops: Ops }): Mirror => {
@@ -217,6 +219,34 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
     if (events.length) await ops.publish(events)
   }
 
+  // The launching Task's main-thread tool_result says whether the CLI ran the
+  // subagent to completion ("done") or async-launched it, in which case its
+  // frames and task_notification arrive after the parent turn's result.
+  const resolved = (message: Record<string, unknown>) => {
+    const content = record(message["message"])["content"]
+    if (!Array.isArray(content)) return
+    const status = record(message["tool_use_result"])["status"]
+    for (const block of content) {
+      const item = record(block)
+      if (item["type"] !== "tool_result") continue
+      const id = item["tool_use_id"]
+      if (typeof id !== "string") continue
+      const entry = entries.get(id)
+      if (entry) entry.resolution = status === "async_launched" ? "async" : "done"
+    }
+  }
+
+  const settle = async (predicate: (entry: Entry) => boolean) => {
+    const events: ChildEvent[] = []
+    for (const entry of entries.values()) {
+      if (entry.settled || !predicate(entry)) continue
+      entry.settled = true
+      closeOpen(entry, events)
+      events.push({ kind: "execution-succeeded", sessionID: entry.sessionID })
+    }
+    if (events.length) await ops.publish(events)
+  }
+
   return {
     observe: async (message) => {
       const raw = message as unknown as Record<string, unknown>
@@ -226,23 +256,25 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
         return
       }
       const parent = raw["parent_tool_use_id"]
-      if (typeof parent !== "string" || !parent) return
+      if (typeof parent !== "string" || !parent) {
+        if (raw["type"] === "user") resolved(raw)
+        return
+      }
       const entry = entries.get(parent)
       if (!entry) return
       if (raw["type"] === "assistant") return assistant(entry, raw)
       if (raw["type"] === "user") return user(entry, raw)
     },
     children: () => entries,
-    sweep: async () => {
-      const events: ChildEvent[] = []
-      for (const entry of entries.values()) {
-        if (entry.settled) continue
-        closeOpen(entry, events)
-        events.push({ kind: "execution-succeeded", sessionID: entry.sessionID })
-      }
+    // Turn end: async-launched children are still running and keep their
+    // entries; everything else is settled but never deleted — late lookups and
+    // the live children() map depend on the entries surviving.
+    sweep: () => settle((entry) => entry.resolution !== "async"),
+    // Process exit: nothing can settle or reference these children any more.
+    finalize: async () => {
+      await settle(() => true)
       entries.clear()
       byTask.clear()
-      if (events.length) await ops.publish(events)
     },
   }
 }

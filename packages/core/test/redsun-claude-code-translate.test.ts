@@ -72,6 +72,39 @@ describe("ClaudeCodeTranslate", () => {
     })
   })
 
+  it("suppresses partial-stream frames that arrive after the aggregate tool call", () => {
+    // The CLI can deliver the full assistant message before the stream's
+    // content_block_stop for the same block; a trailing tool-input-end would
+    // kill the runner ("Duplicate tool input end").
+    const { parts } = run([
+      streamEvent({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "Grep" } }),
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] } },
+      streamEvent({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"pat" } }),
+      streamEvent({ type: "content_block_stop", index: 0 }),
+    ])
+    expect(parts.map((part) => part.type)).toEqual(["tool-input-start", "tool-call"])
+  })
+
+  it("suppresses a stream block that opens after its aggregate tool call", () => {
+    const { parts } = run([
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] } },
+      streamEvent({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "Grep" } }),
+      streamEvent({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{}" } }),
+      streamEvent({ type: "content_block_stop", index: 0 }),
+    ])
+    expect(parts.map((part) => part.type)).toEqual(["tool-call"])
+  })
+
+  it("keeps the normal partial-stream order intact", () => {
+    const { parts } = run([
+      streamEvent({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "Grep" } }),
+      streamEvent({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"pattern\":\"x\"}" } }),
+      streamEvent({ type: "content_block_stop", index: 0 }),
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] } },
+    ])
+    expect(parts.map((part) => part.type)).toEqual(["tool-input-start", "tool-input-delta", "tool-input-end", "tool-call"])
+  })
+
   it("maps Bash onto shell and flags error results", () => {
     const { parts } = run([
       { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_2", name: "Bash", input: { command: "ls" } }] } },

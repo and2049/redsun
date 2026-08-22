@@ -288,8 +288,9 @@ export const Plugin = define({
             isOneShot: (sessionID) => pendingOneShot.delete(sessionID),
             turnBrief,
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
-            observer: (sessionID, message) => mirrorFor(sessionID, modelRef).observe(message),
+            observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
+            onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
             permissionMode,
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {
