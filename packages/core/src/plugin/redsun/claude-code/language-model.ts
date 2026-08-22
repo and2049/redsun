@@ -126,6 +126,7 @@ export interface Hooks {
   readonly isOneShot?: (sessionID: string) => boolean
   readonly turnBrief?: (sessionID: string) => string | undefined
   readonly onTurnEnd?: (sessionID: string) => Promise<void> | void
+  readonly onExit?: (sessionID: string) => Promise<void> | void
   readonly permissionMode?: (sessionID: string) => Promise<PermissionMode>
 }
 
@@ -226,6 +227,7 @@ export const make = (input: {
       model: ClaudeCodeModels.cliModel(modelID),
       permissionMode,
       observer: hooks?.observer ? (message, inTurn) => hooks.observer!(sessionID, message, inTurn) : undefined,
+      onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
       options: {
         ...interactiveOptions(config),
         ...(resume ? { resume } : {}),
@@ -278,23 +280,36 @@ const toStream = (
   state: ClaudeCodeTranslate.State,
   onDone?: () => Promise<void> | void,
   onCancel?: () => void,
-): ReadableStream<LanguageModelV3StreamPart> =>
-  new ReadableStream({
+): ReadableStream<LanguageModelV3StreamPart> => {
+  // After the reader cancels, enqueue/close throw — swallow them so the
+  // consuming loop keeps draining and onDone still runs exactly once.
+  let closed = false
+  const safely = (action: () => void) => {
+    if (closed) return
+    try {
+      action()
+    } catch {
+      closed = true
+    }
+  }
+  return new ReadableStream({
     async start(controller) {
-      controller.enqueue({ type: "stream-start", warnings: [] })
+      safely(() => controller.enqueue({ type: "stream-start", warnings: [] }))
       try {
         for await (const message of messages)
-          for (const part of ClaudeCodeTranslate.translate(state, message)) controller.enqueue(part)
+          for (const part of ClaudeCodeTranslate.translate(state, message)) safely(() => controller.enqueue(part))
       } catch (error) {
-        controller.enqueue({ type: "error", error })
+        safely(() => controller.enqueue({ type: "error", error }))
       } finally {
         await onDone?.()
-        controller.close()
+        safely(() => controller.close())
       }
     },
     cancel() {
+      closed = true
       onCancel?.()
     },
   })
+}
 
 export type { PermissionResult }

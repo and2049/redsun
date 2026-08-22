@@ -227,14 +227,14 @@ describe("ClaudeCodeSubagents", () => {
     expect(h.kinds()).toEqual(["execution-started"])
   })
 
-  it("closes an unsettled child at the turn-end sweep and clears the map", async () => {
+  it("closes an unsettled child at the turn-end sweep but keeps its entry", async () => {
     const h = harness()
     await h.mirror.observe(msg(taskStarted()))
     await h.mirror.observe(msg(childAssistant([{ type: "text", text: "partial" }])))
     await h.mirror.sweep()
 
     expect(h.kinds()).toEqual(["execution-started", "step-started", "text", "step-ended", "execution-succeeded"])
-    expect(h.mirror.children().size).toBe(0)
+    expect(h.mirror.children().size).toBe(1)
   })
 
   it("does not re-close a child that already settled", async () => {
@@ -243,7 +243,67 @@ describe("ClaudeCodeSubagents", () => {
     await h.mirror.observe(msg(taskNotification()))
     await h.mirror.sweep()
     expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
+    expect(h.mirror.children().size).toBe(1)
+  })
+
+  it("keeps an async-launched child running across the turn-end sweep", async () => {
+    const h = harness()
+    await h.mirror.observe(msg(taskStarted()))
+    // Main-thread tool_result for the launching Task call: async_launched means
+    // the subagent's frames and notification arrive after the parent's result.
+    await h.mirror.observe(
+      msg({
+        type: "user",
+        parent_tool_use_id: null,
+        message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "launched" }] },
+        tool_use_result: { status: "async_launched" },
+      }),
+    )
+    await h.mirror.sweep()
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(0)
+
+    // Between-turn frames still reach the mirror and find their entry.
+    await h.mirror.observe(msg(childAssistant([{ type: "text", text: "found it" }])), false)
+    expect(h.kinds()).toContain("step-started")
+    expect(h.kinds()).toContain("text")
+
+    await h.mirror.observe(msg(taskNotification()), false)
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
+  })
+
+  it("sweeps a foreground child whose tool_result already returned", async () => {
+    const h = harness()
+    await h.mirror.observe(msg(taskStarted()))
+    await h.mirror.observe(
+      msg({
+        type: "user",
+        parent_tool_use_id: null,
+        message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "summary" }] },
+        tool_use_result: { status: "completed" },
+      }),
+    )
+    await h.mirror.sweep()
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
+  })
+
+  it("finalize settles a never-notified child and clears the map", async () => {
+    const h = harness()
+    await h.mirror.observe(msg(taskStarted()))
+    await h.mirror.observe(
+      msg({
+        type: "user",
+        parent_tool_use_id: null,
+        message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "launched" }] },
+        tool_use_result: { status: "async_launched" },
+      }),
+    )
+    await h.mirror.sweep()
+    await h.mirror.finalize()
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
     expect(h.mirror.children().size).toBe(0)
+
+    await h.mirror.finalize()
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
   })
 
   it("hands translate.ts the live map rather than a snapshot", async () => {
