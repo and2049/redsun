@@ -147,7 +147,7 @@ export const Definitions = {
   "session.half.page.up": keybind("ctrl+alt+u", "Scroll messages up by half page"),
   "session.half.page.down": keybind("ctrl+alt+d", "Scroll messages down by half page"),
   "session.first": keybind("ctrl+g,home,alt+home", "Navigate to first message"),
-  "session.last": keybind("ctrl+alt+g,end", "Navigate to last message"),
+  "session.last": keybind("ctrl+alt+g,end,ctrl+end", "Navigate to last message"),
   "session.message.next": keybind("none", "Navigate to next message"),
   "session.message.previous": keybind("none", "Navigate to previous message"),
   "session.message.user.next": keybind("none", "Navigate to next user message"),

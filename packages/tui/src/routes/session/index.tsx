@@ -1339,19 +1339,22 @@ export function Session() {
                 </Show>
               </scrollbox>
             </box>
-            <box height={1} flexShrink={0} flexDirection="row" justifyContent="flex-end">
+            <box height={1} flexShrink={0} flexDirection="row" justifyContent="center">
               <Show when={awayFromBottom()}>
                 <box
                   id="session-jump-to-latest"
                   paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={theme.raise(theme.background.default)}
                   onMouseOver={() => setLatestHovered(true)}
                   onMouseOut={() => setLatestHovered(false)}
                   onMouseUp={toBottom}
                 >
                   <text
                     fg={latestHovered() ? theme.text.action.secondary.hovered : theme.text.action.secondary.default}
+                    bg={theme.raise(theme.background.default)}
                   >
-                    Jump to latest ↓
+                    Jump to latest (ctrl+end) ↓
                   </text>
                 </box>
               </Show>
