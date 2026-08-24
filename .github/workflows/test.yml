@@ -28,6 +28,14 @@ jobs:
         run: bun lint
         timeout-minutes: 5
 
+      - name: Test Effect simplification rules
+        run: bun run test:effect-simplification-rules
+        timeout-minutes: 5
+
+      - name: Check Effect simplifications
+        run: bun run lint:effect-simplifications
+        timeout-minutes: 5
+
       - name: Test core
         run: cd packages/core && bun test
         timeout-minutes: 20
