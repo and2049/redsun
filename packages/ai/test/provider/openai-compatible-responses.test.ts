@@ -78,6 +78,45 @@ describe("Open Responses-compatible route", () => {
     }),
   )
 
+  it.effect("uses data URLs for embedded PDF messages and tool results", () =>
+    Effect.gen(function* () {
+      const model = configure({
+        apiKey: "test-key",
+        baseURL: "https://responses.example.test/v1",
+        provider: "example",
+      }).model("example-model")
+      const pdf = "data:application/pdf;base64,JVBERi0xLjQ="
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user([{ type: "media", mediaType: "application/pdf", data: pdf, filename: "input.pdf" }]),
+            Message.assistant({ type: "tool-call", id: "call_1", name: "read", input: {} }),
+            Message.tool({
+              id: "call_1",
+              name: "read",
+              resultType: "content",
+              result: [{ type: "file", uri: pdf, mime: "application/pdf", name: "result.pdf" }],
+            }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.input).toEqual([
+        {
+          role: "user",
+          content: [{ type: "input_file", filename: "input.pdf", file_data: pdf }],
+        },
+        { type: "function_call", call_id: "call_1", name: "read", arguments: "{}" },
+        {
+          type: "function_call_output",
+          call_id: "call_1",
+          output: [{ type: "input_file", filename: "result.pdf", file_data: pdf }],
+        },
+      ])
+    }),
+  )
+
   it.effect("rejects OpenAI-native tools", () =>
     Effect.gen(function* () {
       const model = configure({
@@ -93,7 +132,7 @@ describe("Open Responses-compatible route", () => {
     }),
   )
 
-  it.effect("omits OpenAI-only nullable phases from the Open Responses baseline", () =>
+  it.effect("preserves nullable phases in the forgiving Open Responses baseline", () =>
     Effect.gen(function* () {
       const model = configure({
         apiKey: "test-key",
@@ -113,7 +152,14 @@ describe("Open Responses-compatible route", () => {
       )
 
       expect(prepared.body).toMatchObject({
-        input: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "Unclassified." }] }],
+        input: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Unclassified." }],
+            phase: null,
+          },
+        ],
       })
     }),
   )
@@ -187,6 +233,7 @@ describe("Open Responses-compatible route", () => {
           streamOptions: { includeObfuscation: false },
           topLogprobs: 3,
           truncation: "auto",
+          serviceTier: "provider-tier",
           allowedTools: { toolNames: ["lookup"] },
           maxToolCalls: 2,
           parallelToolCalls: false,
@@ -211,6 +258,7 @@ describe("Open Responses-compatible route", () => {
         presence_penalty: 0.2,
         frequency_penalty: -0.1,
         truncation: "auto",
+        service_tier: "provider-tier",
         tool_choice: {
           type: "allowed_tools",
           mode: "auto",

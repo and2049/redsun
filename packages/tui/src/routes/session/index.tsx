@@ -113,6 +113,7 @@ import { createSingleFlight } from "../../util/single-flight"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import { createDelayedPresence } from "../../util/delayed-presence"
 import { SessionLocationMissing } from "./location-missing"
+import { isRecord } from "../../util/record"
 
 addDefaultParsers(parsers.parsers)
 
@@ -144,7 +145,6 @@ const context = createContext<{
   terminal: { width: number; height: number }
   sessionID: string
   thinkingMode: () => ThinkingMode
-  showThinking: () => boolean
   markdownMode: () => "source" | "rendered"
   groupExploration: () => boolean
   diffWrapMode: () => "word" | "none"
@@ -253,7 +253,6 @@ export function Session() {
   const sidebar = createMemo(() => config.session?.sidebar ?? "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
   const thinkingMode = createMemo<ThinkingMode>(() => config.session?.thinking ?? "hide")
-  const showThinking = createMemo(() => true)
   const showScrollbar = createMemo(() => config.session?.scrollbar ?? false)
   const markdownMode = createMemo(() => config.session?.markdown ?? "rendered")
   const diffWrapMode = createMemo(() => config.diffs?.wrap ?? "word")
@@ -1093,7 +1092,7 @@ export function Session() {
         try {
           const sessionData = session()
           if (!sessionData) return
-          const transcript = formatSessionTranscript(sessionData, messages(), showThinking())
+          const transcript = formatSessionTranscript(sessionData, messages(), true)
           await clipboard.write(transcript)
           toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
         } catch {
@@ -1114,7 +1113,7 @@ export function Session() {
           const sessionData = session()
           if (!sessionData) return
 
-          const options = await DialogExportOptions.show(dialog, showThinking())
+          const options = await DialogExportOptions.show(dialog, true)
 
           if (options === null) return
 
@@ -1281,7 +1280,6 @@ export function Session() {
         },
         sessionID: route.sessionID,
         thinkingMode,
-        showThinking,
         markdownMode,
         groupExploration,
         diffWrapMode,
@@ -3845,8 +3843,7 @@ export function toolDisplay(tool: string) {
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return
-  return value as Record<string, unknown>
+  return isRecord(value) ? value : undefined
 }
 
 function formatSessionTranscript(session: SessionInfo, messages: SessionMessageInfo[], thinking: boolean) {
