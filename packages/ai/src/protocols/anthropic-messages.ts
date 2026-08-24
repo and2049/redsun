@@ -41,6 +41,7 @@ const SSE_EVENTS = new Set([
   "content_block_start",
   "content_block_delta",
   "content_block_stop",
+  "ping",
   "error",
 ])
 export const framing = Framing.sseEvents(SSE_EVENTS)
@@ -53,7 +54,7 @@ export type ThinkingInput =
   | {
       readonly type: "disabled"
     }
-  | ({ readonly type: "enabled" } & (
+  | ({ readonly type: "enabled"; readonly display?: "summarized" | "omitted" } & (
       | { readonly budgetTokens: number; readonly budget_tokens?: number }
       | { readonly budgetTokens?: number; readonly budget_tokens: number }
     ))
@@ -212,6 +213,7 @@ const AnthropicThinking = Schema.Union([
   Schema.Struct({
     type: Schema.tag("enabled"),
     budget_tokens: Schema.Number,
+    display: Schema.optional(Schema.Literals(["summarized", "omitted"])),
   }),
   Schema.Struct({
     type: Schema.tag("adaptive"),
@@ -614,15 +616,12 @@ const resolveOptions = Effect.fn("AnthropicMessages.resolveOptions")(function* (
 
 const resolveThinking = Effect.fn("AnthropicMessages.resolveThinking")(function* (input: unknown) {
   if (!ProviderShared.isRecord(input)) return undefined
-  if (input.type === "adaptive") {
-    const display =
-      input.display === "summarized"
-        ? ("summarized" as const)
-        : input.display === "omitted"
-          ? ("omitted" as const)
-          : undefined
+  const display =
+    input.display === "summarized" || input.display === "omitted"
+      ? (input.display as "summarized" | "omitted")
+      : undefined
+  if (input.type === "adaptive")
     return { type: "adaptive" as const, ...(display === undefined ? {} : { display }) }
-  }
   if (input.type === "disabled") return { type: "disabled" as const }
   if (input.type !== "enabled") return undefined
   const budget =
@@ -633,7 +632,7 @@ const resolveThinking = Effect.fn("AnthropicMessages.resolveThinking")(function*
         : undefined
   if (budget === undefined)
     return yield* ProviderShared.invalidRequest("Anthropic thinking provider option requires budgetTokens")
-  return { type: "enabled" as const, budget_tokens: budget }
+  return { type: "enabled" as const, budget_tokens: budget, ...(display === undefined ? {} : { display }) }
 })
 
 const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (request: LLMRequest) {
@@ -794,7 +793,8 @@ const onContentBlockStart = (state: ParserState, event: AnthropicEvent): StepRes
   const block = event.content_block
   if (!block) return [state, NO_EVENTS]
 
-  if ((block.type === "tool_use" || block.type === "server_tool_use") && event.index !== undefined) {
+  if (block.type === "tool_use" || block.type === "server_tool_use") {
+    if (event.index === undefined || !block.id) return [state, NO_EVENTS]
     const events: LLMEvent[] = []
     const lifecycle = Lifecycle.stepStart(state.lifecycle, events)
     return [
@@ -802,7 +802,7 @@ const onContentBlockStart = (state: ParserState, event: AnthropicEvent): StepRes
         ...state,
         lifecycle,
         tools: ToolStream.start(state.tools, event.index, {
-          id: block.id ?? String(event.index),
+          id: block.id,
           name: block.name ?? "",
           input:
             block.input !== undefined && (!ProviderShared.isRecord(block.input) || Object.keys(block.input).length > 0)
@@ -814,7 +814,7 @@ const onContentBlockStart = (state: ParserState, event: AnthropicEvent): StepRes
       [
         ...events,
         LLMEvent.toolInputStart({
-          id: block.id ?? String(event.index),
+          id: block.id,
           name: block.name ?? "",
           providerExecuted: block.type === "server_tool_use" ? true : undefined,
         }),
@@ -1004,15 +1004,28 @@ const providerErrorMessage = (event: AnthropicEvent): string => {
 }
 
 const onError = (event: AnthropicEvent) =>
-  new AIError({
-    module: ADAPTER,
-    method: "stream",
-    reason: classifyProviderFailure({ message: providerErrorMessage(event), code: event.error?.type }),
-  })
+  Effect.fail(
+    new AIError({
+      module: ADAPTER,
+      method: "stream",
+      reason: classifyProviderFailure({ message: providerErrorMessage(event), code: event.error?.type }),
+    }),
+  )
 
 const step = (state: ParserState, event: AnthropicEvent) => {
   if (event.type === "message_start") return Effect.succeed(onMessageStart(state, event))
-  if (event.type === "content_block_start") return Effect.succeed(onContentBlockStart(state, event))
+  if (event.type === "content_block_start") {
+    const block = event.content_block
+    if (block && (block.type === "tool_use" || block.type === "server_tool_use")) {
+      if (event.index === undefined)
+        return Effect.fail(ProviderShared.eventError(ADAPTER, `Anthropic ${block.type} missing index`))
+      if (!block.id)
+        return Effect.fail(
+          ProviderShared.eventError(ADAPTER, `Anthropic tool_use missing id at index ${event.index}`),
+        )
+    }
+    return Effect.succeed(onContentBlockStart(state, event))
+  }
   if (event.type === "content_block_delta") return onContentBlockDelta(state, event)
   if (event.type === "content_block_stop") return onContentBlockStop(state, event)
   if (event.type === "message_delta") return Effect.succeed(onMessageDelta(state, event))

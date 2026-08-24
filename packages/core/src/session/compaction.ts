@@ -239,9 +239,12 @@ type PlanContent =
 const planContent = (messages: readonly SessionMessage.Info[], config: Settings): PlanContent | undefined => {
   const selected = select(messages, config.tokens)
   if (!selected) return
-  const previous = messages.findLast((message) => message.type === "compaction" && message.status === "completed")
-  const previousSummary = previous?.type === "compaction" ? previous.summary : undefined
-  const previousRecent = previous?.type === "compaction" ? previous.recent : ""
+  const previous = messages.findLast(
+    (message): message is SessionMessage.CompactionCompleted =>
+      message.type === "compaction" && message.status === "completed",
+  )
+  const previousSummary = previous?.summary
+  const previousRecent = previous?.recent ?? ""
   const summarizeRecent = !previousRecent && selected.head.length === 0
   if (config.strategy === "algorithmic") {
     const inventory = CompactionExtractor.serialize(
@@ -436,11 +439,10 @@ const make = (dependencies: Dependencies) => {
         prompt: content.prompt,
         recent: content.recent,
       })
-    const error = { type: "compaction.unavailable" as const, message: "Nothing to compact yet" }
     return yield* failed({
       sessionID: input.session.id,
       reason: "auto",
-      error,
+      error: { type: "compaction.unavailable", message: "Nothing to compact yet" },
     })
   })
   const required = (input: RequiredInput) => {

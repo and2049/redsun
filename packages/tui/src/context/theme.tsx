@@ -164,8 +164,7 @@ const themeContext = createSimpleContext({
       clearTimeout(themeRefreshTimeout)
       themeRefreshTimeout = setTimeout(() => void syncCustomThemes(), THEME_REFRESH_DELAY)
     }
-    let unsubscribeRefresh: (() => void) | undefined
-    unsubscribeRefresh = themes.subscribeRefresh?.(refresh)
+    const unsubscribeRefresh = themes.subscribeRefresh?.(refresh)
 
     onCleanup(() => {
       unsubscribeRefresh?.()

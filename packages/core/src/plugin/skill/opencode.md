@@ -150,7 +150,7 @@ redsun v0.3.x was built on OpenCode V1, so migrating from it is an OpenCode
 V1 to V2 migration. For any request to migrate configuration, agents, commands,
 skills, plugins, integrations, or other behavior from V1 to V2, read the full
 [migration guide](https://opencode.ai/v2/docs/migrate-v1) before acting. In
-the repository, its source is `packages/www/content/docs/migrate-v1.mdx`.
+the repository, its source is `packages/www/src/docs/content/migrate-v1.mdx`.
 
 V1 config files and `.redsun/` definitions are intended to remain compatible.
 The only intentional breaking changes are the server API and plugin API. Native
