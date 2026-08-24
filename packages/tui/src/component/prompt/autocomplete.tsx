@@ -960,7 +960,7 @@ export function Autocomplete(props: {
                     fg={index === store.selected ? theme.text.action.primary.focused : theme.text.subdued}
                     wrapMode="none"
                   >
-                    {" " + option().description?.trimStart()}
+                    {" " + option().description?.replace(/\s+/g, " ").trim()}
                   </text>
                 </Show>
               </box>

@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Message, ToolFailure } from "@opencode-ai/ai"
-import { DateTime, Effect, Stream, Types } from "effect"
+import { DateTime, Effect, Option, Stream, Types } from "effect"
 import type { SessionContext } from "@opencode-ai/plugin/effect/session"
 import type { ToolHooks } from "@opencode-ai/plugin/effect/tool"
 import { Agent } from "@opencode-ai/core/agent"

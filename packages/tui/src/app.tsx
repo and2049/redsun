@@ -464,6 +464,7 @@ function App(props: { pair?: DialogPairCredentials }) {
     if (route.data.type !== "session") return
     const session = data.session.get(route.data.sessionID)
     if (!session) return
+    if (data.session.creating(session.id)) return
     if (session.location.workspaceID !== undefined || terminalEnvironment.variables === undefined) return
     void client.api.session
       .environment({ sessionID: session.id, variables: terminalEnvironment.variables })
@@ -1158,7 +1159,9 @@ function App(props: { pair?: DialogPairCredentials }) {
         evt.preventDefault()
         evt.stopPropagation()
       }}
-      onMouseUp={copyOnSelectEnabled() ? () => Selection.copy(renderer, toast, clipboard) : undefined}
+      onMouseUp={
+        copyOnSelectEnabled() ? (event) => Selection.copyOnSelectRelease(event, renderer, toast, clipboard) : undefined
+      }
     >
       <box flexGrow={1} minHeight={0} flexDirection="column">
         <Show when={plugins.ready()}>
