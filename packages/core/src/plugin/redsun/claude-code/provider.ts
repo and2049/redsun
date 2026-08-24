@@ -11,6 +11,7 @@ import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
 import { Permission } from "../../../permission.js"
 import { PluginRuntime } from "../../runtime.js"
+import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"
 import { Tool } from "../../../tool.js"
 import { ClaudeCodeAuth } from "./auth.js"
@@ -55,19 +56,7 @@ export const Plugin = define({
       return
     }
 
-    yield* ctx.catalog.transform((catalog) => {
-      const info = ClaudeCodeModels.providerInfo()
-      catalog.provider.update(ClaudeCodeModels.PROVIDER_ID, (provider) => {
-        provider.name = info.name
-        provider.activation = info.activation
-        provider.package = info.package
-      })
-      for (const model of ClaudeCodeModels.MODELS) {
-        catalog.model.update(ClaudeCodeModels.PROVIDER_ID, model.id, (draft) => {
-          Object.assign(draft, model)
-        })
-      }
-    })
+    yield* ctx.catalog.transform(ClaudeCodeModels.applyCatalog)
 
     yield* ctx.integration.transform((draft) => {
       draft.update(ClaudeCodeModels.PROVIDER_ID, (integration) => {
@@ -96,8 +85,30 @@ export const Plugin = define({
     const briefed = new Map<string, string>()
     const profiles = new Map<string, { mode?: string; system?: string }>()
     const pendingOneShot = new Set<string>()
+    const substitutionsNotified = new Set<string>()
 
     const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery)
+
+    const notifySubstitution = (sessionID: string, input: { requested: string; served: string }) => {
+      const key = `${sessionID} ${input.requested} ${input.served}`
+      if (substitutionsNotified.has(key)) return
+      substitutionsNotified.add(key)
+      // Published on the bus rather than through Session.synthetic: the frame
+      // arrives mid-turn, and an inbox-admitted synthetic is steer-delivered
+      // into the live turn, spending a model call on the notice itself.
+      Effect.runFork(
+        bus
+          .publish(SessionEvent.Synthetic, {
+            sessionID: sessionID as never,
+            text: `The requested Claude Code model "${input.requested}" is not available (unknown id, retired, or not on this subscription); Claude Code substituted its default and this turn was answered by "${input.served}".`,
+            description: `${input.requested} unavailable — Claude Code answered with ${input.served}`,
+            metadata: {
+              [ClaudeCodeModels.SUBSTITUTED_METADATA_KEY]: { requested: input.requested, served: input.served },
+            },
+          })
+          .pipe(Effect.catch(() => Effect.void)),
+      )
+    }
 
     const mirrors = new Map<string, ClaudeCodeSubagents.Mirror>()
     const mirrorFor = (sessionID: string, model: Model.Ref) => {
@@ -291,6 +302,7 @@ export const Plugin = define({
             observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
             onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
+            onModelSubstituted: notifySubstitution,
             permissionMode,
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {
