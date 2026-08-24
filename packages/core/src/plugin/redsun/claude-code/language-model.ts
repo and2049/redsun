@@ -128,6 +128,7 @@ export interface Hooks {
   readonly onTurnEnd?: (sessionID: string) => Promise<void> | void
   readonly onExit?: (sessionID: string) => Promise<void> | void
   readonly permissionMode?: (sessionID: string) => Promise<PermissionMode>
+  readonly onModelSubstituted?: (sessionID: string, input: { requested: string; served: string }) => void
 }
 
 export interface Config {
@@ -223,10 +224,26 @@ export const make = (input: {
       ...(prompt ? [{ type: "text" as const, text: prompt }] : []),
       ...delta.blocks,
     ] as Parameters<typeof manager.turn>[1]
+    // The CLI silently serves its default when a pinned id is unknown or not
+    // on the subscription; every main-thread assistant frame names the model
+    // that actually answered, so a mismatch is only detectable here. Subagent
+    // frames (parent_tool_use_id set) legitimately run other models.
+    const watchServedModel = (message: SDKMessage) => {
+      if (message.type !== "assistant" || message.parent_tool_use_id) return
+      const served = message.message?.model
+      if (served && ClaudeCodeModels.isSubstituted(modelID, served))
+        hooks?.onModelSubstituted?.(sessionID, { requested: modelID, served })
+    }
     const turn = await manager.turn(sessionID, content, {
       model: ClaudeCodeModels.cliModel(modelID),
       permissionMode,
-      observer: hooks?.observer ? (message, inTurn) => hooks.observer!(sessionID, message, inTurn) : undefined,
+      observer:
+        hooks?.observer || hooks?.onModelSubstituted
+          ? (message, inTurn) => {
+              watchServedModel(message)
+              return hooks?.observer?.(sessionID, message, inTurn)
+            }
+          : undefined,
       onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
       options: {
         ...interactiveOptions(config),
