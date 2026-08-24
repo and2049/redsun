@@ -6,7 +6,7 @@ import { Provider } from "@opencode-ai/core/provider"
 const fs = (files: readonly string[]) => ({ isFile: (p: string) => files.includes(p) })
 
 describe("ClaudeCodeModels", () => {
-  it("exposes the CLI aliases verbatim as model ids", () => {
+  it("exposes the CLI aliases and pinned ids verbatim as model ids", () => {
     expect(ClaudeCodeModels.MODELS.map((model) => String(model.id))).toEqual([
       "fable",
       "opus",
@@ -14,8 +14,12 @@ describe("ClaudeCodeModels", () => {
       "sonnet",
       "sonnet[1m]",
       "haiku",
+      "claude-opus-4-8",
+      "claude-sonnet-4-5",
+      "claude-haiku-4-5",
     ])
     expect(ClaudeCodeModels.cliModel("opus[1m]")).toBe("opus[1m]")
+    expect(ClaudeCodeModels.cliModel("claude-opus-4-8")).toBe("claude-opus-4-8")
   })
 
   it("names the provider the way the V1 picker did", () => {
@@ -50,6 +54,22 @@ describe("ClaudeCodeModels", () => {
     expect(byID.get("sonnet")?.limit.context).toBe(200_000)
     expect(byID.get("sonnet[1m]")?.limit.context).toBe(1_000_000)
     expect(byID.get("fable")?.limit.context).toBe(1_000_000)
+    expect(byID.get("claude-opus-4-8")?.limit.context).toBe(1_000_000)
+    expect(byID.get("claude-sonnet-4-5")?.limit.context).toBe(200_000)
+    expect(byID.get("claude-haiku-4-5")?.limit.context).toBe(200_000)
+  })
+
+  it("flags a silent CLI substitution only for pinned ids", () => {
+    // Aliases resolve to a concrete model by design; a pinned id must be
+    // served verbatim or as a dated snapshot of itself.
+    expect(ClaudeCodeModels.isSubstituted("opus", "claude-opus-5")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("sonnet[1m]", "claude-sonnet-5")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("claude-opus-4-8", "claude-opus-4-8")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("claude-opus-4-8", "claude-opus-4-8-20260101")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("claude-sonnet-4-5[1m]", "claude-sonnet-4-5-20250929")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("claude-opus-4-1", "claude-opus-5")).toBe(true)
+    expect(ClaudeCodeModels.isSubstituted("claude-opus-4-8", "claude-opus-5")).toBe(true)
+    expect(ClaudeCodeModels.isSubstituted("claude-opus-4-8", "")).toBe(false)
   })
 
   it("identifies delegated models", () => {

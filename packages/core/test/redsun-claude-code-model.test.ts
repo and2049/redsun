@@ -131,6 +131,48 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
     expect(parts.map((part) => part.type)).toEqual(["stream-start", "text-start", "text-delta", "finish"])
   })
 
+  it("reports a silent CLI model substitution from main-thread assistant frames", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const seen: unknown[] = []
+    const created = model({
+      modelID: "claude-opus-4-1",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: { onModelSubstituted: (sessionID, input) => seen.push([sessionID, input]) },
+    })
+    const { stream } = await created.doStream(call({ prompt: [user("hello")] }))
+    await collect(stream)
+
+    const observer = calls[0]!.options.observer as (message: unknown, inTurn: boolean) => Promise<void> | void
+    // A subagent frame may legitimately run another model; a dated snapshot of
+    // the requested pin is the requested model. Only the substitution reports.
+    await observer({ type: "assistant", parent_tool_use_id: "toolu_1", message: { model: "claude-haiku-4-5" } }, true)
+    await observer({ type: "assistant", parent_tool_use_id: null, message: { model: "claude-opus-4-1-20250805" } }, true)
+    await observer({ type: "assistant", parent_tool_use_id: null, message: { model: "claude-opus-5" } }, true)
+
+    expect(seen).toEqual([["ses_1", { requested: "claude-opus-4-1", served: "claude-opus-5" }]])
+  })
+
+  it("never reports a substitution for an alias, which resolves by design", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const seen: unknown[] = []
+    const created = model({
+      modelID: "opus",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: { onModelSubstituted: (sessionID, input) => seen.push([sessionID, input]) },
+    })
+    const { stream } = await created.doStream(call({ prompt: [user("hello")] }))
+    await collect(stream)
+
+    const observer = calls[0]!.options.observer as (message: unknown, inTurn: boolean) => Promise<void> | void
+    await observer({ type: "assistant", parent_tool_use_id: null, message: { model: "claude-opus-5" } }, true)
+
+    expect(seen).toEqual([])
+  })
+
   it("prepends the turn brief, which is the only way an agent's instructions arrive", async () => {
     // A delegated turn sends no system prompt, so `agent.system` never reaches
     // the CLI. See turn-brief.ts.
