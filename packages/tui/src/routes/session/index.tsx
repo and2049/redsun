@@ -132,6 +132,9 @@ const GOAL_VERDICT_KEY = "redsun.goal.verdict"
 const GOAL_CLEAR = "__clear__"
 // Message-metadata key stamped on advisor asides (core/src/plugin/redsun/advisor.ts).
 const ADVISOR_METADATA_KEY = "redsun.advisor"
+// Message-metadata key stamped when the Claude Code CLI silently substitutes a
+// requested model (core/src/plugin/redsun/claude-code/models.ts).
+const MODEL_SUBSTITUTED_METADATA_KEY = "redsun.claude-code.model-substituted"
 type PendingAction = "steer" | "queue" | "cancel"
 
 const context = createContext<{
@@ -2052,7 +2055,8 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
       | { ok?: boolean; impossible?: boolean; error?: boolean; cleared?: string }
       | undefined
   const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
-  const noticeLabel = () => (goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : "Notice")
+  const modelSubstituted = () => metadata()?.[MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
+  const noticeLabel = () => (goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : modelSubstituted() ? "Model" : "Notice")
   const noticeIcon = () => (goalVerdict() ? "◎" : "◈")
   const noticeColor = () => {
     const verdict = goalVerdict()
@@ -2062,6 +2066,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
       return theme.text.feedback.warning.default
     }
     if (advisorNote()) return theme.text.feedback.info.default
+    if (modelSubstituted()) return theme.text.feedback.warning.default
     return theme.text.subdued
   }
   return (
