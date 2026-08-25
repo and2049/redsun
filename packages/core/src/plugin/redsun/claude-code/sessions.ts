@@ -9,6 +9,7 @@ export interface QueryLike extends AsyncIterable<SDKMessage> {
   close(): void
   initializationResult?(): Promise<unknown>
   accountInfo?(): Promise<unknown>
+  supportedModels?(): Promise<unknown>
 }
 
 export type CreateQuery = (input: {
@@ -89,12 +90,14 @@ const INTERRUPT_GRACE_MS = 15_000
 export class SessionManager {
   private sessions = new Map<string, LiveSession>()
   private interruptGraceMs: number
+  private onStart?: (query: QueryLike) => void
 
   constructor(
     private createQuery: CreateQuery,
-    options?: { interruptGraceMs?: number },
+    options?: { interruptGraceMs?: number; onStart?: (query: QueryLike) => void },
   ) {
     this.interruptGraceMs = options?.interruptGraceMs ?? INTERRUPT_GRACE_MS
+    this.onStart = options?.onStart
   }
 
   private async exit(session: LiveSession) {
@@ -160,6 +163,10 @@ export class SessionManager {
     })()
     this.sessions.set(sessionID, session)
     this.evict(sessionID)
+    try {
+      this.onStart?.(query)
+    } catch {
+    }
     return session
   }
 
