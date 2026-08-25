@@ -72,6 +72,67 @@ describe("ClaudeCodeModels", () => {
     expect(ClaudeCodeModels.isSubstituted("claude-opus-4-8", "")).toBe(false)
   })
 
+  it("flags an alias substitution once the CLI has said what the alias resolves to", () => {
+    // supportedModels() supplies `resolvedModel` per picker row; with it a
+    // quota fallback (opus turn answered by sonnet) becomes checkable too.
+    expect(ClaudeCodeModels.isSubstituted("sonnet", "claude-sonnet-5", "claude-sonnet-5")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("opus[1m]", "claude-opus-5", "claude-opus-5[1m]")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("haiku", "claude-haiku-4-5-20251001", "claude-haiku-4-5")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("opus[1m]", "claude-sonnet-5", "claude-opus-5[1m]")).toBe(true)
+    // An unparseable or absent resolution keeps aliases exempt.
+    expect(ClaudeCodeModels.isSubstituted("sonnet", "claude-opus-5")).toBe(false)
+    expect(ClaudeCodeModels.isSubstituted("sonnet", "claude-opus-5", "something-else")).toBe(false)
+  })
+
+  it("retires only curated pinned ids", () => {
+    expect(ClaudeCodeModels.isRetirable("claude-opus-4-8")).toBe(true)
+    expect(ClaudeCodeModels.isRetirable("claude-sonnet-4-5")).toBe(true)
+    expect(ClaudeCodeModels.isRetirable("opus")).toBe(false)
+    expect(ClaudeCodeModels.isRetirable("opus[1m]")).toBe(false)
+    // Config-added ids are the user's escape hatch and stay untouched.
+    expect(ClaudeCodeModels.isRetirable("claude-opus-4-1")).toBe(false)
+  })
+
+  it("derives generation-accurate names from the CLI's resolved wire ids", () => {
+    expect(ClaudeCodeModels.discoveredName({ value: "sonnet", resolvedModel: "claude-sonnet-5" })).toBe(
+      "Claude Sonnet 5",
+    )
+    expect(ClaudeCodeModels.discoveredName({ value: "haiku", resolvedModel: "claude-haiku-4-5-20251001" })).toBe(
+      "Claude Haiku 4.5",
+    )
+    expect(ClaudeCodeModels.discoveredName({ value: "opus[1m]", resolvedModel: "claude-opus-5[1m]" })).toBe(
+      "Claude Opus 5 1M",
+    )
+    // A dated snapshot of a single-digit generation must not read the date as
+    // a minor version.
+    expect(ClaudeCodeModels.discoveredName({ value: "x", resolvedModel: "claude-sonnet-4-20250514" })).toBe(
+      "Claude Sonnet 4",
+    )
+    expect(ClaudeCodeModels.discoveredName({ value: "x", displayName: "Fancy" })).toBe("Claude Fancy")
+    expect(ClaudeCodeModels.discoveredName({ value: "x" })).toBeUndefined()
+  })
+
+  it("parses KV-cached picker rows and retirements defensively", () => {
+    expect(
+      ClaudeCodeModels.parseDiscovered([
+        { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet", extra: 1 },
+        { value: "" },
+        { resolvedModel: "claude-opus-5" },
+        "junk",
+        null,
+      ]),
+    ).toEqual([{ value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" }])
+    expect(ClaudeCodeModels.parseDiscovered("junk")).toEqual([])
+
+    const retired = ClaudeCodeModels.parseRetired({
+      "claude-opus-4-8": { served: "claude-opus-5", at: "2026-08-24" },
+      broken: { served: 42 },
+      junk: "junk",
+    })
+    expect([...retired.entries()]).toEqual([["claude-opus-4-8", { served: "claude-opus-5", at: "2026-08-24" }]])
+    expect(ClaudeCodeModels.parseRetired(["not", "a", "record"]).size).toBe(0)
+  })
+
   it("identifies delegated models", () => {
     expect(ClaudeCodeModels.isDelegated({ providerID: "claude-code" })).toBe(true)
     expect(ClaudeCodeModels.isDelegated({ providerID: "anthropic" })).toBe(false)
@@ -90,6 +151,48 @@ describe("ClaudeCodeModels", () => {
       expect(model.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
       expect(ClaudeCodeModels.isDelegated(model)).toBe(true)
     }
+  })
+
+  it("applies retirements and discovered picker rows through the catalog transform", () => {
+    const models = new Map<string, Record<string, unknown>>()
+    const target = {
+      provider: { update: (_id: string, fn: (provider: Record<string, unknown>) => void) => fn({}) },
+      model: {
+        update: (_pid: string, mid: string, fn: (model: Record<string, unknown>) => void) => {
+          const key = String(mid)
+          const draft = models.get(key) ?? { id: mid }
+          models.set(key, draft)
+          fn(draft)
+        },
+      },
+    }
+    ClaudeCodeModels.applyCatalog(target as never, {
+      retired: new Map([
+        ["claude-opus-4-8", { served: "claude-opus-5" }],
+        // A stale KV record for an id we don't curate must not conjure a row.
+        ["claude-opus-4-1", { served: "claude-opus-5" }],
+      ]),
+      discovered: [
+        { value: "default", resolvedModel: "claude-opus-5[1m]", displayName: "Default (recommended)" },
+        { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" },
+        { value: "claude-fable-5[1m]", resolvedModel: "claude-fable-5", displayName: "Fable" },
+      ],
+    })
+
+    expect(models.get("claude-opus-4-8")?.enabled).toBe(false)
+    expect(models.has("claude-opus-4-1")).toBe(false)
+    expect(models.get("claude-sonnet-4-5")?.enabled).toBe(true)
+
+    // Curated alias refreshed in place; "default" skipped; new picker row
+    // appended after the curated set so `catalog.model.small` ordering holds.
+    expect(models.get("sonnet")?.name).toBe("Claude Sonnet 5")
+    expect(models.has("default")).toBe(false)
+    const added = models.get("claude-fable-5[1m]")
+    expect(added?.name).toBe("Claude Fable 5 1M")
+    expect(added?.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
+    expect(String(added?.family)).toBe("claude-fable")
+    expect((added?.limit as { context: number }).context).toBe(1_000_000)
+    expect([...models.keys()].indexOf("claude-fable-5[1m]")).toBeGreaterThan([...models.keys()].indexOf("haiku"))
   })
 
   it("stays visible without a connection", () => {

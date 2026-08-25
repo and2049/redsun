@@ -33,6 +33,9 @@ const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
 
 const cursorKey = (sessionID: string) => `redsun.claude-code-session/${sessionID}`
 
+const RETIRED_KEY = "redsun.claude-code.retired"
+const DISCOVERED_KEY = "redsun.claude-code.discovered"
+
 const correctionFeedback = (error: unknown): string | undefined => {
   for (let node: unknown = error, depth = 0; node !== undefined && node !== null && depth < 4; depth++) {
     const candidate = node as { _tag?: unknown; feedback?: unknown; cause?: unknown; error?: unknown }
@@ -56,7 +59,21 @@ export const Plugin = define({
       return
     }
 
-    yield* ctx.catalog.transform(ClaudeCodeModels.applyCatalog)
+    const kv = yield* KV.Service
+
+    // The registry keeps itself fresh through two KV-backed inputs re-applied
+    // on every catalog reload: pinned ids the CLI was observed substituting
+    // (hidden until config resurrects them) and the CLI's own picker rows
+    // (probed per spawned session, since no API enumerates what a
+    // subscription can reach ahead of time).
+    const retired = ClaudeCodeModels.parseRetired(
+      yield* kv.get(RETIRED_KEY).pipe(Effect.orElseSucceed(() => undefined)),
+    )
+    let discovered = ClaudeCodeModels.parseDiscovered(
+      yield* kv.get(DISCOVERED_KEY).pipe(Effect.orElseSucceed(() => undefined)),
+    )
+
+    yield* ctx.catalog.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
 
     yield* ctx.integration.transform((draft) => {
       draft.update(ClaudeCodeModels.PROVIDER_ID, (integration) => {
@@ -71,7 +88,6 @@ export const Plugin = define({
     })
 
     const location = yield* Location.Service
-    const kv = yield* KV.Service
     const permission = yield* Permission.Service
     const forms = yield* Form.Service
     const tools = yield* Tool.Service
@@ -87,9 +103,40 @@ export const Plugin = define({
     const pendingOneShot = new Set<string>()
     const substitutionsNotified = new Set<string>()
 
-    const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery)
+    let discoveredSnapshot = JSON.stringify(discovered)
+    const onDiscovered = (value: unknown) => {
+      const models = ClaudeCodeModels.parseDiscovered(value)
+      if (!models.length) return
+      const snapshot = JSON.stringify(models)
+      if (snapshot === discoveredSnapshot) return
+      discoveredSnapshot = snapshot
+      discovered = models
+      Effect.runFork(
+        kv
+          .set(DISCOVERED_KEY, models.map((entry) => ({ ...entry })))
+          .pipe(Effect.andThen(ctx.catalog.reload()), Effect.catch(() => Effect.void)),
+      )
+    }
+
+    const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery, {
+      // The picker probe rides the session the user is already spawning; it
+      // costs no tokens and no extra process.
+      onStart: (query) => void query.supportedModels?.().then(onDiscovered).catch(() => {}),
+    })
+
+    const retire = (input: { requested: string; served: string }) => {
+      if (!ClaudeCodeModels.isRetirable(input.requested)) return
+      if (retired.has(input.requested)) return
+      retired.set(input.requested, { served: input.served, at: new Date().toISOString() })
+      Effect.runFork(
+        kv
+          .set(RETIRED_KEY, Object.fromEntries([...retired].map(([id, record]) => [id, { ...record }])))
+          .pipe(Effect.andThen(ctx.catalog.reload()), Effect.catch(() => Effect.void)),
+      )
+    }
 
     const notifySubstitution = (sessionID: string, input: { requested: string; served: string }) => {
+      retire(input)
       const key = `${sessionID} ${input.requested} ${input.served}`
       if (substitutionsNotified.has(key)) return
       substitutionsNotified.add(key)
@@ -303,6 +350,7 @@ export const Plugin = define({
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
             onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
             onModelSubstituted: notifySubstitution,
+            resolvedModel: (id) => discovered.find((entry) => entry.value === id)?.resolvedModel,
             permissionMode,
             resumeCursor: (sessionID) => cursors.get(sessionID),
             onCursor: (sessionID, claudeSessionID) => {

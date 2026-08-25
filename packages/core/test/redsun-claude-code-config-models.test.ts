@@ -94,6 +94,54 @@ describe("Claude Code config-declared models", () => {
     }),
   )
 
+  it.effect("hides a retired pinned model until user config resurrects it", () =>
+    Effect.gen(function* () {
+      // The auto-retire path: a substitution observed at runtime lands in the
+      // retired map the registered transform reads, and user config -- which
+      // runs after it -- stays the final word.
+      const catalog = yield* Catalog.Service
+      const retired = new Map([["claude-opus-4-8", { served: "claude-opus-5" }]])
+      yield* catalog.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired }))
+
+      const hidden = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      expect(hidden?.enabled).toBe(false)
+
+      yield* addProviderPlugin([
+        configDocument({
+          providers: {
+            "claude-code": { models: { "claude-opus-4-8": { disabled: false } } },
+          },
+        }),
+      ])
+      const resurrected = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      expect(resurrected?.enabled).toBe(true)
+    }),
+  )
+
+  it.live("re-applies live retirements and discoveries on catalog.reload", () =>
+    Effect.gen(function* () {
+      // provider.ts registers the transform once over mutable state and calls
+      // reload() when a substitution or picker probe lands; the transform must
+      // see the mutation. Live clock: reload's debounce sleeps for real.
+      const catalog = yield* Catalog.Service
+      const retired = new Map<string, ClaudeCodeModels.Retirement>()
+      let discovered: ClaudeCodeModels.Discovered[] = []
+      yield* catalog.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
+
+      const before = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      expect(before?.enabled).toBe(true)
+
+      retired.set("claude-opus-4-8", { served: "claude-opus-5" })
+      discovered = [{ value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" }]
+      yield* catalog.reload()
+
+      const after = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      expect(after?.enabled).toBe(false)
+      const alias = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("sonnet"))
+      expect(alias?.name).toBe("Claude Sonnet 5")
+    }),
+  )
+
   it.effect("lets user config override a curated pinned model", () =>
     Effect.gen(function* () {
       // Registration order (claude-code plugin before ConfigProviderPlugin in

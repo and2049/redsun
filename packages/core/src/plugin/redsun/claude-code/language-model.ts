@@ -129,6 +129,8 @@ export interface Hooks {
   readonly onExit?: (sessionID: string) => Promise<void> | void
   readonly permissionMode?: (sessionID: string) => Promise<PermissionMode>
   readonly onModelSubstituted?: (sessionID: string, input: { requested: string; served: string }) => void
+  /** Canonical wire id an alias resolves to, per the CLI's own picker (when known). */
+  readonly resolvedModel?: (modelID: string) => string | undefined
 }
 
 export interface Config {
@@ -231,7 +233,7 @@ export const make = (input: {
     const watchServedModel = (message: SDKMessage) => {
       if (message.type !== "assistant" || message.parent_tool_use_id) return
       const served = message.message?.model
-      if (served && ClaudeCodeModels.isSubstituted(modelID, served))
+      if (served && ClaudeCodeModels.isSubstituted(modelID, served, hooks?.resolvedModel?.(modelID)))
         hooks?.onModelSubstituted?.(sessionID, { requested: modelID, served })
     }
     const turn = await manager.turn(sessionID, content, {
