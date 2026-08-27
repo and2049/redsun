@@ -44,7 +44,7 @@ const config = createTuiResolvedConfig()
 function DataProvider(props: ParentProps) {
   return (
     <ConfigProvider config={config}>
-      <DataProviderBase>
+      <DataProviderBase directory={process.cwd()}>
         <LocationProvider>
           <SyncLocation />
           {props.children}
@@ -923,7 +923,9 @@ test("completes exploration when a queued prompt is promoted", async () => {
       },
     })
     await wait(() => rows.find((row) => row.type === "group")?.completed === true)
-    expect(rows.at(-1)).toEqual({ type: "message", messageID: "message-user" })
+    await wait(() => rows.at(-1)?.type === "assistant-footer")
+    expect(rows.at(-1)).toEqual({ type: "assistant-footer", messageID: "message-assistant" })
+    expect(rows.at(-2)).toEqual({ type: "message", messageID: "message-user" })
   } finally {
     app.renderer.destroy()
   }
@@ -1443,7 +1445,7 @@ test("tracks session status from active sessions and execution events", async ()
       const assistant = data.session.message.get("session-retry", "message-retry")
       return assistant?.type === "assistant" && assistant.retry === undefined
     })
-    await wait(() => !rows.some((row) => row.type === "assistant-footer" && row.messageID === "message-retry"))
+    expect(rows.some((row) => row.type === "assistant-footer" && row.messageID === "message-retry")).toBe(true)
     expect(data.session.message.list("session-retry").filter((message) => message.type === "assistant")).toHaveLength(1)
     emitEvent(events, {
       id: "evt_retry_scheduled_again",
@@ -1668,7 +1670,7 @@ test("restores queued compaction from durable pending input", async () => {
       },
     })
     await wait(() => rows.some((row) => row.type === "part"))
-    expect(rows.map((row) => row.type)).toEqual(["part", "compaction-queued", "compaction-queued"])
+    expect(rows.map((row) => row.type)).toEqual(["part", "assistant-footer", "compaction-queued", "compaction-queued"])
 
     emitEvent(events, {
       id: "evt_compaction_started",
@@ -1727,6 +1729,7 @@ test("refreshes integrations after integration updates", async () => {
                 id: "openai",
                 name: "OpenAI",
                 methods: [{ type: "key" }],
+                connections: [{ type: "credential", id: "cred_openai", label: "OpenAI" }],
               },
             ],
     })
@@ -1765,6 +1768,16 @@ test("refreshes integrations after integration updates", async () => {
     await wait(() => data.location.integration.list()?.length === 1)
     await wait(() => requests.model > before.model && requests.provider > before.provider)
     expect(data.location.integration.list()?.[0]).toMatchObject({ id: "openai", name: "OpenAI" })
+
+    const previous = { ...requests }
+    events.emit({
+      id: "evt_credential",
+      created: 0,
+      type: "credential.switched",
+      data: { credentialID: "cred_openai", integrationID: "openai" },
+    })
+    await wait(() => requests.model > previous.model && requests.provider > previous.provider)
+    expect(requests.integration).toBe(previous.integration)
   } finally {
     app.renderer.destroy()
   }

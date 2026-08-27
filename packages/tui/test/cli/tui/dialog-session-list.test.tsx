@@ -89,7 +89,7 @@ test("scopes sessions to the active session location", async () => {
                     <RouteProvider>
                       <ClientProvider api={createApi(calls.fetch)}>
                         <PermissionProvider>
-                          <DataProvider>
+                          <DataProvider directory={process.cwd()}>
                             <LocationProvider>
                               <ThemeProvider source={emptyThemeSource}>
                                 <LocalProvider>

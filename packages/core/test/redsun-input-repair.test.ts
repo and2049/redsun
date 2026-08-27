@@ -60,6 +60,6 @@ describe("ToolInputRepair", () => {
       executeToolRuntime(tool as never, { items: "definitely not json" }, {} as never).pipe(Effect.exit),
     )
     expect(failed._tag).toBe("Failure")
-    expect(String(failed)).toContain("Invalid tool input")
+    expect(String(failed)).toContain("Invalid arguments for tool")
   })
 })
