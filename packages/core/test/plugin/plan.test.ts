@@ -34,7 +34,7 @@ const agentSelected = (agent: Agent.ID, previous: Agent.ID): SessionEvent.AgentS
   data: { sessionID, agent, previous },
 })
 
-const WORKTREE = AbsolutePath.make(process.platform === "win32" ? "C:\repo" : "/repo")
+const WORKTREE = AbsolutePath.make(process.platform === "win32" ? "C:\\repo" : "/repo")
 // REDSUN: the plan directory is per-project when a repository exists, global otherwise.
 const planDirectory = path.join(WORKTREE, ".redsun", "plans")
 const globalPlanDirectory = path.join(Global.Path.data, "plans")
@@ -266,6 +266,11 @@ describe("plan plugin mutations", () => {
       expect(Permission.evaluate("edit", path.join(planDirectory, "work.md"), planAgent.permissions).effect).toBe(
         "allow",
       )
+      // REDSUN: mutation resources inside the Location are Location-relative, so the
+      // relative form is what the edit/write/patch tools actually assert.
+      expect(Permission.evaluate("edit", ".redsun/plans/work.md", planAgent.permissions).effect).toBe("allow")
+      expect(Permission.evaluate("edit", ".redsun/plans/nested/work.md", planAgent.permissions).effect).toBe("allow")
+      expect(Permission.evaluate("edit", ".redsun/other.md", planAgent.permissions).effect).toBe("deny")
       expect(Permission.evaluate("edit", "/workspace/source.ts", planAgent.permissions).effect).toBe("deny")
       expect(Permission.evaluate("edit", "source.ts", planAgent.permissions).effect).toBe("deny")
     }),
@@ -325,6 +330,7 @@ describe("plan plugin mutations", () => {
         "allow",
       )
       expect(Permission.evaluate("edit", path.join(planDirectory, "a.md"), planAgent.permissions).effect).toBe("deny")
+      expect(Permission.evaluate("edit", ".redsun/plans/a.md", planAgent.permissions).effect).toBe("deny")
     }),
   )
 })
