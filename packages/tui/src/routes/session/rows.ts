@@ -379,6 +379,22 @@ export function cacheReuseDrop(previous: CacheUsage | undefined, current: CacheU
   return drop > 0 ? drop : undefined
 }
 
+// Stamp appended to the settled footer: 24h clock today, "yesterday" for the prior
+// calendar day, otherwise a full date. Local time throughout.
+export function completionStamp(completed: number, now: number) {
+  const end = new Date(completed)
+  const clock = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`
+  const start = new Date(now)
+  const days =
+    (Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()) -
+      Date.UTC(end.getFullYear(), end.getMonth(), end.getDate())) /
+    86_400_000
+  if (days === 0) return clock
+  if (days === 1) return `yesterday ${clock}`
+  const date = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`
+  return `${date} ${clock}`
+}
+
 export function turnInput(message: SessionMessageAssistant, messages: SessionMessageInfo[]) {
   const index = messages.findIndex((item) => item.id === message.id)
   return messages
