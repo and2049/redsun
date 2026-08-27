@@ -87,22 +87,6 @@ export const Plugin = {
       return text.length > 0 ? text : NO_TEXT
     })
 
-    const injectCompletion = Effect.fn("SubagentTool.injectCompletion")(function* (
-      parentID: SessionSchema.ID,
-      childID: SessionSchema.ID,
-      agent: string,
-      description: string,
-      state: "completed" | "error" | "cancelled",
-      text: string,
-    ) {
-      yield* runtime.session.synthetic({
-        sessionID: parentID,
-        text: `<subagent sessionID="${childID}" state="${state}" description="${description}">\n${text}\n</subagent>`,
-        description,
-        metadata: { source: "subagent", childID, agent, state },
-      })
-    })
-
     const notifyWhenDone = Effect.fn("SubagentTool.notifyWhenDone")(function* (
       parentID: SessionSchema.ID,
       childID: SessionSchema.ID,
@@ -113,23 +97,24 @@ export const Plugin = {
       const key = `${childID}:${startedAt}`
       if (notifications.has(key)) return
       notifications.add(key)
-      yield* runtime.job.wait({ id: childID }).pipe(
-        Effect.flatMap((result) => {
-          if (result.info?.status === "completed")
-            return injectCompletion(parentID, childID, agent, description, "completed", result.info.output ?? NO_TEXT)
-          if (result.info?.status === "error")
-            return injectCompletion(
-              parentID,
-              childID,
-              agent,
-              description,
-              "error",
-              result.info.error ?? "Subagent failed",
-            )
-          if (result.info?.status === "cancelled")
-            return injectCompletion(parentID, childID, agent, description, "cancelled", "Subagent cancelled")
-          return Effect.void
-        }),
+      yield* Effect.gen(function* () {
+        const info = (yield* runtime.job.wait({ id: childID })).info
+        if (!info || info.status === "running") return
+        const text =
+          info.status === "completed"
+            ? (info.output ?? NO_TEXT)
+            : info.status === "error"
+              ? (info.error ?? "Subagent failed")
+              : "Subagent cancelled"
+        yield* runtime.session.synthetic({
+          ...(info.notificationID ? { id: info.notificationID } : {}),
+          sessionID: parentID,
+          text: `<subagent sessionID="${childID}" state="${info.status}" description="${description}">\n${text}\n</subagent>`,
+          description,
+          metadata: { source: "subagent", childID, agent, state: info.status },
+        })
+        if (info.notificationID) yield* runtime.job.completeBackground(info.notificationID)
+      }).pipe(
         Effect.ensuring(Effect.sync(() => notifications.delete(key))),
         Effect.forkIn(scope, { startImmediately: true }),
       )
@@ -257,6 +242,7 @@ export const Plugin = {
                     existing === undefined
                       ? ["You are a subagent spawned by another session.", input.prompt].join("\n")
                       : input.prompt,
+                  ...(background && existing === undefined ? { resume: false } : {}),
                 })
                 .pipe(
                   Effect.mapError(
@@ -264,17 +250,19 @@ export const Plugin = {
                   ),
                 )
 
-              const run = Effect.gen(function* () {
-                yield* runtime.session.resume(child.id)
-                return yield* latestAssistantText(child.id)
-              }).pipe(Effect.onInterrupt(() => runtime.session.interrupt(child.id)))
-
               const info = yield* runtime.job.start({
                 id: child.id,
                 type: name,
                 title: input.description,
                 metadata: {},
-                run,
+                recovery: {
+                  kind: "subagent",
+                  parentSessionID: context.sessionID,
+                  childSessionID: child.id,
+                  agent: agent.name,
+                  description: input.description,
+                },
+                run: runtime.session.resume(child.id).pipe(Effect.andThen(latestAssistantText(child.id))),
               })
 
               if (background) {

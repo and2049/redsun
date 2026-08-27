@@ -317,7 +317,7 @@ async function renderOpen(
                 <ToastProvider>
                   <RouteProvider>
                     <ClientProvider api={createApi(calls.fetch)}>
-                      <DataProvider>
+                      <DataProvider directory={process.cwd()}>
                         <LocationProvider>
                             <ThemeProvider source={emptyThemeSource}>
                               <DialogProvider>

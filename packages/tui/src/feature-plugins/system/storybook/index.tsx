@@ -2,6 +2,7 @@ import { Plugin } from "@opencode-ai/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createSignal, For, type JSX } from "solid-js"
 import { StoryFooter } from "./footer"
+import { mermanLayoutsStory } from "./merman-layouts"
 import { sessionLocationMissingStory } from "./session-location-missing"
 
 /**
@@ -14,7 +15,7 @@ export type Story = {
   render: (context: Plugin.Context) => JSX.Element
 }
 
-const stories: Story[] = [sessionLocationMissingStory]
+const stories: Story[] = [mermanLayoutsStory, sessionLocationMissingStory]
 
 function Commands(props: { context: Plugin.Context }) {
   props.context.keymap.layer(() => ({

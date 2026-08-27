@@ -12,6 +12,7 @@ import { SessionSchema } from "./session/schema.js"
 import { SessionStore } from "./session/store.js"
 import { Wildcard } from "./util/wildcard.js"
 import { PermissionSaved } from "./permission/saved.js"
+import { PluginHooks } from "./plugin/hooks.js"
 
 const PermissionEffect = Permission.Effect
 export { PermissionEffect as Effect }
@@ -71,9 +72,10 @@ export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission
   rules: Permission.Ruleset,
   permission: Schema.String,
   resources: Schema.Array(Schema.String),
+  reason: Schema.String.pipe(Schema.optional),
 }) {
   override get message() {
-    return `Permission denied: ${this.permission}`
+    return this.reason ?? `Permission denied: ${this.permission}`
   }
 }
 
@@ -105,11 +107,6 @@ export type Mode = typeof Mode.Type
 const MODE_KEY = "permission.mode"
 
 export interface Interface {
-  readonly allowsAll: (input: {
-    readonly sessionID: SessionSchema.ID
-    readonly action: string
-    readonly agent?: Agent.ID
-  }) => Effect.Effect<boolean, SessionErrors.NotFoundError>
   readonly ask: (input: AssertInput) => Effect.Effect<AskResult, SessionErrors.NotFoundError>
   readonly assert: (input: AssertInput) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
@@ -137,6 +134,7 @@ const layer = Layer.effect(
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
     const kv = yield* KV.Service
+    const hooks = yield* PluginHooks.Service
     const pending = new Map<ID, Pending>()
 
     const stored = yield* kv.get(MODE_KEY)
@@ -171,24 +169,6 @@ const layer = Layer.effect(
       return agent?.permissions ?? missingAgentPermissions
     })
 
-    const allowsAll = Effect.fnUntraced(function* (input: {
-      readonly sessionID: SessionSchema.ID
-      readonly action: string
-      readonly agent?: Agent.ID
-    }) {
-      const rules = yield* configured(input.sessionID, input.agent)
-      const relevant = rules.filter((rule) => Wildcard.match(input.action, rule.action))
-      for (let index = relevant.length - 1; index >= 0; index--) {
-        const rule = relevant[index]
-        if (rule.resource !== "*") {
-          if (rule.effect !== "allow") return false
-          continue
-        }
-        return rule.effect === "allow"
-      }
-      return false
-    })
-
     function denied(input: Pick<Request, "action" | "resources">, rules: Permission.Ruleset) {
       return input.resources.some((resource) => evaluate(input.action, resource, rules).effect === "deny")
     }
@@ -203,11 +183,21 @@ const layer = Layer.effect(
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
-      if (autoApprove && effect === "ask") return { effect: "allow" as const, rules: all }
-      return { effect, rules: all }
+      const event = yield* hooks.trigger("permission", "evaluate", {
+        sessionID: input.sessionID,
+        agent: input.agent,
+        action: input.action,
+        resources: input.resources,
+        metadata: input.metadata,
+        source: input.source,
+        effect,
+      })
+      if (autoApprove && event.effect === "ask")
+        return { effect: "allow" as const, message: event.message, rules: all }
+      return { effect: event.effect, message: event.message, rules: all }
     })
 
-    function request(input: AssertInput): Request {
+    function request(input: AssertInput, message?: string): Request {
       return {
         id: input.id ?? ID.create(),
         sessionID: input.sessionID,
@@ -216,6 +206,7 @@ const layer = Layer.effect(
         save: input.save,
         metadata: input.metadata,
         source: input.source,
+        message,
       }
     }
 
@@ -236,39 +227,42 @@ const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
-      const value = request(input)
+      const value = request(input, result.message)
       if (result.effect === "ask") yield* create(value, input.agent)
       return { id: value.id, effect: result.effect }
     })
 
     const assert = Effect.fn("Permission.assert")((input: AssertInput) =>
-      Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function* () {
-          const result = yield* evaluateInput(input)
-          if (result.effect === "deny") {
-            return yield* new BlockedError({
-              rules: relevant(input, result.rules),
-              permission: input.action,
-              resources: input.resources,
-            })
-          }
-          if (result.effect === "allow") return
-          const item = yield* create(request(input), input.agent)
-          return yield* restore(Deferred.await(item.deferred)).pipe(
-            // Deliberate defect tunnel: leaves wrap execution in blanket `mapError`, which
-            // must not convert a user's decline into model-facing tool output. The decline
-            // resurfaces as a typed failure at SessionModelRequest.executeTool. A decline
-            // WITH feedback (CorrectedError) intentionally stays typed so the leaf can turn
-            // it into ToolFailure and the model continues.
-            Effect.catchTag("Permission.DeclinedError", (error) => Effect.die(error)),
-            Effect.ensuring(
-              Effect.sync(() => {
-                pending.delete(item.request.id)
-              }),
-            ),
-          )
-        }),
-      ),
+      Effect.gen(function* () {
+        const result = yield* evaluateInput(input)
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            if (result.effect === "deny") {
+              return yield* new BlockedError({
+                rules: relevant(input, result.rules),
+                permission: input.action,
+                resources: input.resources,
+                reason: result.message,
+              })
+            }
+            if (result.effect === "allow") return
+            const item = yield* create(request(input, result.message), input.agent)
+            return yield* restore(Deferred.await(item.deferred)).pipe(
+              // Deliberate defect tunnel: leaves wrap execution in blanket `mapError`, which
+              // must not convert a user's decline into model-facing tool output. The decline
+              // resurfaces as a typed failure at SessionModelRequest.executeTool. A decline
+              // WITH feedback (CorrectedError) intentionally stays typed so the leaf can turn
+              // it into ToolFailure and the model continues.
+              Effect.catchTag("Permission.DeclinedError", (error) => Effect.die(error)),
+              Effect.ensuring(
+                Effect.sync(() => {
+                  pending.delete(item.request.id)
+                }),
+              ),
+            )
+          }),
+        )
+      }),
     )
 
     const reply = Effect.fn("Permission.reply")((input: ReplyInput) =>
@@ -374,12 +368,12 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ allowsAll, ask, assert, reply, get, forSession, list, mode, setMode })
+    return Service.of({ ask, assert, reply, get, forSession, list, mode, setMode })
   }),
 )
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node, KV.node, Location.node, Agent.node, SessionStore.node, PermissionSaved.node],
+  deps: [Bus.node, KV.node, Location.node, Agent.node, SessionStore.node, PermissionSaved.node, PluginHooks.node],
 })
