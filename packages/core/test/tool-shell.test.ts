@@ -233,7 +233,7 @@ const withScanner = <A, E, R>(
         yield* Effect.promise(() => Promise.all([fs.mkdir(fixture.active), fs.mkdir(fixture.outside)]))
         yield* Effect.promise(() =>
           Bun.write(
-            path.join(fixture.active, "opencode.json"),
+            path.join(fixture.active, "redsun.json"),
             JSON.stringify({ experimental: { portable_shell_scanner: portable } }),
           ),
         )
