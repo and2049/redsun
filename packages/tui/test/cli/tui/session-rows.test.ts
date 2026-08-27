@@ -391,12 +391,12 @@ test("renders synthetic messages with descriptions", () => {
   ])
 })
 
-test("rates only streamed steps while the turn is live", () => {
+test("blends streamed usage with an in-flight estimate while the turn is live", () => {
   const first = assistant("assistant-1", [])
   first.time = { created: 8_000, streamed: 10_000, completed: 20_000 }
   first.finish = "tool-calls"
   first.tokens = { input: 10, output: 20, reasoning: 5, cache: { read: 0, write: 0 } }
-  const inflight = assistant("assistant-2", [])
+  const inflight = assistant("assistant-2", [{ type: "text", text: "x".repeat(40) }])
   inflight.time = { created: 27_000 }
   const messages: SessionMessageInfo[] = [
     { type: "user", id: "user-1", text: "Question", time: { created: 1_000 } },
@@ -404,7 +404,10 @@ test("rates only streamed steps while the turn is live", () => {
     inflight,
   ]
 
-  expect(turnTokensPerSecond(inflight, messages, true)).toBe(10)
+  // 20 real tokens over 2s plus ~10 estimated (40 chars / 4) over the 2s elapsed so far.
+  expect(turnTokensPerSecond(inflight, messages, { now: 29_000 })).toBe(7.5)
+  // The estimate moves with the clock even while no new content arrives.
+  expect(turnTokensPerSecond(inflight, messages, { now: 33_000 })).toBe(3.75)
   expect(turnTokensPerSecond(inflight, messages)).toBeUndefined()
 })
 

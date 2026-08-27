@@ -392,7 +392,24 @@ export function turnDuration(message: SessionMessageAssistant, messages: Session
   return Math.max(0, message.time.completed - (input?.time.created ?? message.time.created))
 }
 
-export function turnTokensPerSecond(message: SessionMessageAssistant, messages: SessionMessageInfo[], live = false) {
+// The provider only reports token usage at step end, so the running step's output is
+// estimated from what it has streamed so far - visible text, reasoning, and tool-call
+// input all count as model output. Four characters per token is the usual rough cut.
+function estimateOutputTokens(message: SessionMessageAssistant) {
+  const chars = message.content.reduce((total, part) => {
+    if (part.type === "text" || part.type === "reasoning") return total + part.text.length
+    if (part.type === "tool" && part.state.status === "streaming" && typeof part.state.input === "string")
+      return total + part.state.input.length
+    return total
+  }, 0)
+  return chars / 4
+}
+
+export function turnTokensPerSecond(
+  message: SessionMessageAssistant,
+  messages: SessionMessageInfo[],
+  live?: { now: number },
+) {
   const index = messages.findIndex((item) => item.id === message.id)
   const end = index === -1 ? messages.length : index + 1
   const start = messages
@@ -401,15 +418,18 @@ export function turnTokensPerSecond(message: SessionMessageAssistant, messages: 
   const steps = messages
     .slice(start + 1, end)
     .filter((item): item is SessionMessageAssistant => item.type === "assistant")
-  const durations = steps.flatMap((step) =>
-    step.time.streamed === undefined ? [] : [Math.max(0, step.time.streamed - step.time.created)],
-  )
-  // Live mode rates only the steps that finished streaming; the in-flight step has no
-  // token count yet. A settled turn still requires every step to carry one.
-  const settled = live ? steps.filter((step) => step.time.streamed !== undefined) : steps
-  if (settled.length === 0 || durations.length !== settled.length) return
-  const output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0), 0)
-  const duration = durations.reduce((total, value) => total + value, 0)
+  const settled = steps.filter((step) => step.time.streamed !== undefined)
+  // A settled turn is rated from real usage alone and needs every step to carry it.
+  if (!live && settled.length !== steps.length) return
+  if (steps.length === 0) return
+  let output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0), 0)
+  let duration = settled.reduce((total, step) => total + Math.max(0, (step.time.streamed ?? 0) - step.time.created), 0)
+  if (live)
+    for (const step of steps) {
+      if (step.time.streamed !== undefined) continue
+      output += estimateOutputTokens(step)
+      duration += Math.max(0, live.now - step.time.created)
+    }
   if (output <= 0 || duration <= 0) return
   return output / (duration / 1_000)
 }
