@@ -100,6 +100,7 @@ import {
   explorationSummary,
   resolvePart,
   turnDuration,
+  turnInput,
   turnTokensPerSecond,
   type CacheUsage,
   type PartRef,
@@ -2007,8 +2008,34 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
   const local = useLocal()
   const theme = useTheme("elevated")
   const interrupted = createMemo(() => props.message.error?.message === "Step interrupted")
-  const duration = createMemo(() => turnDuration(props.message, data.session.message.list(ctx.sessionID)))
-  const tokensPerSecond = createMemo(() => turnTokensPerSecond(props.message, data.session.message.list(ctx.sessionID)))
+  const messages = createMemo(() => data.session.message.list(ctx.sessionID))
+  // The line lives for the whole turn: present tense with a ticking clock while the
+  // model works ("Cooking for 12s"), past tense once the turn settles. A step that
+  // finished on tool-calls is still mid-turn.
+  const generating = createMemo(() => {
+    if (props.message.error) return false
+    return !(props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish))
+  })
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!generating()) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const duration = createMemo(() => {
+    if (!generating()) return turnDuration(props.message, messages())
+    const input = turnInput(props.message, messages())
+    return Math.max(0, now() - (input?.time.created ?? props.message.time.created))
+  })
+  const tokensPerSecond = createMemo(() => turnTokensPerSecond(props.message, messages(), generating()))
+  // Seeded by the turn's input so the verb holds steady across the steps of one turn
+  // and through the flip from "Cooking" to "Cooked".
+  const verb = createMemo(() => {
+    const seed = turnInput(props.message, messages())?.id ?? props.message.id
+    const past = completionVerb(seed)
+    return generating() ? past.replace(/ed$/, "ing") : past
+  })
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
@@ -2022,17 +2049,29 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
           <text fg={theme.text.subdued}>Interrupted</text>
         </box>
       </Show>
-      <Show when={!props.message.error && duration() > 0}>
+      <Show when={!props.message.error && (generating() || duration() > 0)}>
         <box paddingLeft={TRANSCRIPT_GUTTER}>
           {/* U+25A3 keeps text presentation everywhere; U+2733 turns emoji on Windows.
               The icon carries the agent's color as a finished-in-this-mode indicator. */}
           <text>
             <span style={{ fg: local.agent.color(props.message.agent) }}>▣ </span>
-            <span style={{ fg: theme.text.subdued }}>
-              {completionVerb(props.message.id)} for {completionDuration(duration())}
-            </span>
-            <Show when={config.data.session.tps && tokensPerSecond()}>
-              {(value) => <span style={{ fg: theme.text.subdued }}> · {value().toFixed(1)} tok/s</span>}
+            <Show
+              when={generating()}
+              fallback={
+                <>
+                  <span style={{ fg: theme.text.subdued }}>
+                    {verb()} for {completionDuration(duration())}
+                  </span>
+                  <Show when={config.data.session.tps && tokensPerSecond()}>
+                    {(value) => <span style={{ fg: theme.text.subdued }}> · {value().toFixed(1)} tok/s</span>}
+                  </Show>
+                </>
+              }
+            >
+              <span style={{ fg: theme.text.subdued }}>
+                {verb()}… ({completionDuration(duration())}
+                {config.data.session.tps && tokensPerSecond() ? ` · ${tokensPerSecond()?.toFixed(1)} tok/s` : ""})
+              </span>
             </Show>
           </text>
         </box>

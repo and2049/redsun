@@ -172,7 +172,11 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
     setRows(
       produce((draft) => {
         if (hasPart(draft, ref)) return
-        append(draft, ref, part, queuedStart(draft))
+        // Streaming parts slot in above their message's live footer so the
+        // timer line stays pinned under the step while it generates.
+        const footer = draft.findIndex((row) => row.type === "assistant-footer" && row.messageID === ref.messageID)
+        const index = queuedStart(draft)
+        append(draft, ref, part, footer === -1 ? index : Math.min(footer, index))
       }),
     )
 
@@ -186,11 +190,24 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       }),
     )
 
-  const removeFooter = (messageID: string) =>
+  // A new step moves the turn's live footer onto its message: the previous step's
+  // footer disappears (settled turns keep theirs) and one appears for the running step,
+  // so the timer/tok-per-second line stays on screen for the whole turn.
+  const retargetFooter = (messageID: string) =>
     setRows(
       produce((draft) => {
-        const index = draft.findIndex((row) => row.type === "assistant-footer" && row.messageID === messageID)
-        if (index !== -1) draft.splice(index, 1)
+        for (let index = draft.length - 1; index >= 0; index--) {
+          const row = draft[index]
+          if (row?.type !== "assistant-footer" || row.messageID === messageID) continue
+          const message = data.session.message.get(sessionID(), row.messageID)
+          if (message?.type !== "assistant") continue
+          const terminal = (message.finish && !["tool-calls", "unknown"].includes(message.finish)) || message.error
+          if (!terminal && !message.retry) draft.splice(index, 1)
+        }
+        if (draft.some((row) => row.type === "assistant-footer" && row.messageID === messageID)) return
+        const index = queuedStart(draft)
+        completePrevious(draft, index)
+        draft.splice(index, 0, { type: "assistant-footer", messageID })
       }),
     )
 
@@ -264,7 +281,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       if (event.data.sessionID === sessionID()) appendFooter(event.data.assistantMessageID)
     }),
     data.on("session.step.started", (event) => {
-      if (event.data.sessionID === sessionID()) removeFooter(event.data.assistantMessageID)
+      if (event.data.sessionID === sessionID()) retargetFooter(event.data.assistantMessageID)
     }),
     data.on("session.step.ended", (event) => {
       if (event.data.sessionID !== sessionID() || ["tool-calls", "unknown"].includes(event.data.finish)) return
@@ -289,7 +306,7 @@ export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new S
   const usage = turnTokens
     ? { steps: [] as SessionMessageAssistant[], previousTurnCache: undefined as CacheUsage | undefined }
     : undefined
-  return [
+  const rows = [
     ...messages.filter((message) => !pending.has(message.id)),
     ...pendingCompactions,
     ...messages.filter(isInput),
@@ -328,6 +345,24 @@ export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new S
     }
     return rows
   }, [])
+  // A turn still generating keeps a live footer under its newest step so the timer and
+  // tok/s stay visible while the model works; terminal and retry footers land above.
+  const running = messages.findLast(
+    (message): message is SessionMessageAssistant => message.type === "assistant" && !pending.has(message.id),
+  )
+  if (
+    running &&
+    !running.error &&
+    !running.retry &&
+    !(running.finish && !["tool-calls", "unknown"].includes(running.finish)) &&
+    !rows.some((row) => row.type === "assistant-footer" && row.messageID === running.id)
+  ) {
+    const index = rows.findIndex(
+      (row) => row.type === "compaction-queued" || (row.type === "message" && pending.has(row.messageID)),
+    )
+    rows.splice(index === -1 ? rows.length : index, 0, { type: "assistant-footer", messageID: running.id })
+  }
+  return rows
 }
 
 export function cacheReuseDrop(previous: CacheUsage | undefined, current: CacheUsage) {
@@ -344,16 +379,20 @@ export function cacheReuseDrop(previous: CacheUsage | undefined, current: CacheU
   return drop > 0 ? drop : undefined
 }
 
-export function turnDuration(message: SessionMessageAssistant, messages: SessionMessageInfo[]) {
-  if (message.time.completed === undefined) return 0
+export function turnInput(message: SessionMessageAssistant, messages: SessionMessageInfo[]) {
   const index = messages.findIndex((item) => item.id === message.id)
-  const input = messages
+  return messages
     .slice(0, index === -1 ? messages.length : index)
     .findLast((item) => item.type === "user" || item.type === "synthetic")
+}
+
+export function turnDuration(message: SessionMessageAssistant, messages: SessionMessageInfo[]) {
+  if (message.time.completed === undefined) return 0
+  const input = turnInput(message, messages)
   return Math.max(0, message.time.completed - (input?.time.created ?? message.time.created))
 }
 
-export function turnTokensPerSecond(message: SessionMessageAssistant, messages: SessionMessageInfo[]) {
+export function turnTokensPerSecond(message: SessionMessageAssistant, messages: SessionMessageInfo[], live = false) {
   const index = messages.findIndex((item) => item.id === message.id)
   const end = index === -1 ? messages.length : index + 1
   const start = messages
@@ -365,8 +404,11 @@ export function turnTokensPerSecond(message: SessionMessageAssistant, messages: 
   const durations = steps.flatMap((step) =>
     step.time.streamed === undefined ? [] : [Math.max(0, step.time.streamed - step.time.created)],
   )
-  if (steps.length === 0 || durations.length !== steps.length) return
-  const output = steps.reduce((total, step) => total + (step.tokens?.output ?? 0), 0)
+  // Live mode rates only the steps that finished streaming; the in-flight step has no
+  // token count yet. A settled turn still requires every step to carry one.
+  const settled = live ? steps.filter((step) => step.time.streamed !== undefined) : steps
+  if (settled.length === 0 || durations.length !== settled.length) return
+  const output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0), 0)
   const duration = durations.reduce((total, value) => total + value, 0)
   if (output <= 0 || duration <= 0) return
   return output / (duration / 1_000)
