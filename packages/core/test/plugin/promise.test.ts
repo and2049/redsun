@@ -10,12 +10,14 @@ import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { PluginPromise } from "@opencode-ai/core/plugin/promise"
 import { WebSearch } from "@opencode-ai/core/websearch"
+import { Vcs } from "@opencode-ai/core/vcs"
 import { Session } from "@opencode-ai/core/session"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { SessionInbox } from "@opencode-ai/core/session/inbox"
 import { Tool } from "@opencode-ai/core/tool"
 import { Provider } from "@opencode-ai/core/provider"
 import { Project } from "@opencode-ai/core/project"
+import { Workspace } from "@opencode-ai/core/workspace"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { define } from "@opencode-ai/plugin/promise/plugin"
 import { Money } from "@opencode-ai/schema/money"
@@ -27,6 +29,41 @@ import { host as testHost } from "./host"
 const it = testEffect(PluginTestLayer)
 
 describe("fromPromise", () => {
+  it.effect("exposes the host location including workspace and project metadata", () =>
+    Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const location = yield* Location.Service
+      const expected = new Location.Info({
+        directory: AbsolutePath.make("/worktree/packages/app"),
+        workspaceID: Workspace.ID.make("wrk_plugin_location"),
+        project: {
+          id: Project.ID.global,
+          directory: AbsolutePath.make("/worktree"),
+          canonical: AbsolutePath.make("/project"),
+        },
+      })
+      const host = yield* PluginHost.make(plugins).pipe(
+        Effect.provideService(Location.Service, {
+          ...location,
+          directory: expected.directory,
+          workspaceID: expected.workspaceID,
+          project: expected.project,
+        }),
+      )
+      const seen: Location.Info[] = []
+      yield* PluginPromise.fromPromise(
+        define({
+          id: "promise-location",
+          setup: (ctx) => {
+            seen.push(ctx.location)
+          },
+        }),
+      ).effect(host)
+
+      expect(seen).toEqual([expected])
+    }),
+  )
+
   it.effect("adapts plugin storage methods", () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service
@@ -121,7 +158,7 @@ describe("fromPromise", () => {
     }),
   )
 
-  it.effect("preserves no-content and rejected Promise behavior", () =>
+  it.effect("preserves interrupt results and rejected Promise behavior", () =>
     Effect.gen(function* () {
       const seen: unknown[] = []
       const host = testHost({
@@ -131,11 +168,12 @@ describe("fromPromise", () => {
               return Effect.fail(new Error("interrupt failed"))
             }
             expect(input.continue).toBe(true)
-            return Effect.void
+            return Effect.succeed({ interrupted: false })
           },
           switchAgent: (input) => Effect.sync(() => seen.push(input)),
           switchModel: (input) => Effect.sync(() => seen.push(input)),
           rename: (input) => Effect.sync(() => seen.push(input)),
+          move: (input) => Effect.sync(() => seen.push(input)),
           wait: (input) => Effect.sync(() => seen.push(input)),
         },
       })
@@ -144,7 +182,9 @@ describe("fromPromise", () => {
         define({
           id: "promise-session-interrupt",
           setup: async (ctx) => {
-            expect(await ctx.session.interrupt({ sessionID: "ses_success", continue: true })).toBeUndefined()
+            expect(await ctx.session.interrupt({ sessionID: "ses_success", continue: true })).toEqual({
+              interrupted: false,
+            })
             await expect(ctx.session.interrupt({ sessionID: "ses_failure" })).rejects.toThrow("interrupt failed")
             expect(await ctx.session.switchAgent({ sessionID: "ses_success", agent: "build" })).toBeUndefined()
             expect(
@@ -154,6 +194,9 @@ describe("fromPromise", () => {
               }),
             ).toBeUndefined()
             expect(await ctx.session.rename({ sessionID: "ses_success", title: "Renamed" })).toBeUndefined()
+            expect(
+              await ctx.session.move({ sessionID: "ses_success", directory: "/destination", delivery: "queue" }),
+            ).toBeUndefined()
             expect(await ctx.session.wait({ sessionID: "ses_success" })).toBeUndefined()
           },
         }),
@@ -166,6 +209,11 @@ describe("fromPromise", () => {
           model: { providerID: Provider.ID.make("openai"), id: Model.ID.make("gpt-5") },
         },
         { sessionID: Session.ID.make("ses_success"), title: "Renamed" },
+        {
+          sessionID: Session.ID.make("ses_success"),
+          directory: AbsolutePath.make("/destination"),
+          delivery: "queue",
+        },
         { sessionID: Session.ID.make("ses_success") },
       ])
     }),
@@ -230,12 +278,14 @@ describe("fromPromise", () => {
       const promisePlugin = define({
         id: "promise-client-reads",
         setup: async (ctx) => {
+          expect(Object.keys(ctx.mcp).sort()).toEqual(["list", "reload", "transform"])
           const results = await Promise.all([
             ctx.agent.list(),
             ctx.catalog.provider.list(),
             ctx.catalog.model.list(),
             ctx.command.list(),
             ctx.integration.list(),
+            ctx.mcp.list(),
             ctx.plugin.list(),
             ctx.reference.list(),
             ctx.skill.list(),
@@ -247,7 +297,7 @@ describe("fromPromise", () => {
 
       yield* PluginPromise.fromPromise(promisePlugin).effect(host)
 
-      expect(seen).toHaveLength(8)
+      expect(seen).toHaveLength(9)
       expect(new Set(seen).size).toBe(1)
     }),
   )
@@ -430,6 +480,56 @@ describe("fromPromise", () => {
     }),
   )
 
+  it.effect("registers a Promise VCS provider and forwards client reads", () =>
+    Effect.gen(function* () {
+      const vcs = yield* Vcs.Service
+      const plugin = yield* Plugin.Service
+      const host = yield* PluginHost.make(plugin)
+      const signals: AbortSignal[] = []
+      const promisePlugin = define({
+        id: "promise-vcs",
+        setup: async (ctx) => {
+          await ctx.vcs.transform((draft) => {
+            draft.add({
+              id: "custom",
+              name: "Custom VCS",
+              info: async (_input, request) => {
+                signals.push(request.signal)
+                return { branch: { current: "feature", default: "main" } }
+              },
+              branches: async (input, request) => {
+                signals.push(request.signal)
+                expect(input.search).toBe("feat")
+                return ["feature"]
+              },
+              status: async (_input, request) => {
+                signals.push(request.signal)
+                return [{ file: "file.txt", additions: 1, deletions: 0, status: "added" }]
+              },
+              diff: async (input, request) => {
+                signals.push(request.signal)
+                expect(input.context).toBe(2)
+                expect(input.maxOutputBytes).toBe(10_000_000)
+                return [{ file: "file.txt", patch: "+hello", additions: 1, deletions: 0, status: "added" }]
+              },
+            })
+            draft.default.set("custom")
+          })
+
+          expect((await ctx.vcs.get()).data.branch.current).toBe("feature")
+          expect((await ctx.vcs.branches({ search: "feat" })).data).toEqual(["feature"])
+          expect((await ctx.vcs.status()).data).toHaveLength(1)
+          expect((await ctx.vcs.diff({ mode: "working", context: 2 })).data[0].patch).toBe("+hello")
+        },
+      })
+
+      yield* PluginPromise.fromPromise(promisePlugin).effect(host)
+      expect((yield* vcs.info()).branch.current).toBe("feature")
+      expect(signals).toHaveLength(4)
+      expect(signals.every((signal) => signal instanceof AbortSignal)).toBeTrue()
+    }),
+  )
+
   it.effect("registers a standalone web search provider", () =>
     Effect.gen(function* () {
       const websearch = yield* WebSearch.Service
@@ -511,6 +611,11 @@ describe("fromPromise", () => {
               },
             })
           })
+          await ctx.tool.hook("execute.before", (event) => {
+            expect(event.tool).toBe("helllo")
+            expect(event).not.toHaveProperty("inputSchema")
+            event.tool = "hello"
+          })
         },
       })
 
@@ -524,13 +629,157 @@ describe("fromPromise", () => {
           agent: Agent.ID.make("build"),
           messageID: SessionMessage.ID.make("msg_promise_tool"),
           progress: (update) => Effect.sync(() => progress.push(update)),
-          call: { type: "tool-call", id: "call_promise_tool", name: "hello", input: { name: "world" } },
+          call: { type: "tool-call", id: "call_promise_tool", name: "helllo", input: { name: "world" } },
         }),
       ).toMatchObject({
         output: "Hello, world!",
         content: [{ type: "text", text: "Hello, world!" }],
       })
       expect(progress).toEqual([{ phase: "greeting" }])
+    }),
+  )
+
+  it.live("reloads and disposes Promise tools while preserving older snapshots", () =>
+    Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const registry = yield* Tool.Service
+      const host = yield* PluginHost.make(plugins)
+      const source = { description: "Original", replays: 0 }
+      const registrations: Array<{ reload: () => Promise<void>; dispose: () => Promise<void> }> = []
+      yield* PluginPromise.fromPromise(
+        define({
+          id: "promise-tool-lifecycle",
+          setup: async (ctx) => {
+            expect(Object.keys(ctx.tool).sort()).toEqual(["hook", "reload", "transform"])
+            const registration = await ctx.tool.transform((draft) => {
+              source.replays++
+              const description = source.description
+              draft.add({
+                name: "reloadable",
+                description,
+                input: Schema.Struct({}),
+                output: Schema.String,
+                options: { codemode: false },
+                execute: async () => ({ output: description }),
+              })
+              expect(draft.list().map((tool) => tool.id)).toEqual(["reloadable"])
+              expect(draft.get("reloadable")?.id).toBe("reloadable")
+              expect(draft.get("reloadable")?.name).toBe("reloadable")
+              expect(draft.get("missing")).toBeUndefined()
+            })
+            registrations.push({ reload: ctx.tool.reload, dispose: registration.dispose })
+          },
+        }),
+      ).effect(host)
+      const registration = registrations[0]
+      if (!registration) return yield* Effect.die("Promise tool registration was not captured")
+      const original = yield* registry.snapshot()
+      const execute = (snapshot: Tool.Snapshot) =>
+        snapshot.execute({
+          sessionID: Session.ID.make("ses_promise_tool_reload"),
+          agent: Agent.ID.make("build"),
+          messageID: SessionMessage.ID.make("msg_promise_tool_reload"),
+          call: { type: "tool-call", id: "call_promise_tool_reload", name: "reloadable", input: {} },
+        })
+
+      source.description = "Reloaded"
+      yield* Effect.promise(() => registration.reload())
+      const reloaded = yield* registry.snapshot()
+      expect(source.replays).toBe(2)
+      expect(reloaded.definitions).toContainEqual(
+        expect.objectContaining({ name: "reloadable", description: "Reloaded" }),
+      )
+      expect(yield* execute(reloaded)).toMatchObject({ output: "Reloaded" })
+      expect(yield* execute(original)).toMatchObject({ output: "Original" })
+
+      yield* Effect.promise(() => registration.dispose())
+      yield* Effect.promise(() => registration.dispose())
+      expect((yield* registry.snapshot()).definitions.some((tool) => tool.name === "reloadable")).toBe(false)
+      expect(yield* execute(original)).toMatchObject({ output: "Original" })
+      expect(yield* execute(reloaded)).toMatchObject({ output: "Reloaded" })
+      yield* Effect.promise(() => registration.reload())
+      expect(source.replays).toBe(2)
+      expect((yield* registry.snapshot()).definitions.some((tool) => tool.name === "reloadable")).toBe(false)
+    }),
+  )
+
+  it.live("adapts tool updates, executor wrapping, and removal across replay and disposal", () =>
+    Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const registry = yield* Tool.Service
+      const host = yield* PluginHost.make(plugins)
+      const progress: Tool.Metadata[] = []
+      let greeting = "Hello"
+      const registrations: Array<{ dispose: () => Promise<void> }> = []
+      yield* host.tool.transform((draft) => {
+        const text = greeting
+        draft.add({
+          name: "hello",
+          description: "Hello",
+          options: { namespace: "acme", codemode: false },
+          input: Schema.Struct({ name: Schema.String }),
+          output: Schema.String,
+          execute: ({ name }, context) =>
+            context.progress({ phase: "original" }).pipe(Effect.as({ output: `${text}, ${name}!` })),
+        })
+        draft.add({
+          name: "temporary",
+          description: "Temporary",
+          input: Schema.Struct({}),
+          options: { codemode: false },
+          execute: () => Effect.succeed({ content: "temporary" }),
+        })
+      })
+      yield* PluginPromise.fromPromise(
+        define({
+          id: "promise-tool-mutations",
+          setup: async (ctx) => {
+            registrations.push(
+              await ctx.tool.transform((draft) => {
+                draft.update("missing", () => {
+                  throw new Error("must not create a tool")
+                })
+                draft.update("acme_hello", (tool) => {
+                  const execute = tool.execute
+                  tool.description = "Wrapped"
+                  delete tool.output
+                  tool.execute = async (input, context) => {
+                    const result = await execute(input, context)
+                    return { content: `${result.output} Wrapped.` }
+                  }
+                })
+                draft.remove("temporary")
+              }),
+            )
+            greeting = "Hi"
+            await ctx.tool.reload()
+          },
+        }),
+      ).effect(host)
+      const snapshot = yield* registry.snapshot()
+      expect(snapshot.definitions.map((tool) => tool.name)).toEqual(["acme_hello", "execute"])
+      expect(snapshot.definitions[0]?.description).toBe("Wrapped")
+      expect(snapshot.definitions[0]?.outputSchema).toBeUndefined()
+      expect(
+        yield* snapshot.execute({
+          sessionID: Session.ID.make("ses_promise_tool_update"),
+          agent: Agent.ID.make("build"),
+          messageID: SessionMessage.ID.make("msg_promise_tool_update"),
+          call: { type: "tool-call", id: "call_update", name: "acme_hello", input: { name: "world" } },
+          progress: (update) =>
+            Effect.sync(() => {
+              progress.push(update)
+            }),
+        }),
+      ).toMatchObject({ content: [{ type: "text", text: "Hi, world! Wrapped." }] })
+      expect(progress).toEqual([{ phase: "original" }])
+      const registration = registrations[0]
+      if (!registration) return yield* Effect.die("Promise tool registration was not captured")
+      yield* Effect.promise(() => registration.dispose())
+      yield* Effect.promise(() => registration.dispose())
+      const restored = yield* registry.snapshot()
+      expect(restored.definitions.map((tool) => tool.name)).toEqual(["acme_hello", "temporary", "execute"])
+      expect(restored.definitions[0]?.description).toBe("Hello")
     }),
   )
 

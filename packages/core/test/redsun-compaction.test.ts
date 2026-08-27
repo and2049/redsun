@@ -10,6 +10,7 @@ import { Bus } from "@opencode-ai/core/bus"
 import { CompactionExtractor } from "@opencode-ai/core/session/compaction-extractor"
 import { SessionCompaction } from "@opencode-ai/core/session/compaction"
 import { SessionMessage } from "@opencode-ai/core/session/message"
+import { SessionModelRequest } from "@opencode-ai/core/session/model-request"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { SessionTable } from "@opencode-ai/core/session/sql"
@@ -52,15 +53,13 @@ const client = Layer.mock(LLMClient.Service)({
   },
   generate: () => Effect.die("unused"),
 })
+const resolvedModel = SessionRunnerModel.resolved(model, {
+  capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+  cost,
+  limit: { context: 10_000, output: 1_000 },
+})
 const models = Layer.mock(SessionRunnerModel.Service)({
-  resolve: () =>
-    Effect.succeed(
-      SessionRunnerModel.resolved(model, {
-        capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
-        cost,
-        limit: { context: 10_000, output: 1_000 },
-      }),
-    ),
+  resolve: () => Effect.succeed(resolvedModel),
 })
 
 const harness = (compaction: Record<string, unknown>) => {
@@ -69,7 +68,14 @@ const harness = (compaction: Record<string, unknown>) => {
   })
   return testEffect(
     AppNodeBuilder.build(
-      LayerNode.group([Database.node, Bus.node, SessionProjector.node, SessionStore.node, SessionCompaction.node]),
+      LayerNode.group([
+        Database.node,
+        Bus.node,
+        SessionProjector.node,
+        SessionStore.node,
+        SessionCompaction.node,
+        SessionModelRequest.node,
+      ]),
       [
         [Bus.node, Bus.configured({ persist: true })],
         [llmClient, client],
@@ -242,6 +248,8 @@ hybrid.effect("hybrid compaction sends the inventory and only the recent head sl
     expect(
       yield* compaction.compactManual({
         session,
+        resolveModel: () => Effect.succeed(resolvedModel),
+        prepare: (yield* SessionModelRequest.Service).prepare,
         messages: conversation(),
         inputID: SessionMessage.ID.make("msg_compact_hybrid"),
       }),
@@ -264,6 +272,8 @@ algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
     expect(
       yield* compaction.compactManual({
         session,
+        resolveModel: () => Effect.succeed(resolvedModel),
+        prepare: (yield* SessionModelRequest.Service).prepare,
         messages: conversation(),
         inputID: SessionMessage.ID.make("msg_compact_algorithmic"),
       }),
@@ -294,6 +304,8 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
     expect(
       yield* compaction.compactManual({
         session,
+        resolveModel: () => Effect.succeed(resolvedModel),
+        prepare: (yield* SessionModelRequest.Service).prepare,
         messages: [previous, ...conversation()],
         inputID: SessionMessage.ID.make("msg_compact_carry"),
       }),

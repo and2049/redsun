@@ -26,6 +26,7 @@ test("validates the session list scope setting", () => {
   expect(decode({ tabs: { enabled: true, layout: "vertical" } })).toEqual({ tabs: {} })
   expect(decode({ prompt: { image_preview: true } })).toEqual({ prompt: { image_preview: true } })
   expect(decode({ session: { image_preview: true } })).toEqual({ session: { image_preview: true } })
+  expect(decode({ session: { tps: false } })).toEqual({ session: { tps: false } })
   expect(decode({ session: { new_location: "inherit" } })).toEqual({ session: { new_location: "inherit" } })
   expect(() => decode({ session: { new_location: "current" } })).toThrow()
 })
@@ -52,6 +53,7 @@ test("resolves nested config and keybind defaults", () => {
   expect(config.debug).toEqual({ devtools: true })
   expect(config.tabs).toEqual({ scope: "cwd" })
   expect(config.session.new_location).toBe("launch")
+  expect(config.session.tps).toBe(true)
 })
 
 test("offers session list scope and no tab strip settings", () => {
@@ -61,6 +63,21 @@ test("offers session list scope and no tab strip settings", () => {
 
 test("shows the new session location default in settings", () => {
   expect(settings.find((setting) => setting.path.join(".") === "session.new_location")?.default).toBe("launch")
+})
+
+test("shows the TPS default in session settings", () => {
+  const setting = settings.find((setting) => setting.path.join(".") === "session.tps")
+  expect(setting?.category).toBe("Session")
+  expect(setting?.default).toBe(true)
+})
+
+test("names tool grouping explicitly in settings", () => {
+  expect(settings.find((setting) => setting.path.join(".") === "session.grouping")).toMatchObject({
+    title: "Tool grouping",
+    category: "Session",
+    default: "auto",
+    values: ["none", "auto"],
+  })
 })
 
 test("validates terminal copy behavior", () => {
