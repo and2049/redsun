@@ -31,6 +31,7 @@ it.effect("todowrite registers through the real entry point and persists the lis
             return Effect.void
           }) as never,
           hook: () => Effect.die("unused tool.hook"),
+          reload: (() => Effect.void) as never,
         },
       }),
     ).pipe(Effect.provide(Layer.mock(KV.Service)(kv)))

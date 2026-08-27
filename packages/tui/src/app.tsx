@@ -31,7 +31,6 @@ import {
   batch,
   Show,
 } from "solid-js"
-import { createStore } from "solid-js/store"
 import {
   TuiLifecycleProvider,
   TuiAppProvider,
@@ -39,7 +38,6 @@ import {
   TuiStartupProvider,
   TuiTerminalEnvironmentProvider,
   useTuiApp,
-  useTuiPaths,
   useTuiStartup,
   useTuiTerminalEnvironment,
   type TuiApp,
@@ -77,7 +75,6 @@ import { DialogOpen, DialogOpenKey, loadDialogOpen } from "./component/dialog-op
 import { ThemeErrorToast } from "./component/theme-error-toast"
 import { createThemeSource, ThemeProvider, useTheme, useThemes } from "./context/theme"
 import { Home } from "./routes/home"
-import { Session } from "./routes/session"
 import { PromptHistoryProvider } from "./prompt/history"
 import { FrecencyProvider } from "./prompt/frecency"
 import { PromptStashProvider } from "./prompt/stash"
@@ -100,6 +97,7 @@ import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 import { AttentionProvider } from "./context/attention"
 import { StorageProvider, useStorage } from "./context/storage"
+import { Session } from "./routes/session"
 import { createTuiClipboard } from "./clipboard"
 
 registerOpencodeSpinner()
@@ -199,7 +197,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
         reconnect: async (signal: AbortSignal) => {
           const endpoint = await managed.reconnect(signal)
           const next = { baseUrl: endpoint.url, headers: Service.headers(endpoint) }
-          return { api: OpenCode.make(next) }
+          return { api: OpenCode.make(next), url: endpoint.url }
         },
         restart: managed.restart,
       }
@@ -352,9 +350,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                 : undefined
                                             }
                                           >
-                                            <ClientProvider api={api} service={service}>
+                                            <ClientProvider api={api} url={input.server.endpoint.url} service={service}>
                                               <PermissionProvider>
-                                                <DataProvider>
+                                                <DataProvider directory={directory}>
                                                   <LocationProvider>
                                                     <VimProvider>
                                                       <ThemeProvider source={createThemeSource(global.config)}>
@@ -436,7 +434,6 @@ function App(props: { pair?: DialogPairCredentials }) {
   const log = useLog({ component: "app" })
   const app = useTuiApp()
   const startup = useTuiStartup()
-  const paths = useTuiPaths()
   const config = useConfig()
   const route = useRoute()
   const dimensions = useTerminalDimensions()
@@ -655,6 +652,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         category: "Session",
         slash: { name: "new", aliases: ["clear"] },
         run: () => {
+          const model = local.model.current()
           const current =
             route.data.type === "session"
               ? (data.session.get(route.data.sessionID)?.location ?? location.ref)
@@ -663,11 +661,12 @@ function App(props: { pair?: DialogPairCredentials }) {
             type: "home",
             location: newSessionLocation(
               config.data.session.new_location,
-              paths.cwd,
+              data.location.default().directory,
               current,
               location.error?.location,
             ),
           })
+          if (model) local.model.set(model)
           dialog.clear()
         },
       },
@@ -875,7 +874,7 @@ function App(props: { pair?: DialogPairCredentials }) {
                 const restart = client.restart
                 if (!restart) return
                 dialog.clear()
-                toast.show({ variant: "info", message: "Restarting service...", duration: 30000 })
+                toast.show({ variant: "info", message: "Restarting service…", duration: 30000 })
                 // restart resolves once the replacement service is healthy; the
                 // event stream reattaches through the reconnect loop.
                 await restart()
