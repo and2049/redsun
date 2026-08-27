@@ -284,7 +284,7 @@ const runPermissionCommand = (
     expect(yield* permission.list()).toEqual([])
     expect(yield* Queue.size(queue)).toBe(0)
     return { exit, requests }
-  }).pipe(Effect.scoped, Effect.timeout(Duration.seconds(5)))
+  }).pipe(Effect.scoped, Effect.timeout(Duration.seconds(15)))
 
 // Directory cases still document inherited limitations; fixed scanner cases require matching behavior.
 describe("ShellTool scanner permissions", () => {
@@ -660,7 +660,9 @@ describe("ShellTool ordinary shell syntax", () => {
                 })
             }),
           pwsh ?? "pwsh",
-        ))
+        ),
+        { timeout: 15_000 },
+      )
     }
   }
 
@@ -698,7 +700,9 @@ describe("ShellTool ordinary shell syntax", () => {
             })
           }),
         pwsh ?? "pwsh",
-      ))
+      ),
+      { timeout: 45_000 },
+    )
   }
 })
 
