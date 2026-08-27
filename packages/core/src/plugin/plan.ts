@@ -2,6 +2,7 @@ export * as PlanPlugin from "./plan.js"
 
 import { Message, ToolFailure } from "@opencode-ai/ai"
 import { define } from "@opencode-ai/plugin/effect/plugin"
+import { FSUtil } from "@opencode-ai/util/fs-util"
 import { Global } from "@opencode-ai/util/global"
 import { Effect, Stream } from "effect"
 import path from "node:path"
@@ -44,6 +45,14 @@ export const Plugin = define({
         item.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
         item.permissions.push({ action: "edit", resource: "*", effect: "deny" })
         item.permissions.push({ action: "edit", resource: path.join(plans, "*"), effect: "allow" })
+        // REDSUN: mutation resources are Location-relative for internal paths, so an
+        // absolute rule alone never matches a plans directory inside the Location.
+        if (FSUtil.contains(location.directory, plans))
+          item.permissions.push({
+            action: "edit",
+            resource: path.join(path.relative(location.directory, plans), "*"),
+            effect: "allow",
+          })
         item.permissions.push({ action: "external_directory", resource: path.join(plans, "*"), effect: "allow" })
       })
     })
