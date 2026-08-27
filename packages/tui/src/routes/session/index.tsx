@@ -2028,7 +2028,9 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
     const input = turnInput(props.message, messages())
     return Math.max(0, now() - (input?.time.created ?? props.message.time.created))
   })
-  const tokensPerSecond = createMemo(() => turnTokensPerSecond(props.message, messages(), generating()))
+  const tokensPerSecond = createMemo(() =>
+    turnTokensPerSecond(props.message, messages(), generating() ? { now: now() } : undefined),
+  )
   // Seeded by the turn's input so the verb holds steady across the steps of one turn
   // and through the flip from "Cooking" to "Cooked".
   const verb = createMemo(() => {
