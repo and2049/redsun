@@ -56,7 +56,7 @@ jobs:
         timeout-minutes: 15
 
       - name: Test core
-        run: cd packages/core && bun test
+        run: cd packages/core && bun run test
         timeout-minutes: 20
         env:
           CI: true
