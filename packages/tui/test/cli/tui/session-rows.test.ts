@@ -174,6 +174,7 @@ test("groups exploration parts across assistant messages until a delimiter", () 
       ],
     },
     { type: "part", ref: { messageID: "assistant-2", partID: "text:0" } },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -202,6 +203,7 @@ test("keeps non-exploration tools as individual part rows", () => {
       completed: false,
       refs: [{ messageID: "assistant-1", partID: "grep-1" }],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
@@ -230,6 +232,7 @@ test("assigns stable kind ordinals within an assistant message", () => {
       completed: false,
       refs: [{ messageID: "assistant-1", partID: "reasoning:1" }],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
@@ -260,6 +263,7 @@ test("groups adjacent reasoning parts until a visible boundary", () => {
       completed: false,
       refs: [{ messageID: "assistant-1", partID: "reasoning:2" }],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
@@ -292,6 +296,7 @@ test("groups across empty assistant reasoning parts", () => {
         { messageID: "assistant-2", partID: "grep-1" },
       ],
     },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -349,6 +354,7 @@ test("hides synthetic messages without descriptions", () => {
         { messageID: "assistant-2", partID: "grep-1" },
       ],
     },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -381,6 +387,72 @@ test("renders synthetic messages with descriptions", () => {
       completed: false,
       refs: [{ messageID: "assistant-2", partID: "grep-1" }],
     },
+    { type: "assistant-footer", messageID: "assistant-2" },
+  ])
+})
+
+test("rates only streamed steps while the turn is live", () => {
+  const first = assistant("assistant-1", [])
+  first.time = { created: 8_000, streamed: 10_000, completed: 20_000 }
+  first.finish = "tool-calls"
+  first.tokens = { input: 10, output: 20, reasoning: 5, cache: { read: 0, write: 0 } }
+  const inflight = assistant("assistant-2", [])
+  inflight.time = { created: 27_000 }
+  const messages: SessionMessageInfo[] = [
+    { type: "user", id: "user-1", text: "Question", time: { created: 1_000 } },
+    first,
+    inflight,
+  ]
+
+  expect(turnTokensPerSecond(inflight, messages, true)).toBe(10)
+  expect(turnTokensPerSecond(inflight, messages)).toBeUndefined()
+})
+
+test("keeps a live footer under the newest step of a running turn", () => {
+  const inflight = assistant("assistant-1", [{ type: "text", text: "Working" }])
+  const messages: SessionMessageInfo[] = [
+    { type: "user", id: "user-1", text: "Go", time: { created: 0 } },
+    inflight,
+  ]
+
+  expect(reduceSessionRows(messages)).toEqual([
+    { type: "message", messageID: "user-1" },
+    { type: "part", ref: { messageID: "assistant-1", partID: "text:0" } },
+    { type: "assistant-footer", messageID: "assistant-1" },
+  ])
+})
+
+test("places the live footer before queued input rows", () => {
+  const inflight = assistant("assistant-1", [{ type: "text", text: "Working" }])
+  const messages: SessionMessageInfo[] = [
+    { type: "user", id: "user-1", text: "Go", time: { created: 0 } },
+    inflight,
+    { type: "user", id: "user-queued", text: "Queued", time: { created: 5 } },
+  ]
+
+  expect(reduceSessionRows(messages, new Set(["user-queued"]))).toEqual([
+    { type: "message", messageID: "user-1" },
+    { type: "part", ref: { messageID: "assistant-1", partID: "text:0" } },
+    { type: "assistant-footer", messageID: "assistant-1" },
+    { type: "message", messageID: "user-queued" },
+  ])
+})
+
+test("emits no live footer once the turn settles or errors", () => {
+  const settled = assistant("assistant-1", [{ type: "text", text: "Done" }])
+  settled.finish = "stop"
+  const failed = assistant("assistant-2", [{ type: "text", text: "Broken" }])
+  failed.error = { type: "provider.transport", message: "Disconnected" }
+
+  const rows = reduceSessionRows([
+    { type: "user", id: "user-1", text: "Go", time: { created: 0 } },
+    settled,
+    { type: "user", id: "user-2", text: "Again", time: { created: 2 } },
+    failed,
+  ])
+  expect(rows.filter((row) => row.type === "assistant-footer")).toEqual([
+    { type: "assistant-footer", messageID: "assistant-1" },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -464,6 +536,7 @@ test("collapses every read-only tool into one run", () => {
         { messageID: "assistant-1", partID: "web-1" },
       ],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
