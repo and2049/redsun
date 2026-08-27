@@ -96,6 +96,7 @@ import { usePlugin } from "../../plugin/context"
 import {
   cacheReuseDrop,
   createSessionRows,
+  completionStamp,
   messageBoundaryIDs,
   explorationSummary,
   resolvePart,
@@ -2066,6 +2067,11 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
                   </span>
                   <Show when={config.data.session.tps && tokensPerSecond()}>
                     {(value) => <span style={{ fg: theme.text.subdued }}> · {value().toFixed(1)} tok/s</span>}
+                  </Show>
+                  <Show when={props.message.time.completed}>
+                    {(completed) => (
+                      <span style={{ fg: theme.text.subdued }}> · done {completionStamp(completed(), Date.now())}</span>
+                    )}
                   </Show>
                 </>
               }

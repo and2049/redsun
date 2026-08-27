@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode-ai/client"
 import {
   cacheReuseDrop,
+  completionStamp,
   explorationSummary,
   messageBoundaryIDs,
   reduceSessionRows,
@@ -21,6 +22,21 @@ test("measures turn duration from the user prompt across assistant steps", () =>
   ]
 
   expect(turnDuration(final, messages)).toBe(29_000)
+})
+
+test("stamps a settled turn with the local completion time", () => {
+  // Same calendar day: clock only. Fixed offsets keep this independent of the test timezone.
+  const noon = new Date(2026, 7, 12, 14, 5).getTime()
+  expect(completionStamp(noon, new Date(2026, 7, 12, 14, 6).getTime())).toBe("14:05")
+  // Prior calendar day.
+  const yesterday = new Date(2026, 7, 11, 21, 3).getTime()
+  expect(completionStamp(yesterday, new Date(2026, 7, 12, 0, 30).getTime())).toBe("yesterday 21:03")
+  // Older than a day: full date and clock.
+  const older = new Date(2026, 7, 12, 9, 42).getTime()
+  expect(completionStamp(older, new Date(2026, 7, 27, 10, 0).getTime())).toBe("2026-08-12 09:42")
+  // Late yesterday still counts as yesterday even past midnight.
+  const lateNight = new Date(2026, 7, 11, 23, 59).getTime()
+  expect(completionStamp(lateNight, new Date(2026, 7, 12, 1, 0).getTime())).toBe("yesterday 23:59")
 })
 
 test("measures turn output throughput across model steps without tool time", () => {
