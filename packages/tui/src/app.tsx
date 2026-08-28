@@ -8,14 +8,13 @@ import { ClipboardProvider, useClipboard } from "./context/clipboard"
 import { LogProvider, useLog, type LogSink } from "./context/log"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
-import * as Selection from "./util/selection"
+import { Selection } from "./util/selection"
 import {
   CliRenderEvents,
   createCliRenderer,
   MouseButton,
   type CliRenderer,
   type CliRendererConfig,
-  type MouseEvent,
   type ThemeMode,
 } from "@opentui/core"
 import { RouteProvider, useRoute } from "./context/route"
@@ -498,14 +497,16 @@ function App(props: { pair?: DialogPairCredentials }) {
     }
   })
 
-  // Let selection copy/dismiss win ahead of normal bindings when explicit copy is required.
+  const copyOnSelectEnabled = () =>
+    (config.data.terminal?.copy ?? (process.platform === "win32" ? "manual" : "select")) === "select"
+
+  // Selection copy/dismiss must precede both app bindings and the terminal pane's raw key forwarding.
   const offSelectionKeys = keymap.intercept(
     "key",
     ({ event }) => {
-      if ((config.data.terminal?.copy ?? (process.platform === "win32" ? "manual" : "select")) === "select") return
-      Selection.handleSelectionKey(renderer, toast, event, clipboard)
+      Selection.handleSelectionKey(renderer, toast, event, clipboard, copyOnSelectEnabled())
     },
-    { priority: 1 },
+    { priority: 101 },
   )
   onCleanup(() => {
     offSelectionKeys()
@@ -523,8 +524,6 @@ function App(props: { pair?: DialogPairCredentials }) {
     renderer.clearSelection()
   }
   const terminalTitleEnabled = () => config.data.terminal?.title ?? true
-  const copyOnSelectEnabled = () =>
-    (config.data.terminal?.copy ?? (process.platform === "win32" ? "manual" : "select")) === "select"
   const pasteSummaryEnabled = () => config.data.prompt?.paste !== "full"
 
   createEffect(() => {

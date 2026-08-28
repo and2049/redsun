@@ -77,6 +77,7 @@ export function fromPromise(plugin: Plugin) {
         )
         const AgentEndpoints = ClientApi.groups["server.agent"].endpoints
         const CommandEndpoints = ClientApi.groups["server.command"].endpoints
+        const ExperimentalEndpoints = ClientApi.groups["server.experimental"].endpoints
         const GenerateEndpoints = ClientApi.groups["server.generate"].endpoints
         const IntegrationEndpoints = ClientApi.groups["server.integration"].endpoints
         const McpEndpoints = ClientApi.groups["server.mcp"].endpoints
@@ -99,19 +100,15 @@ export function fromPromise(plugin: Plugin) {
 
         const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromiseWith(context)(effect)
 
-        const promiseTool = (tool: Tool.Info & { readonly id: string }): Info & { readonly id: string } => {
-          const execute = tool.execute
-          return {
-            ...tool,
-            execute: (input, context) =>
-              run(
-                execute(input, {
-                  ...context,
-                  progress: (update) => Effect.promise(() => context.progress(update)),
-                }),
-              ),
-          }
-        }
+        const promiseExecutor =
+          (execute: Tool.Info["execute"]): Info["execute"] =>
+          (input, context) =>
+            run(
+              execute(input, {
+                ...context,
+                progress: (update) => Effect.promise(() => context.progress(update)),
+              }),
+            )
 
         const adaptApiMethod = <PromiseMethod>(
           endpoint: HttpApiEndpoint.Top,
@@ -191,6 +188,11 @@ export function fromPromise(plugin: Plugin) {
                   Stream.map((event) => event as unknown as PromiseEvent),
                 ),
               ),
+          },
+          experimental: {
+            terminal: {
+              read: adaptApiMethod(ExperimentalEndpoints["persistentPty.read"], host.experimental.terminal.read),
+            },
           },
           generate: {
             text: adaptApiMethod(GenerateEndpoints["generate.text"], host.generate.text),
@@ -310,10 +312,10 @@ export function fromPromise(plugin: Plugin) {
               register(
                 host.tool.transform((draft) =>
                   callback({
-                    list: () => draft.list().map((tool) => promiseTool(tool)),
+                    list: () => draft.list().map((tool) => ({ ...tool, execute: promiseExecutor(tool.execute) })),
                     get: (id) => {
                       const tool = draft.get(id)
-                      return tool ? promiseTool(tool) : undefined
+                      return tool ? { ...tool, execute: promiseExecutor(tool.execute) } : undefined
                     },
                     add: (tool: Info) =>
                       draft.add({
@@ -322,16 +324,9 @@ export function fromPromise(plugin: Plugin) {
                       }),
                     update: (id, update) =>
                       draft.update(id, (tool) => {
-                        const execute = tool.execute
                         const value: Info = {
                           ...tool,
-                          execute: (input, context) =>
-                            run(
-                              execute(input, {
-                                ...context,
-                                progress: (update) => Effect.promise(() => context.progress(update)),
-                              }),
-                            ),
+                          execute: promiseExecutor(tool.execute),
                         }
                         update(value)
                         Object.assign(tool, value, {

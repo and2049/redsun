@@ -29,6 +29,8 @@ export type TokenUsageInfo = {
 
 export type LocationRef = { directory: string; workspaceID?: string }
 
+export type SessionMetadata = { [x: string]: JsonValue }
+
 export type FileDiffInfo = {
   file: string
   patch: string
@@ -378,6 +380,16 @@ export type SessionStatus =
 
 export type PtyTicketConnectToken = { ticket: string; expires_in: number }
 
+export type PersistentPtyReadResult = {
+  ptyID: string
+  title: string
+  cwd: string
+  foregroundProcess: string | null
+  screen: { text: string; cols: number; rows: number; cursor: { x: number; y: number } }
+}
+
+export type PersistentPtyHandoff = { directory: string; instanceID: string; ticket: string; expiresAt: number }
+
 export type ShellInfo1 = {
   id: string
   status: "running" | "exited" | "timeout" | "killed"
@@ -548,6 +560,7 @@ export type SessionCreated = {
     title?: string
     agent?: string
     model?: ModelRef
+    metadata?: SessionMetadata
     version: string
   }
 }
@@ -1642,6 +1655,7 @@ export type SessionInfo = {
   title?: string
   location: LocationRef
   subpath?: string
+  metadata?: SessionMetadata
   revert?: SessionRevert
 }
 
@@ -2711,6 +2725,7 @@ export type SessionCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
   }["id"]
   readonly title?: {
     readonly id?: string | null
@@ -2718,6 +2733,7 @@ export type SessionCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
   }["title"]
   readonly agent?: {
     readonly id?: string | null
@@ -2725,6 +2741,7 @@ export type SessionCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
   }["agent"]
   readonly model?: {
     readonly id?: string | null
@@ -2732,6 +2749,7 @@ export type SessionCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
   }["model"]
   readonly location?: {
     readonly id?: string | null
@@ -2739,7 +2757,16 @@ export type SessionCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
   }["location"]
+  readonly metadata?: {
+    readonly id?: string | null
+    readonly title?: string | null
+    readonly agent?: string | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly metadata?: { readonly [x: string]: JsonValue } | null
+  }["metadata"]
 }
 
 export type SessionCreateOutput = { data: SessionInfo }["data"]
@@ -2776,6 +2803,7 @@ export type SessionImportInput = {
       readonly title?: string
       readonly location: { readonly directory: string; readonly workspaceID?: string }
       readonly subpath?: string
+      readonly metadata?: { readonly [x: string]: JsonValue }
       readonly revert?: {
         readonly messageID: string
         readonly partID?: string
@@ -3052,6 +3080,7 @@ export type SessionImportInput = {
       readonly title?: string
       readonly location: { readonly directory: string; readonly workspaceID?: string }
       readonly subpath?: string
+      readonly metadata?: { readonly [x: string]: JsonValue }
       readonly revert?: {
         readonly messageID: string
         readonly partID?: string
@@ -3328,6 +3357,7 @@ export type SessionImportInput = {
       readonly title?: string
       readonly location: { readonly directory: string; readonly workspaceID?: string }
       readonly subpath?: string
+      readonly metadata?: { readonly [x: string]: JsonValue }
       readonly revert?: {
         readonly messageID: string
         readonly partID?: string
@@ -5813,56 +5843,63 @@ export type PtyConnectTokenOutput = {
   data: PtyTicketConnectToken
 }
 
+export type ExperimentalPersistentPtyReadInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly lines?: { readonly lines?: number | undefined }["lines"]
+}
+
+export type ExperimentalPersistentPtyReadOutput = { data: PersistentPtyReadResult | null }["data"]
+
 export type ExperimentalPersistentPtyListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type ExperimentalPersistentPtyListOutput = { data: Array<PersistentPtyInfo> }["data"]
 
 export type ExperimentalPersistentPtyCreateInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly command: {
-    readonly command: string
+  readonly command?: {
+    readonly command?: string
     readonly args: ReadonlyArray<string>
-    readonly cwd: string
+    readonly cwd?: string
     readonly title: string
     readonly env: { readonly [x: string]: string }
     readonly size?: { readonly cols: number; readonly rows: number }
   }["command"]
   readonly args: {
-    readonly command: string
+    readonly command?: string
     readonly args: ReadonlyArray<string>
-    readonly cwd: string
+    readonly cwd?: string
     readonly title: string
     readonly env: { readonly [x: string]: string }
     readonly size?: { readonly cols: number; readonly rows: number }
   }["args"]
-  readonly cwd: {
-    readonly command: string
+  readonly cwd?: {
+    readonly command?: string
     readonly args: ReadonlyArray<string>
-    readonly cwd: string
+    readonly cwd?: string
     readonly title: string
     readonly env: { readonly [x: string]: string }
     readonly size?: { readonly cols: number; readonly rows: number }
   }["cwd"]
   readonly title: {
-    readonly command: string
+    readonly command?: string
     readonly args: ReadonlyArray<string>
-    readonly cwd: string
+    readonly cwd?: string
     readonly title: string
     readonly env: { readonly [x: string]: string }
     readonly size?: { readonly cols: number; readonly rows: number }
   }["title"]
   readonly env: {
-    readonly command: string
+    readonly command?: string
     readonly args: ReadonlyArray<string>
-    readonly cwd: string
+    readonly cwd?: string
     readonly title: string
     readonly env: { readonly [x: string]: string }
     readonly size?: { readonly cols: number; readonly rows: number }
   }["env"]
   readonly size?: {
-    readonly command: string
+    readonly command?: string
     readonly args: ReadonlyArray<string>
-    readonly cwd: string
+    readonly cwd?: string
     readonly title: string
     readonly env: { readonly [x: string]: string }
     readonly size?: { readonly cols: number; readonly rows: number }
@@ -5872,6 +5909,8 @@ export type ExperimentalPersistentPtyCreateInput = {
 export type ExperimentalPersistentPtyCreateOutput = { data: PersistentPtyInfo }["data"]
 
 export type ExperimentalPersistentPtyShutdownOutput = void
+
+export type ExperimentalPersistentPtyHandoffOutput = { handoff: PersistentPtyHandoff | null }
 
 export type ExperimentalPersistentPtyGetInput = { readonly ptyID: { readonly ptyID: string }["ptyID"] }
 

@@ -5,8 +5,8 @@ import { Cause, Effect, Layer, Schema, Context, RcMap, Stream, Scope } from "eff
 import { ListAnchor } from "@opencode-ai/schema/session"
 import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-orm"
 import { Project } from "./project.js"
-import { Workspace } from "./workspace.js"
-import { Model } from "./model.js"
+import { Workspace } from "@opencode-ai/schema/workspace"
+import { Model } from "@opencode-ai/schema/model"
 import { Location } from "./location.js"
 import { SessionMessage } from "./session/message.js"
 import { Base64, FileAttachment, Prompt } from "@opencode-ai/schema/prompt"
@@ -17,7 +17,7 @@ import { SessionProjector } from "./session/projector.js"
 import { SessionMessageTable, SessionTable } from "./session/sql.js"
 import { SessionSchema } from "./session/schema.js"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema.js"
-import { Agent } from "./agent.js"
+import { Agent } from "@opencode-ai/schema/agent"
 import { Money } from "@opencode-ai/schema/money"
 import { App } from "./app.js"
 import { Slug } from "./util/slug.js"
@@ -41,6 +41,7 @@ import { Session } from "@opencode-ai/schema/session"
 import { FSUtil } from "@opencode-ai/util/fs-util"
 import { Image } from "./image.js"
 import { PluginSupervisor } from "./plugin/supervisor-service.js"
+import { PluginHooks } from "./plugin/hooks.js"
 import { Mime } from "./mime.js"
 import type { EventLog } from "@opencode-ai/schema/event-log"
 import { Event } from "@opencode-ai/schema/event"
@@ -97,6 +98,7 @@ type CreateBaseInput = {
   title?: string
   agent?: Agent.ID
   model?: Model.Ref
+  metadata?: SessionSchema.Metadata
 }
 type CreateInput = CreateBaseInput &
   ({ location: Location.Ref; parentID?: never } | { parentID: SessionSchema.ID; location?: never })
@@ -413,6 +415,9 @@ const layer = Layer.effect(
               subpath: RelativePath.make(path.relative(project.directory, location.directory).replaceAll("\\", "/")),
               title: input.title,
               agent: input.agent,
+              // Children inherit metadata the way they inherit location, so
+              // host policies that read it treat the family uniformly.
+              metadata: input.metadata ?? parent?.metadata,
               model: input.model
                 ? {
                     id: Model.ID.make(input.model.id),
@@ -645,39 +650,30 @@ const layer = Layer.effect(
           ),
         ),
       prompt: Effect.fn("Session.prompt")((input) =>
-        Effect.uninterruptible(
+        Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
             const session = yield* result.get(input.sessionID)
-            // A staged revert must be committed before admitting new input so the prompt
-            // continues from the reverted boundary rather than stale post-boundary history.
-            if (session.revert) yield* SessionRevert.commit(session).pipe(Effect.provideService(Bus.Service, bus))
-            // Resolved lazily so prompt admission only boots location services when an
-            // image attachment actually needs the resizer.
-            const image = Effect.gen(function* () {
-              const plugins = yield* PluginSupervisor.Service
-              yield* plugins.flush
-              return yield* Image.Service
-            }).pipe(Effect.provide(locations.get(session.location)))
-            const skills = Effect.gen(function* () {
-              const plugins = yield* PluginSupervisor.Service
-              yield* plugins.flush
-              return yield* Skill.Service
-            }).pipe(Effect.provide(locations.get(session.location)))
-            const prompt = yield* resolvePrompt(
-              { text: input.text, files: input.files, agents: input.agents, skills: input.skills },
-              image,
-              skills,
-            ).pipe(Effect.provideService(FSUtil.Service, fs))
             const messageID = input.id ?? SessionMessage.ID.create()
-            const admittedInput = SessionInbox.Item.make({
-              type: "user",
-              payload: { ...prompt, metadata: input.metadata },
-              delivery: input.delivery ?? "steer",
-            })
-            const admitted = yield* SessionInbox.admit(db, bus, {
-              id: messageID,
-              sessionID: input.sessionID,
-              item: admittedInput,
+            const admitted = yield* Effect.gen(function* () {
+              const existing = yield* SessionInbox.reconcile(db, {
+                id: messageID,
+                sessionID: session.id,
+                delivery: input.delivery ?? "steer",
+              })
+              if (existing) return existing
+              const item = yield* restore(
+                preparePrompt(input, messageID).pipe(
+                  Effect.provide(locations.get(session.location)),
+                  Effect.provideService(FSUtil.Service, fs),
+                ),
+              )
+              // Commit a staged revert only after preparation succeeds, before admitting new work.
+              if (session.revert) yield* SessionRevert.commit(session).pipe(Effect.provideService(Bus.Service, bus))
+              return yield* SessionInbox.admit(db, bus, {
+                id: messageID,
+                sessionID: session.id,
+                item,
+              })
             }).pipe(
               Effect.catchDefect((defect) =>
                 defect instanceof SessionInbox.LifecycleConflict
@@ -1023,19 +1019,34 @@ function synthesizeTerminalShellInfo(started: ShellSchema.Info): ShellSchema.Inf
   }
 }
 
-const resolvePrompt = Effect.fn("Session.resolvePrompt")(function* (
-  input: PromptInput.Prompt,
-  image: Effect.Effect<Image.Interface>,
-  skills: Effect.Effect<Skill.Interface>,
+const preparePrompt = Effect.fn("Session.preparePrompt")(function* (
+  request: Parameters<Interface["prompt"]>[0],
+  messageID: SessionMessage.ID,
 ) {
+  const plugins = yield* PluginSupervisor.Service
+  yield* plugins.flush
+  const hooks = yield* PluginHooks.Service
+  const event = yield* hooks.trigger("session", "prompt", {
+    sessionID: request.sessionID,
+    messageID,
+    prompt: structuredClone({
+      text: request.text,
+      files: request.files?.slice(),
+      agents: request.agents?.slice(),
+      skills: request.skills?.slice(),
+    }),
+    metadata: structuredClone(request.metadata),
+    delivery: request.delivery ?? "steer",
+  })
+  const input = event.prompt
   const fs = yield* FSUtil.Service
   const files = input.files
-    ? yield* Effect.forEach(input.files, (file) => materializeAttachment(fs, file, image), { concurrency: 8 })
+    ? yield* Effect.forEach(input.files, (file) => materializeAttachment(fs, file), { concurrency: 8 })
     : undefined
   const requested = input.skills
   const selected = yield* Effect.gen(function* () {
     if (!requested?.length) return undefined
-    const skillService = yield* skills
+    const skillService = yield* Skill.Service
     const prepared = new Map<Skill.ID, Skill.Name>()
     return yield* Effect.forEach(requested, (attachment) =>
       Effect.gen(function* () {
@@ -1053,7 +1064,19 @@ const resolvePrompt = Effect.fn("Session.resolvePrompt")(function* (
       }),
     )
   })
-  return Prompt.make({ text: input.text, agents: input.agents, files, skills: selected?.length ? selected : undefined })
+  return SessionInbox.Item.make({
+    type: "user",
+    payload: {
+      ...Prompt.make({
+        text: input.text,
+        agents: input.agents,
+        files,
+        skills: selected?.length ? selected : undefined,
+      }),
+      metadata: event.metadata,
+    },
+    delivery: event.delivery,
+  })
 })
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
@@ -1061,7 +1084,6 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 const materializeAttachment = Effect.fn("Session.materializeAttachment")(function* (
   fs: FSUtil.Interface,
   input: PromptInput.FileAttachment,
-  image: Effect.Effect<Image.Interface>,
 ) {
   const resolved = input.uri.startsWith("data:")
     ? {
@@ -1090,7 +1112,7 @@ const materializeAttachment = Effect.fn("Session.materializeAttachment")(functio
             .join("\n"),
         )
       : resolved.bytes
-  const normalized = yield* normalizeImageAttachment(input, Buffer.from(content).toString("base64"), mime, image)
+  const normalized = yield* normalizeImageAttachment(input, Buffer.from(content).toString("base64"), mime)
   return FileAttachment.create({
     data: normalized.data,
     mime: normalized.mime,
@@ -1105,10 +1127,9 @@ const normalizeImageAttachment = Effect.fn("Session.normalizeImageAttachment")(f
   input: PromptInput.FileAttachment,
   data: string,
   mime: string,
-  image: Effect.Effect<Image.Interface>,
 ) {
   if (!mime.startsWith("image/")) return { data: Base64.make(data), mime }
-  const service = yield* image
+  const service = yield* Image.Service
   const label = input.name ?? (input.uri.startsWith("data:") ? "inline attachment" : input.uri)
   const content = { uri: label, content: data, encoding: "base64" as const, mime }
   const normalized = yield* service.normalize(label, content).pipe(
@@ -1197,7 +1218,7 @@ const SHELL_MAX_CAPTURE_BYTES = 1024 * 1024
 
 export const node = makeGlobalNode({
   service: Service,
-  layer: layer.pipe(Layer.orDie),
+  layer,
   deps: [
     Job.node,
     SessionEnvironment.node,
