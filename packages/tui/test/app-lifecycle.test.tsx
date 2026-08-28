@@ -853,3 +853,67 @@ test("ctrl+c dismisses autocomplete and shell mode before exiting", async () => 
     await server.stop()
   }
 })
+
+test.each(["manual", "select"] as const)("selection copy and dismissal respect %s mode in the prompt", async (copy) => {
+  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  setup.renderer.start()
+  const ready = Promise.withResolvers<void>()
+  const session = {
+    id: "dummy",
+    title: "Selection fixture",
+    projectID: "project",
+    location: { directory },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 0, updated: 0 },
+  }
+  const calls = createFetch((url) => {
+    if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
+    if (url.pathname === "/api/session/dummy") return json({ data: session })
+    if (url.pathname === "/api/session/dummy/message") return json({ data: [], cursor: {} })
+    if (url.pathname === "/api/session/dummy/inbox") return json({ data: [] })
+    if (url.pathname === "/api/session/dummy/permission") return json({ data: [] })
+    return undefined
+  }, createEventStream())
+  const server = Bun.serve({ port: 0, fetch: (request) => calls.fetch(request) })
+
+  try {
+    const { run } = await import("../src/app")
+    const task = Effect.runPromise(
+      run({
+        app: { name: "test", version: "test", channel: "test" },
+        server: { endpoint: { url: server.url.toString() } },
+        config: {
+          get: async () => ({ animations: false, terminal: { copy } }),
+          update: async () => ({}),
+        },
+        packages: { resolve: async () => undefined },
+        args: { sessionID: session.id },
+        terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
+        log: () => {},
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node)), Effect.provide(FileSystem.layerNoop({}))),
+    )
+
+    await ready.promise
+    await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+    await setup.mockInput.typeText("selection audit draft")
+    setup.mockInput.pressKey("a", { ctrl: true, shift: true })
+    expect(setup.renderer.getSelection()?.getSelectedText()).toBe("selection audit draft")
+
+    setup.mockInput.pressEscape()
+    expect(setup.renderer.hasSelection).toBeFalse()
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("selection audit draft")
+
+    setup.mockInput.pressKey("c", { ctrl: true })
+    await setup.waitForFrame((frame) => !frame.includes("selection audit draft"))
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("")
+    expect(setup.renderer.hasSelection).toBeFalse()
+    expect(setup.renderer.isDestroyed).toBeFalse()
+
+    setup.renderer.destroy()
+    await task
+  } finally {
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    await server.stop()
+  }
+})

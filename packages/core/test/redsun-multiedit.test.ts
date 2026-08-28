@@ -56,7 +56,7 @@ const withTool = <A, E, R>(directory: string, body: (registry: Tool.Interface) =
         [
           [
             Environment.node,
-            transformEnvironmentFiles(activeLocation, (files) => ({
+            transformEnvironmentFiles((files) => ({
               write: (target, content) =>
                 Effect.sync(() => writes.push(target)).pipe(Effect.andThen(files.write(target, content))),
             })),
