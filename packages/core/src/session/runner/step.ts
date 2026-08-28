@@ -2,7 +2,7 @@ export * as SessionStep from "./step.js"
 
 import {
   AIError,
-  InvalidProviderOutputReason,
+  InvalidProviderOutputError,
   LLMClient,
   LLMEvent,
   isContextOverflowFailure,
@@ -36,7 +36,7 @@ export type Outcome = Data.TaggedEnum<{
   RecoverFull: {}
   Compacted: {}
 }>
-const Outcome = Data.taggedEnum<Outcome>()
+export const Outcome = Data.taggedEnum<Outcome>()
 
 interface Input {
   readonly sessionID: SessionSchema.ID
@@ -44,7 +44,6 @@ interface Input {
   readonly agent: Agent.ID
   readonly model: SessionRunnerModel.Resolved
   readonly prepared: SessionModelRequest.Prepared
-  readonly toolsDisabled: boolean
   readonly recoverContinuation: boolean
   /** The runner owns compaction policy; the attempt invokes it only before durable output. */
   readonly recoverOverflow: Effect.Effect<boolean>
@@ -73,11 +72,12 @@ export const make = Effect.gen(function* () {
     })
     const toolRuns: Array<{
       readonly call: ToolCall
-      readonly fiber: Fiber.Fiber<void, SessionModelRequest.ExecuteError>
+      readonly fiber: Fiber.Fiber<void, Permission.DeclinedError | QuestionTool.CancelledError>
     }> = []
     const interruptTools = Effect.suspend(() => Fiber.interruptAll(toolRuns.map((run) => run.fiber)))
     const executeTool = (call: ToolCall) => {
-      if (input.toolsDisabled) return new Tool.Error({ message: "Tools are disabled after the maximum agent steps" })
+      if (input.prepared.request.toolChoice?.type === "none")
+        return new Tool.Error({ message: "Tools are disabled after the maximum agent steps" })
       return input.prepared.executeTool({
         sessionID: input.sessionID,
         agent: input.agent,
@@ -127,15 +127,12 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const stream = yield* restore(providerStream).pipe(Effect.exit)
         const streamFailure = Option.getOrUndefined(Exit.findErrorOption(stream))
-        const streamInterrupted = stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)
+        const streamInterrupted = Exit.hasInterrupts(stream)
         if (!overflowFailure && publisher.hasStarted()) yield* publisher.streamed()
         if (streamInterrupted) yield* interruptTools
         const joined = yield* restore(Fiber.awaitAll(toolRuns.map((run) => run.fiber))).pipe(Effect.exit)
-        if (joined._tag === "Failure") yield* interruptTools
-        const tools = classifyToolExits(
-          joined,
-          toolRuns.map((run) => run.call),
-        )
+        if (Exit.isFailure(joined)) yield* interruptTools
+        const tools = classifyToolExits(joined, toolRuns)
 
         if (
           !publisher.record().outputStarted &&
@@ -147,13 +144,11 @@ export const make = Effect.gen(function* () {
         if (overflowFailure) yield* publisher.publish(overflowFailure)
         const recorded = publisher.record()
         const unknownFinish =
-          stream._tag === "Success" && recorded.finish?.finish === "unknown"
+          Exit.isSuccess(stream) && recorded.finish?.finish === "unknown"
             ? new AIError({
-                module: "session",
-                method: "stream",
-                reason: new InvalidProviderOutputReason({
-                  classification: "incomplete-stream",
+                reason: new InvalidProviderOutputError({
                   message: "The provider response ended with an unknown finish reason.",
+                  classification: "incomplete-stream",
                 }),
               })
             : undefined
@@ -193,7 +188,7 @@ export const make = Effect.gen(function* () {
         if (interrupted) yield* publisher.failAssistant(STEP_INTERRUPTED)
 
         // All local fibers have joined; only provider-hosted results can still be missing.
-        if (llmError || (stream._tag === "Success" && !recorded.providerFailed)) {
+        if (llmError || (Exit.isSuccess(stream) && !recorded.providerFailed)) {
           const missing = yield* publisher.failUnsettledTools(RESULT_MISSING, "hosted")
           if (missing && !llmError && !recorded.finish) yield* publisher.failAssistant(RESULT_MISSING)
         }
@@ -226,23 +221,28 @@ export const make = Effect.gen(function* () {
             })
         }
 
+        // After durable output, recovery continues instead of replaying: the
+        // partial assistant message is already persisted history. Any failure
+        // the pre-output gate would retry is continued here, plus interrupted
+        // streams, whose read failures may carry delivery states the retry
+        // policy rejects for full resends.
         if (
           llmFailure &&
           llmError &&
-          isInterruptedStream(llmFailure) &&
+          (isInterruptedStream(llmFailure) || SessionRunnerRetry.isRetryable(llmFailure)) &&
           record.outputStarted &&
           tools.declines.length === 0 &&
           !tools.interrupted
         )
           return Outcome.Continue({ cause: llmFailure, error: llmError })
 
-        if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
+        if (Exit.isFailure(stream)) return yield* Effect.failCause(stream.cause)
         if (tools.declines.length > 0) return yield* Effect.interrupt
         if (tools.interrupted && tools.failure) return yield* Effect.failCause(tools.failure)
-        if (tools.interrupted && joined._tag === "Failure") return yield* Effect.failCause(joined.cause)
+        if (tools.interrupted && Exit.isFailure(joined)) return yield* Effect.failCause(joined.cause)
         if (record.failure) return yield* new StepFailedError({ error: record.failure })
         return Outcome.Completed({
-          needsContinuation: !input.toolsDisabled && record.needsContinuation,
+          needsContinuation: input.prepared.request.toolChoice?.type !== "none" && record.needsContinuation,
         })
       }),
     )
@@ -251,42 +251,33 @@ export const make = Effect.gen(function* () {
   return { attempt }
 })
 
-const isDecline = (
-  error: SessionModelRequest.ExecuteError,
-): error is Permission.DeclinedError | QuestionTool.CancelledError =>
-  error._tag === "Permission.DeclinedError" || error._tag === "QuestionTool.CancelledError"
-
 const isInterruptedStream = (failure: AIError) => {
   if (failure.reason._tag === "InvalidProviderOutput") return failure.reason.classification === "incomplete-stream"
   if (failure.reason._tag === "Transport") return failure.reason.operation === "read"
   return false
 }
 
-/** Keep every joined exit associated with its call; a decline is not an infrastructure failure. */
+/** Tool.Error settles in each fiber; only user declines remain in the typed error channel. */
 const classifyToolExits = (
-  settled: Exit.Exit<Array<Exit.Exit<void, SessionModelRequest.ExecuteError>>>,
-  calls: ReadonlyArray<ToolCall>,
+  settled: Exit.Exit<Array<Exit.Exit<void, Permission.DeclinedError | QuestionTool.CancelledError>>>,
+  runs: ReadonlyArray<{ readonly call: ToolCall }>,
 ) => {
-  const exits = settled._tag === "Success" ? settled.value : []
+  const exits = Exit.isSuccess(settled) ? settled.value : []
   const declines = exits.flatMap((exit, index) =>
-    exit._tag === "Failure"
+    Exit.isFailure(exit)
       ? exit.cause.reasons.flatMap((reason) =>
-          Cause.isFailReason(reason) && isDecline(reason.error) ? [{ call: calls[index], reason: reason.error }] : [],
+          Cause.isFailReason(reason) ? [{ call: runs[index].call, reason: reason.error }] : [],
         )
       : [],
   )
-  const causes =
-    settled._tag === "Failure"
-      ? [settled.cause]
-      : exits.flatMap((exit) => (exit._tag === "Failure" ? [exit.cause] : []))
+  const causes = Exit.isFailure(settled)
+    ? [settled.cause]
+    : exits.flatMap((exit) => (Exit.isFailure(exit) ? [exit.cause] : []))
   const failure = causes
     .flatMap((cause) => {
       if (Cause.hasInterrupts(cause)) return []
-      const reasons = cause.reasons.flatMap(
-        (reason): Array<Cause.Reason<never>> =>
-          Cause.isFailReason(reason) ? (isDecline(reason.error) ? [] : [Cause.makeDieReason(reason.error)]) : [reason],
-      )
-      return reasons.length > 0 ? [Cause.fromReasons(reasons)] : []
+      const reasons = cause.reasons.filter(Cause.isDieReason)
+      return reasons.length > 0 ? [Cause.fromReasons<never>(reasons)] : []
     })
     .at(0)
   return { interrupted: causes.some(Cause.hasInterrupts), declines, failure }
