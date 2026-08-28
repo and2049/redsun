@@ -896,6 +896,7 @@ test.each(["manual", "select"] as const)("selection copy and dismissal respect %
 
     await ready.promise
     await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     await setup.mockInput.typeText("selection audit draft")
     await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "selection audit draft")
     setup.mockInput.pressKey("a", { ctrl: true, shift: true })
