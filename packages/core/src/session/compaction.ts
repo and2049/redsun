@@ -16,6 +16,7 @@ import type { SessionRunnerModel } from "./runner/model.js"
 import { SessionSchema } from "./schema.js"
 import { toSessionError } from "./to-session-error.js"
 import { Token } from "../util/token.js"
+import { ReadLocator } from "../util/read-locator.js"
 import { SessionUsage } from "./usage.js"
 import { Agent } from "../agent.js"
 import { State } from "../state.js"
@@ -134,7 +135,7 @@ export const serializeToolContent = (content: SessionMessage.ToolStateCompleted[
     )
     .join("\n")
 
-const serialize = (message: SessionMessage.Info) => {
+const serialize = (message: SessionMessage.Info, stale: ReadonlySet<string> = new Set()) => {
   if (message.type === "user") {
     const files =
       message.files?.map(
@@ -158,7 +159,9 @@ const serialize = (message: SessionMessage.Info) => {
         if (part.state.status === "completed")
           return [
             `[Assistant tool call]: ${part.name}(${input})`,
-            `[Tool result]: ${truncateToolOutput(serializeToolContent(part.state.content))}`,
+            stale.has(part.id)
+              ? "[Tool result]: [superseded by a later read of the same file]"
+              : `[Tool result]: ${truncateToolOutput(serializeToolContent(part.state.content))}`,
           ]
         if (part.state.status === "error")
           return [`[Assistant tool call]: ${part.name}(${input})`, `[Tool error]: ${part.state.error.message}`]
@@ -180,10 +183,21 @@ const select = (
 ):
   | { readonly head: readonly { message: SessionMessage.Info; text: string }[]; readonly recent: string }
   | undefined => {
+  const stale = ReadLocator.stale(
+    messages.flatMap((message) =>
+      message.type === "assistant"
+        ? message.content.flatMap((part) =>
+            part.type === "tool" && part.state.status === "completed"
+              ? [{ id: part.id, name: part.name, input: part.state.input }]
+              : [],
+          )
+        : [],
+    ),
+  )
   const conversation = messages
     .filter((message) => message.type !== "compaction" && message.type !== "system")
     .flatMap((message) => {
-      const text = serialize(message)
+      const text = serialize(message, stale)
       return text ? [{ message, text }] : []
     })
   if (conversation.length === 0) return undefined

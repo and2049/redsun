@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
-import { Message, ToolResultPart } from "@opencode-ai/ai"
+import { Message, ToolCallPart, ToolResultPart } from "@opencode-ai/ai"
 import { Document, Info as ConfigInfo } from "@opencode-ai/schema/config"
 import { Config } from "@opencode-ai/core/config"
 import {
   RedsunContextOptimizer,
   boundInstruction,
   boundInstructionText,
-  limitToolResultReplay,
+  dedupeStaleReads,
 } from "@opencode-ai/core/plugin/redsun/context-optimizer"
 import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
@@ -21,44 +21,58 @@ const toolMessage = (id: string, size: number) =>
     content: [ToolResultPart.make({ id, name: "shell", result: "x".repeat(size), resultType: "text" })],
   })
 
+const read = (id: string, input: Record<string, unknown>, size: number) => [
+  Message.assistant([ToolCallPart.make({ id, name: "read", input })]),
+  Message.make({
+    role: "tool",
+    content: [ToolResultPart.make({ id, name: "read", result: "x".repeat(size), resultType: "text" })],
+  }),
+]
+
 const resultText = (message: Message) => {
   const part = message.content[0]
   return part?.type === "tool-result" && part.result.type === "text" ? String(part.result.value) : ""
 }
 
-test("limitToolResultReplay keeps the newest results and replaces older ones in place", () => {
+const results = (messages: Array<Message>) => messages.filter((message) => message.role === "tool").map(resultText)
+
+test("dedupeStaleReads replaces only reads superseded by a later read of the same path and range", () => {
   const messages = [
     Message.user("start"),
-    ...Array.from({ length: 10 }, (_, index) => toolMessage(`call_${index}`, 300)),
+    ...read("a1", { path: "a.ts" }, 300),
+    ...read("b1", { path: "b.ts" }, 300),
+    toolMessage("shell", 300),
+    ...read("a2", { path: "a.ts" }, 300),
+    ...read("a3", { path: "a.ts", offset: 10 }, 300),
   ]
-  const limited = limitToolResultReplay(messages, 1_000, 2)
-  // Order and pairing intact: nothing removed, first message untouched.
-  expect(limited).toHaveLength(11)
-  expect(limited[0]?.content[0]).toEqual({ type: "text", text: "start" })
-  // Newest two kept unconditionally; the budget covers roughly one more.
-  expect(resultText(limited[10]!)).not.toContain("omitted")
-  expect(resultText(limited[9]!)).not.toContain("omitted")
-  const omitted = limited.slice(1).filter((message) => resultText(message).includes("omitted"))
-  expect(omitted.length).toBeGreaterThanOrEqual(6)
-  expect(resultText(limited[1]!)).toContain("[redsun: older tool result omitted from model context]")
-  expect(resultText(limited[1]!)).toContain("tool_call: call_0")
+  const deduped = dedupeStaleReads(messages, 0)
+  expect(deduped).toHaveLength(messages.length)
+  expect(deduped[0]?.content[0]).toEqual({ type: "text", text: "start" })
+  const [a1, b1, shell, a2, a3] = results(deduped)
+  expect(a1).toBe("[redsun: superseded by a later read of a.ts; see the latest read result]")
+  expect(b1).not.toContain("superseded")
+  expect(shell).not.toContain("superseded")
+  expect(a2).not.toContain("superseded")
+  expect(a3).not.toContain("superseded")
+  expect(deduped[2]?.content[0]?.type).toBe("tool-result")
 })
 
-test("limitToolResultReplay counts dropped sizes against the budget", () => {
-  // One huge old result poisons the remaining budget: everything older than the
-  // unconditional keep window is omitted even though it would individually fit.
-  const messages = [toolMessage("old_small", 100), toolMessage("huge", 5_000), toolMessage("new", 100)]
-  const limited = limitToolResultReplay(messages, 1_000, 1)
-  expect(resultText(limited[2]!)).not.toContain("omitted")
-  expect(resultText(limited[1]!)).toContain("omitted")
-  expect(resultText(limited[0]!)).toContain("omitted")
+test("dedupeStaleReads defers rewriting until the superseded results reach the threshold", () => {
+  const messages = [...read("a1", { path: "a.ts" }, 600), ...read("a2", { path: "a.ts" }, 600)]
+  expect(dedupeStaleReads(messages, 1_000)).toBe(messages)
+  expect(results(dedupeStaleReads([...messages, ...read("a3", { path: "a.ts" }, 1_000)], 1_000))).toEqual([
+    "[redsun: superseded by a later read of a.ts; see the latest read result]",
+    "[redsun: superseded by a later read of a.ts; see the latest read result]",
+    "x".repeat(1_000),
+  ])
 })
 
-test("limitToolResultReplay is idempotent", () => {
-  const messages = [...Array.from({ length: 10 }, (_, index) => toolMessage(`call_${index}`, 300))]
-  const once = limitToolResultReplay(messages, 1_000, 2)
-  const twice = limitToolResultReplay(once, 1_000, 2)
-  expect(twice.map(resultText)).toEqual(once.map(resultText))
+test("dedupeStaleReads is idempotent and leaves histories without stale reads untouched", () => {
+  const messages = [...read("a1", { path: "a.ts" }, 300), ...read("a2", { path: "a.ts" }, 300)]
+  const once = dedupeStaleReads(messages, 0)
+  expect(results(dedupeStaleReads(once, 0))).toEqual(results(once))
+  const distinct = [...read("a1", { path: "a.ts" }, 300), ...read("b1", { path: "b.ts" }, 300)]
+  expect(dedupeStaleReads(distinct, 0)).toBe(distinct)
 })
 
 test("boundInstruction fits or truncates at a line boundary under the cap", () => {
@@ -119,7 +133,8 @@ it.effect("the plugin's context hook bounds instructions and tool replay through
       system: [{ type: "text", text: `Instructions from: AGENTS.md\n${big}` }],
       messages: [
         Message.user(`Instructions from: memory.md\n${big}`),
-        ...Array.from({ length: 10 }, (_, index) => toolMessage(`call_${index}`, 30_000)),
+        ...read("a1", { path: "a.ts" }, 70_000),
+        ...read("a2", { path: "a.ts" }, 300),
       ],
       tools: {},
     }
@@ -130,7 +145,7 @@ it.effect("the plugin's context hook bounds instructions and tool replay through
     const firstUser = event.messages[0] as Message
     const firstPart = firstUser.content[0]
     expect(firstPart?.type === "text" ? firstPart.text : "").toContain("truncated at line")
-    expect(resultText(event.messages[1] as Message)).toContain("omitted")
-    expect(resultText(event.messages[10] as Message)).not.toContain("omitted")
+    expect(resultText(event.messages[2] as Message)).toContain("superseded by a later read of a.ts")
+    expect(resultText(event.messages[4] as Message)).toBe("x".repeat(300))
   }),
 )

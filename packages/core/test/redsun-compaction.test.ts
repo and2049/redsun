@@ -200,7 +200,9 @@ test("extractor caps every category", () => {
   const long = "x".repeat(1_000)
   const messages = [
     message({ id: "msg_task", type: "user", text: long }),
-    ...Array.from({ length: 30 }, (_, index) => message({ id: `msg_req_${index}`, type: "user", text: `req ${index}` })),
+    ...Array.from({ length: 30 }, (_, index) =>
+      message({ id: `msg_req_${index}`, type: "user", text: `req ${index}` }),
+    ),
     message({
       id: "msg_tools",
       type: "assistant",
@@ -236,7 +238,9 @@ test("buildPrompt folds the inventory in without repeating it downstream", () =>
   })
   expect(prompt).toContain("## Structured Inventory")
   expect(prompt).toContain("Ship it")
-  expect(prompt.indexOf("## Structured Inventory")).toBeLessThan(prompt.indexOf("The following is the conversation history:"))
+  expect(prompt.indexOf("## Structured Inventory")).toBeLessThan(
+    prompt.indexOf("The following is the conversation history:"),
+  )
   expect(SessionCompaction.buildPrompt({ context: ["conversation"] })).not.toContain("## Structured Inventory")
 })
 
@@ -316,5 +320,45 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
     expect(summary).toContain("## Previous Summary")
     expect(summary).toContain("Earlier anchored summary.")
     expect(summary).toContain("Fix the login redirect bug in the auth flow.")
+  }),
+)
+
+hybrid.effect("compaction serializes only the latest read of a file", () =>
+  Effect.gen(function* () {
+    requests = []
+    const compaction = yield* configured({ strategy: "hybrid", tokens: 0, keepRecent: 10 })
+    const { session } = yield* seedSession("stale-read")
+    const read = (id: string, text: string) => ({
+      type: "tool",
+      id,
+      name: "read",
+      state: { status: "completed", input: { path: "src/auth/redirect.ts" }, content: [{ type: "text", text }] },
+      time: { created: 0 },
+    })
+    const messages = [
+      message({ id: "msg_user_stale", type: "user", text: "Fix the login redirect bug in the auth flow." }),
+      message({
+        id: "msg_assistant_stale",
+        type: "assistant",
+        agent: "build",
+        model: { id: "test-model", providerID: "test-provider" },
+        content: [read("call_read_old", "OLD_READ_CONTENT"), read("call_read_new", "NEW_READ_CONTENT")],
+        time: { created: 0 },
+      }),
+      message({ id: "msg_user_stale_two", type: "user", text: "Also keep the fragment intact." }),
+    ]
+    expect(
+      yield* compaction.compactManual({
+        session,
+        resolveModel: () => Effect.succeed(resolvedModel),
+        prepare: (yield* SessionModelRequest.Service).prepare,
+        messages,
+        inputID: SessionMessage.ID.make("msg_compact_stale"),
+      }),
+    ).toEqual({ status: "completed" })
+    const prompt = JSON.stringify(requests[0]?.messages)
+    expect(prompt).toContain("[Tool result]: [superseded by a later read of the same file]")
+    expect(prompt).toContain("[Tool result]: NEW_READ_CONTENT")
+    expect(prompt).not.toContain("[Tool result]: OLD_READ_CONTENT")
   }),
 )
