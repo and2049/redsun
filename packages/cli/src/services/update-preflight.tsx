@@ -20,6 +20,7 @@ import {
   onMount,
   Show,
   untrack,
+  type JSX,
 } from "solid-js"
 
 const stages = ["Keeping your session safe", "Starting the new background service", "Loading redsun"] as const
@@ -104,7 +105,7 @@ async function open(from?: string): Promise<Session> {
   const terminalMode = renderer.waitForThemeMode(1000).catch(() => null)
   await render(
     () => (
-      <Show when={visible()}>
+      <Mount visible={visible}>
         <UpdateFooter
           from={from}
           active={active}
@@ -114,7 +115,7 @@ async function open(from?: string): Promise<Session> {
           renderer={renderer}
           onOutcomeSettled={() => resolveOutcome?.()}
         />
-      </Show>
+      </Mount>
     ),
     renderer,
   ).catch((error) => {
@@ -327,6 +328,20 @@ const createFade = () =>
       color: shade(rampFor(cell.color), brightness),
     }))
   })
+
+/**
+ * The footer shares `renderer.root` with the TUI that mounts after the handoff. A
+ * conditional rendered directly at the root clears every root child when it turns off
+ * (Solid's markerless insert), which would tear down the TUI's tree, so the footer is
+ * toggled inside its own box.
+ */
+export function Mount(props: { visible: () => boolean; children: JSX.Element }) {
+  return (
+    <box>
+      <Show when={props.visible()}>{props.children}</Show>
+    </box>
+  )
+}
 
 const smoothstep = (value: number) => value * value * (3 - 2 * value)
 const frameDone = Promise.resolve()
