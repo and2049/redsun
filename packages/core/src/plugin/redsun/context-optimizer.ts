@@ -5,12 +5,11 @@ import { Document, type Entry } from "@opencode-ai/schema/config"
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Config } from "../../config.js"
+import { ReadLocator } from "../../util/read-locator.js"
 
 export const INSTRUCTION_MAX_CHARS = 24_000
-export const TOOL_RESULT_REPLAY_MAX_CHARS = 48_000
-export const TOOL_RESULT_REPLAY_KEEP_RECENT = 6
+export const STALE_READ_REWRITE_MIN_CHARS = 65_536
 
-const TOOL_REPLAY_OMITTED = "[redsun: older tool result omitted from model context]"
 const INSTRUCTION_HEADER = "Instructions from: "
 
 const json = (value: unknown) => {
@@ -21,45 +20,48 @@ const json = (value: unknown) => {
   }
 }
 
-const omittedToolResult = (part: ContentPart & { type: "tool-result" }): ContentPart => ({
+const staleRead = (part: ContentPart & { type: "tool-result" }, file: string): ContentPart => ({
   ...part,
   result: {
     type: "text",
-    value: `${TOOL_REPLAY_OMITTED}\ntool_call: ${part.id}\nThe full result remains stored in the local session transcript.`,
+    value: `[redsun: superseded by a later read of ${file}; see the latest read result]`,
   },
 })
 
 /**
- * Bound the aggregate size of replayed tool results. The newest keepRecent results are
- * unconditionally preserved; older results are replaced (never removed, so tool-call
- * pairing stays intact) once the running total exceeds maxChars. Dropped results still
- * count toward the total on purpose — it keeps the cutoff monotone.
+ * Replace read results superseded by a later read of the same path and range with a short
+ * pointer. Results are never removed, so tool-call pairing stays intact. Rewrites are
+ * deferred until the superseded results total at least minChars: history only grows, so the
+ * decision is monotone and provider prefix caches survive between crossings.
  */
-export const limitToolResultReplay = (
-  messages: Array<Message>,
-  maxChars = TOOL_RESULT_REPLAY_MAX_CHARS,
-  keepRecent = TOOL_RESULT_REPLAY_KEEP_RECENT,
-): Array<Message> => {
-  let seen = 0
-  let chars = 0
-  return messages
-    .toReversed()
-    .map((message) => {
-      if (!message.content.some((part) => part.type === "tool-result")) return message
-      const content = message.content
-        .toReversed()
-        .map((part) => {
-          if (part.type !== "tool-result") return part
-          seen++
-          const size = json(part).length
-          const keep = seen <= keepRecent || chars + size <= maxChars
-          chars += size
-          return keep ? part : omittedToolResult(part)
-        })
-        .toReversed()
-      return Message.make({ id: message.id, role: message.role, content, metadata: message.metadata, native: message.native })
+export const dedupeStaleReads = (messages: Array<Message>, minChars = STALE_READ_REWRITE_MIN_CHARS): Array<Message> => {
+  const calls = messages.flatMap((message) =>
+    message.content.flatMap((part) =>
+      part.type === "tool-call" ? [{ id: part.id, name: part.name, input: part.input }] : [],
+    ),
+  )
+  const stale = ReadLocator.stale(calls)
+  if (stale.size === 0) return messages
+  const inputs = new Map(calls.map((call) => [call.id, call.input]))
+  const results = messages.flatMap((message) =>
+    message.content.filter((part) => part.type === "tool-result" && stale.has(part.id)),
+  )
+  if (results.reduce((total, part) => total + json(part).length, 0) < minChars) return messages
+  return messages.map((message) => {
+    if (!message.content.some((part) => part.type === "tool-result" && stale.has(part.id))) return message
+    const content = message.content.map((part) =>
+      part.type === "tool-result" && stale.has(part.id)
+        ? staleRead(part, ReadLocator.path(inputs.get(part.id)) ?? "the same file")
+        : part,
+    )
+    return Message.make({
+      id: message.id,
+      role: message.role,
+      content,
+      metadata: message.metadata,
+      native: message.native,
     })
-    .toReversed()
+  })
 }
 
 /**
@@ -120,7 +122,13 @@ const boundMessage = (message: Message, maxChars: number) => {
   const content = message.content.map((part) =>
     part.type === "text" ? { ...part, text: boundInstructionText(part.text, maxChars) } : part,
   )
-  return Message.make({ id: message.id, role: message.role, content, metadata: message.metadata, native: message.native })
+  return Message.make({
+    id: message.id,
+    role: message.role,
+    content,
+    metadata: message.metadata,
+    native: message.native,
+  })
 }
 
 const boundSystem = (part: SystemPart, maxChars: number): SystemPart =>
@@ -134,7 +142,7 @@ export const Plugin = define({
     yield* ctx.session.hook("context", (event) =>
       Effect.sync(() => {
         event.system = event.system.map((part) => boundSystem(part, maxChars))
-        event.messages = limitToolResultReplay(event.messages).map((message) => boundMessage(message, maxChars))
+        event.messages = dedupeStaleReads(event.messages).map((message) => boundMessage(message, maxChars))
       }),
     )
   }),
