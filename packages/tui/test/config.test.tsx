@@ -125,10 +125,13 @@ test("reserves home and end for navigation", () => {
   expect(config.keybinds.get("input.visual.line.end")).toMatchObject([{ key: "alt+e" }])
 })
 
-test("opens the subagent picker with down", () => {
+test("navigates the active subagent list with bare arrows and the child tree with ctrl arrows", () => {
   const config = resolve({}, { terminalSuspend: true })
 
-  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.list.next")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.list.previous")).toMatchObject([{ key: "up" }])
+  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "ctrl+down" }])
+  expect(config.keybinds.get("session.parent")).toMatchObject([{ key: "ctrl+up" }])
 })
 
 test("navigates session tabs with option arrows", () => {

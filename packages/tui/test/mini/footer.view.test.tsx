@@ -1070,7 +1070,6 @@ test.skip("direct footer recreates the frame across command panel transitions", 
   }
 })
 
-
 test("direct footer submits slash autocomplete selections without dispatching shell completions", async () => {
   const submits: RunPrompt[] = []
   const app = await renderFooter({
@@ -1475,7 +1474,7 @@ test("direct footer shows authoritative queued work while running", async () => 
     expect(frame).toContain("1 queued")
     expect(frame).toContain("ctrl+b background")
     expect(frame).toContain("ctrl+shift+q 1 queued")
-    expect(frame).toContain("↓ subagents")
+    expect(frame).toContain("ctrl+↓ subagents")
     expect(frame).toContain("ctrl+p cmd")
     expect(frame).toContain("subagents · ctrl+p cmd")
     expect(frame).not.toContain("1 agent")
@@ -1535,7 +1534,7 @@ test("direct footer keeps commands and active work ahead of usage under width pr
       model: "a-model-name-long-enough-to-force-responsive-truncation",
       usage: "159.6K (16%) · $4.23",
     },
-    width: 80,
+    width: 86,
   })
 
   try {
@@ -1544,7 +1543,7 @@ test("direct footer keeps commands and active work ahead of usage under width pr
 
     expect(frame).toContain("Plan")
     expect(frame).toContain("ctrl+b background")
-    expect(frame).toContain("↓ subagents")
+    expect(frame).toContain("ctrl+↓ subagents")
     expect(frame).toContain("ctrl+p cmd")
     expect(frame).not.toContain("a-model-name")
     expect(frame).not.toContain("159.6K")
@@ -1596,7 +1595,7 @@ test("direct footer always offers backgrounding for a foreground subagent", asyn
     await app.renderOnce()
     const frame = app.captureCharFrame()
 
-    expect(frame).toContain("ctrl+b background · ↓ subagents · ctrl+p cmd")
+    expect(frame).toContain("ctrl+b background · ctrl+↓ subagents · ctrl+p cmd")
     expect(frame).not.toContain("queued")
   } finally {
     app.cleanup()
@@ -1619,7 +1618,7 @@ test("direct footer hides the subagent hint when only completed subagents remain
     const frame = app.captureCharFrame()
 
     expect(frame).toContain("ctrl+p cmd")
-    expect(frame).not.toContain("↓ subagents")
+    expect(frame).not.toContain("ctrl+↓ subagents")
   } finally {
     app.cleanup()
   }

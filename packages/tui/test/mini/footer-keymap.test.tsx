@@ -104,7 +104,7 @@ async function renderSubagent(interrupt: "ctrl+i" | "none") {
 async function openSubagent(app: Awaited<ReturnType<typeof testRender>>) {
   await app.renderOnce()
   expect(app.renderer.currentFocusedEditor?.plainText).toBe("")
-  app.mockInput.pressArrow("down")
+  app.mockInput.pressArrow("down", { ctrl: true })
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("Select subagent")
   app.mockInput.pressEnter()

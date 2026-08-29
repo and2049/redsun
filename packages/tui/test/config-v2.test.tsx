@@ -116,10 +116,12 @@ test("preserves current navigation defaults", () => {
       "session.tab.next",
     ),
   ).toEqual([])
-  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "ctrl+down" }])
   expect(config.keybinds.get("session.child.next")).toMatchObject([{ key: "right" }])
   expect(config.keybinds.get("session.child.previous")).toMatchObject([{ key: "left" }])
-  expect(config.keybinds.get("session.parent")).toMatchObject([{ key: "up" }])
+  expect(config.keybinds.get("session.child.list.next")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.list.previous")).toMatchObject([{ key: "up" }])
+  expect(config.keybinds.get("session.parent")).toMatchObject([{ key: "ctrl+up" }])
   expect(config.keybinds.get("session.message.next")).toEqual([])
   expect(config.keybinds.get("session.message.previous")).toEqual([])
   expect(config.keybinds.get("session.message.user.next")).toEqual([])

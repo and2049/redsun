@@ -63,7 +63,8 @@ import { DialogTimeline } from "./dialog-timeline"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer"
 import { scrollAnchor, setScrollAnchor } from "./scroll-anchor"
-import { childSessions as familyChildren, nextChild } from "./child-navigation"
+import { activeChildren, childSessions as familyChildren, nextChild, nextInActiveList } from "./child-navigation"
+import { listHidden, setListHidden, SubagentHint, SubagentList } from "./subagent-list"
 import { useVim } from "../../context/vim"
 import { useKeyboard } from "@opentui/solid"
 import { filetype } from "../../util/filetype"
@@ -222,6 +223,8 @@ export function Session() {
     }),
   )
   const childSessions = createMemo(() => familyChildren(family()))
+  const activeSessions = createMemo(() => activeChildren(childSessions(), data.session.status))
+  const rootSession = createMemo(() => family().find((info) => !info.parentID))
   const familySessionIDs = createMemo(() => family().map((info) => info.id))
   const permissions = createMemo(() =>
     familySessionIDs().flatMap((sessionID) => data.session.permission.list(sessionID) ?? []),
@@ -821,6 +824,23 @@ export function Session() {
     },
   ]
 
+  const listCommands = [
+    {
+      id: "session.child.list.next",
+      title: "Next active subagent",
+      group: "Session",
+      palette: undefined,
+      run: () => moveActive(1),
+    },
+    {
+      id: "session.child.list.previous",
+      title: "Previous active subagent",
+      group: "Session",
+      palette: undefined,
+      run: () => moveActive(-1),
+    },
+  ]
+
   const baseCommands = createMemo(() => [
     {
       title: "Share session",
@@ -1285,7 +1305,7 @@ export function Session() {
   ])
 
   const commands = createMemo(() =>
-    [...globalCommands, ...baseAndUnfocusedCommands, ...baseCommands()].map(
+    [...globalCommands, ...baseAndUnfocusedCommands, ...listCommands, ...baseCommands()].map(
       (command) =>
         ({
           bind: false,
@@ -1304,6 +1324,11 @@ export function Session() {
   Keymap.createLayer(() => ({
     enabled: () => renderer.currentFocusedEditor === null,
     bindings: baseAndUnfocusedCommands.map((command) => command.id),
+  }))
+
+  Keymap.createLayer(() => ({
+    enabled: () => renderer.currentFocusedEditor === null && activeSessions().length > 0,
+    bindings: listCommands.map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
@@ -1331,6 +1356,21 @@ export function Session() {
   function moveChild(direction: number) {
     const target = nextChild(childSessions(), session()?.id, direction)
     if (target) enterChild(target.id)
+  }
+
+  function moveActive(direction: number) {
+    const root = rootSession()
+    if (!root || activeSessions().length === 0 || dialog.stack.length > 0) return
+    if (listHidden()) {
+      if (direction > 0) setListHidden(false)
+      return
+    }
+    if (direction < 0 && session()?.id === root.id) {
+      setListHidden(true)
+      return
+    }
+    const target = nextInActiveList(activeSessions(), root.id, session()?.id, direction)
+    if (target) enterChild(target)
   }
 
   function childSessionHandler(run: () => void) {
@@ -1502,6 +1542,19 @@ export function Session() {
                   />
                 </Match>
               </Switch>
+              <Show when={activeSessions().length > 0 && listHidden()}>
+                <SubagentHint count={activeSessions().length} />
+              </Show>
+              <Show when={activeSessions().length > 0 && !listHidden() && rootSession()}>
+                {(root) => (
+                  <SubagentList
+                    root={root()}
+                    active={activeSessions()}
+                    currentID={route.sessionID}
+                    onSelect={enterChild}
+                  />
+                )}
+              </Show>
             </box>
           </Show>
         </box>
@@ -2189,7 +2242,8 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
       | undefined
   const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
   const modelSubstituted = () => metadata()?.[MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
-  const noticeLabel = () => (goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : modelSubstituted() ? "Model" : "Notice")
+  const noticeLabel = () =>
+    goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : modelSubstituted() ? "Model" : "Notice"
   const noticeIcon = () => (goalVerdict() ? "◎" : "◈")
   const noticeColor = () => {
     const verdict = goalVerdict()
