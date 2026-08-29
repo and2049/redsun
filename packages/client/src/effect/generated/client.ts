@@ -624,7 +624,6 @@ const EndpointSessionGenerate = (raw: RawClient["server.session"]) => (input: Se
       params: { sessionID: input["sessionID"] },
       payload: {
         prompt: input["prompt"],
-        system: input["system"],
         temperature: input["temperature"],
         model: input["model"],
         tools: input["tools"],

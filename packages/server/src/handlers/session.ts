@@ -594,7 +594,6 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             .generate({
               sessionID: ctx.params.sessionID,
               prompt: ctx.payload.prompt,
-              system: ctx.payload.system,
               temperature: ctx.payload.temperature,
               model: ctx.payload.model,
               tools: ctx.payload.tools,
