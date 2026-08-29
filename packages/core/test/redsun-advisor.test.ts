@@ -3,7 +3,7 @@ import { SessionMessage } from "@opencode-ai/core/session/message"
 import { SessionStore } from "@opencode-ai/core/session/store"
 import { Session } from "@opencode-ai/core/session"
 import {
-  ADVISOR_SYSTEM,
+  ADVISOR_INSTRUCTIONS,
   METADATA_KEY,
   advisorConfigFromEntries,
   makeState,
@@ -114,7 +114,15 @@ const setup = (input: Setup) => {
           }),
       ),
   }
-  return { services, session, prompts, synthetics, generateInputs, readFiles, generateCalls: () => generateInputs.length }
+  return {
+    services,
+    session,
+    prompts,
+    synthetics,
+    generateInputs,
+    readFiles,
+    generateCalls: () => generateInputs.length,
+  }
 }
 
 it.effect("stays silent unless advisor.enabled is true", () =>
@@ -153,8 +161,10 @@ it.effect("an aside lands as a non-waking synthetic with advisor metadata", () =
       resume: false,
     })
     expect(synthetics[0]?.metadata?.[METADATA_KEY]).toMatchObject({ severity: "aside", judgedMessageID: "msg_a1" })
-    // The review request runs with the advisor's own system prompt, no tools, temperature 0.
-    expect(generateInputs[0]).toMatchObject({ system: ADVISOR_SYSTEM, temperature: 0, tools: false })
+    // The review request keeps the session prefix; instructions ride in the prompt.
+    expect(generateInputs[0]).toMatchObject({ temperature: 0, tools: false })
+    expect(generateInputs[0]?.system).toBeUndefined()
+    expect(generateInputs[0]?.prompt).toContain(ADVISOR_INSTRUCTIONS)
   }),
 )
 
@@ -172,7 +182,12 @@ it.effect("an interrupt steers and its own settlement is not re-reviewed", () =>
     // The advisor-authored prompt settles next: the guard skips before config or generate.
     const second = setup({
       config: { enabled: true, cooldown_turns: 0 },
-      messages: [user("msg_u1", "do it"), assistant("msg_a1"), user("msg_advisor_1", "[advisor] ..."), assistant("msg_a2")],
+      messages: [
+        user("msg_u1", "do it"),
+        assistant("msg_a1"),
+        user("msg_advisor_1", "[advisor] ..."),
+        assistant("msg_a2"),
+      ],
       generate: '{"severity":"interrupt","note":"unused"}',
     })
     yield* review(second.session, second.services, state, sessionID)
@@ -245,7 +260,7 @@ it.effect("inline guidance beats guidance files; the walk-up finds WATCHDOG.md",
     })
     yield* review(inline.session, inline.services, makeState(), sessionID)
     expect(inline.readFiles).toEqual([])
-    expect(inline.generateInputs[0]?.system).toContain("<guidance>\nnever touch prod\n</guidance>")
+    expect(inline.generateInputs[0]?.prompt).toContain("<guidance>\nnever touch prod\n</guidance>")
 
     const walked = setup({
       config: { enabled: true },
@@ -254,7 +269,7 @@ it.effect("inline guidance beats guidance files; the walk-up finds WATCHDOG.md",
       generate: '{"severity":"aside","note":"n"}',
     })
     yield* review(walked.session, walked.services, makeState(), sessionID)
-    expect(walked.generateInputs[0]?.system).toContain("<guidance>\nwatch the tests\n</guidance>")
+    expect(walked.generateInputs[0]?.prompt).toContain("<guidance>\nwatch the tests\n</guidance>")
   }),
 )
 

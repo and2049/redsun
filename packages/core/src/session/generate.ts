@@ -15,12 +15,10 @@ export interface Interface {
   readonly generate: (input: {
     readonly sessionID: SessionSchema.ID
     readonly prompt: string
-    /** REDSUN: replaces the base system parts (agent system + history initial) when set. */
-    readonly system?: string
     readonly temperature?: number
     /** REDSUN: model override for judge/advisor calls; defaults to the session model. */
     readonly model?: Model.Ref
-    /** REDSUN: `false` sends the request with no tools and toolChoice "none". */
+    /** REDSUN: `false` keeps the tool definitions (cached prefix) but forces toolChoice "none". */
     readonly tools?: boolean
   }) => Effect.Effect<string, Error>
 }

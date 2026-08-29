@@ -30,12 +30,13 @@ export const Verdict = Schema.Struct({
 })
 export type Verdict = typeof Verdict.Type
 
-export const JUDGE_SYSTEM = `You are evaluating a stop condition. Judge only from the conversation transcript.
+export const JUDGE_INSTRUCTIONS = `You are evaluating a stop condition. Judge only from the conversation transcript.
 
 Return JSON with {"ok":true,"reason":"evidence"} when the condition is satisfied, {"ok":false,"reason":"what is missing"} when work remains, or {"ok":false,"impossible":true,"reason":"why"} only when the condition genuinely cannot be achieved in this session. Always include a specific reason.`
 
+/** Judge instructions ride in the user turn so the request reuses the session's cached prefix. */
 export const judgeQuestion = (condition: string) =>
-  `Has this stopping condition been satisfied?\n\nCondition: ${condition}`
+  `${JUDGE_INSTRUCTIONS}\n\nHas this stopping condition been satisfied?\n\nCondition: ${condition}`
 
 export const continuationText = (condition: string, reason: string) =>
   `Your goal is not yet satisfied: "${condition}".\n\nThe independent judge noted:\n${reason}\n\nKeep working toward the goal. Do not stop until it is genuinely met or impossible.`

@@ -6,14 +6,7 @@ import { DateTime, Effect, Exit, Stream } from "effect"
 import { KV } from "../../kv.js"
 import { SessionStore } from "../../session/store.js"
 import { ClaudeCodeModels } from "./claude-code/models.js"
-import {
-  GOAL_FEATURE_PROMPT,
-  REACT_CAP,
-  continuationText,
-  judgeQuestion,
-  JUDGE_SYSTEM,
-  parseVerdict,
-} from "./goal-shared.js"
+import { GOAL_FEATURE_PROMPT, REACT_CAP, continuationText, judgeQuestion, parseVerdict } from "./goal-shared.js"
 
 export const key = (sessionID: string) => `redsun.goal/${sessionID}`
 
@@ -260,7 +253,6 @@ export const review = Effect.fn("RedsunGoal.review")(function* (
     .generate({
       sessionID,
       prompt: judgeQuestion(active.condition),
-      system: JUDGE_SYSTEM,
       temperature: 0,
       tools: false,
     })
@@ -291,20 +283,14 @@ export const review = Effect.fn("RedsunGoal.review")(function* (
   }
   if (verdict.value.ok || verdict.value.impossible) {
     const cleared: ClearReason = verdict.value.ok ? "satisfied" : "impossible"
-    yield* clearWith(
-      session,
-      services,
-      sessionID,
-      `Goal ${cleared}: ${verdict.value.reason}`,
-      {
-        ok: verdict.value.ok,
-        ...(verdict.value.impossible ? { impossible: true } : {}),
-        reason: verdict.value.reason,
-        attempt: active.react,
-        ...(judgedMessageID ? { judgedMessageID } : {}),
-        cleared,
-      },
-    )
+    yield* clearWith(session, services, sessionID, `Goal ${cleared}: ${verdict.value.reason}`, {
+      ok: verdict.value.ok,
+      ...(verdict.value.impossible ? { impossible: true } : {}),
+      reason: verdict.value.reason,
+      attempt: active.react,
+      ...(judgedMessageID ? { judgedMessageID } : {}),
+      cleared,
+    })
     return
   }
   const attempt = yield* bumpReact(services, sessionID, active)

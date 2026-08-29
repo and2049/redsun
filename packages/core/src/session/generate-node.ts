@@ -1,6 +1,6 @@
 export * as SessionGenerateNode from "./generate-node.js"
 
-import { LLMClient, Message, SystemPart } from "@opencode-ai/ai"
+import { LLMClient, Message } from "@opencode-ai/ai"
 import { Effect, Layer } from "effect"
 import { Database } from "../database/database.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
@@ -20,26 +20,24 @@ export const layer = Layer.effect(
     return SessionGenerate.Service.of({
       generate: Effect.fn("SessionGenerate.generate")(function* (input) {
         const selection = yield* context.select(input.sessionID)
-        // REDSUN: judge/advisor controls — optional model override, replacement system
-        // prompt, tool suppression, and temperature for transient evaluation calls.
+        // REDSUN: judge/advisor controls — optional model override, tool-call suppression,
+        // and temperature. The session's system prompt and tool definitions are kept so the
+        // request shares the conversation's cached prefix.
         const model = yield* context.resolveModel(
           input.model ? { ...selection.session, model: input.model } : selection.session,
         )
         const history = yield* SessionHistory.preview(database.db, selection.session.id, selection.instructions)
-        // REDSUN: tool suppression empties the toolset and forces toolChoice "none"; a
-        // replacement system prompt substitutes wholesale.
-        const tools = input.tools === false ? { ...selection.tools, definitions: [] } : selection.tools
         const transcript = SessionModelRequest.baseTranscript({
           agent: selection.agent.info,
           model,
-          tools,
+          tools: selection.tools,
           initial: history.initial,
           messages: history.messages,
         })
         const prepared = yield* context.prepare({
-          scope: { session: selection.session, agentID: selection.agent.id, model, tools },
+          scope: { session: selection.session, agentID: selection.agent.id, model, tools: selection.tools },
           transcript: {
-            system: input.system !== undefined ? [SystemPart.make(input.system)] : transcript.system,
+            system: transcript.system,
             messages: [
               ...transcript.messages,
               ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),

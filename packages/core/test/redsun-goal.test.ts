@@ -15,7 +15,12 @@ import {
   type Services,
   type SessionApi,
 } from "@opencode-ai/core/plugin/redsun/goal"
-import { GOAL_FEATURE_PROMPT, JUDGE_SYSTEM, REACT_CAP, continuationText } from "@opencode-ai/core/plugin/redsun/goal-shared"
+import {
+  GOAL_FEATURE_PROMPT,
+  JUDGE_INSTRUCTIONS,
+  REACT_CAP,
+  continuationText,
+} from "@opencode-ai/core/plugin/redsun/goal-shared"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { testEffect } from "./lib/effect"
 import { host } from "./plugin/host"
@@ -140,7 +145,9 @@ it.effect("sync arms the goal from prompt metadata and clears on the clear marke
     yield* services.kv.set(key(sessionID), { condition: "tests pass", react: 3, seen: "msg_set" })
     expect(yield* sync(services, sessionID)).toMatchObject({ react: 3 })
 
-    context.push(message({ id: "msg_clear", type: "synthetic", text: "Goal cleared.", metadata: { [METADATA_KEY]: CLEAR } }))
+    context.push(
+      message({ id: "msg_clear", type: "synthetic", text: "Goal cleared.", metadata: { [METADATA_KEY]: CLEAR } }),
+    )
     expect(yield* sync(services, sessionID)).toBeUndefined()
     expect(stored(kvStore)).toMatchObject({ condition: "", seen: "msg_clear" })
   }),
@@ -238,7 +245,7 @@ it.effect("an unexhausted budget still reaches the judge", () =>
   }),
 )
 
-it.effect("the judge call carries its own system prompt, temperature 0, and no tools", () =>
+it.effect("the judge call keeps the session prefix and carries its instructions in the prompt", () =>
   Effect.gen(function* () {
     const { services, session, generateInputs } = setup({
       messages: [user("msg_set", "goal", { [METADATA_KEY]: "tests pass" }), assistant("msg_a1")],
@@ -246,9 +253,10 @@ it.effect("the judge call carries its own system prompt, temperature 0, and no t
     })
     yield* review(session, services, sessionID)
     expect(generateInputs).toHaveLength(1)
-    expect(generateInputs[0]).toMatchObject({ system: JUDGE_SYSTEM, temperature: 0, tools: false })
+    expect(generateInputs[0]).toMatchObject({ temperature: 0, tools: false })
+    expect(generateInputs[0]?.system).toBeUndefined()
     expect(generateInputs[0]?.prompt).toContain("tests pass")
-    expect(generateInputs[0]?.prompt).not.toContain(JUDGE_SYSTEM)
+    expect(generateInputs[0]?.prompt).toContain(JUDGE_INSTRUCTIONS)
   }),
 )
 

@@ -19,11 +19,17 @@ import { ClaudeCodeModels } from "./claude-code/models.js"
  * set. Reviews are best-effort: failures are logged and never affect the session.
  */
 
-export const ADVISOR_SYSTEM = `You are a watchdog advisor reviewing another agent's coding session after a completed turn. Judge only from the transcript.
+export const ADVISOR_INSTRUCTIONS = `You are a watchdog advisor reviewing another agent's coding session after a completed turn. Judge only from the transcript.
 
 Return JSON: {"severity":"none"} when no intervention is warranted (the default), {"severity":"aside","note":"..."} for guidance the agent should see before its next turn, or {"severity":"interrupt","note":"..."} only for serious problems that must be corrected before work continues (destructive or unsafe actions, a clearly wrong direction, violating explicit user instructions). Notes must be terse and specific. Prefer "none" - do not nitpick style or restate what the agent already knows.`
 
-export const REVIEW_QUESTION = "Review the transcript above. Does the last completed turn warrant an advisory?"
+/** Advisor instructions ride in the user turn so the request reuses the session's cached prefix. */
+export const reviewQuestion = (guidance: string | undefined) =>
+  [
+    ADVISOR_INSTRUCTIONS,
+    ...(guidance ? [`<guidance>\n${guidance}\n</guidance>`] : []),
+    "Review the transcript above. Does the last completed turn warrant an advisory?",
+  ].join("\n\n")
 
 /** Message-metadata key stamped on advisor asides; the TUI colors these notices. */
 export const METADATA_KEY = "redsun.advisor"
@@ -168,8 +174,7 @@ export const review = Effect.fn("RedsunAdvisor.review")(function* (
   const advisory = yield* session
     .generate({
       sessionID,
-      prompt: REVIEW_QUESTION,
-      system: guidance ? `${ADVISOR_SYSTEM}\n\n<guidance>\n${guidance}\n</guidance>` : ADVISOR_SYSTEM,
+      prompt: reviewQuestion(guidance),
       temperature: 0,
       tools: false,
       ...(parseModelRef(cfg.model) ? { model: parseModelRef(cfg.model) } : {}),
