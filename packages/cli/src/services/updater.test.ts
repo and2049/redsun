@@ -80,4 +80,30 @@ describe("updater", () => {
     expect(action("1.2.3", `${" ".repeat(251)}1.2.3`, true)).toBe("none")
     expect(action("1.2.3", `1.2.4+${"a".repeat(250)}`, true)).toBe("upgrade")
   })
+
+  test("updates date releases within the same year", () => {
+    expect(action("v26-8-28.0", "v26-8-28.1", true)).toBe("upgrade")
+    expect(action("v26-8-28.0", "v26-8-29.0", true)).toBe("upgrade")
+    expect(action("26-8-28.0", " v26-9-1.0\n", true)).toBe("upgrade")
+    expect(action("v26-8-28.1", "v26-8-28.0", true)).toBe("upgrade")
+  })
+
+  test("notifies and stays quiet for identical date releases", () => {
+    expect(action("v26-8-28.0", "v26-8-29.0", "notify")).toBe("notify")
+    expect(action("v26-8-28.0", "v26-8-28.0", true)).toBe("none")
+  })
+
+  test("never automatically updates across calendar years", () => {
+    expect(action("v26-12-31.0", "v27-1-1.0", true)).toBe("none")
+  })
+
+  test("does not auto-act across version formats", () => {
+    expect(action("1.2.3", "v26-8-28.0", true)).toBe("none")
+    expect(action("v26-8-28.0", "1.2.3", true)).toBe("none")
+  })
+
+  test("rejects malformed date releases", () => {
+    const invalid = ["v26-08-28.0", "v26-8-08.0", "v26-8-28.00", "v26-13-1.0", "v26-8-32.0", "v2026-8-28.0", "v26-8-28"]
+    invalid.forEach((version) => expect(action("v26-8-28.0", version, true), version).toBe("none"))
+  })
 })
