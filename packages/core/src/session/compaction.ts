@@ -1,6 +1,7 @@
 export * as SessionCompaction from "./compaction.js"
 
 import { LLMClient, LLMEvent, Message } from "@opencode-ai/ai"
+import { Agent } from "@opencode-ai/schema/agent"
 import { SessionError } from "@opencode-ai/schema/session-error"
 import { Context, Effect, Layer, Stream } from "effect"
 import { ConfigCompaction } from "@opencode-ai/schema/config/compaction"
@@ -18,7 +19,6 @@ import { toSessionError } from "./to-session-error.js"
 import { Token } from "../util/token.js"
 import { ReadLocator } from "../util/read-locator.js"
 import { SessionUsage } from "./usage.js"
-import { Agent } from "../agent.js"
 import { State } from "../state.js"
 
 const DEFAULT_BUFFER = 20_000
@@ -173,7 +173,9 @@ const serialize = (message: SessionMessage.Info, stale: ReadonlySet<string> = ne
   if (message.type === "synthetic") return `[Synthetic context]: ${message.text}`
   if (message.type === "skill") return `[Skill activated: ${message.name}]\n${message.text}`
   if (message.type === "shell")
-    return `[Shell]: ${message.command}\n${truncateToolOutput(message.output?.output ?? "")}`
+    return message.metadata?.background === true
+      ? ""
+      : `[Shell]: ${message.command}\n${truncateToolOutput(message.output?.output ?? "")}`
   return ""
 }
 
@@ -511,27 +513,28 @@ export const layer = Layer.effect(
           inputID: input.inputID,
           started: input.started,
         })
-      const resolved = yield* input.resolveModel(input.session).pipe(
-        Effect.catch((cause) =>
-          failed({
-            sessionID: input.session.id,
-            reason: "manual",
-            error: toSessionError(cause),
-            inputID: input.inputID,
-          }),
-        ),
+      return yield* input.resolveModel(input.session).pipe(
+        Effect.matchEffect({
+          onFailure: (cause) =>
+            failed({
+              sessionID: input.session.id,
+              reason: "manual",
+              error: toSessionError(cause),
+              inputID: input.inputID,
+            }),
+          onSuccess: (resolved) =>
+            execute({
+              session: input.session,
+              resolved,
+              prepare: input.prepare,
+              reason: "manual",
+              inputID: input.inputID,
+              started: input.started,
+              prompt: content.prompt,
+              recent: content.recent,
+            }),
+        }),
       )
-      if ("status" in resolved) return resolved
-      return yield* execute({
-        session: input.session,
-        resolved,
-        prepare: input.prepare,
-        reason: "manual",
-        inputID: input.inputID,
-        started: input.started,
-        prompt: content.prompt,
-        recent: content.recent,
-      })
     })
     return Service.of({
       transform: state.transform,

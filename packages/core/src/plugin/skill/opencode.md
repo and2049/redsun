@@ -95,11 +95,13 @@ to every project for that user. Project configuration can live in any directory
 as `redsun.json(c)` or `.redsun/redsun.json(c)`, including nested packages
 in a monorepo.
 
-When redsun starts, it searches from the current directory up to the project
-root. It merges direct `redsun.json(c)` files from root to current directory,
+During ordinary project discovery, redsun searches the current Location
+directory and every ancestor through the filesystem root, including directories
+above the detected project or repository root. It merges direct
+`redsun.json(c)` files from the farthest ancestor to the current directory,
 then does the same for `.redsun/redsun.json(c)` files. This means every
-`.redsun` config overrides every direct config. Global configuration has the
-lowest precedence.
+discovered `.redsun` config overrides every discovered direct config. Global
+filesystem configuration has lower precedence than these discovered documents.
 
 Common configuration fields include `model`, `default_agent`, `permissions`,
 `agents`, `commands`, `plugins`, `providers`, `mcp`, `skills`, `instructions`,

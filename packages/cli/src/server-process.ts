@@ -22,6 +22,7 @@ export type Options = {
   readonly mode: Mode
   readonly hostname?: string
   readonly port?: number
+  readonly cors?: readonly string[]
 }
 
 export const INSTALLED_DATABASE = "redsun-release.db"
@@ -98,6 +99,7 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           },
           hostname,
           port,
+          cors: options.cors ?? config.cors,
           password,
           pty: { handoff },
           simulation: truthy(process.env.OPENCODE_SIMULATE),

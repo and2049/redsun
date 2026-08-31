@@ -16,6 +16,10 @@ export type PluginSource =
   | { type: "local"; path: string }
   | { type: "sdk" }
 
+export type PluginFeatures = { server?: true; tui?: true; rpc?: true }
+
+export type PluginState = { status: "active" } | { status: "failed"; error: string }
+
 export type SessionForkBoundary = { type: "before"; messageID: string } | { type: "through"; messageID: string }
 
 export type MoneyUSD = number
@@ -335,6 +339,8 @@ export type SkillInfo = {
   content: string
 }
 
+export type RpcOutput = { output?: any }
+
 export type PermissionReply = "once" | "always" | "reject"
 
 export type Pty = {
@@ -421,6 +427,8 @@ export type WorkspaceDestroyResult = { destroyed: boolean }
 
 export type VcsBranch = { current?: string; default?: string }
 
+export type VcsBase = { name: string; ref: string; source: "reflog" | "default" }
+
 export type VcsFileStatus = {
   file: string
   additions: number
@@ -442,9 +450,7 @@ export type ProviderRequest = {
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
 
-export type PluginInfo =
-  | { id: string; source: PluginSource; status: "active"; tui: boolean }
-  | { id?: string; source: PluginSource; status: "failed"; error: string; tui: boolean }
+export type PluginInfo = { id?: string; source: PluginSource; features: PluginFeatures; state: PluginState }
 
 export type SessionMessageLocationSwitched = {
   id: string
@@ -458,6 +464,15 @@ export type SessionMessageLocationSwitched = {
 }
 
 export type SessionInboxMovePayload = { location: LocationRef; projectID: string; subpath?: string }
+
+export type V2EventRpc = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any } | undefined
+  type: `${"rpc."}${string}`
+  location: LocationRef
+  data: { [x: string]: any }
+}
 
 export type V2EventServerConnected = {
   id: string
@@ -2339,6 +2354,7 @@ export type V2Event =
   | VcsBranchUpdated
   | McpStatusChanged
   | McpResourcesChanged
+  | V2EventRpc
   | V2EventServerConnected
 
 export type SessionLogItem = SessionEventDurable | EventLogSynced
@@ -2504,6 +2520,24 @@ export type PermissionNotFoundError = {
 }
 export const isPermissionNotFoundError = (value: unknown): value is PermissionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionNotFoundError"
+
+export type RpcError = {
+  readonly _tag: "RpcError"
+  readonly type: string
+  readonly message: string
+  readonly data?: unknown | undefined
+}
+export const isRpcError = (value: unknown): value is RpcError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "RpcError"
+
+export type RpcInternalError = {
+  readonly _tag: "RpcInternalError"
+  readonly type: "rpc.internal" | "rpc.invalid_output"
+  readonly message: string
+  readonly data?: unknown | undefined
+}
+export const isRpcInternalError = (value: unknown): value is RpcInternalError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "RpcInternalError"
 
 export type PtyNotFoundError = { readonly _tag: "PtyNotFoundError"; readonly ptyID: string; readonly message: string }
 export const isPtyNotFoundError = (value: unknown): value is PtyNotFoundError =>
@@ -4137,35 +4171,24 @@ export type SessionGenerateInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly prompt: {
     readonly prompt: string
-    readonly system?: string | null
     readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly tools?: boolean | null
   }["prompt"]
-  readonly system?: {
-    readonly prompt: string
-    readonly system?: string | null
-    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
-    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
-    readonly tools?: boolean | null
-  }["system"]
   readonly temperature?: {
     readonly prompt: string
-    readonly system?: string | null
     readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly tools?: boolean | null
   }["temperature"]
   readonly model?: {
     readonly prompt: string
-    readonly system?: string | null
     readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly tools?: boolean | null
   }["model"]
   readonly tools?: {
     readonly prompt: string
-    readonly system?: string | null
     readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly tools?: boolean | null
@@ -5733,6 +5756,17 @@ export type SkillListOutput = {
   data: Array<SkillInfo>
 }
 
+export type RpcCallInput = {
+  readonly rpcID: { readonly rpcID: string; readonly method: string }["rpcID"]
+  readonly method: { readonly rpcID: string; readonly method: string }["method"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly input?: { readonly input: JsonValue }["input"]
+}
+
+export type RpcCallOutput = RpcOutput
+
 export type EventSubscribeOutput = V2Event
 
 export type PtyListInput = {
@@ -6139,6 +6173,17 @@ export type VcsGetOutput = {
   data: VcsInfo
 }
 
+export type VcsBaseInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type VcsBaseOutput = {
+  location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
+  data: VcsBase | null
+}
+
 export type VcsStatusInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
@@ -6176,17 +6221,26 @@ export type VcsBranchesOutput = {
 export type VcsDiffInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch"
+    readonly mode: "working" | "branch" | "committed"
+    readonly base?: string | undefined
     readonly context?: number | undefined
   }["location"]
   readonly mode: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch"
+    readonly mode: "working" | "branch" | "committed"
+    readonly base?: string | undefined
     readonly context?: number | undefined
   }["mode"]
+  readonly base?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+    readonly mode: "working" | "branch" | "committed"
+    readonly base?: string | undefined
+    readonly context?: number | undefined
+  }["base"]
   readonly context?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly mode: "working" | "branch"
+    readonly mode: "working" | "branch" | "committed"
+    readonly base?: string | undefined
     readonly context?: number | undefined
   }["context"]
 }

@@ -20,11 +20,14 @@ import { Project } from "@opencode-ai/core/project"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { App } from "@opencode-ai/core/app"
 import { Agent } from "@opencode-ai/core/agent"
+import { Model } from "@opencode-ai/core/model"
+import { Provider } from "@opencode-ai/core/provider"
 import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
 import { Location } from "@opencode-ai/core/location"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Money } from "@opencode-ai/schema/money"
 import { Skill } from "@opencode-ai/schema/skill"
+import { Shell } from "@opencode-ai/schema/shell"
 import { DateTime, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -258,7 +261,25 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
         session,
         resolveModel: () => Effect.succeed(resolved),
         prepare: modelRequests.prepare,
-        messages: [userMessage],
+        messages: [
+          userMessage,
+          SessionMessage.Shell.make({
+            id: SessionMessage.ID.create(),
+            type: "shell",
+            shellID: Shell.ID.make("sh_background"),
+            status: "exited",
+            command: "pwd",
+            metadata: { background: true },
+            output: { output: "display-only-output", cursor: 19, size: 19, truncated: false },
+            time: { created: DateTime.makeUnsafe(0), completed: DateTime.makeUnsafe(1) },
+          }),
+          SessionMessage.Synthetic.make({
+            id: SessionMessage.ID.create(),
+            type: "synthetic",
+            text: "User shell pwd completed: /project",
+            time: { created: DateTime.makeUnsafe(2) },
+          }),
+        ],
         inputID: SessionMessage.ID.make("msg_manual_compaction"),
       }),
     ).toEqual({ status: "completed" })
@@ -280,6 +301,8 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
     expect(requests[0]?.generation).toBeUndefined()
     expect(JSON.stringify(requests[0]?.messages)).toContain("Manual compaction should include this short conversation.")
     expect(JSON.stringify(requests[0]?.messages)).toContain("Use Effect services and generators.")
+    expect(JSON.stringify(requests[0]?.messages)).toContain("User shell pwd completed: /project")
+    expect(JSON.stringify(requests[0]?.messages)).not.toContain("display-only-output")
     expect(yield* store.context(sessionID)).toMatchObject([
       { type: "compaction", reason: "manual", summary: "manual summary", recent: "" },
     ])
@@ -299,6 +322,54 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
       { type: Bus.versionedType(SessionEvent.Compaction.Started.type, 1) },
       { type: Bus.versionedType(SessionEvent.UsageRecorded.type, 1) },
       { type: Bus.versionedType(SessionEvent.Compaction.Ended.type, 1) },
+    ])
+  }),
+)
+
+it.effect("manual compaction records model resolution failures without calling the model", () =>
+  Effect.gen(function* () {
+    requests = []
+    const compaction = yield* SessionCompaction.Service
+    const store = yield* SessionStore.Service
+    const sessionID = Session.ID.make("ses_manual_resolution_failure")
+    const session = yield* insertSession(sessionID)
+    const modelRequests = yield* SessionModelRequest.Service
+    const inputID = SessionMessage.ID.make("msg_manual_resolution_failure")
+
+    expect(
+      yield* compaction.compactManual({
+        session,
+        resolveModel: () =>
+          Effect.fail(
+            new SessionRunnerModel.ModelUnavailableError({
+              providerID: Provider.ID.make("test"),
+              modelID: Model.ID.make("missing"),
+            }),
+          ),
+        prepare: modelRequests.prepare,
+        messages: [
+          {
+            id: SessionMessage.ID.create(),
+            type: "user",
+            text: "Summarize this conversation.",
+            time: { created: DateTime.makeUnsafe(0) },
+          },
+        ],
+        inputID,
+      }),
+    ).toEqual({
+      status: "failed",
+      error: { type: "provider.no-route", message: "Model unavailable: test/missing" },
+    })
+    expect(requests).toHaveLength(0)
+    expect(yield* store.context(sessionID)).toMatchObject([
+      {
+        id: inputID,
+        type: "compaction",
+        status: "failed",
+        reason: "manual",
+        error: { type: "provider.no-route", message: "Model unavailable: test/missing" },
+      },
     ])
   }),
 )

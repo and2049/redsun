@@ -384,7 +384,6 @@ export type SessionInstructionsEntryRemoveOperation<E = never> = (
 export type SessionGenerateInput = {
   readonly sessionID: Session.ID
   readonly prompt: string
-  readonly system?: string | undefined
   readonly temperature?: number | undefined
   readonly model?: Model.Ref | undefined
   readonly tools?: boolean | undefined
@@ -1590,6 +1589,19 @@ export interface SkillApi<E = never> {
   readonly list: SkillListOperation<E>
 }
 
+export type RpcCallInput = {
+  readonly rpcID: string
+  readonly method: string
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  readonly input?: unknown | undefined
+}
+export type RpcCallOutput = { readonly output?: unknown }
+export type RpcCallOperation<E = never> = (input: RpcCallInput) => Effect.Effect<RpcCallOutput, E>
+
+export interface RpcApi<E = never> {
+  readonly call: RpcCallOperation<E>
+}
+
 export type EventSubscribeOutput = OpenCodeEvent
 export type EventSubscribeOperation<E = never> = () => Stream.Stream<EventSubscribeOutput, E>
 
@@ -1967,6 +1979,12 @@ export type VcsGetInput = {
 export type VcsGetOutput = { readonly location: Location.Info; readonly data: Vcs.Info }
 export type VcsGetOperation<E = never> = (input?: VcsGetInput) => Effect.Effect<VcsGetOutput, E>
 
+export type VcsBaseInput = {
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+}
+export type VcsBaseOutput = { readonly location: Location.Info; readonly data: Vcs.Base | null }
+export type VcsBaseOperation<E = never> = (input?: VcsBaseInput) => Effect.Effect<VcsBaseOutput, E>
+
 export type VcsStatusInput = {
   readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
 }
@@ -1984,6 +2002,7 @@ export type VcsBranchesOperation<E = never> = (input?: VcsBranchesInput) => Effe
 export type VcsDiffInput = {
   readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
   readonly mode: Vcs.Mode
+  readonly base?: string | undefined
   readonly context?: number | undefined
 }
 export type VcsDiffOutput = { readonly location: Location.Info; readonly data: ReadonlyArray<FileDiff.Info> }
@@ -1991,6 +2010,7 @@ export type VcsDiffOperation<E = never> = (input: VcsDiffInput) => Effect.Effect
 
 export interface VcsApi<E = never> {
   readonly get: VcsGetOperation<E>
+  readonly base: VcsBaseOperation<E>
   readonly status: VcsStatusOperation<E>
   readonly branches: VcsBranchesOperation<E>
   readonly diff: VcsDiffOperation<E>
@@ -2082,6 +2102,7 @@ export interface AppApi<E = never> {
   readonly file: FileApi<E>
   readonly command: CommandApi<E>
   readonly skill: SkillApi<E>
+  readonly rpc: RpcApi<E>
   readonly event: EventApi<E>
   readonly pty: PtyApi<E>
   readonly experimental: ExperimentalApi<E>

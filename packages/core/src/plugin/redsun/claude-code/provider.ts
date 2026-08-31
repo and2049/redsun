@@ -298,8 +298,8 @@ export const Plugin = define({
               .flatMap((part) => (part.type === "text" ? [part.text] : []))
               .join("\n")
           }).pipe(
-            Effect.catch((error) =>
-              Effect.fail(error instanceof Error ? error : new Error(String((error as { message?: string })?.message ?? error))),
+            Effect.mapError((error) =>
+              error instanceof Error ? error : new Error(String((error as { message?: string })?.message ?? error)),
             ),
           ),
         )
