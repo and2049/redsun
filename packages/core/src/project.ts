@@ -62,6 +62,7 @@ export const root = Effect.fn("Project.root")(function* (
 export interface Interface {
   readonly list: () => Effect.Effect<ReadonlyArray<Info>>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError>
+  /** Resolves and persists the owning Project. */
   readonly resolve: (input: AbsolutePath, options?: { readonly discovery?: boolean }) => Effect.Effect<Resolved>
 }
 
@@ -137,11 +138,10 @@ const layer = Layer.effect(
           strategy: project.vcs.type === "git" ? "git" : undefined,
         })
       // A missing directory row means this directory's resolution is a new durable
-      // fact (copy.ts registers copy directories directly; those never strand
-      // sessions and never announce). The row insert commits atomically with the
-      // event, so a crash between checks retries on the next resolve instead of
-      // stranding the announcement. The in-flight set keeps concurrent resolves
-      // from publishing the same fact twice.
+      // fact. The row insert commits atomically with the event, so a crash between
+      // checks retries on the next resolve instead of stranding the announcement.
+      // The in-flight set keeps concurrent resolves from publishing the same fact
+      // twice.
       for (const item of directories) {
         const key = item.projectID + "\u0000" + item.directory
         if (announcing.has(key)) continue

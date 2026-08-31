@@ -70,7 +70,7 @@ import { DialogThemeList } from "./component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
-import { DialogOpen, DialogOpenKey, loadDialogOpen } from "./component/dialog-open"
+import { DialogOpen, DialogOpenKey, moveOpenSession } from "./component/dialog-open"
 import { ThemeErrorToast } from "./component/theme-error-toast"
 import { createThemeSource, ThemeProvider, useTheme, useThemes } from "./context/theme"
 import { Home } from "./routes/home"
@@ -86,7 +86,7 @@ import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { Config, ConfigProvider, useConfig } from "./config"
 import { newSessionLocation } from "./config/new-session-location"
 import { PluginProvider, usePlugin, type PackageResolver } from "./plugin/context"
-import { tuiPluginDirectories } from "./plugin/discovery"
+import { localPluginDirectories } from "./plugin/discovery"
 import { PluginRoute, Slot } from "./plugin/render"
 import { CommandPaletteDialog } from "./component/command-palette"
 import { COMMAND_PALETTE_COMMAND, Keymap, type KeymapCommand } from "./context/keymap"
@@ -188,7 +188,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
     Effect.catch(() => Effect.tryPromise(() => api.location.get())),
   )
   const directory = location.directory
-  const pluginDirectories = yield* Effect.promise(() => tuiPluginDirectories(process.cwd(), global.config))
+  const pluginDirectories = yield* Effect.promise(() => localPluginDirectories(process.cwd(), global.config))
   const handoff = input.terminalHandoff ? yield* Effect.promise(input.terminalHandoff) : undefined
   const managed = input.server.service
   const service = managed
@@ -466,7 +466,7 @@ function App(props: { pair?: DialogPairCredentials }) {
       .environment({ sessionID: session.id, variables: terminalEnvironment.variables })
       .catch(toast.error)
   })
-  let openingOpen: Promise<SessionInfo[]> | undefined
+  const [openSessions, setOpenSessions] = createSignal<SessionInfo[]>([])
   // Toast once when an MCP server enters a failed or needs-auth state so the user knows to act,
   // without having to open the status panel. Tracking the last alerted status avoids re-toasting
   // the same problem on every refresh while still re-alerting if the state changes.
@@ -674,14 +674,12 @@ function App(props: { pair?: DialogPairCredentials }) {
         title: "Open session or project",
         category: "Session",
         slash: { name: "open", aliases: ["projects", "project"] },
-        run: async () => {
-          if (dialog.key === DialogOpenKey || openingOpen) return
-          const previous = dialog.stack.at(-1)
-          openingOpen = loadDialogOpen(data, client)
-          const sessions = await openingOpen
-          openingOpen = undefined
-          if (dialog.stack.at(-1) !== previous) return
-          dialog.replace(() => <DialogOpen sessions={sessions} />, undefined, { key: DialogOpenKey, size: "large" })
+        run: () => {
+          if (dialog.key === DialogOpenKey) return
+          dialog.replace(() => <DialogOpen sessions={openSessions()} onLoad={setOpenSessions} />, undefined, {
+            key: DialogOpenKey,
+            size: "large",
+          })
         },
       },
       ...Array.from({ length: 9 }, (_, i) => ({
@@ -1106,7 +1104,14 @@ function App(props: { pair?: DialogPairCredentials }) {
     })
   })
 
+  event.on("session.moved", (evt) => {
+    setOpenSessions((sessions) =>
+      sessions.map((session) => (session.id !== evt.data.sessionID ? session : moveOpenSession(session, evt))),
+    )
+  })
+
   event.on("session.deleted", (evt) => {
+    setOpenSessions((sessions) => sessions.filter((session) => session.id !== evt.data.sessionID))
     if (route.data.type === "session" && route.data.sessionID === evt.data.sessionID) {
       const title = active?.id === evt.data.sessionID ? active.title : undefined
       route.navigate({ type: "home" })

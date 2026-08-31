@@ -51,6 +51,7 @@ import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
 export type DataSessionStatus = "idle" | "running"
+type OpenCodeEventMap = { [Type in OpenCodeEvent["type"]]: Extract<OpenCodeEvent, { type: Type }> }
 
 export type CreateDataInput = {
   readonly api: () => OpenCodeClient
@@ -58,7 +59,7 @@ export type CreateDataInput = {
   readonly event: {
     readonly on: <Type extends OpenCodeEvent["type"]>(
       type: Type,
-      handler: (event: Extract<OpenCodeEvent, { type: Type }>) => void,
+      handler: (event: OpenCodeEventMap[Type]) => void,
     ) => () => void
     readonly listen: (handler: (event: { name: OpenCodeEvent["type"]; details: OpenCodeEvent }) => void) => () => void
   }
@@ -307,6 +308,7 @@ export function createData(config: CreateDataInput) {
   // submission order. Each waits for the previous POST to settle, so one
   // failure does not block the next.
   const sending = new Map<string, Promise<unknown>>()
+  const messageLoads = new Map<string, Promise<unknown>>()
   const compacting = new Map<string, { id: string; observed: Set<string>; request: Promise<SessionInboxCompaction> }>()
   onCleanup(() => compacting.clear())
 
@@ -616,13 +618,17 @@ export function createData(config: CreateDataInput) {
           })
           .catch((error) => console.error("Failed to load projected model switch message", error))
         return
-      case "session.renamed":
+      case "session.renamed": {
         // Preserve the live title when it races the session's initial read.
-        void result.session.sync(event.data.sessionID).then(() => {
+        const family = sync.pending(`session.family:${event.data.sessionID}`)
+          ? result.session.sync(event.data.sessionID, { children: true })
+          : Promise.resolve()
+        void Promise.all([result.session.sync(event.data.sessionID), family]).then(() => {
           if (store.session.info[event.data.sessionID])
             setStore("session", "info", event.data.sessionID, "title", event.data.title)
         })
         return
+      }
       case "session.moved": {
         const current = store.session.info[event.data.sessionID]
         if (current) {
@@ -749,7 +755,8 @@ export function createData(config: CreateDataInput) {
             command: event.data.shell.command,
             status: event.data.shell.status,
             exit: event.data.shell.exit,
-            metadata: event.metadata,
+            metadata:
+              event.data.shell.metadata.background === true ? { ...event.metadata, background: true } : event.metadata,
             time: { created: event.created },
           })
         })
@@ -1529,20 +1536,70 @@ export function createData(config: CreateDataInput) {
         loading(sessionID: string) {
           return store.session.messageLoading[sessionID] ?? false
         },
-        async loadMore(sessionID: string) {
+        async loadMore(
+          sessionID: string,
+          options?: {
+            all?: boolean
+            signal?: AbortSignal
+            /** Runs synchronously inside the store-publication batch. */
+            beforePublish?: () => void
+          },
+        ) {
+          const signal = options?.signal
+          if (signal?.aborted) return
+          while (messageLoads.has(sessionID)) {
+            const published = await (() => {
+              const pending = messageLoads.get(sessionID)
+              if (!signal) return pending
+              const aborted = Promise.withResolvers<void>()
+              const cancel = () => aborted.resolve()
+              signal.addEventListener("abort", cancel, { once: true })
+              return Promise.race([pending, aborted.promise])
+                .catch((error) => {
+                  if (!signal.aborted) throw error
+                })
+                .finally(() => signal.removeEventListener("abort", cancel))
+            })()
+            if ((!options?.all && published) || signal?.aborted) return
+          }
           const cursor = store.session.messageCursor[sessionID]
-          if (!cursor || store.session.messageLoading[sessionID]) return
+          if (!cursor || signal?.aborted) return
           setStore("session", "messageLoading", sessionID, true)
-          const response = await api()
-            .message.list({ sessionID, limit: messagePageLimit, cursor })
+          const request = (async () => {
+            const fetched: SessionMessageInfo[] = []
+            let next: string | undefined = cursor
+            do {
+              const response = await api().message.list(
+                {
+                  sessionID,
+                  limit: options?.all ? 200 : messagePageLimit,
+                  cursor: next,
+                },
+                { signal },
+              )
+              if (signal?.aborted) return
+              fetched.push(...response.data)
+              next = response.cursor.next ?? undefined
+              if (!options?.all) break
+            } while (next)
+            // A jump through history publishes once, not once per page of offscreen messages.
+            const existing = store.session.message[sessionID] ?? []
+            const ids = new Set(existing.map((item) => item.id))
+            const messages = [...fetched.reverse().filter((item) => !ids.has(item.id)), ...existing]
+            batch(() => {
+              options?.beforePublish?.()
+              messageIndex.set(sessionID, new Map(messages.map((item, position) => [item.id, position])))
+              setStore("session", "message", sessionID, reconcile(messages))
+              setStore("session", "messageCursor", sessionID, next)
+            })
+            return true
+          })()
+            .catch((error) => {
+              if (!signal?.aborted) throw error
+            })
             .finally(() => setStore("session", "messageLoading", sessionID, false))
-          const older = response.data.toReversed()
-          const existing = store.session.message[sessionID] ?? []
-          const ids = new Set(existing.map((item) => item.id))
-          const messages = [...older.filter((item) => !ids.has(item.id)), ...existing]
-          messageIndex.set(sessionID, new Map(messages.map((item, position) => [item.id, position])))
-          setStore("session", "message", sessionID, reconcile(messages))
-          setStore("session", "messageCursor", sessionID, response.cursor.next ?? undefined)
+          track(messageLoads, sessionID, request)
+          await request
         },
         invalidate(sessionID: string) {
           sync.invalidate(`session.message:${sessionID}`)

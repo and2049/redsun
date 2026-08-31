@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { getEventListeners } from "node:events"
 import { createRoot } from "solid-js"
 import { createData, type CreateDataInput } from "../src/solid"
 import { OpenCode, type OpenCodeEvent, type Project, type SessionInfo } from "../src/promise"
@@ -68,6 +69,63 @@ test("revalidates after an event overtakes an active session read", async () => 
 
     await wait(() => requests === 2 && setup.data.session.get("ses_refresh")?.time.viewed === 2)
   } finally {
+    setup.dispose()
+  }
+})
+
+test("preserves a live session rename across concurrent session and family reads", async () => {
+  const family = Promise.withResolvers<void>()
+  const renamed = Promise.withResolvers<void>()
+  const listeners = new Set<Parameters<CreateDataInput["event"]["listen"]>[0]>()
+  let requests = 0
+  const stale = { ...session(0), title: undefined }
+  const api = OpenCode.make({
+    baseUrl: "http://opencode.local",
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      if (!request.url.endsWith(`/api/session/${stale.id}`)) return Response.json({ data: [], cursor: {} })
+      requests++
+      await (requests === 1 ? family.promise : renamed.promise)
+      return Response.json({ data: stale })
+    },
+  })
+  const setup = createRoot((dispose) => ({
+    data: createData({
+      api: () => api,
+      directory: "/project",
+      event: {
+        on: () => () => {},
+        listen(handler) {
+          listeners.add(handler)
+          return () => listeners.delete(handler)
+        },
+      },
+    }),
+    dispose,
+  }))
+
+  try {
+    const initial = setup.data.session.sync(stale.id, { children: true })
+    await wait(() => requests === 1)
+    const event: OpenCodeEvent = {
+      id: "evt_renamed",
+      created: 1,
+      type: "session.renamed",
+      durable: { aggregateID: stale.id, seq: 1, version: 1 },
+      data: { sessionID: stale.id, title: "Generated title" },
+    }
+    listeners.forEach((listener) => listener({ name: event.type, details: event }))
+    await wait(() => requests === 2)
+    renamed.resolve()
+    await wait(() => setup.data.session.get(stale.id) !== undefined)
+    family.resolve()
+    await initial
+    await Bun.sleep(0)
+
+    expect(setup.data.session.get(stale.id)?.title).toBe("Generated title")
+  } finally {
+    family.resolve()
+    renamed.resolve()
     setup.dispose()
   }
 })
@@ -414,6 +472,120 @@ test("loads bounded message pages", async () => {
   }
 })
 
+test.each(["success", "failure", "cancel", "cancel-retry", "cancel-page", "join-cancel", "join-failure"])(
+  "bulk history (%s)",
+  async (mode) => {
+    const messages = [1, 2, 3].map((index) => ({
+      id: `msg_${index}`,
+      type: "user",
+      text: `Message ${index}`,
+      time: { created: index },
+    }))
+    const release = Promise.withResolvers<void>()
+    const controller = new AbortController()
+    const requests: URL[] = []
+    const publications: string[][] = []
+    const api = OpenCode.make({
+      baseUrl: "http://opencode.local",
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input))
+        requests.push(url)
+        const cursor = url.searchParams.get("cursor")
+        if (!cursor) return Response.json({ data: [messages[2]], cursor: { next: "recent" } })
+        if (cursor === "recent") {
+          if (mode.startsWith("join")) await release.promise
+          if (mode === "join-failure") return Response.json({ message: "offline" }, { status: 503 })
+          return Response.json({ data: [messages[2], messages[1]], cursor: { next: "oldest" } })
+        }
+        if (cursor === "oldest") return Response.json({ data: [messages[0]], cursor: { next: "empty" } })
+        expect(init?.signal).toBe(requests.length === 4 ? controller.signal : undefined)
+        await release.promise
+        if (mode === "failure") return Response.json({ message: "offline" }, { status: 503 })
+        return Response.json({ data: [], cursor: {} })
+      },
+    })
+    const setup = createRoot((dispose) => {
+      const data = createData({
+        api: () => api,
+        directory: "/project",
+        event: { on: () => () => {}, listen: () => () => {} },
+      })
+      return { data, dispose }
+    })
+
+    try {
+      await setup.data.session.message.sync("ses_refresh")
+      const newest = setup.data.session.message.get("ses_refresh", "msg_3")
+      const load = setup.data.session.message.loadMore(
+        "ses_refresh",
+        mode.startsWith("join")
+          ? undefined
+          : {
+              all: true,
+              signal: controller.signal,
+              beforePublish: () => {
+                publications.push(setup.data.session.message.list("ses_refresh").map((message) => message.id))
+                expect(setup.data.session.message.get("ses_refresh", "msg_3")).toBe(newest)
+              },
+            },
+      )
+      const joined = setup.data.session.message.loadMore("ses_refresh", { all: true, signal: controller.signal })
+      const settled = Promise.allSettled([load, joined])
+      if (mode.startsWith("join")) {
+        await wait(() => requests.length === 2)
+        expect(getEventListeners(controller.signal, "abort")).toHaveLength(1)
+        controller.abort()
+        let cancelled = false
+        void joined.then(() => {
+          cancelled = true
+        })
+        await wait(() => cancelled)
+        expect(setup.data.session.message.loading("ses_refresh")).toBe(true)
+        expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
+        release.resolve()
+        expect((await settled).map((result) => result.status)).toEqual(
+          mode === "join-failure" ? ["rejected", "fulfilled"] : ["fulfilled", "fulfilled"],
+        )
+        expect(requests.at(-1)?.searchParams.get("limit")).toBe("20")
+        expect(requests).toHaveLength(2)
+        expect(setup.data.session.message.more("ses_refresh")).toBe(true)
+        expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(
+          mode === "join-failure" ? ["msg_3"] : ["msg_2", "msg_3"],
+        )
+        return
+      }
+      await wait(() => requests.length === 4)
+      expect(setup.data.session.message.loading("ses_refresh")).toBe(true)
+      expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(["msg_3"])
+      expect(requests.slice(1).map((url) => url.searchParams.get("limit"))).toEqual(["200", "200", "200"])
+      if (mode.startsWith("cancel")) controller.abort()
+      const retry =
+        mode === "cancel-retry" || mode === "cancel-page"
+          ? setup.data.session.message.loadMore("ses_refresh", mode === "cancel-retry" ? { all: true } : undefined)
+          : undefined
+      release.resolve()
+      expect((await settled).map((result) => result.status)).toEqual(
+        mode === "failure" ? ["rejected", "rejected"] : ["fulfilled", "fulfilled"],
+      )
+      await retry
+      const success = mode === "success" || mode === "cancel-retry"
+      expect(setup.data.session.message.loading("ses_refresh")).toBe(false)
+      expect(setup.data.session.message.more("ses_refresh")).toBe(!success)
+      expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(
+        success ? ["msg_1", "msg_2", "msg_3"] : mode === "cancel-page" ? ["msg_2", "msg_3"] : ["msg_3"],
+      )
+      expect(setup.data.session.message.get("ses_refresh", "msg_3")).toBe(newest)
+      expect(requests).toHaveLength(mode === "cancel-retry" ? 7 : mode === "cancel-page" ? 5 : 4)
+      if (mode === "cancel-page") expect(requests.at(-1)?.searchParams.get("limit")).toBe("20")
+      expect(publications).toEqual(mode === "success" ? [["msg_3"]] : [])
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
+    } finally {
+      release.resolve()
+      setup.dispose()
+    }
+  },
+)
+
 test("preserves assistant content replacement events across an active message read", async () => {
   const listeners = new Set<Parameters<CreateDataInput["event"]["listen"]>[0]>()
   const release = Promise.withResolvers<void>()
@@ -547,6 +719,36 @@ test("ignores activity snapshots from an older connection", async () => {
     expect(setup.data.session.status("ses_old")).toBe("idle")
   } finally {
     reads.forEach((read) => read.resolve(Response.json({ data: {} })))
+    setup.dispose()
+  }
+})
+
+test("projects background user shell metadata from durable shell data", () => {
+  const setup = activityFixture(() => Response.json({ data: {} }))
+  try {
+    setup.emit({
+      id: "evt_user_shell",
+      created: 1,
+      type: "session.shell.started",
+      durable: { aggregateID: "ses_refresh", seq: 1, version: 1 },
+      data: {
+        sessionID: "ses_refresh",
+        shell: {
+          id: "sh_user",
+          status: "running",
+          command: "pwd",
+          cwd: "/project",
+          shell: "/bin/sh",
+          file: "/project/shell.out",
+          metadata: { sessionID: "ses_refresh", background: true },
+          time: { started: 1 },
+        },
+      },
+    })
+    expect(setup.data.session.message.list("ses_refresh")).toMatchObject([
+      { type: "shell", shellID: "sh_user", status: "running", metadata: { background: true } },
+    ])
+  } finally {
     setup.dispose()
   }
 })

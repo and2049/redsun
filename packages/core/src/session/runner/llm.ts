@@ -1,7 +1,7 @@
 export * as SessionRunnerLLM from "./llm.js"
 
 import { Message } from "@opencode-ai/ai"
-import { Cause, Effect, Exit, FiberMap, Layer, Pull, Schedule } from "effect"
+import { Cause, Effect, Exit, FiberMap, Layer } from "effect"
 import { Database } from "../../database/database.js"
 import { Bus } from "../../bus.js"
 import { ClaudeCodeModels } from "../../plugin/redsun/claude-code/models.js"
@@ -16,7 +16,7 @@ import { SessionMessage } from "../message.js"
 import { SessionSchema } from "../schema.js"
 import { SessionStore } from "../store.js"
 import { SessionTitle } from "../title.js"
-import { DrainResult, Service, type Continuation } from "./index.js"
+import { DrainResult, Service, type Interface } from "./index.js"
 import { Snapshot } from "../../snapshot.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { llmClient } from "../../effect/app-node-platform.js"
@@ -41,16 +41,12 @@ const layer = Layer.effect(
     const compaction = yield* SessionCompaction.Service
     const plugins = yield* PluginSupervisor.Service
     const title = yield* SessionTitle.Service
+    const inbox = yield* SessionInbox.Service
     const steps = yield* SessionStep.make
     // Title generation starts once input is visible and must not delay model execution.
     const titles = yield* FiberMap.make<SessionSchema.ID, void, never>()
 
-    const drain = Effect.fn("SessionRunner.drain")(function* (input: {
-      readonly sessionID: SessionSchema.ID
-      readonly force: boolean
-      readonly continuation?: Continuation
-      readonly promotable?: SessionInbox.Promotable
-    }) {
+    const drain = Effect.fn("SessionRunner.drain")(function* (input: Parameters<Interface["drain"]>[0]) {
       const sessionID = input.sessionID
       let force = input.force
       let continuing = input.continuation !== undefined
@@ -117,11 +113,13 @@ const layer = Layer.effect(
                       message: "Claude Code compacts its own session; running /compact in the CLI instead.",
                     },
                   })
-                  yield* SessionInbox.admit(db, bus, {
-                    id: SessionMessage.ID.create(),
-                    sessionID,
-                    item: { type: "user", payload: { text: "/compact" }, delivery: "steer" },
-                  })
+                  yield* inbox
+                    .admit({
+                      id: SessionMessage.ID.create(),
+                      sessionID,
+                      item: { type: "user", payload: { text: "/compact" }, delivery: "steer" },
+                    })
+                    .pipe(Effect.orDie)
                   force = false
                   continue
                 }
@@ -196,7 +194,7 @@ const layer = Layer.effect(
     const runStep = Effect.fn("SessionRunner.runStep")(function* (first: SessionContext.Loaded, step: number) {
       const sessionID = first.session.id
       let assistantMessageID = SessionMessage.ID.create()
-      const retry = yield* Schedule.toStepWithSleep(SessionRunnerRetry.schedule(bus, sessionID))
+      const retry = yield* SessionRunnerRetry.make(bus, sessionID)
       let initial: SessionContext.Loaded | undefined = first
       let recoverOverflow = true
       let recoverContinuation = true
@@ -244,6 +242,15 @@ const layer = Layer.effect(
           agent: loaded.agent.id,
           model: loaded.model,
           prepared,
+          retry: (cause, error, proposed) =>
+            retry.decide({
+              cause,
+              error,
+              agent: loaded.agent.id,
+              model: loaded.model.ref,
+              hook: prepared.retry,
+              retry: proposed,
+            }),
           recoverContinuation,
           recoverOverflow: Effect.suspend(() =>
             recoverOverflow && compaction.enabled()
@@ -254,18 +261,17 @@ const layer = Layer.effect(
         const completed = yield* SessionStep.Outcome.$match(outcome, {
           Completed: (outcome) => Effect.succeed(outcome.needsContinuation),
           Retry: (outcome) =>
-            retry({ cause: outcome.cause, error: outcome.error, assistantMessageID }).pipe(
-              Pull.catchDone(() =>
-                bus
-                  .publish(SessionEvent.Step.Failed, { sessionID, assistantMessageID, error: outcome.error })
-                  .pipe(Effect.andThen(outcome.cause)),
-              ),
-              Effect.asVoid,
-            ),
+            retry.wait({
+              decision: outcome.decision,
+              error: outcome.error,
+              assistantMessageID,
+            }),
           Continue: Effect.fnUntraced(function* (outcome) {
-            yield* retry({ cause: outcome.cause, error: outcome.error, assistantMessageID }).pipe(
-              Pull.catchDone(() => outcome.cause),
-            )
+            yield* retry.wait({
+              decision: outcome.decision,
+              error: outcome.error,
+              assistantMessageID,
+            })
             yield* bus.publish(SessionEvent.Synthetic, { sessionID, text: CONTINUE_AFTER_INCOMPLETE_STREAM })
             assistantMessageID = SessionMessage.ID.create()
           }),
@@ -325,5 +331,6 @@ export const node = makeLocationNode({
     Snapshot.node,
     ToolOutput.node,
     Database.node,
+    SessionInbox.node,
   ],
 })
