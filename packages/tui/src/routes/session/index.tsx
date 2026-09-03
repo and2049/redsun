@@ -44,9 +44,12 @@ import { FilePath } from "../../ui/file-path"
 import {
   canonicalToolName,
   finiteNumber,
+  flattenTodos,
   primitiveInputSummary,
+  todoItems,
   toolDisplayContent,
   toolDisplayMetadata,
+  type TodoItem,
   webSearchProviderLabel,
 } from "../../util/tool-display"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
@@ -3541,19 +3544,6 @@ function Write(props: ToolProps) {
   )
 }
 
-type TodoItem = { content: string; status: string }
-
-function todoItems(value: unknown): TodoItem[] {
-  if (!Array.isArray(value)) return []
-  return value.filter(
-    (item): item is TodoItem =>
-      typeof item === "object" &&
-      item !== null &&
-      typeof (item as TodoItem).content === "string" &&
-      typeof (item as TodoItem).status === "string",
-  )
-}
-
 const TODO_GLYPHS: Record<string, string> = {
   pending: "◻",
   in_progress: "◐",
@@ -3561,47 +3551,54 @@ const TODO_GLYPHS: Record<string, string> = {
   cancelled: "✗",
 }
 
-function TodoWrite(props: ToolProps) {
+function TodoLine(props: { todo: TodoItem; depth: number }) {
   const theme = useTheme()
+  const color = () => {
+    if (props.todo.status === "in_progress") return theme.accent
+    if (props.todo.status === "completed" || props.todo.status === "cancelled") return theme.text.subdued
+    return theme.text.default
+  }
+  return (
+    <>
+      <text
+        fg={color()}
+        attributes={props.todo.status === "cancelled" ? TextAttributes.STRIKETHROUGH : undefined}
+      >
+        {"  ".repeat(props.depth)}
+        {TODO_GLYPHS[props.todo.status] ?? "◻"} {props.todo.content}
+      </text>
+      <For each={props.todo.children}>{(child) => <TodoLine todo={child} depth={props.depth + 1} />}</For>
+    </>
+  )
+}
+
+function TodoWrite(props: ToolProps) {
   // Both writers land here: redsun's todowrite metadata and Claude Code's mirrored
   // TodoWrite input. Fall back to the call input while the result is streaming.
   const todos = createMemo(() => {
     const fromMetadata = todoItems(props.metadata.todos)
     return fromMetadata.length > 0 ? fromMetadata : todoItems(props.input.todos)
   })
+  const all = createMemo(() => flattenTodos(todos()))
   const open = createMemo(
-    () => todos().filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length,
+    () => all().filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length,
   )
   const [expanded, setExpanded] = createSignal(true)
-  const color = (status: string) => {
-    if (status === "in_progress") return theme.accent
-    if (status === "completed" || status === "cancelled") return theme.text.subdued
-    return theme.text.default
-  }
   return (
     <>
       <InlineTool
         icon="☰"
         name="Tasks"
         pending="Updating tasks..."
-        complete={todos().length > 0}
+        complete={all().length > 0}
         part={props.part}
         onClick={() => setExpanded((value) => !value)}
       >
-        {todos().length} task{todos().length === 1 ? "" : "s"} ({open()} open)
+        {all().length} task{all().length === 1 ? "" : "s"} ({open()} open)
       </InlineTool>
       <Show when={expanded() && todos().length > 0}>
         <box paddingLeft={TRANSCRIPT_GUTTER + INLINE_TOOL_ICON_WIDTH}>
-          <For each={todos()}>
-            {(todo) => (
-              <text
-                fg={color(todo.status)}
-                attributes={todo.status === "cancelled" ? TextAttributes.STRIKETHROUGH : undefined}
-              >
-                {TODO_GLYPHS[todo.status] ?? "◻"} {todo.content}
-              </text>
-            )}
-          </For>
+          <For each={todos()}>{(todo) => <TodoLine todo={todo} depth={0} />}</For>
         </box>
       </Show>
     </>

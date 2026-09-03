@@ -53,6 +53,26 @@ it.effect("todowrite registers through the real entry point and persists the lis
     expect(result.metadata.todos).toEqual(todos)
     expect(kvStore.get(key(sessionID))).toEqual(todos)
 
+    const nested = [
+      {
+        content: "auth",
+        status: "in_progress",
+        priority: "high",
+        children: [
+          { content: "login form", status: "completed", priority: "high" },
+          { content: "session cookie", status: "pending", priority: "medium" },
+        ],
+      },
+      { content: "docs", status: "pending", priority: "low" },
+    ]
+    const grouped = (yield* definition!.execute({ todos: nested }, { sessionID })) as {
+      content: string
+      metadata: { todos: unknown[] }
+    }
+    expect(grouped.content).toBe("4 todos (3 open)")
+    expect(grouped.metadata.todos).toEqual(nested)
+    expect(kvStore.get(key(sessionID))).toEqual(nested)
+
     const emptied = (yield* definition!.execute({ todos: [] }, { sessionID })) as { content: string }
     expect(emptied.content).toBe("0 todos (0 open)")
     expect(kvStore.get(key(sessionID))).toEqual([])

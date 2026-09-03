@@ -8,7 +8,7 @@ export const NAME = "todowrite"
 
 export const key = (sessionID: string) => `redsun.todos/${sessionID}`
 
-export const Todo = Schema.Struct({
+const Item = Schema.Struct({
   content: Schema.String.annotate({ description: "Brief description of the task" }),
   status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]).annotate({
     description: "Current status of the task",
@@ -17,7 +17,16 @@ export const Todo = Schema.Struct({
     description: "Priority level of the task",
   }),
 })
+
+export const Todo = Schema.Struct({
+  ...Item.fields,
+  children: Schema.optionalKey(Schema.Array(Item)).annotate({
+    description: "Sub-steps nested under this task (one level deep)",
+  }),
+})
 export type Todo = typeof Todo.Type
+
+export const flatten = (todos: ReadonlyArray<Todo>) => todos.flatMap((todo) => [todo, ...(todo.children ?? [])])
 
 export const DESCRIPTION = `Create and maintain a structured task list for the current coding session. Tracks progress, organizes multi-step work, and surfaces status to the user. Every call replaces the whole list.
 
@@ -43,6 +52,7 @@ Skip when:
 - If blocked or partial, keep it \`in_progress\` and add a follow-up todo describing the blocker
 - Preserve user-provided commands verbatim (flags, args, order)
 - Items should be specific and actionable; break large work into smaller steps
+- Group the sub-steps of a larger item under it as \`children\` (one level only); a parent stays \`in_progress\` until every child is \`completed\` or \`cancelled\`
 
 When in doubt, use it.`
 
@@ -64,12 +74,11 @@ export const Plugin = define({
           execute: (input, context) =>
             Effect.gen(function* () {
               yield* kv.set(key(context.sessionID), input.todos as never)
-              const open = input.todos.filter(
-                (todo) => todo.status !== "completed" && todo.status !== "cancelled",
-              ).length
+              const all = flatten(input.todos)
+              const open = all.filter((todo) => todo.status !== "completed" && todo.status !== "cancelled").length
               return {
                 output: { todos: input.todos },
-                content: `${input.todos.length} todo${input.todos.length === 1 ? "" : "s"} (${open} open)`,
+                content: `${all.length} todo${all.length === 1 ? "" : "s"} (${open} open)`,
                 metadata: { todos: input.todos },
               }
             }),
