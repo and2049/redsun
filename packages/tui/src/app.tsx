@@ -243,6 +243,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
           (renderer) => Effect.sync(() => destroyRenderer(renderer)),
         )
       })
+      // Every mounted component subscribes to resize through useTerminalDimensions and
+      // unsubscribes on cleanup; a session screen mounts more than EventEmitter's default 10.
+      renderer.setMaxListeners(64)
       const clipboard = yield* Effect.acquireRelease(
         Effect.sync(() => createTuiClipboard(renderer)),
         (clipboard) =>
