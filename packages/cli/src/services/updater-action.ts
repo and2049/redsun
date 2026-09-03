@@ -1,4 +1,4 @@
-export type Policy = boolean | "notify"
+export type Policy = "disable" | "notify" | "auto"
 export type Action = "none" | "notify" | "upgrade"
 
 const maximumComponent = "9007199254740991"
@@ -13,20 +13,21 @@ type Release =
   | { kind: "date"; year: string; month: string; day: string; index: string }
 
 export function action(current: string, latest: string, policy: Policy): Action {
-  if (policy === false) return "none"
+  if (policy === "disable") return "none"
   const currentVersion = parseReleaseVersion(current)
   const latestVersion = parseReleaseVersion(latest)
   // Mixed formats (a legacy semver install and a date release) cannot be
   // ordered, so no automatic action; `redsun upgrade` still works by hand.
   if (!currentVersion || !latestVersion || currentVersion.kind !== latestVersion.kind) return "none"
   if (sameRelease(currentVersion, latestVersion)) return "none"
+  if (policy === "notify") return "notify"
   // Major upgrades (semver major, or calendar year for date tags) are never
   // installed automatically.
-  if (majorOf(currentVersion) !== majorOf(latestVersion)) return "none"
-  return policy === "notify" ? "notify" : "upgrade"
+  if (majorOf(currentVersion) !== majorOf(latestVersion)) return "notify"
+  return "upgrade"
 }
 
-function parseReleaseVersion(input: string): Release | undefined {
+export function parseReleaseVersion(input: string): Release | undefined {
   if (input.length > 256) return
   const trimmed = input.trim()
   const date = trimmed.match(datePattern)

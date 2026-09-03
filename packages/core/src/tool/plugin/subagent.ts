@@ -5,9 +5,9 @@ import type { Context } from "@opencode-ai/plugin/effect/plugin"
 import { Effect, Schema, Scope } from "effect"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
-import type { Job } from "../../job.js"
-import { PluginRuntime } from "../../plugin/runtime.js"
+import { Job } from "../../job.js"
 import { Permission } from "../../permission.js"
+import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentCompletion } from "../../session/subagent-completion.js"
 import { RedsunWorkerModel } from "../../plugin/redsun/worker-model.js"
@@ -59,7 +59,8 @@ export const description = [
 export const Plugin = {
   id: "opencode.tool.subagent",
   effect: Effect.fn("SubagentTool.Plugin")(function* (ctx: Context) {
-    const runtime = yield* PluginRuntime.Service
+    const sessions = yield* Session.Service
+    const jobs = yield* Job.Service
     const agents = yield* Agent.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
@@ -76,7 +77,7 @@ export const Plugin = {
     // Concatenate the child's final completed assistant text. Distinguishes "completed with no
     // text" (generic string) from "failed" (the run effect fails, surfaced as a job error).
     const latestAssistantText = Effect.fn("SubagentTool.latestAssistantText")(function* (sessionID: SessionSchema.ID) {
-      const messages = yield* runtime.session.messages({ sessionID, order: "desc", limit: 20 })
+      const messages = yield* sessions.messages({ sessionID, order: "desc", limit: 20 })
       const assistant = messages.find(
         (message) =>
           message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
@@ -97,8 +98,8 @@ export const Plugin = {
       if (notifications.has(key)) return
       notifications.add(key)
       yield* Effect.gen(function* () {
-        const info = (yield* runtime.job.wait({ id: recovery.childSessionID })).info
-        if (info) yield* SubagentCompletion.deliver(runtime.session, runtime.job, { ...info, recovery })
+        const info = (yield* jobs.wait({ id: recovery.childSessionID })).info
+        if (info) yield* SubagentCompletion.deliver(sessions, jobs, { ...info, recovery })
       }).pipe(
         Effect.ensuring(Effect.sync(() => notifications.delete(key))),
         Effect.forkIn(scope, { startImmediately: true }),
@@ -106,8 +107,8 @@ export const Plugin = {
     })
 
     yield* ctx.tool
-      .transform((draft) =>
-        draft.add({
+      .transform((editor) =>
+        editor.add({
           name,
           options: { codemode: false },
           description,
@@ -115,7 +116,7 @@ export const Plugin = {
           output: Output,
           execute: (input, context) =>
             Effect.gen(function* () {
-              const parent = yield* runtime.session
+              const parent = yield* sessions
                 .get(context.sessionID)
                 .pipe(
                   Effect.mapError(
@@ -126,7 +127,7 @@ export const Plugin = {
               let depth = 0
               while (current.parentID) {
                 depth++
-                current = yield* runtime.session
+                current = yield* sessions
                   .get(current.parentID)
                   .pipe(
                     Effect.mapError(
@@ -161,7 +162,7 @@ export const Plugin = {
               const existing =
                 input.sessionID === undefined
                   ? undefined
-                  : yield* runtime.session
+                  : yield* sessions
                       .get(input.sessionID)
                       .pipe(
                         Effect.mapError(
@@ -176,11 +177,11 @@ export const Plugin = {
               // Continuing with a different agent switches the child, mirroring create semantics
               // where the agent's configured model wins over the inherited one.
               if (existing !== undefined && existing.agent !== agent.id) {
-                yield* runtime.session.switchAgent({ sessionID: existing.id, agent: agent.id }).pipe(
+                yield* sessions.switchAgent({ sessionID: existing.id, agent: agent.id }).pipe(
                   Effect.andThen(
                     agent.model === undefined
                       ? Effect.void
-                      : runtime.session.switchModel({ sessionID: existing.id, model: agent.model }),
+                      : sessions.switchModel({ sessionID: existing.id, model: agent.model }),
                   ),
                   Effect.mapError(
                     (error) =>
@@ -201,7 +202,7 @@ export const Plugin = {
                 return yield* new ToolFailure({ message: RedsunWorkerModel.unconfigured(agent.id) })
               const child =
                 existing ??
-                (yield* runtime.session
+                (yield* sessions
                   .create({
                     parentID: context.sessionID,
                     // REDSUN: same title format as the Claude Code subagent mirror.
@@ -220,7 +221,7 @@ export const Plugin = {
 
               // Standard prompt admission outside the job: Job.start joining a running child skips
               // its run effect, and the default wake starts an idle child or steers a running one.
-              yield* runtime.session
+              yield* sessions
                 .prompt({
                   sessionID: child.id,
                   text:
@@ -242,24 +243,24 @@ export const Plugin = {
                 agent: agent.name,
                 description: input.description,
               }
-              const info = yield* runtime.job.start({
+              const info = yield* jobs.start({
                 id: child.id,
                 type: name,
                 title: input.description,
                 metadata: {},
                 recovery,
-                run: runtime.session.resume(child.id).pipe(Effect.andThen(latestAssistantText(child.id))),
+                run: sessions.resume(child.id).pipe(Effect.andThen(latestAssistantText(child.id))),
               })
 
               if (background) {
-                yield* runtime.job.background(info.id)
+                yield* jobs.background(info.id)
                 yield* notifyWhenDone(recovery, info.started_at)
                 return backgroundResult(child.id)
               }
 
-              const result = yield* runtime.job.block({ id: child.id, sessionID: context.sessionID }).pipe(
+              const result = yield* jobs.block({ id: child.id, sessionID: context.sessionID }).pipe(
                 Effect.onInterrupt(() =>
-                  Effect.all([runtime.session.interrupt(child.id), runtime.job.cancel(child.id)], {
+                  Effect.all([sessions.interrupt(child.id), jobs.cancel(child.id)], {
                     discard: true,
                   }),
                 ),

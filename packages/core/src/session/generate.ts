@@ -1,27 +1,73 @@
 export * as SessionGenerate from "./generate.js"
 
-import type { AIError } from "@opencode-ai/ai"
+import { LLMClient, Message, type AIError } from "@opencode-ai/ai"
 import type { Model } from "@opencode-ai/schema/model"
-import { Context, type Effect } from "effect"
+import { Effect } from "effect"
+import { Database } from "../database/database.js"
+import { Instance } from "../instance/service.js"
+import { Plugin } from "../plugin/service.js"
 import type { Instructions } from "../instructions/index.js"
+import { SessionContext } from "./context.js"
 import type { AgentNotFoundError } from "./error.js"
+import { SessionHistory } from "./history.js"
+import { SessionModelRequest } from "./model-request.js"
 import type { SessionRunnerModel } from "./runner/model.js"
 import type { SessionSchema } from "./schema.js"
 
 export type Error = AgentNotFoundError | Instructions.InitializationBlocked | SessionRunnerModel.Error | AIError
 
-export interface Interface {
-  /** Generates text from current Session context without mutating the Session. */
-  readonly generate: (input: {
-    readonly sessionID: SessionSchema.ID
-    readonly prompt: string
-    readonly temperature?: number
-    /** REDSUN: model override for judge/advisor calls; defaults to the session model. */
-    readonly model?: Model.Ref
-    /** REDSUN: `false` keeps the tool definitions (cached prefix) but forces toolChoice "none". */
-    readonly tools?: boolean
-  }) => Effect.Effect<string, Error>
-}
+/** Generates text from current Session context without mutating the Session. */
+export const generate = Effect.fn("SessionGenerate.generate")(function* (input: {
+  session: SessionSchema.Info
+  prompt: string
+  temperature?: number
+  /** REDSUN: model override for judge/advisor calls; defaults to the session model. */
+  model?: Model.Ref
+  /** REDSUN: `false` keeps the tool definitions (cached prefix) but forces toolChoice "none". */
+  tools?: boolean
+}) {
+  const instances = yield* Instance.Service
+  const database = yield* Database.Service
+  const llm = yield* LLMClient.Service
 
-/** Location-scoped transient generation from Session context. */
-export class Service extends Context.Service<Service, Interface>()("@opencode/SessionGenerate") {}
+  return yield* Effect.gen(function* () {
+    yield* Plugin.awaitActivation
+    const context = yield* SessionContext.Service
+    const selection = yield* context.select(input.session.id)
+    const model = yield* context.resolveModel(
+      input.model ? { ...selection.session, model: input.model } : selection.session,
+    )
+    const history = yield* SessionHistory.preview(database.db, selection.session.id, selection.instructions)
+    const transcript = SessionModelRequest.baseTranscript({
+      agent: selection.agent.info,
+      model,
+      tools: selection.tools,
+      initial: history.initial,
+      messages: history.messages,
+    })
+    const prepared = yield* context.prepare({
+      scope: { session: selection.session, agentID: selection.agent.id, model, tools: selection.tools },
+      transcript: {
+        system: transcript.system,
+        messages: [
+          ...transcript.messages,
+          ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
+          Message.user(input.prompt),
+        ],
+      },
+      ...(input.tools === false ? { toolChoice: "none" as const } : {}),
+    })
+    yield* Effect.logInfo("sending session generation request", {
+      sessionID: selection.session.id,
+      providerID: model.ref.providerID,
+      modelID: model.ref.id,
+    })
+    const request =
+      input.temperature !== undefined
+        ? { ...prepared.request, generation: { ...prepared.request.generation, temperature: input.temperature } }
+        : prepared.request
+    const response = yield* llm.generate(request, prepared.options)
+    yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })
+    return response.text
+  }).pipe(instances.provide(input.session))
+})

@@ -17,7 +17,7 @@ const planDirectory = (location: Location.Interface) =>
   location.vcs ? path.join(location.project.directory, ".redsun", "plans") : path.join(Global.Path.data, "plans")
 
 const enter = (directory: string) => `<system-reminder>
-You are in Plan mode. You may optionally create or update plan documents in:
+You are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:
 ${directory}
 
 Do not modify any other files, run shell commands, or ask a subagent to do any of that.
@@ -36,8 +36,8 @@ export const Plugin = define({
     const plans = planDirectory(location)
     const enterReminder = enter(plans)
 
-    yield* ctx.agent.transform((draft) => {
-      draft.update(plan, (item) => {
+    yield* ctx.agent.transform((editor) => {
+      editor.update(plan, (item) => {
         item.name = Agent.Name.make("Plan")
         item.description = "Read-only agent for exploring the codebase and planning work before implementation."
         item.mode = "primary"

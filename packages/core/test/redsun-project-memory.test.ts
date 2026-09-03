@@ -29,10 +29,10 @@ const memoryLayer = (input: { directory: string; project?: boolean }) => {
     AppNodeBuilder.build(
       LayerNode.group([InstructionDiscovery.node, Bus.node, FSUtil.node, Global.node, Location.node, Watcher.node]),
       [
-        [InstructionDiscovery.node, InstructionDiscovery.configured({ project: input.project })],
-        [Global.node, tempGlobalLayer],
-        [Location.node, Layer.succeed(Location.Service, Location.Service.of(location(ref)))],
-        [Watcher.node, watcher],
+        InstructionDiscovery.node.replace(InstructionDiscovery.configured({ project: input.project })),
+        Global.node.replace(tempGlobalLayer),
+        Location.node.replace(Layer.succeed(Location.Service, Location.Service.of(location(ref)))),
+        Watcher.node.replace(watcher),
       ],
     ),
     watcher,

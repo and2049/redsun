@@ -49,13 +49,8 @@ import { DialogSkill } from "../dialog-skill"
 import { useArgs } from "../../context/args"
 import { useConfig } from "../../config"
 import { usePromptMove } from "./move"
-import {
-  normalizePastedFilepath,
-  parsePastedFilepaths,
-  readLocalAttachment,
-  MAX_LOCAL_ATTACHMENT_BYTES,
-  type LocalAttachment,
-} from "./local-attachment"
+import { resolvePastedAttachments } from "./local-attachment"
+import { PromptMetadataRow } from "./metadata"
 import { locationKey, useData } from "../../context/data"
 import { useLocation } from "../../context/location"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
@@ -105,12 +100,6 @@ const revealedPromptMetadata = new WeakSet<object>()
 function randomIndex(count: number) {
   if (count <= 0) return 0
   return Math.floor(Math.random() * count)
-}
-
-const WORKER_UNSET = "worker model not set"
-
-function fadeColor(color: RGBA, alpha: number) {
-  return RGBA.fromValues(color.r, color.g, color.b, color.a * alpha)
 }
 
 export function PromptInterruptStatus(props: {
@@ -1498,35 +1487,18 @@ export function Prompt(props: PromptProps) {
   async function pasteInputText(text: string, changed: () => boolean) {
     const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
     const pastedContent = normalizedText.trim()
-    const filepath = normalizePastedFilepath(pastedContent, terminalEnvironment.platform)
-    const isUrl = /^(https?):\/\//.test(filepath)
-    if (!isUrl) {
-      const attachment = await readLocalAttachment(filepath)
-      if (attachment) {
-        if (changed()) return
-        pasteLocalAttachment(filepath, attachment)
-        return
-      }
-
-      const filepaths = parsePastedFilepaths(pastedContent, terminalEnvironment.platform)
-      if (filepaths.length > 1) {
-        let remaining = MAX_LOCAL_ATTACHMENT_BYTES
-        const attachments: Array<{ filepath: string; attachment: LocalAttachment }> = []
-        for (const candidate of filepaths) {
-          const next = await readLocalAttachment(candidate, remaining)
-          if (!next) break
-          remaining -= typeof next.content === "string" ? Buffer.byteLength(next.content) : next.content.byteLength
-          attachments.push({ filepath: candidate, attachment: next })
-        }
-        if (attachments.length === filepaths.length) {
-          if (changed()) return
-          for (const item of attachments) pasteLocalAttachment(item.filepath, item.attachment)
+    const attachments = await resolvePastedAttachments(pastedContent, terminalEnvironment.platform)
+    if (changed()) return
+    if (attachments) {
+      attachments.forEach((attachment) => {
+        if (attachment.type === "text") {
+          pasteText(attachment.content, `[SVG: ${attachment.filename || "image"}]`)
           return
         }
-      }
+        pasteAttachment(attachment)
+      })
+      return
     }
-
-    if (changed()) return
 
     const lineCount = (pastedContent.match(/\n/g)?.length ?? 0) + 1
     if ((lineCount >= 3 || pastedContent.length > 150) && config.prompt?.paste !== "full") {
@@ -1550,18 +1522,6 @@ export function Prompt(props: PromptProps) {
       input.getLayoutNode().markDirty()
       renderer.requestRender()
     }, 0)
-  }
-
-  function pasteLocalAttachment(filepath: string, attachment: LocalAttachment) {
-    const filename = path.basename(filepath)
-    if (attachment.type === "text") {
-      pasteText(attachment.content, `[SVG: ${filename || "image"}]`)
-      return
-    }
-    pasteAttachment({
-      filename,
-      uri: `data:${attachment.mime};base64,${Buffer.from(attachment.content).toString("base64")}`,
-    })
   }
 
   function pasteAttachment(file: { filename?: string; uri: string }) {
@@ -1664,39 +1624,6 @@ export function Prompt(props: PromptProps) {
     return promptDisplay().agentLabel
   })
 
-  const metaItems = createMemo(() => {
-    const label = agentLabel()
-    if (!label) return []
-    const items = [label]
-    if (store.mode !== "normal") return items
-    items.push("\u00b7", promptDisplay().modelLabel, promptDisplay().providerLabel)
-    if (promptDisplay().variant) items.push("\u00b7", promptDisplay().variant ?? "")
-    if (composeWorker()) {
-      const worker = workerDisplay()
-      items.push("\u00b7")
-      if (!worker) items.push(WORKER_UNSET)
-      else {
-        items.push(worker.model, worker.provider)
-        if (worker.variant) items.push("\u00b7", worker.variant)
-      }
-    }
-    return items
-  })
-  const [metaLabelsWidth, setMetaLabelsWidth] = createSignal(0)
-  const showProviderLabels = createMemo(() => {
-    // The new-session page runs the prompt at its configured max width, narrow
-    // enough that a compose pair truncates more often than not, so the
-    // providers come off there unconditionally. A session prompt has the full
-    // row and keeps them until they genuinely don't fit.
-    if (props.sessionID == null) return false
-    // Yoga floors an unmeasured box at 1; treat that as "not measured yet".
-    const available = metaLabelsWidth()
-    if (available <= 1) return true
-    const items = metaItems()
-    // gap={1} sits between every rendered item
-    return items.reduce((sum, item) => sum + item.length, items.length - 1) <= available
-  })
-
   const animateMetadata = !revealedPromptMetadata.has(local)
   const metadataAnimationsEnabled = () => animationsEnabled() && animateMetadata
   const agentMetaAlpha = createFadeIn(() => !!agentLabel(), metadataAnimationsEnabled)
@@ -1711,7 +1638,11 @@ export function Prompt(props: PromptProps) {
   createEffect(() => {
     if (agentLabel()) revealedPromptMetadata.add(local)
   })
-  const footerInput = () => ({ sessionID: props.sessionID, mode: store.mode })
+  const footerInput = () => ({
+    sessionID: props.sessionID,
+    mode: store.mode,
+    showDetails: store.interrupt === 0 || dimensions().width >= 80,
+  })
   const editorFileReadout = createMemo(() =>
     editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined,
   )
@@ -1922,103 +1853,20 @@ export function Prompt(props: PromptProps) {
               />
             </box>
             <box flexDirection="row" flexShrink={0} gap={1} justifyContent="space-between">
-              <box
-                flexDirection="row"
-                gap={1}
-                flexGrow={1}
-                flexShrink={1}
-                minWidth={0}
-                onSizeChange={function (this: BoxRenderable) {
-                  const width = this.width
-                  queueMicrotask(() => setMetaLabelsWidth(width))
-                }}
-              >
-                <Show when={agentLabel()} fallback={<box height={1} />}>
-                  {(label) => (
-                    <>
-                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>{label()}</text>
-                      <Show when={store.mode === "normal" && dimensions().width >= 28}>
-                        <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
-                          <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
-                          <text
-                            flexShrink={1}
-                            minWidth={0}
-                            wrapMode="none"
-                            truncate
-                            fg={fadeColor(muted() ? theme.text.subdued : theme.text.default, modelMetaAlpha())}
-                          >
-                            {promptDisplay().modelLabel}
-                          </text>
-                          <Show when={showProviderLabels() && dimensions().width >= 50}>
-                            <text flexShrink={0} fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>
-                              {promptDisplay().providerLabel}
-                            </text>
-                          </Show>
-                          <Show when={promptDisplay().variant && dimensions().width >= 70}>
-                            <text fg={fadeColor(theme.text.subdued, variantMetaAlpha())}>·</text>
-                            <text>
-                              <span
-                                style={{
-                                  fg: fadeColor(theme.text.feedback.warning.default, variantMetaAlpha()),
-                                  bold: true,
-                                }}
-                              >
-                                {promptDisplay().variant}
-                              </span>
-                            </text>
-                          </Show>
-                          <Show when={composeWorker() && dimensions().width >= 70}>
-                            <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
-                            <Show
-                              when={workerDisplay()}
-                              fallback={
-                                <text
-                                  flexShrink={0}
-                                  fg={fadeColor(theme.text.feedback.warning.default, modelMetaAlpha())}
-                                >
-                                  {WORKER_UNSET}
-                                </text>
-                              }
-                            >
-                              {(worker) => (
-                                <>
-                                  <text
-                                    flexShrink={1}
-                                    minWidth={0}
-                                    wrapMode="none"
-                                    truncate
-                                    fg={fadeColor(muted() ? theme.text.subdued : theme.text.default, modelMetaAlpha())}
-                                  >
-                                    {worker().model}
-                                  </text>
-                                  <Show when={showProviderLabels()}>
-                                    <text flexShrink={0} fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>
-                                      {worker().provider}
-                                    </text>
-                                  </Show>
-                                  <Show when={worker().variant}>
-                                    <text fg={fadeColor(theme.text.subdued, variantMetaAlpha())}>·</text>
-                                    <text>
-                                      <span
-                                        style={{
-                                          fg: fadeColor(theme.text.feedback.warning.default, variantMetaAlpha()),
-                                          bold: true,
-                                        }}
-                                      >
-                                        {worker().variant}
-                                      </span>
-                                    </text>
-                                  </Show>
-                                </>
-                              )}
-                            </Show>
-                          </Show>
-                        </box>
-                      </Show>
-                    </>
-                  )}
-                </Show>
-              </box>
+              <PromptMetadataRow
+                mode={store.mode}
+                agent={agentLabel()}
+                auto={local.permission.mode === "auto"}
+                model={promptDisplay().modelLabel}
+                provider={props.sessionID == null ? "" : promptDisplay().providerLabel}
+                variant={promptDisplay().variant}
+                worker={composeWorker() ? (workerDisplay() ?? null) : undefined}
+                muted={!!muted()}
+                highlight={highlight()}
+                agentAlpha={agentMetaAlpha()}
+                modelAlpha={modelMetaAlpha()}
+                variantAlpha={variantMetaAlpha()}
+              />
               <Show
                 when={
                   hasRightContent() ||

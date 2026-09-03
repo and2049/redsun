@@ -16,7 +16,6 @@ describe("run runtime boot", () => {
     expect(result.leader.timeout).toBe(2000)
     expect(result.keybinds.get("command.palette.show")?.[0]?.key).toBe("ctrl+p")
     expect(result.keybinds.get("variant.cycle")?.[0]?.key).toBe("ctrl+t")
-    // Normal mode claims escape, so interrupt lives on a chord.
     expect(result.keybinds.get("session.interrupt")?.[0]?.key).toBe("ctrl+\\")
     expect(result.keybinds.get("prompt.history.previous")?.[0]?.key).toBe("up")
     expect(result.keybinds.get("prompt.history.next")?.[0]?.key).toBe("down")
@@ -44,6 +43,7 @@ describe("run runtime boot", () => {
       turn_summary: "show",
       footer: "show",
       splash: "show",
+      work_spinner: "block-soft-slide",
       mono: false,
     })
     expect(
@@ -54,6 +54,7 @@ describe("run runtime boot", () => {
           turn_summary: "hide",
           footer: "hide",
           splash: "hide",
+          work_spinner: "block-low-comet",
           mono: true,
         },
       }),
@@ -63,6 +64,7 @@ describe("run runtime boot", () => {
       turn_summary: "hide",
       footer: "hide",
       splash: "hide",
+      work_spinner: "block-low-comet",
       mono: true,
     })
   })

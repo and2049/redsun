@@ -39,8 +39,8 @@ describe("config plugin reloads", () => {
       const plugins = yield* Plugin.Service
       const references = yield* Reference.Service
       const host = yield* PluginHost.make(plugins)
-      yield* references.transform((draft) =>
-        draft.add(
+      yield* references.transform((editor) =>
+        editor.add(
           "external",
           Reference.LocalSource.make({ type: "local", path: AbsolutePath.make("/references/external") }),
         ),
@@ -55,11 +55,11 @@ describe("config plugin reloads", () => {
     }).pipe(
       Effect.provide(
         Config.testLayer([
-          referenceConfig("/config/first/opencode.json", {
+          referenceConfig("/config/first/redsun.json", {
             shared: "./shared",
             first: "./first",
           }),
-          referenceConfig("/config/second/opencode.json", {
+          referenceConfig("/config/second/redsun.json", {
             shared: "./shared",
             second: "./second",
           }),
