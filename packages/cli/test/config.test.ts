@@ -126,7 +126,6 @@ test("migrates tui and kv config into cli.json", async () => {
     $schema: "https://opencode.ai/v2/cli.json",
     theme: { name: "legacy" },
     keybinds: {
-      leader: "ctrl+o",
       "app.exit": "ctrl+q",
       "prompt.paste": { key: "ctrl+v", preventDefault: false },
       "session.delete": false,
@@ -146,7 +145,6 @@ test("migrates tui and kv config into cli.json", async () => {
   expect(config).not.toHaveProperty("which_key")
   expect(config).not.toHaveProperty("hints")
   expect((await Bun.file(path.join(directory.path, "cli.json")).json()).keybinds).toEqual({
-    leader: "ctrl+o",
     "app.exit": "ctrl+q",
     "prompt.paste": { key: "ctrl+v", preventDefault: false },
     "session.delete": false,
