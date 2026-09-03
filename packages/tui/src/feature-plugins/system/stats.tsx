@@ -63,7 +63,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
     <box width={width()} flexDirection="column" alignItems="center" flexShrink={0} gap={compact() ? 1 : 2}>
       <box width="100%" flexDirection={width() < 44 ? "column" : "row"} justifyContent="space-between">
         <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
-          opencode / stats
+          redsun / stats
         </text>
         <text fg={theme.text.subdued}>{dates()}</text>
       </box>
