@@ -4,11 +4,13 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { batch, createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { OneCellSpinner } from "../../../component/one-cell-spinner"
 import { useConfig } from "../../../config"
-import { entrySplashLayout } from "../../../mini/splash"
 import { stringWidth } from "../../../util/string-width"
 import { StoryFooter } from "./footer"
 import type { Story } from "./index"
 import { ONE_CELL_SPINNERS } from "./one-cell-spinner.fixtures"
+
+const LAUNCH_LABEL = " redsun"
+const LAUNCH_DETAIL = " v1.18.4 · ~/src/redsun"
 
 function OneCellSpinnerStory(props: { context: Plugin.Context }) {
   const dimensions = useTerminalDimensions()
@@ -31,9 +33,6 @@ function OneCellSpinnerStory(props: { context: Plugin.Context }) {
   })
   const previewWidth = () => (solo() ? Math.min(dimensions().width, 64) : dimensions().width)
   const speeds = createMemo(() => (dimensions().width >= 60 ? [0.5, 1, 2] : [speed()]))
-  const splash = createMemo(() =>
-    entrySplashLayout({ width: Math.max(1, previewWidth() - 8), version: "1.18.4", detail: "~/src/opencode" }),
-  )
   let scroll: ScrollBoxRenderable | undefined
   const revealSelected = () => {
     if (!scroll || scroll.isDestroyed) return
@@ -221,7 +220,7 @@ function OneCellSpinnerStory(props: { context: Plugin.Context }) {
               </Show>
               <box
                 width={
-                  solo() ? Math.min(previewWidth() - 2, stringWidth(splash().label + splash().metadata) + 7) : "100%"
+                  solo() ? Math.min(previewWidth() - 2, stringWidth(LAUNCH_LABEL + LAUNCH_DETAIL) + 7) : "100%"
                 }
                 marginTop={solo() ? 1 : 0}
               >
@@ -253,8 +252,8 @@ function OneCellSpinnerStory(props: { context: Plugin.Context }) {
                     color={theme.text.default}
                   />
                   <text fg={theme.text.default} wrapMode="none">
-                    {splash().label.slice(1)}
-                    <span style={{ fg: theme.text.subdued }}>{splash().metadata}</span>
+                    {LAUNCH_LABEL}
+                    <span style={{ fg: theme.text.subdued }}>{LAUNCH_DETAIL}</span>
                   </text>
                 </box>
               </box>

@@ -1,15 +1,34 @@
+import type { SessionMessageAssistantTool } from "@opencode-ai/client/promise"
 import { describe, expect, test } from "bun:test"
-import { normalizeTool, toolInlineInfo, toolOutputText, toolPath, toolScroll } from "../../src/mini/tool"
-import { canonicalToolPart } from "./fixture/tool-part"
+import { normalizeTool, toolInlineInfo, toolOutputText, toolPath } from "../../src/util/tool-run"
 
-describe("Mini tool presentation", () => {
+function canonicalToolPart(
+  name: string,
+  state: SessionMessageAssistantTool["state"],
+  id = `${name}-1`,
+): SessionMessageAssistantTool {
+  return {
+    type: "tool",
+    id,
+    name,
+    state,
+    time:
+      state.status === "streaming"
+        ? { created: 1 }
+        : state.status === "completed" || state.status === "error"
+          ? { created: 1, ran: 1, completed: 2 }
+          : { created: 1, ran: 1 },
+  }
+}
+
+describe("Run tool presentation", () => {
   test("uses V2 shell output without the model-facing status", () => {
     expect(
       toolOutputText("shell", [
-        { type: "text", text: "mini-output\n" },
+        { type: "text", text: "shell-output\n" },
         { type: "text", text: "Command exited with code 0." },
       ]),
-    ).toBe("mini-output\n")
+    ).toBe("shell-output\n")
 
     expect(
       toolOutputText("shell", [
@@ -88,20 +107,6 @@ describe("Mini tool presentation", () => {
 
     expect(toolInlineInfo(skill({ name: "effect" })).title).toBe('Skill "effect"')
     expect(toolInlineInfo(skill({})).title).toBe('Skill "tigerstyle"')
-    expect(
-      toolScroll("start", {
-        directory: "/work/project",
-        raw: "",
-        name: "skill",
-        input: { id: "tigerstyle" },
-        meta: { name: "effect" },
-        state: {},
-        status: "completed",
-        error: "",
-        output: "",
-        time: {},
-      }),
-    ).toBe('→ Skill "effect"')
   })
 
   test("renders compact search metadata", () => {

@@ -50,7 +50,6 @@ const Handlers = Runtime.handlers(Commands, {
   stats: () => import("./commands/handlers/stats"),
   export: () => import("./commands/handlers/export"),
   import: () => import("./commands/handlers/import"),
-  mini: () => import("./commands/handlers/mini"),
   run: () => import("./commands/handlers/run"),
   pair: () => import("./commands/handlers/pair"),
   service: {

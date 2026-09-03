@@ -282,42 +282,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         ),
       },
     }),
-    Spec.make("mini", {
-      description: "Start the minimal interactive interface",
-      params: {
-        ...ServerParams,
-        continue: Flag.boolean("continue").pipe(
-          Flag.withAlias("c"),
-          Flag.withDescription("Continue the last session"),
-          Flag.withDefault(false),
-        ),
-        session: Flag.string("session").pipe(
-          Flag.withAlias("s"),
-          Flag.withDescription("Session ID to continue"),
-          Flag.optional,
-        ),
-        fork: Flag.boolean("fork").pipe(
-          Flag.withDescription("Fork the session when continuing"),
-          Flag.withDefault(false),
-        ),
-        replay: Flag.boolean("replay").pipe(
-          Flag.withDescription("Restore session history on resume and resize (disable with --no-replay)"),
-          Flag.optional,
-        ),
-        replayLimit: Flag.integer("replay-limit").pipe(
-          Flag.withDescription("Limit replay to the newest N messages (default: 200)"),
-          Flag.optional,
-        ),
-        model: Flag.string("model").pipe(
-          Flag.withAlias("m"),
-          Flag.withDescription("Model to use in the format provider/model"),
-          Flag.optional,
-        ),
-        agent: Flag.string("agent").pipe(Flag.withDescription("Agent to use"), Flag.optional),
-        prompt: Flag.string("prompt").pipe(Flag.withDescription("Prompt to use"), Flag.optional),
-        demo: Flag.boolean("demo").pipe(Flag.withDefault(false), Flag.withHidden),
-      },
-    }),
     Spec.make("run", {
       description: "Run redsun with a message",
       params: {

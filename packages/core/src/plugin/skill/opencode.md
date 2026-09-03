@@ -54,7 +54,7 @@ must still use V2 unless the user specifically requests a V1 result.
 ## [CLI](https://opencode.ai/v2/docs/cli)
 
 For questions about the terminal interface, command-line invocation, `run`,
-`mini`, terminal providers, or other CLI behavior, fetch the
+terminal providers, or other CLI behavior, fetch the
 [CLI guide](https://opencode.ai/v2/docs/cli) and the relevant page linked from
 that section.
 

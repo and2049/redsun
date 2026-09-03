@@ -10,7 +10,7 @@ import type {
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { EOL } from "node:os"
 import { readFile } from "node:fs/promises"
-import { nonEmptyToolContent, toolOutputText, type MiniToolPart } from "@opencode-ai/tui/mini/tool"
+import { nonEmptyToolContent, toolOutputText, type ToolPart } from "@opencode-ai/tui/util/tool-run"
 import { UI } from "./ui"
 
 type Model = {
@@ -364,7 +364,7 @@ export async function runNonInteractivePrompt(input: Input) {
           },
           time: { created: current.timestamp, ran: current.timestamp, completed: time },
         }
-        const part: MiniToolPart = {
+        const part: ToolPart = {
           partID: current.id,
           sessionID: input.sessionID,
           messageID: event.data.assistantMessageID,
@@ -413,7 +413,7 @@ export async function runNonInteractivePrompt(input: Input) {
           },
           time: { created: current.timestamp, ran: current.timestamp, completed: time },
         }
-        const part: MiniToolPart = {
+        const part: ToolPart = {
           partID: current.id,
           sessionID: input.sessionID,
           messageID: event.data.assistantMessageID,
@@ -574,7 +574,7 @@ export async function runNonInteractivePrompt(input: Input) {
 
         const key = toolKey(message.id, item.id)
         if (renderedTools.has(key) || item.state.status === "streaming" || item.state.status === "running") continue
-        const part: MiniToolPart = {
+        const part: ToolPart = {
           partID: projectedPartID(message.id, `tool-${item.id}`),
           sessionID: input.sessionID,
           messageID: message.id,
