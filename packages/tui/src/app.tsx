@@ -1218,7 +1218,7 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
           <Slot path="app" />
         </Show>
       </box>
-      <Show when={route.data.type === "session"}>
+      <Show when={route.data.type === "session" || route.data.type === "home"}>
         <WorkspaceStatus />
       </Show>
       <CommandBar />

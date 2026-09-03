@@ -1158,6 +1158,16 @@ test("configured app bindings execute settings and permission commands", async (
   expect(commands).not.toContain("Enable auto-approve permissions")
 })
 
+test.each([
+  { auto: undefined, expected: "Auto-approve all disabled (Shift+Tab)" },
+  { auto: true, expected: "Auto-approve all enabled" },
+])("home reports the auto-approve mode before a session exists (auto: $auto)", async ({ auto, expected }) => {
+  await using setup = await createAppFixture({ args: auto ? { auto } : {} })
+  await setup.ready
+  const frame = await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+  expect(frame).toContain(expected)
+})
+
 test("ctrl+c dismisses autocomplete and shell mode before exiting", async () => {
   await using setup = await createAppFixture()
   await setup.ready
