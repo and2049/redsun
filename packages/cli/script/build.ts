@@ -129,7 +129,9 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
     external: ["node-gyp"],
     format: "esm",
     minify: true,
-    bytecode: true,
+    // REDSUN: publish.yml cross-compiles every target from one runner, and Bun 1.4.0
+    // bytecode compiled on one platform crashes the target's Bun on another at startup.
+    bytecode: item.os === process.platform && item.arch === process.arch && item.abi === undefined,
     sourcemap: Script.channel === "dev" || Script.channel === "local" ? "inline" : "none",
     splitting: true,
     compile: {
