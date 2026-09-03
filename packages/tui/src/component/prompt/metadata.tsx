@@ -12,7 +12,6 @@ export type WorkerDisplay = { model: string; provider: string; variant?: string 
 export function PromptMetadataRow(props: {
   mode: "normal" | "shell"
   agent?: string
-  auto: boolean
   model: string
   provider: string
   variant?: string
@@ -32,7 +31,6 @@ export function PromptMetadataRow(props: {
       width: Math.max(0, dimensions().width - (dimensions().width < 44 ? 9 : 13)),
       terminalWidth: dimensions().width,
       agent: props.agent ?? "",
-      auto: props.auto,
       model: props.model,
       provider: props.provider,
       variant: props.variant,
@@ -48,9 +46,6 @@ export function PromptMetadataRow(props: {
       >
         <Show when={layout().agent}>
           {(agent) => <text fg={fade(props.highlight, props.agentAlpha)}>{agent()}</text>}
-        </Show>
-        <Show when={props.mode === "normal" && layout().auto}>
-          <text fg={fade(theme.text.subdued, props.agentAlpha)}>auto</text>
         </Show>
         <Show when={props.mode === "normal" && layout().model}>
           <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
@@ -144,7 +139,6 @@ function fade(color: RGBA, alpha: number) {
 
 type Layout = {
   agent?: string
-  auto?: boolean
   model: string
   provider?: string
   variant?: string
@@ -155,7 +149,6 @@ function promptMetadataLayout(input: {
   width: number
   terminalWidth: number
   agent: string
-  auto?: boolean
   model: string
   provider: string
   variant?: string
@@ -168,7 +161,6 @@ function promptMetadataLayout(input: {
   const shortWorker = worker ? { ...worker, provider: worker.provider.split(" / ").at(-1) ?? worker.provider } : worker
   const bareWorker = worker ? { ...worker, provider: "" } : worker
   const candidates: Layout[] = [
-    { agent, auto: input.auto, model: input.model, provider, variant: input.variant, worker },
     { agent, model: input.model, provider, variant: input.variant, worker },
     { agent, model: input.model, provider: shortProvider, variant: input.variant, worker: shortWorker },
     { agent, model: input.model, variant: input.variant, worker: bareWorker },
@@ -203,7 +195,6 @@ function text(input: Layout) {
           ]
   return [
     ...(input.agent ? [input.agent] : []),
-    ...(input.auto ? ["auto"] : []),
     ...(input.model ? [...(input.agent ? ["·"] : []), input.model] : []),
     ...(input.provider ? [input.provider] : []),
     ...(input.variant ? ["·", input.variant] : []),
