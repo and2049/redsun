@@ -38,8 +38,8 @@ it.live("uses base configuration without depending on process.cwd()", () =>
     yield* Effect.promise(() => Promise.all([fs.mkdir(global), fs.mkdir(project)]))
     yield* Effect.promise(() =>
       Promise.all([
-        fs.writeFile(path.join(global, "opencode.json"), JSON.stringify({ model: "base/default" })),
-        fs.writeFile(path.join(project, "opencode.json"), JSON.stringify({ model: "project/default" })),
+        fs.writeFile(path.join(global, "redsun.json"), JSON.stringify({ model: "base/default" })),
+        fs.writeFile(path.join(project, "redsun.json"), JSON.stringify({ model: "project/default" })),
       ]),
     )
     const handler = yield* ServerFetch.make(
@@ -48,7 +48,7 @@ it.live("uses base configuration without depending on process.cwd()", () =>
         config: { directory: global },
         fs: { filewatcher: false },
       },
-      { overrides: [[Generate.node, generate]] },
+      { overrides: [Generate.node.replace(generate)] },
     )
 
     expect(global).not.toBe(process.cwd())

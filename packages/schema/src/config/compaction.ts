@@ -15,6 +15,5 @@ export class Info extends Schema.Class<Info>("Config.Compaction")({
   keep: Keep.pipe(optional),
   buffer: NonNegativeInt.pipe(optional),
   strategy: Strategy.pipe(optional),
-  keep_recent: NonNegativeInt.pipe(optional),
   max_tool_results: NonNegativeInt.pipe(optional),
 }) {}

@@ -1,26 +1,38 @@
+import { intro, log, outro, spinner } from "@clack/prompts"
 import { Effect, Option } from "effect"
-import { EOL } from "node:os"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Updater } from "../../services/updater"
-
-const METHODS = ["curl", "powershell"] as const
+import { handlePromptErrors } from "../../ui/prompt"
+import { OPENCODE_VERSION } from "../../version"
 
 export default Runtime.handler(
   Commands.commands.upgrade,
   Effect.fn("cli.upgrade")(function* (input) {
-    const requested = Option.getOrUndefined(input.method)
-    if (requested !== undefined && !METHODS.includes(requested as (typeof METHODS)[number]))
-      return yield* Effect.fail(new Error(`Unknown installation method: ${requested}`))
+    intro("Upgrade")
     const updater = yield* Updater.Service
-    const result = yield* updater.upgrade({
-      target: Option.getOrUndefined(input.target),
-      method: requested as Updater.Method | undefined,
-    })
-    if (result.status === "current") {
-      process.stdout.write(`redsun ${result.to} is already installed${EOL}`)
+    const method = Option.getOrUndefined(input.method) ?? (yield* updater.method())
+    if (!method)
+      return yield* Effect.fail(
+        new Error("Could not detect the installation method. Pass --method to choose how to upgrade redsun."),
+      )
+
+    log.info(`Using method: ${method}`)
+    const target = Option.getOrUndefined(input.target) ?? (yield* updater.latest())
+    const version = target.trim().replace(/^v/, "")
+    if (version === OPENCODE_VERSION) {
+      log.warn(`redsun upgrade skipped: ${version} is already installed`)
+      outro("Done")
       return
     }
-    process.stdout.write(`upgraded redsun ${result.from} -> ${result.to} using ${result.method}${EOL}`)
-  }),
+
+    log.info(`From ${OPENCODE_VERSION} → ${version}`)
+    const progress = spinner()
+    progress.start("Upgrading...")
+    yield* updater.upgrade(method, target).pipe(
+      Effect.tap(() => Effect.sync(() => progress.stop("Upgrade complete"))),
+      Effect.tapCause(() => Effect.sync(() => progress.stop("Upgrade failed", 1))),
+    )
+    outro("Done")
+  }, handlePromptErrors),
 )

@@ -95,7 +95,7 @@ async function render(input: {
           get: async () => ({ theme: { name: input.theme }, animations: true }),
           update: async () => ({}),
         },
-        packages: { resolve: async () => undefined },
+        packages: { prepare: async () => ({ directory: "" }) },
         terminalHandoff: async () => {
           queueMicrotask(handedOff)
           return {

@@ -1,6 +1,7 @@
 import { Argument, Flag, GlobalFlag } from "effect/unstable/cli"
 import { Schema } from "effect"
 import { Spec } from "../framework/spec"
+import { Updater } from "../services/updater"
 
 export const PrintLogs = GlobalFlag.setting("print-logs")({
   flag: Flag.boolean("print-logs").pipe(
@@ -56,6 +57,20 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     prompt: Flag.string("prompt").pipe(Flag.withDescription("Prompt to use"), Flag.optional),
   },
   commands: [
+    Spec.make("upgrade", {
+      description: "Upgrade redsun to the latest or a specific version",
+      params: {
+        target: Argument.string("target").pipe(
+          Argument.withDescription("Version to upgrade to (with or without a leading v)"),
+          Argument.optional,
+        ),
+        method: Flag.choice("method", Updater.methods).pipe(
+          Flag.withAlias("m"),
+          Flag.withDescription("Installation method to use"),
+          Flag.optional,
+        ),
+      },
+    }),
     Spec.make("acp", { description: "Start an Agent Client Protocol server" }),
     Spec.make("api", {
       description: "Make a request to the running server",
@@ -184,6 +199,24 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
             package: Argument.string("package").pipe(Argument.withDescription("npm registry or Git package specifier")),
           },
         }),
+        Spec.make("check", {
+          description: "Check package plugins for updates",
+          params: {
+            target: Argument.string("target").pipe(
+              Argument.withDescription("Configured package target"),
+              Argument.optional,
+            ),
+          },
+        }),
+        Spec.make("update", {
+          description: "Update package plugins",
+          params: {
+            target: Argument.string("target").pipe(
+              Argument.withDescription("Configured package target; omit to update all outdated plugins"),
+              Argument.optional,
+            ),
+          },
+        }),
         Spec.make("remove", {
           description: "Remove a plugin from global configuration",
           params: {
@@ -195,20 +228,6 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
     Spec.make("models", {
       description: "List all available models",
       params: ServerParams,
-    }),
-    Spec.make("upgrade", {
-      description: "Upgrade redsun to the latest or a specific version",
-      params: {
-        target: Argument.string("target").pipe(
-          Argument.withDescription("Version to upgrade to, for example 0.3.1"),
-          Argument.optional,
-        ),
-        method: Flag.string("method").pipe(
-          Flag.withAlias("m"),
-          Flag.withDescription("Installer to run: curl or powershell"),
-          Flag.optional,
-        ),
-      },
     }),
     Spec.make("stats", {
       description: "Show shareable usage statistics",

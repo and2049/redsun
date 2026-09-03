@@ -54,16 +54,15 @@ const withTool = <A, E, R>(directory: string, body: (registry: Tool.Interface) =
       AppNodeBuilder.build(
         LayerNode.group([Tool.node, LocationMutation.node, FileMutation.node, multieditToolNode]),
         [
-          [
-            Environment.node,
+          Environment.node.replace(
             transformEnvironmentFiles((files) => ({
               write: (target, content) =>
                 Effect.sync(() => writes.push(target)).pipe(Effect.andThen(files.write(target, content))),
             })),
-          ],
-          [Location.node, activeLocation],
-          [Formatter.node, formatter],
-          [Permission.node, permission],
+          ),
+          Location.node.replace(activeLocation),
+          Formatter.node.replace(formatter),
+          Permission.node.replace(permission),
         ],
       ),
     ),

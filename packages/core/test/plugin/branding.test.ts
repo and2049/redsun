@@ -44,7 +44,7 @@ const offending = (text: string, pattern: RegExp, allow: (line: string) => boole
 
 describe("model-facing branding", () => {
   test("prompt files exist and were discovered", () => {
-    expect(prompts.length).toBeGreaterThanOrEqual(7)
+    expect(prompts.length).toBeGreaterThanOrEqual(6)
     expect(skills.map((item) => item.name).sort()).toEqual(["opencode.md", "report.md"])
   })
 

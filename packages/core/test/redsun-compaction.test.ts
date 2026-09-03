@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { LLMClient, LLMEvent, LanguageModel, type LLMRequest } from "@opencode-ai/ai"
 import { OpenAIChat } from "@opencode-ai/ai/protocols"
+import { Agent } from "@opencode-ai/core/agent"
 import { Config } from "@opencode-ai/core/config"
 import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -13,6 +14,7 @@ import { SessionMessage } from "@opencode-ai/core/session/message"
 import { SessionModelRequest } from "@opencode-ai/core/session/model-request"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
+import type { SessionSchema } from "@opencode-ai/core/session/schema"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionStore } from "@opencode-ai/core/session/store"
 import { Session } from "@opencode-ai/core/session"
@@ -47,7 +49,7 @@ const client = Layer.mock(LLMClient.Service)({
   stream: (request: LLMRequest) => {
     requests.push(request)
     return Stream.make(
-      LLMEvent.textDelta({ id: "summary", text: "llm summary" }),
+      LLMEvent.textDelta({ id: "summary", text: "## Objective\n- llm summary" }),
       LLMEvent.finish({ reason: { normalized: "stop" } }),
     )
   },
@@ -57,9 +59,6 @@ const resolvedModel = SessionRunnerModel.resolved(model, {
   capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
   cost,
   limit: { context: 10_000, output: 1_000 },
-})
-const models = Layer.mock(SessionRunnerModel.Service)({
-  resolve: () => Effect.succeed(resolvedModel),
 })
 
 const harness = (compaction: Record<string, unknown>) => {
@@ -76,18 +75,13 @@ const harness = (compaction: Record<string, unknown>) => {
         SessionCompaction.node,
         SessionModelRequest.node,
       ]),
-      [
-        [Bus.node, Bus.configured({ persist: true })],
-        [llmClient, client],
-        [Config.node, config],
-        [SessionRunnerModel.node, models],
-      ],
+      [Bus.node.replace(Bus.configured({ persist: true })), llmClient.replace(client), Config.node.replace(config)],
     ),
   )
 }
 
 // keep.tokens: 0 forces everything except the newest user turn into the head.
-const hybrid = harness({ strategy: "hybrid", keep: { tokens: 0 }, keep_recent: 1 })
+const hybrid = harness({ strategy: "hybrid", keep: { tokens: 0 } })
 const algorithmic = harness({ strategy: "algorithmic", keep: { tokens: 0 } })
 
 // Settings reach the service through ConfigCompactionPlugin's transform in production;
@@ -95,11 +89,21 @@ const algorithmic = harness({ strategy: "algorithmic", keep: { tokens: 0 } })
 const configured = (settings: Partial<SessionCompaction.Settings>) =>
   Effect.gen(function* () {
     const compaction = yield* SessionCompaction.Service
-    yield* compaction.transform((draft) => draft.configure(settings))
+    yield* compaction.transform((editor) => editor.configure(settings))
     return compaction
   })
 
 const message = (value: Record<string, unknown>) => decodeMessage({ time: { created: 0 }, ...value })
+
+const loaded = (session: SessionSchema.Info, messages: readonly SessionMessage.Info[]) => ({
+  session,
+  messages,
+  model: resolvedModel,
+  agent: { id: Agent.defaultID, info: Agent.Info.default(Agent.defaultID) },
+  initial: "Session instructions",
+  instructionUpdate: "",
+  tools: { definitions: [], execute: () => Effect.die("Compaction must not execute tools") },
+})
 
 const conversation = () => [
   message({
@@ -231,44 +235,60 @@ test("extractor caps every category", () => {
   expect(state.results.at(-1)).toBe("shell: output 39")
 })
 
-test("buildPrompt folds the inventory in without repeating it downstream", () => {
-  const prompt = SessionCompaction.buildPrompt({
-    inventory: "## Task\n\nShip it",
-    context: ["conversation"],
-  })
+test("buildPrompt folds the inventory in ahead of the template rules", () => {
+  const prompt = SessionCompaction.buildPrompt(false, "## Task\n\nShip it")
   expect(prompt).toContain("## Structured Inventory")
   expect(prompt).toContain("Ship it")
-  expect(prompt.indexOf("## Structured Inventory")).toBeLessThan(
-    prompt.indexOf("The following is the conversation history:"),
-  )
-  expect(SessionCompaction.buildPrompt({ context: ["conversation"] })).not.toContain("## Structured Inventory")
+  expect(prompt.indexOf("## Objective")).toBeLessThan(prompt.indexOf("## Structured Inventory"))
+  expect(SessionCompaction.buildPrompt(false)).not.toContain("## Structured Inventory")
 })
 
-hybrid.effect("hybrid compaction sends the inventory and only the recent head slice", () =>
+hybrid.effect("hybrid compaction sends the head as transcript plus the inventory", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ strategy: "hybrid", tokens: 0, keepRecent: 1 })
+    const compaction = yield* configured({ strategy: "hybrid", tokens: 0 })
     const { session } = yield* seedSession("hybrid")
+    const messages = conversation()
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () => Effect.succeed(resolvedModel),
+        resolveContext: () => Effect.succeed(loaded(session, messages)),
         prepare: (yield* SessionModelRequest.Service).prepare,
-        messages: conversation(),
+        messages,
         inputID: SessionMessage.ID.make("msg_compact_hybrid"),
       }),
     ).toEqual({ status: "completed" })
     expect(requests).toHaveLength(1)
     const prompt = JSON.stringify(requests[0]?.messages)
     expect(prompt).toContain("## Structured Inventory")
+    expect(prompt).toContain("- `src/auth/redirect.ts`: changed; read")
+    // The head rides as real conversation messages, not serialized text.
     expect(prompt).toContain("Fix the login redirect bug in the auth flow.")
-    // keep_recent: 1 keeps only the assistant message in the serialized conversation.
     expect(prompt).not.toContain("[User]: Fix the login redirect bug in the auth flow.")
-    expect(prompt).toContain("[Assistant]: The redirect drops the query string before validation.")
   }),
 )
 
-algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
+hybrid.effect("llm strategy sends no inventory", () =>
+  Effect.gen(function* () {
+    requests = []
+    const compaction = yield* configured({ strategy: "llm", tokens: 0 })
+    const { session } = yield* seedSession("llm")
+    const messages = conversation()
+    expect(
+      yield* compaction.compactManual({
+        session,
+        resolveContext: () => Effect.succeed(loaded(session, messages)),
+        prepare: (yield* SessionModelRequest.Service).prepare,
+        messages,
+        inputID: SessionMessage.ID.make("msg_compact_llm"),
+      }),
+    ).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    expect(JSON.stringify(requests[0]?.messages)).not.toContain("## Structured Inventory")
+  }),
+)
+
+algorithmic.effect("algorithmic compaction completes without an LLM call or model resolution", () =>
   Effect.gen(function* () {
     requests = []
     const compaction = yield* configured({ strategy: "algorithmic", tokens: 0 })
@@ -276,7 +296,7 @@ algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () => Effect.succeed(resolvedModel),
+        resolveContext: () => Effect.die("algorithmic compaction must not resolve a model"),
         prepare: (yield* SessionModelRequest.Service).prepare,
         messages: conversation(),
         inputID: SessionMessage.ID.make("msg_compact_algorithmic"),
@@ -308,7 +328,7 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () => Effect.succeed(resolvedModel),
+        resolveContext: () => Effect.die("algorithmic compaction must not resolve a model"),
         prepare: (yield* SessionModelRequest.Service).prepare,
         messages: [previous, ...conversation()],
         inputID: SessionMessage.ID.make("msg_compact_carry"),
@@ -323,11 +343,13 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
   }),
 )
 
-hybrid.effect("compaction serializes only the latest read of a file", () =>
+hybrid.effect("the retained tail serializes only the latest read of a file", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ strategy: "hybrid", tokens: 0, keepRecent: 10 })
-    const { session } = yield* seedSession("stale-read")
+    // The tail allowance fits the newest three messages but not the long opener, so the
+    // reads land in the retained tail rather than the summarized head.
+    const compaction = yield* configured({ strategy: "hybrid", tokens: 200 })
+    const { session, store } = yield* seedSession("stale-read")
     const read = (id: string, text: string) => ({
       type: "tool",
       id,
@@ -336,6 +358,7 @@ hybrid.effect("compaction serializes only the latest read of a file", () =>
       time: { created: 0 },
     })
     const messages = [
+      message({ id: "msg_user_zero", type: "user", text: "x".repeat(4_000) }),
       message({ id: "msg_user_stale", type: "user", text: "Fix the login redirect bug in the auth flow." }),
       message({
         id: "msg_assistant_stale",
@@ -350,15 +373,17 @@ hybrid.effect("compaction serializes only the latest read of a file", () =>
     expect(
       yield* compaction.compactManual({
         session,
-        resolveModel: () => Effect.succeed(resolvedModel),
+        resolveContext: () => Effect.succeed(loaded(session, messages)),
         prepare: (yield* SessionModelRequest.Service).prepare,
         messages,
         inputID: SessionMessage.ID.make("msg_compact_stale"),
       }),
     ).toEqual({ status: "completed" })
-    const prompt = JSON.stringify(requests[0]?.messages)
-    expect(prompt).toContain("[Tool result]: [superseded by a later read of the same file]")
-    expect(prompt).toContain("[Tool result]: NEW_READ_CONTENT")
-    expect(prompt).not.toContain("[Tool result]: OLD_READ_CONTENT")
+    const context = yield* store.context(session.id)
+    const recent = context.at(-1)
+    const tail = recent?.type === "compaction" && recent.status === "completed" ? recent.recent : ""
+    expect(tail).toContain("[Tool result]: [superseded by a later read of the same file]")
+    expect(tail).toContain("[Tool result]: NEW_READ_CONTENT")
+    expect(tail).not.toContain("[Tool result]: OLD_READ_CONTENT")
   }),
 )

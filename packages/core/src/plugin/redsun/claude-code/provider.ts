@@ -10,7 +10,7 @@ import { Form } from "../../../form.js"
 import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
 import { Permission } from "../../../permission.js"
-import { PluginRuntime } from "../../runtime.js"
+import { Session } from "../../../session.js"
 import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"
 import { Tool } from "../../../tool.js"
@@ -91,7 +91,7 @@ export const Plugin = define({
     const permission = yield* Permission.Service
     const forms = yield* Form.Service
     const tools = yield* Tool.Service
-    const runtime = yield* PluginRuntime.Service
+    const sessions = yield* Session.Service
     const bus = yield* Bus.Service
     const agentRegistry = yield* Agent.Service
 
@@ -167,7 +167,7 @@ export const Plugin = define({
           messageID: () => SessionMessage.ID.create(),
           createChild: (input) =>
             Effect.runPromise(
-              runtime.session
+              sessions
                 .create({
                   parentID: sessionID as never,
                   title: input.title,
@@ -193,7 +193,7 @@ export const Plugin = define({
           agents.set(event.sessionID, event.agent)
           const info = yield* agentRegistry.resolve(event.agent).pipe(Effect.orElseSucceed(() => undefined))
           profiles.set(event.agent, { mode: info?.mode, system: info?.system })
-          const session = yield* runtime.session.get(event.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+          const session = yield* sessions.get(event.sessionID).pipe(Effect.orElseSucceed(() => undefined))
           if (session?.parentID) workers.add(event.sessionID)
         }
         const stored = yield* kv.get(cursorKey(event.sessionID))
@@ -262,7 +262,7 @@ export const Plugin = define({
                 sessionID: sessionID as never,
                 ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
               })
-              yield* runtime.session.switchAgent({
+              yield* sessions.switchAgent({
                 sessionID: sessionID as never,
                 agent: Agent.ID.make("build"),
               })
@@ -280,7 +280,7 @@ export const Plugin = define({
         return Effect.runPromise(
           Effect.gen(function* () {
             const snapshot = yield* tools.snapshot()
-            const messages = yield* runtime.session.messages({ sessionID: sessionID as never, order: "desc", limit: 1 })
+            const messages = yield* sessions.messages({ sessionID: sessionID as never, order: "desc", limit: 1 })
             const messageID = messages[0]?.id
             if (!messageID) return yield* Effect.fail(new Error("Session has no message to attribute the task to."))
             const result = yield* snapshot.execute({
