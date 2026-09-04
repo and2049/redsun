@@ -36,6 +36,11 @@ jobs:
         run: bun run lint:effect-simplifications
         timeout-minutes: 5
 
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep
+
       - name: Test core
         run: cd packages/core && bun run test
         timeout-minutes: 20
