@@ -210,7 +210,9 @@ const layer = Layer.effect(
       Effect.gen(function* () {
         const { Arborist } = yield* Effect.promise(() => import("@npmcli/arborist"))
         const add = input.add ?? []
-        const npmOptions = yield* NpmConfig.load(input.config ?? input.dir)
+        // Arborist's reify runs a registry audit by default; plugin installs never surface
+        // the report and the request stalls installs when the endpoint is slow.
+        const npmOptions = { ...(yield* NpmConfig.load(input.config ?? input.dir)), audit: false }
         const options = input.update ? { ...npmOptions, preferOnline: true, noGitRevCache: true } : npmOptions
         const arborist = new Arborist({
           ...options,
@@ -219,7 +221,6 @@ const layer = Layer.effect(
           progress: false,
           savePrefix: "",
           ignoreScripts: true,
-          audit: false,
         })
         return yield* Effect.tryPromise({
           try: () =>
@@ -229,7 +230,6 @@ const layer = Layer.effect(
               update: input.update,
               save: true,
               saveType: "prod",
-              audit: false,
             }),
           catch: (cause) =>
             new InstallFailedError({
