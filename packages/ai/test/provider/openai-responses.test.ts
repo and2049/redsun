@@ -12,6 +12,7 @@ import {
   LanguageModel,
   ToolCallPart,
   ToolDefinition,
+  ToolNamespace,
   ToolResultPart,
   TransportError,
   Usage,
@@ -140,6 +141,94 @@ describe("OpenAI Responses route", () => {
         { type: "image_generation", action: "generate", quality: "high", size: "1024x1024" },
       ])
       expect(prepared.body.tool_choice).toEqual({ type: "image_generation" })
+    }),
+  )
+
+  it.effect("lowers tool namespaces without flattening leaf names", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          prompt: "Find a customer and their orders.",
+          tools: [
+            ToolNamespace.make({
+              name: "crm",
+              description: "Customer management",
+              tools: [
+                ToolDefinition.make({ name: "lookup", description: "Look up a customer", inputSchema: {} }),
+                ToolDefinition.make({ name: "orders", description: "List customer orders", inputSchema: {} }),
+              ],
+            }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.tools).toEqual([
+        {
+          type: "namespace",
+          name: "crm",
+          description: "Customer management",
+          tools: [
+            { type: "function", name: "lookup", description: "Look up a customer", parameters: {}, strict: false },
+            { type: "function", name: "orders", description: "List customer orders", parameters: {}, strict: false },
+          ],
+        },
+      ])
+    }),
+  )
+
+  it.effect("flattens nested levels within a native tool namespace", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          tools: [
+            {
+              type: "namespace",
+              name: "crm",
+              description: "Customer management",
+              tools: [
+                {
+                  type: "namespace",
+                  name: "orders",
+                  description: "Order management",
+                  tools: [ToolDefinition.make({ name: "list", description: "List orders", inputSchema: {} })],
+                },
+              ],
+            },
+          ],
+        }),
+      )
+
+      expect(prepared.body.tools).toEqual([
+        {
+          type: "namespace",
+          name: "crm",
+          description: "Customer management",
+          tools: [{ type: "function", name: "orders_list", description: "List orders", parameters: {}, strict: false }],
+        },
+      ])
+    }),
+  )
+
+  it.effect("defaults tool namespace descriptions", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          tools: [
+            {
+              type: "namespace",
+              name: "crm",
+              tools: [ToolDefinition.make({ name: "lookup", description: "Look up a customer", inputSchema: {} })],
+            },
+          ],
+        }),
+      )
+
+      expect(prepared.body.tools).toEqual([
+        expect.objectContaining({ type: "namespace", name: "crm", description: "Tools in the crm namespace." }),
+      ])
     }),
   )
 
@@ -469,7 +558,7 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("continues an item-id-less tool call with only the new tool output", () =>
+  it.effect("continues a streamed tool call with only the new tool output", () =>
     Effect.gen(function* () {
       const firstRequest = {
         type: "response.create",
@@ -485,6 +574,7 @@ describe("OpenAI Responses route", () => {
           type: "response.output_item.done",
           item: {
             type: "function_call",
+            id: "fc_1",
             status: "completed",
             call_id: "call_1",
             name: "weather",
@@ -2129,30 +2219,31 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("routes item-id-less function arguments by output index and prefers item completion", () =>
+  it.effect("preserves tool namespaces through streaming and history replay", () =>
     Effect.gen(function* () {
-      const item = { type: "function_call", call_id: "call_1", name: "lookup", arguments: "" }
+      const item = {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        namespace: "crm",
+        name: "lookup",
+        arguments: "",
+      }
       const response = yield* LLMClient.generate(request).pipe(
         Effect.provide(
           fixedResponse(
             sseEvents(
-              { type: "response.output_item.added", output_index: 2, item },
+              { type: "response.output_item.added", output_index: 0, item },
               {
                 type: "response.function_call_arguments.delta",
-                output_index: 2,
-                item_id: "opaque_delta",
-                delta: '{"query":"streamed"}',
-              },
-              {
-                type: "response.function_call_arguments.done",
-                output_index: 2,
-                item_id: "opaque_done",
-                arguments: '{"query":"arguments-done"}',
+                output_index: 0,
+                item_id: "fc_1",
+                delta: '{"id":"123"}',
               },
               {
                 type: "response.output_item.done",
-                output_index: 2,
-                item: { ...item, arguments: '{"query":"output-item-done"}' },
+                output_index: 0,
+                item: { ...item, arguments: '{"id":"123"}' },
               },
               { type: "response.completed", response: { id: "resp_1" } },
             ),
@@ -2160,16 +2251,39 @@ describe("OpenAI Responses route", () => {
         ),
       )
 
-      expect(response.events.filter((event) => event.type === "tool-input-delta")).toMatchObject([
-        { id: "call_1", text: '{"query":"streamed"}' },
+      const toolEvents = response.events.filter((event) => event.type.startsWith("tool-"))
+      expect(toolEvents).toEqual([
+        expect.objectContaining({ type: "tool-input-start", name: "lookup", namespace: "crm" }),
+        expect.objectContaining({ type: "tool-input-delta", name: "lookup", namespace: "crm" }),
+        expect.objectContaining({ type: "tool-input-end", name: "lookup", namespace: "crm" }),
+        expect.objectContaining({ type: "tool-call", name: "lookup", namespace: "crm", input: { id: "123" } }),
       ])
-      expect(response.events.filter(LLMEvent.is.toolCall)).toEqual([
-        expect.objectContaining({ id: "call_1", name: "lookup", input: { query: "output-item-done" } }),
+      expect(response.message.content).toEqual([
+        expect.objectContaining({ type: "tool-call", name: "lookup", namespace: "crm", input: { id: "123" } }),
       ])
-      expect(response.events.find(LLMEvent.is.toolCall)?.providerMetadata).toBeUndefined()
+
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            response.message,
+            Message.tool({ id: "call_1", name: "lookup", namespace: "crm", result: { customer: "Ada" } }),
+          ],
+        }),
+      )
+      expect(prepared.body.input).toEqual([
+        {
+          type: "function_call",
+          id: "fc_1",
+          call_id: "call_1",
+          namespace: "crm",
+          name: "lookup",
+          arguments: '{"id":"123"}',
+        },
+        { type: "function_call_output", call_id: "call_1", output: '{"customer":"Ada"}' },
+      ])
     }),
   )
-
   it.effect("routes reasoning summary events by output index", () =>
     Effect.gen(function* () {
       const response = yield* LLMClient.generate(request).pipe(
@@ -2389,7 +2503,7 @@ describe("OpenAI Responses route", () => {
                 {
                   type: "response.output_item.added",
                   output_index: 0,
-                  item: { type: "function_call", call_id: "call_1", name: "lookup", arguments: "" },
+                  item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "lookup", arguments: "" },
                 },
                 event,
                 { type: "response.completed", response: { id: "resp_1" } },
@@ -2890,7 +3004,7 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("ignores duplicate item boundary events", () =>
+  it.effect("ignores duplicate item start events", () =>
     Effect.gen(function* () {
       const response = yield* LLMClient.generate(request).pipe(
         Effect.provide(
@@ -2900,7 +3014,6 @@ describe("OpenAI Responses route", () => {
               // Duplicate added for a known item is not overlap and must no-op.
               { type: "response.output_item.added", item: { type: "reasoning", id: "rs_1" } },
               { type: "response.reasoning_summary_text.delta", item_id: "rs_1", summary_index: 0, delta: "Think" },
-              { type: "response.output_item.done", item: { type: "reasoning", id: "rs_1" } },
               { type: "response.output_item.done", item: { type: "reasoning", id: "rs_1" } },
               {
                 type: "response.output_item.added",
@@ -2920,25 +3033,6 @@ describe("OpenAI Responses route", () => {
                   name: "lookup",
                   arguments: '{"query":"weather"}',
                 },
-              },
-              {
-                type: "response.output_item.done",
-                item: {
-                  type: "function_call",
-                  id: "fc_1",
-                  call_id: "call_1",
-                  name: "lookup",
-                  arguments: '{"query":"weather"}',
-                },
-              },
-              // Duplicates that drop the item id still resolve the same call.
-              {
-                type: "response.output_item.done",
-                item: { type: "function_call", call_id: "call_1", name: "lookup", arguments: '{"query":"weather"}' },
-              },
-              {
-                type: "response.output_item.added",
-                item: { type: "function_call", call_id: "call_1", name: "lookup", arguments: "" },
               },
               { type: "response.completed", response: { id: "resp_1" } },
             ),
@@ -3793,43 +3887,6 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("finalizes and replays a completed function call without an optional item id", () =>
-    Effect.gen(function* () {
-      const response = yield* LLMClient.generate(request).pipe(
-        Effect.provide(
-          fixedResponse(
-            sseEvents(
-              {
-                type: "response.output_item.done",
-                item: { type: "function_call", call_id: "call_1", name: "lookup", arguments: '{"query":"weather"}' },
-              },
-              { type: "response.completed", response: { id: "resp_1" } },
-            ),
-          ),
-        ),
-      )
-
-      expect(response.events.filter(LLMEvent.is.toolCall)).toEqual([
-        expect.objectContaining({ id: "call_1", name: "lookup", input: { query: "weather" } }),
-      ])
-      expect(response.events.find(LLMEvent.is.toolCall)?.providerMetadata).toBeUndefined()
-
-      const prepared = yield* compileRequest(
-        LLM.request({
-          model,
-          messages: [
-            response.message,
-            Message.tool({ id: "call_1", name: "lookup", resultType: "json", result: { forecast: "sunny" } }),
-          ],
-        }),
-      )
-      expect(prepared.body.input).toEqual([
-        { type: "function_call", call_id: "call_1", name: "lookup", arguments: '{"query":"weather"}' },
-        { type: "function_call_output", call_id: "call_1", output: '{"forecast":"sunny"}' },
-      ])
-    }),
-  )
-
   it.effect("emits only missing function arguments from the arguments done event", () =>
     Effect.gen(function* () {
       const body = sseEvents(
@@ -4017,7 +4074,7 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("uses completed response output when item completion and its terminal item id are missing", () =>
+  it.effect("uses completed response output when output item completion is missing", () =>
     Effect.gen(function* () {
       const body = sseEvents(
         {
@@ -4032,6 +4089,7 @@ describe("OpenAI Responses route", () => {
             output: [
               {
                 type: "function_call",
+                id: "fc_item_1",
                 call_id: "call_1",
                 name: "lookup",
                 arguments: '{"query":"weather"}',
@@ -4050,37 +4108,6 @@ describe("OpenAI Responses route", () => {
       expect(response.events.filter(LLMEvent.is.toolInputEnd)).toHaveLength(1)
       expect(response.events.filter(LLMEvent.is.toolCall)).toHaveLength(1)
       expect(response.finishReason.normalized).toBe("tool-calls")
-    }),
-  )
-
-  it.effect("reconciles an item-id-less pending function call from completed response output", () =>
-    Effect.gen(function* () {
-      const item = { type: "function_call", call_id: "call_1", name: "lookup", arguments: "" }
-      const response = yield* LLMClient.generate(request).pipe(
-        Effect.provide(
-          fixedResponse(
-            sseEvents(
-              { type: "response.output_item.added", output_index: 0, item },
-              {
-                type: "response.function_call_arguments.delta",
-                output_index: 0,
-                item_id: "opaque_delta",
-                delta: '{"query":"partial',
-              },
-              {
-                type: "response.completed",
-                response: { id: "resp_1", output: [{ ...item, arguments: '{"query":"complete"}' }] },
-              },
-            ),
-          ),
-        ),
-      )
-
-      expect(response.events.filter(LLMEvent.is.toolCall)).toEqual([
-        expect.objectContaining({ id: "call_1", name: "lookup", input: { query: "complete" } }),
-      ])
-      expect(response.events.find(LLMEvent.is.toolCall)?.providerMetadata).toBeUndefined()
-      expect(response.events.filter(LLMEvent.is.toolInputEnd)).toHaveLength(1)
     }),
   )
 

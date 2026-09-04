@@ -164,6 +164,7 @@ export type TuiInput = {
   args: Args
   config: Config.Interface
   updater?: {
+    monitor: (notify: (version: string) => void, signal: AbortSignal) => Promise<void>
     apply: (version: string) => Promise<void>
   }
   packages: PackageSource
@@ -198,9 +199,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const service = managed
     ? {
         reconnect: async (signal: AbortSignal) => {
-          // Give the server a chance to respawn itself before starting client-side recovery.
-          await new Promise((resolve) => setTimeout(resolve, 50))
-          if (signal.aborted) throw signal.reason ?? new Error("Server reconnect cancelled")
           const endpoint = await managed.reconnect(signal)
           const next = { baseUrl: endpoint.url, headers: Service.headers(endpoint) }
           return { api: OpenCode.make(next), url: endpoint.url }
@@ -481,6 +479,36 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
     "update-notifications",
     { initial: { versions: [] } },
   )
+  const showUpdate = (version: string) => {
+    const updater = props.updater
+    if (!updater || updateNotifications.versions.includes(version)) return
+    void markUpdateNotification((draft) => {
+      draft.versions = [...draft.versions, version].slice(-100)
+    }).catch((error) => log.error("failed to persist update notification", { error }))
+    const key = `update:${version}`
+    dialog.replace(
+      () => (
+        <DialogUpdate
+          dialogKey={key}
+          version={version}
+          install={() => updater.apply(version)}
+          restart={client.restart}
+        />
+      ),
+      undefined,
+      { key },
+    )
+    dialog.setCentered(true)
+  }
+  onMount(() => {
+    const updater = props.updater
+    if (!updater) return
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    void updater.monitor(showUpdate, controller.signal).catch((error) => {
+      if (!controller.signal.aborted) log.error("update monitor failed", { error })
+    })
+  })
   const [openSessions, setOpenSessions] = createSignal<SessionInfo[]>([])
   // Toast once when an MCP server enters a failed or needs-auth state so the user knows to act,
   // without having to open the status panel. Tracking the last alerted status avoids re-toasting
@@ -1109,19 +1137,6 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
       variant: evt.data.variant,
       duration: evt.data.duration,
     })
-  })
-
-  event.on("installation.update-available", (evt) => {
-    const updater = props.updater
-    const restart = client.restart
-    if (!updater || !restart) return
-    const version = evt.data.version
-    if (updateNotifications.versions.includes(version)) return
-    void markUpdateNotification((draft) => {
-      draft.versions = [...draft.versions, version].slice(-100)
-    }).catch((error) => log.error("failed to persist update notification", { error }))
-    dialog.replace(() => <DialogUpdate version={version} install={() => updater.apply(version)} restart={restart} />)
-    dialog.setCentered(true)
   })
 
   event.on("tui.session.select", (evt, { workspace }) => {
