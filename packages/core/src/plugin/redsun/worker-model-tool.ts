@@ -14,6 +14,7 @@ export const NAME = "worker_model"
 export const FIELD = "model"
 export const CLEAR = RedsunWorkerModel.CLEAR
 export const FORM_KIND = "worker-model"
+export const INPUT = Schema.Record(Schema.String, Schema.Unknown)
 
 export const DESCRIPTION =
   "Ask the user which model worker subagents should run on for this session. " +
@@ -46,7 +47,7 @@ export const Plugin = define({
           name: NAME,
           options: { codemode: false },
           description: DESCRIPTION,
-          input: Schema.Struct({}),
+          input: INPUT,
           output: Schema.Struct({ model: Schema.String }),
           execute: (_input, context) =>
             Effect.gen(function* () {

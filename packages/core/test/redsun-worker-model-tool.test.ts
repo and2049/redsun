@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { Model } from "@opencode-ai/schema/model"
 import { Provider } from "@opencode-ai/schema/provider"
 import { RedsunWorkerModelTool } from "@opencode-ai/core/plugin/redsun/worker-model-tool"
+import { definition } from "@opencode-ai/core/tool/runtime"
 
 const model = (providerID: string, id: string, name: string) =>
   ({
@@ -47,5 +48,21 @@ describe("RedsunWorkerModelTool", () => {
     // The TUI answers this form with the same picker `/models` uses; without the
     // marker it would render as the generic dock form instead.
     expect(RedsunWorkerModelTool.FORM_KIND).toBe("worker-model")
+  })
+})
+
+describe("RedsunWorkerModelTool input schema", () => {
+  it("lowers to a root object schema so OpenAI accepts the function definition", () => {
+    // Effect renders an empty Struct as `anyOf: [object, array]` with no root `type`,
+    // which OpenAI rejects for every function tool.
+    const tool = {
+      name: RedsunWorkerModelTool.NAME,
+      description: RedsunWorkerModelTool.DESCRIPTION,
+      input: RedsunWorkerModelTool.INPUT,
+      execute: () => {
+        throw new Error("unused")
+      },
+    }
+    expect(definition(tool as never).inputSchema).toMatchObject({ type: "object" })
   })
 })
