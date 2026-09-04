@@ -115,9 +115,9 @@ function View(props: { context: Plugin.Context }) {
         flexShrink={0}
         gap={2}
       >
-        <Directory context={props.context} />
-        <Mcp context={props.context} />
         <Plugins context={props.context} />
+        <Mcp context={props.context} />
+        <Directory context={props.context} />
         <box flexGrow={1} />
         <Show when={visibility().version}>
           <box flexShrink={0}>

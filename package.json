@@ -27,7 +27,7 @@
       "packages/*"
     ],
     "catalog": {
-      "@anthropic-ai/claude-agent-sdk": "0.3.251",
+      "@anthropic-ai/claude-agent-sdk": "0.3.252",
       "@effect/opentelemetry": "4.0.0-rc.112",
       "@effect/platform-node": "4.0.0-rc.112",
       "@effect/platform-node-shared": "4.0.0-rc.112",
