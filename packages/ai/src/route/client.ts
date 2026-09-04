@@ -487,10 +487,14 @@ export function make<Body, Prepared, Frame, Event, State>(
 }
 
 const prepareRequest = (request: LLMRequest) => {
-  const original = applyCachePolicy(resolveRequestOptions(request))
+  const original = resolveRequestOptions(request)
   const sanitized = LLMRequest.update(original, sanitizeSurrogates({ ...LLMRequest.input(original), model: undefined }))
-  const tools = [...new Map(sanitized.tools.map((tool) => [tool.name, tool])).values()]
-  const resolved = tools.length === sanitized.tools.length ? sanitized : LLMRequest.update(sanitized, { tools })
+  // Deduplicate per sibling level; a tool and a namespace may share a name.
+  const dedupe = (tools: LLMRequest["tools"]): LLMRequest["tools"] =>
+    [...new Map(tools.map((tool) => [`${tool.type}:${tool.name}`, tool])).values()].map((tool) =>
+      tool.type === "tool" ? tool : { ...tool, tools: dedupe(tool.tools) },
+    )
+  const resolved = applyCachePolicy(LLMRequest.update(sanitized, { tools: dedupe(sanitized.tools) }))
   const headers = resolved.model.route.headers?.({ request: resolved })
   return headers === undefined
     ? resolved
@@ -585,9 +589,12 @@ export const layer: Layer.Layer<Service, never, RequestExecutor.Service> = Layer
         Effect.suspend(() => {
           const operation = request.model.route.compact
           if (!operation)
-            return ProviderShared.invalidRequest(
-              `${request.model.provider}/${request.model.route.id} does not support explicit compaction`,
-            )
+            return ProviderShared.unsupportedOperation({
+              operation: "compact",
+              provider: request.model.provider,
+              route: request.model.route.id,
+              message: `${request.model.provider}/${request.model.route.id} does not support explicit compaction`,
+            })
           return operation(prepareRequest(request), executor, options)
         }),
     })

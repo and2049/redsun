@@ -94,6 +94,7 @@ export const Definitions = {
 
   "session.export": keybind("none", "Export session to editor"),
   "session.copy": keybind("none", "Copy session transcript"),
+  "session.copy.id": keybind("none", "Copy session ID"),
   "session.move": keybind("none", "Move session"),
   "session.new": keybind("ctrl+n", "Create a new session"),
   "session.list": keybind("none", "List all sessions"),

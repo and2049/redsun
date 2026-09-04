@@ -921,7 +921,7 @@ export function FormPrompt(props: {
                     }
                     return (
                       <box
-                        onMouseOver={() => setStore("selected", i())}
+                        onMouseMove={() => setStore("selected", i())}
                         onMouseDown={() => setStore("selected", i())}
                         onMouseUp={() => {
                           if (renderer.getSelection()?.getSelectedText()) return
@@ -975,7 +975,7 @@ export function FormPrompt(props: {
                 </For>
                 <Show when={custom()}>
                   <box
-                    onMouseOver={() => setStore("selected", rows().length)}
+                    onMouseMove={() => setStore("selected", rows().length)}
                     onMouseDown={() => setStore("selected", rows().length)}
                     onMouseUp={() => {
                       if (renderer.getSelection()?.getSelectedText()) return
