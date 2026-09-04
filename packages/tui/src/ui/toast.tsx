@@ -45,7 +45,7 @@ function ToastSurface(props: {
   return (
     <box
       position="absolute"
-      top={1}
+      top={dimensions().width < 64 ? 2 : 1}
       right={2}
       maxWidth={Math.min(60, dimensions().width - 6)}
       justifyContent="center"
