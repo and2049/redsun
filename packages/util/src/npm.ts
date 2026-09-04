@@ -219,6 +219,7 @@ const layer = Layer.effect(
           progress: false,
           savePrefix: "",
           ignoreScripts: true,
+          audit: false,
         })
         return yield* Effect.tryPromise({
           try: () =>
@@ -228,6 +229,7 @@ const layer = Layer.effect(
               update: input.update,
               save: true,
               saveType: "prod",
+              audit: false,
             }),
           catch: (cause) =>
             new InstallFailedError({
