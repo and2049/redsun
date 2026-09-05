@@ -119,6 +119,7 @@ const pinnedSessionBindingCommands = [
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
+  "model.refresh",
   "worker.model",
   "worker.variant",
   "model.cycle_recent",
@@ -452,6 +453,11 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
   const event = useEvent()
   const client = useClient()
   const toast = useToast()
+  const refreshModels = () =>
+    client.api.model
+      .refresh()
+      .then(() => toast.show({ variant: "success", message: "Model catalog refreshed" }))
+      .catch(() => toast.show({ variant: "error", message: "Failed to refresh model catalog" }))
   const theme = useTheme()
   const tabsTheme = useTheme("elevated")
   const openWorkerModel = useWorkerModelDialog()
@@ -738,10 +744,18 @@ function App(props: { pair?: DialogPairCredentials; updater?: TuiInput["updater"
         suggested: true,
         category: "Agent",
         // Bias /mo toward /models over /move without changing global fuzzy scoring.
-        slash: { name: "models", aliases: ["mo"] },
-        run: () => {
+        slash: { name: "models", aliases: ["mo"], arguments: "optional" as const },
+        run: (input?: string) => {
+          if (input?.trim() === "refresh") return refreshModels()
           dialog.replace(() => <DialogModel />)
         },
+      },
+      {
+        name: "model.refresh",
+        title: "Refresh model catalog",
+        category: "Agent",
+        description: "Re-fetch the models.dev catalog and repopulate the model list",
+        run: refreshModels,
       },
       {
         name: "worker.model",

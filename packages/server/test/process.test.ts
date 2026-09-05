@@ -15,6 +15,7 @@ it.live("allows browser preflight requests without credentials", () =>
         cors: ["http://192.168.1.10:3001", "https://example.com"],
         app: { version: "test-version" },
         database: { path: ":memory:" },
+        models: { fetch: false },
       },
       undefined,
       (api) =>
