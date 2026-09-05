@@ -2015,28 +2015,30 @@ export function make(options: ClientOptions) {
         ),
     },
     worktree: {
-      list: (input: WorktreeListInput, requestOptions?: RequestOptions) =>
+      list: (input?: WorktreeListInput, requestOptions?: RequestOptions) =>
         request<WorktreeListOutput>(
           {
             method: "GET",
-            path: `/api/worktree/${encodeURIComponent(input.projectID)}`,
+            path: `/api/worktree`,
+            query: { location: input?.["location"] },
             successStatus: 200,
             declaredStatuses: [400, 401],
             empty: false,
           },
           requestOptions,
         ),
-      create: (input: WorktreeCreateInput, requestOptions?: RequestOptions) =>
+      create: (input?: WorktreeCreateInput, requestOptions?: RequestOptions) =>
         request<WorktreeCreateOutput>(
           {
             method: "POST",
-            path: `/api/worktree/${encodeURIComponent(input.projectID)}`,
+            path: `/api/worktree`,
+            query: { location: input?.["location"] },
             body: {
-              strategy: input["strategy"],
-              from: input["from"],
-              branch: input["branch"],
-              directory: input["directory"],
-              name: input["name"],
+              strategy: input?.["strategy"],
+              from: input?.["from"],
+              branch: input?.["branch"],
+              directory: input?.["directory"],
+              name: input?.["name"],
             },
             successStatus: 200,
             declaredStatuses: [400, 401],
@@ -2048,7 +2050,8 @@ export function make(options: ClientOptions) {
         request<WorktreeRemoveOutput>(
           {
             method: "DELETE",
-            path: `/api/worktree/${encodeURIComponent(input.projectID)}`,
+            path: `/api/worktree`,
+            query: { location: input["location"] },
             body: { directory: input["directory"], force: input["force"] },
             successStatus: 204,
             declaredStatuses: [400, 401],
@@ -2056,11 +2059,12 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
-      refresh: (input: WorktreeRefreshInput, requestOptions?: RequestOptions) =>
+      refresh: (input?: WorktreeRefreshInput, requestOptions?: RequestOptions) =>
         request<WorktreeRefreshOutput>(
           {
             method: "POST",
-            path: `/api/worktree/${encodeURIComponent(input.projectID)}/refresh`,
+            path: `/api/worktree/refresh`,
+            query: { location: input?.["location"] },
             successStatus: 204,
             declaredStatuses: [400, 401],
             empty: true,

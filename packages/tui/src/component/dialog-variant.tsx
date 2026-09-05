@@ -14,23 +14,34 @@ export function DialogVariant(props: {
   dialog.setPlacement("bottom")
 
   const list = createMemo(() => props.variants ?? local.model.variant.list())
-  const options = createMemo(() =>
-    list().map((variant) => ({
-      value: variant,
-      title: variant,
+  const options = createMemo(() => [
+    {
+      value: "default",
+      title: "Default",
       onSelect: () => {
         dialog.clear()
-        if (props.onSelect) props.onSelect(variant)
-        else local.model.variant.set(variant)
+        if (props.onSelect) props.onSelect("default")
+        else local.model.variant.set(undefined)
       },
-    })),
-  )
+    },
+    ...list()
+      .filter((variant) => variant !== "default")
+      .map((variant) => ({
+        value: variant,
+        title: variant,
+        onSelect: () => {
+          dialog.clear()
+          if (props.onSelect) props.onSelect(variant)
+          else local.model.variant.set(variant)
+        },
+      })),
+  ])
 
   return (
     <DialogSelect<string>
       options={options()}
       title={props.title ?? "Select variant"}
-      current={props.selected ?? local.model.variant.current()}
+      current={props.selected ?? local.model.variant.current() ?? "default"}
       flat={true}
     />
   )
