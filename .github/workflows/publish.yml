@@ -73,6 +73,11 @@ jobs:
         run: bun turbo typecheck --concurrency=3
         timeout-minutes: 15
 
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ripgrep
+
       - name: Test core
         run: cd packages/core && bun run test
         timeout-minutes: 20
