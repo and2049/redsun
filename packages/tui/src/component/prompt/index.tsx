@@ -25,7 +25,7 @@ import { normalizePromptContent, openEditor } from "../../editor"
 import { useExit } from "../../context/exit"
 import { promptOffsetWidth } from "../../prompt/display"
 import { expandPromptInputPastedText, realignPromptInputMentions } from "../../prompt/mention"
-import { parseSlashHead } from "../../prompt/parse"
+import { argumentSlash, parseSlashHead } from "../../prompt/parse"
 import { stringWidth } from "../../util/string-width"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { emptyPrompt, usePromptHistory, type PromptInfo, type PromptPartRef } from "../../prompt/history"
@@ -167,18 +167,6 @@ function formatEditorContext(selection: EditorSelection) {
   })
 
   return `<system-reminder>${ranges.join("\n")} This may or may not be relevant to the current task.</system-reminder>\n`
-}
-
-function argumentSlash(input: string, commands: readonly KeymapCommand[]) {
-  const head = parseSlashHead(input, /\s/)
-  if (!head) return
-  const command = commands.find(
-    (command) =>
-      command.slash?.arguments &&
-      (command.slash.name === head.name || command.slash.aliases?.includes(head.name) === true),
-  )
-  if (!command) return
-  return { command, input: head.arguments }
 }
 
 export function Prompt(props: PromptProps) {

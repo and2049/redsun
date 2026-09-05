@@ -380,8 +380,8 @@ export interface KeymapCommand {
   readonly slash?: {
     readonly name: string
     readonly aliases?: string[]
-    /** Keeps the slash command in the prompt and passes its raw input to run. */
-    readonly arguments?: true
+    /** Keeps the slash command in the prompt and passes its raw input to run; "optional" runs on selection but still accepts typed input. */
+    readonly arguments?: true | "optional"
   }
   /** Promotes the command in discovery UI. */
   readonly suggested?: boolean | (() => boolean)

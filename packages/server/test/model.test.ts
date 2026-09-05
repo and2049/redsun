@@ -43,6 +43,35 @@ it.live("lists models without blocking on plugin initialization", () =>
   }),
 )
 
+it.live("forces a refresh of the models.dev catalog", () =>
+  Effect.gen(function* () {
+    const source = Bun.serve({
+      port: 0,
+      fetch: () =>
+        new Response(JSON.stringify({ "test-provider": { id: "test-provider", name: "Test", models: {} } }), {
+          headers: { "content-type": "application/json" },
+        }),
+    })
+    const tmp = yield* Effect.acquireRelease(
+      Effect.promise(() => tmpdir("opencode-model-refresh-")),
+      () => Effect.sync(() => source.stop(true)),
+    )
+    const server = yield* startServer(tmp.path, { models: { url: `http://127.0.0.1:${source.port}` } })
+    const url = new URL("/api/model/refresh", server.base)
+    url.searchParams.set("location[directory]", tmp.path)
+    const response = yield* Effect.promise(() =>
+      fetch(url, {
+        method: "POST",
+        headers: { ...server.headers, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    )
+    expect(response.status).toBe(204)
+    const text = yield* Effect.promise(() => response.text())
+    expect(text).toBe("")
+  }),
+)
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }

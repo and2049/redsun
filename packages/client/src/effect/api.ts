@@ -8,5 +8,5 @@ export type WebSearchApi<E = never> = WebsearchApi<E>
 
 export interface CatalogApi<E = never> {
   readonly provider: ProviderApi<E>
-  readonly model: ModelApi<E>
+  readonly model: Omit<ModelApi<E>, "refresh">
 }

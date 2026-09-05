@@ -23,5 +23,5 @@ export type VcsApi = Client["vcs"]
 
 export interface CatalogApi {
   readonly provider: ProviderApi
-  readonly model: ModelApi
+  readonly model: Omit<ModelApi, "refresh">
 }

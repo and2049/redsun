@@ -59,6 +59,7 @@ const applicationServiceNodes = [
   Worktree.node,
   Session.node,
   Instance.node,
+  ModelsDev.node,
   SessionTransfer.node,
   SdkPlugins.node,
   PluginUpdate.node,

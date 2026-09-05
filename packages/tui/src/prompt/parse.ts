@@ -1,3 +1,5 @@
+import type { KeymapCommand } from "@opencode-ai/plugin/tui/context"
+
 export function parseFileLineRange(input: string) {
   const hash = input.lastIndexOf("#")
   if (hash === -1) return { base: input }
@@ -13,6 +15,18 @@ export function parseFileLineRange(input: string) {
 
 export function stripFileLineRange(input: string) {
   return parseFileLineRange(input).base
+}
+
+export function argumentSlash(input: string, commands: readonly KeymapCommand[]) {
+  const head = parseSlashHead(input, /\s/)
+  if (!head) return
+  const command = commands.find(
+    (command) =>
+      command.slash?.arguments &&
+      (command.slash.name === head.name || command.slash.aliases?.includes(head.name) === true),
+  )
+  if (!command) return
+  return { command, input: head.arguments }
 }
 
 export function parseSlashHead(text: string, separator = /[ \t\n]/) {
