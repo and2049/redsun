@@ -7,7 +7,7 @@
   "type": "module",
   "packageManager": "bun@1.4.0",
   "scripts": {
-    "dev": "bun run --cwd packages/cli --conditions=browser src/index.ts",
+    "dev": "bun run --cwd packages/cli src/index.ts",
     "dev:live": "OPENCODE_TUI_CHANNEL=dev OPENCODE_PASSWORD=\"$(redsun service get password)\" bun run dev --server \"$(redsun service status)\"",
     "lint": "oxlint",
     "lint:effect-patterns": "ast-grep scan -c script/ast-grep/sgconfig.yml packages/util/src packages/core/src packages/server/src packages/protocol/src packages/cli/src",
