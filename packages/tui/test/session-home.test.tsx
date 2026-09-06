@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { type Renderable, ScrollBoxRenderable } from "@opentui/core"
+import { type Renderable, ScrollBoxRenderable, Yoga } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode-ai/util/global"
@@ -124,6 +124,7 @@ test.each([
         : root.getChildren().map(findScrollBox).find(Boolean)
     const scroll = findScrollBox(setup.renderer.root)
     if (!scroll) throw new Error("session transcript scrollbox was not found")
+    expect(scroll.viewport.getLayoutNode().getComputedPadding(Yoga.Edge.Right)).toBe(1)
     const mounted = () => scroll.getChildren().filter((child) => child.id?.startsWith("message-"))
     const maximum = () => Math.max(0, scroll.scrollHeight - scroll.viewport.height)
     if (mode === "scrolled" || mode === "cancel" || mode === "settling-scrolled") {

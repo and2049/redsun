@@ -1486,7 +1486,7 @@ export function Session() {
                   scroll.verticalScrollBar.on("change", updateAwayFromBottom)
                 }}
                 viewportOptions={{
-                  paddingRight: showScrollbar() ? 1 : 0,
+                  paddingRight: 1,
                 }}
                 verticalScrollbarOptions={{
                   paddingLeft: 1,
