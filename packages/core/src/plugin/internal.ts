@@ -97,7 +97,7 @@ import { ProviderPlugins } from "./provider.js"
 import { WebSearchPlugins } from "./websearch/index.js"
 import { SkillPlugin } from "./skill.js"
 import { VcsHgPlugin } from "./vcs/hg.js"
-import { SystemPromptPlugin } from "./system-prompt.js"
+import { OptimizePlugin } from "./optimize.js"
 import { VariantPlugin } from "./variant.js"
 import { VcsGitPlugin } from "./vcs/git.js"
 import { WarmingPlugin } from "./warming.js"
@@ -213,12 +213,13 @@ const pre = [
   CommandPlugin.Plugin,
   SkillPlugin.Plugin,
   VcsHgPlugin.Plugin,
-  ...SystemPromptPlugin.Plugins,
   ModelsDevPlugin,
   ClaudeCodeProviderPlugin.Plugin,
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,
+  // Render model prompts after the patch plugin selects the available editing tools.
+  ...OptimizePlugin.Plugins,
   EditTool.Plugin,
   GlobTool.Plugin,
   GrepTool.Plugin,
