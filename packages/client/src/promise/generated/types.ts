@@ -2,6 +2,17 @@ export type JsonValue = null | boolean | number | string | Array<JsonValue> | { 
 
 export type ServiceHealth = { healthy: true; version: string; pid: number }
 
+export type RemoteControlStatus = {
+  supported: boolean
+  enabled: boolean
+  state: "disabled" | "unavailable" | "ready" | "connected"
+  enrolled: boolean
+  backendID?: string
+  processID: string
+  version: 1
+  leaseSeconds: 30
+}
+
 export type ModelRef = { id: string; providerID: string; variant?: string }
 
 export type ProviderSettings = { [x: string]: any }
@@ -9,6 +20,10 @@ export type ProviderSettings = { [x: string]: any }
 export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
+
+export type RemoteControlAgentChoice = { id: string; name: string; mode: "subagent" | "primary" | "all" }
+
+export type RemoteControlModelChoice = { id: string; providerID: string; name: string; variants: Array<{ id: string }> }
 
 export type PluginSource =
   | { type: "builtin" }
@@ -433,6 +448,8 @@ export type WebSearchProvider = { id: string; name: string }
 export type WebSearchResult = { url: string; title?: string; content?: string; time: { published?: number } }
 
 export type ConfigWorktree = { directory: string }
+
+export type RemoteControlPolicyResult = { status: RemoteControlStatus; persisted: boolean }
 
 export type ProviderRequest = {
   settings: ProviderSettings
@@ -961,6 +978,33 @@ export type SessionCompactionDelta = {
   type: "session.compaction.delta"
   location?: LocationRef
   data: { sessionID: string; text: string }
+}
+
+export type RemoteStatus = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "remote.status"
+  location?: LocationRef
+  data: {
+    supported: boolean
+    enabled: boolean
+    state: "disabled" | "unavailable" | "ready" | "connected"
+    enrolled: boolean
+    backendID?: string
+    processID: string
+    version: 1
+    leaseSeconds: 30
+  }
+}
+
+export type RemoteSync = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "remote.sync"
+  location?: LocationRef
+  data: {}
 }
 
 export type FilesystemChanged = {
@@ -2324,6 +2368,8 @@ export type V2Event =
   | SessionRevertCleared
   | SessionRevertCommitted
   | SessionMessageContentUpdated
+  | RemoteStatus
+  | RemoteSync
   | FilesystemChanged
   | ReferenceUpdated
   | PermissionAsked
@@ -2377,13 +2423,13 @@ export type UnauthorizedError = { readonly _tag: "UnauthorizedError"; readonly m
 export const isUnauthorizedError = (value: unknown): value is UnauthorizedError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "UnauthorizedError"
 
-export type AgentNotFoundError = {
-  readonly _tag: "AgentNotFoundError"
-  readonly agentID: string
+export type ConflictError = {
+  readonly _tag: "ConflictError"
   readonly message: string
+  readonly resource?: string | undefined
 }
-export const isAgentNotFoundError = (value: unknown): value is AgentNotFoundError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "AgentNotFoundError"
+export const isConflictError = (value: unknown): value is ConflictError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
 export type ServiceUnavailableError = {
   readonly _tag: "ServiceUnavailableError"
@@ -2392,6 +2438,14 @@ export type ServiceUnavailableError = {
 }
 export const isServiceUnavailableError = (value: unknown): value is ServiceUnavailableError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ServiceUnavailableError"
+
+export type AgentNotFoundError = {
+  readonly _tag: "AgentNotFoundError"
+  readonly agentID: string
+  readonly message: string
+}
+export const isAgentNotFoundError = (value: unknown): value is AgentNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "AgentNotFoundError"
 
 export type InvalidCursorError = { readonly _tag: "InvalidCursorError"; readonly message: string }
 export const isInvalidCursorError = (value: unknown): value is InvalidCursorError =>
@@ -2404,14 +2458,6 @@ export type SessionNotFoundError = {
 }
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
-
-export type ConflictError = {
-  readonly _tag: "ConflictError"
-  readonly message: string
-  readonly resource?: string | undefined
-}
-export const isConflictError = (value: unknown): value is ConflictError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
 export type UnknownError = {
   readonly _tag: "UnknownError"
@@ -2565,6 +2611,34 @@ export const isWorktreeError = (value: unknown): value is WorktreeError =>
 
 export type HealthGetOutput = ServiceHealth
 
+export type RemoteStatusOutput = RemoteControlStatus
+
+export type RemotePolicyInput = { readonly enabled: { readonly enabled: boolean }["enabled"] }
+
+export type RemotePolicyOutput = RemoteControlPolicyResult
+
+export type RemoteEnrollInput = {
+  readonly backendID: {
+    readonly backendID: string
+    readonly credentialID: string
+    readonly digest: string
+  }["backendID"]
+  readonly credentialID: {
+    readonly backendID: string
+    readonly credentialID: string
+    readonly digest: string
+  }["credentialID"]
+  readonly digest: { readonly backendID: string; readonly credentialID: string; readonly digest: string }["digest"]
+}
+
+export type RemoteEnrollOutput = void
+
+export type RemoteRevokeOutput = RemoteControlPolicyResult
+
+export type RemoteHeartbeatInput = { readonly connected: { readonly connected: boolean }["connected"] }
+
+export type RemoteHeartbeatOutput = RemoteControlStatus
+
 export type ServerGetOutput = { urls: Array<string> }
 
 export type LocationGetInput = {
@@ -2600,6 +2674,28 @@ export type AgentGetInput = {
 export type AgentGetOutput = {
   location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
   data: AgentInfo
+}
+
+export type RemoteCatalogAgentsInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type RemoteCatalogAgentsOutput = {
+  location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
+  data: Array<RemoteControlAgentChoice>
+}
+
+export type RemoteCatalogModelsInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type RemoteCatalogModelsOutput = {
+  location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
+  data: Array<RemoteControlModelChoice>
 }
 
 export type PluginListInput = {

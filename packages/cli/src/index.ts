@@ -20,6 +20,7 @@ const Handlers = Runtime.handlers(Commands, {
   upgrade: () => import("./commands/handlers/upgrade"),
   acp: () => import("./commands/handlers/acp"),
   api: () => import("./commands/handlers/api"),
+  remote: () => import("./commands/handlers/remote"),
   auth: {
     list: () => import("./commands/handlers/auth/list"),
     login: () => import("./commands/handlers/auth/login"),

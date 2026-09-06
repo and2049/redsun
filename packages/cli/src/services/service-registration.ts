@@ -36,6 +36,13 @@ export const register = Effect.fnUntraced(function* (options: {
     found.pid === info.pid &&
     found.password === info.password
   yield* fs.writeFileString(temp, encoded, { mode: 0o600 }).pipe(Effect.andThen(fs.rename(temp, options.file)))
+  const remoteFile = `${options.file}.remote`
+  const remoteTemp = `${remoteFile}.${options.id}.tmp`
+  yield* fs
+    .writeFileString(remoteTemp, JSON.stringify({ id: info.id, version: info.version, url: info.url, pid: info.pid }), {
+      mode: 0o600,
+    })
+    .pipe(Effect.andThen(fs.rename(remoteTemp, remoteFile)))
   yield* current.pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("managed service registration check failed; shutting down", {
@@ -65,7 +72,9 @@ export const register = Effect.fnUntraced(function* (options: {
     Effect.forkScoped,
   )
   return current.pipe(
-    Effect.flatMap((found) => (owns(found) ? fs.remove(options.file) : Effect.void)),
+    Effect.flatMap((found) =>
+      owns(found) ? fs.remove(options.file).pipe(Effect.andThen(fs.remove(remoteFile))) : Effect.void,
+    ),
     Effect.ignore,
   )
 })

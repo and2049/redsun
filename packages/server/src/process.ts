@@ -24,6 +24,7 @@ import { createRoutes } from "./routes"
 import { ServerInfo } from "./server-info"
 import { Status } from "./service-status"
 import type { ServerOptions } from "./options"
+import { RemoteAccess } from "./remote-access"
 
 export interface Lifecycle<E = never, R = never> {
   readonly onListen: (
@@ -185,6 +186,8 @@ function dispatch(
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, "http://localhost")
+    if (/^Bearer\s/i.test(request.headers.authorization ?? "") && !RemoteAccess.route(request.method, url.pathname))
+      return unauthorized()
     if (request.method === "GET" && url.pathname === "/api/health") {
       if (!(yield* authorizedRequest(request, auth))) return unauthorized()
       return yield* healthResponse(status, version)
@@ -195,6 +198,11 @@ function dispatch(
     if (
       (url.pathname === "/api" || url.pathname.startsWith("/api/") || url.pathname === "/openapi.json") &&
       (!ready || (!hasPtyConnectTicketURL(url) && !hasPersistentPtyConnectTicketURL(url))) &&
+      !(
+        ready &&
+        /^Bearer\s/i.test(request.headers.authorization ?? "") &&
+        RemoteAccess.route(request.method, url.pathname)
+      ) &&
       !(yield* authorizedRequest(request, auth))
     )
       return unauthorized()

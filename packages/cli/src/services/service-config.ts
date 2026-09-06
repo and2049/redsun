@@ -6,6 +6,7 @@ import { Effect, FileSystem, Option, Schema } from "effect"
 import { randomBytes } from "crypto"
 import path from "path"
 import { selfCommand } from "../util/process"
+import { RemoteControl } from "@opencode-ai/schema/remote-control"
 
 // The CLI's service configuration file, plus the Service.EnsureOptions binding that
 // points the client package's service operations at this CLI: which
@@ -17,6 +18,7 @@ export const Info = Schema.Struct({
   password: Schema.optional(Schema.String),
   cors: Schema.optional(Schema.Array(Schema.String)),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  remote_control: Schema.optional(RemoteControl.Settings),
 })
 export type Info = typeof Info.Type
 
@@ -100,6 +102,8 @@ const paths = Effect.gen(function* () {
   }
 })
 
+export const configPath = paths.pipe(Effect.map((value) => value.configFile))
+
 export const options = Effect.fnUntraced(function* (input: { readonly checkVersion?: boolean } = {}) {
   const { file, legacyRegistrationFiles } = yield* paths
   yield* Effect.forEach(legacyRegistrationFiles, (legacy) => migrateRegistration(legacy, file))
@@ -107,11 +111,7 @@ export const options = Effect.fnUntraced(function* (input: { readonly checkVersi
     file,
     version: input.checkVersion ? OPENCODE_VERSION : undefined,
     env: (yield* read()).env,
-    command: [
-      ...selfCommand(),
-      "serve",
-      "--service",
-    ],
+    command: [...selfCommand(), "serve", "--service"],
   }
 })
 
@@ -145,8 +145,12 @@ export const password = Effect.fn("cli.service-config.password")(function* (valu
 
 export const get = Effect.fn("cli.service-config.get")(function* (key?: string, name?: string) {
   if (key === undefined) {
-    const { password: _password, ...safe } = yield* read()
-    return JSON.stringify(safe, null, 2)
+    const { password: _password, remote_control, ...safe } = yield* read()
+    return JSON.stringify(
+      { ...safe, ...(remote_control ? { remote_control: { enabled: remote_control.enabled } } : {}) },
+      null,
+      2,
+    )
   }
   const selected = configKey(key)
   if (selected !== "env" && name !== undefined) throw new Error(`Usage: opencode service get ${selected}`)

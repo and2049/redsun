@@ -36,12 +36,14 @@ import { Skill } from "@opencode-ai/schema/skill"
 import { Vcs } from "@opencode-ai/schema/vcs"
 import { WebSearch } from "@opencode-ai/schema/websearch"
 import { Workspace } from "@opencode-ai/schema/workspace"
+import { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { Effect, Schema } from "effect"
 import { fileURLToPath } from "url"
 
 const promiseContract = compile(ClientApi, { groupNames, omitEndpoints: promiseOmitEndpoints })
 const effectContract = compile(ClientApi, { groupNames, omitEndpoints: effectOmitEndpoints })
 const effectTypeReferences = [
+  ...namespaceTypes("RemoteControl", "@opencode-ai/schema/remote-control", RemoteControl),
   ...namespaceTypes("Agent", "@opencode-ai/schema/agent", Agent),
   ...namespaceTypes("Command", "@opencode-ai/schema/command", Command),
   ...namespaceTypes("Config", "@opencode-ai/schema/config", Config),

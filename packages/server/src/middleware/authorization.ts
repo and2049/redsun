@@ -6,6 +6,8 @@ import { hasPtyConnectTicketURL } from "@opencode-ai/protocol/groups/pty"
 import { hasPersistentPtyConnectTicketURL } from "@opencode-ai/protocol/groups/persistent-pty"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { RemoteService } from "../remote-control"
+import { RemoteAccess } from "../remote-access"
 
 const AUTH_TOKEN_QUERY = "auth_token"
 const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
@@ -44,10 +46,27 @@ export const authorizationLayer = Layer.effect(
   Authorization,
   Effect.gen(function* () {
     const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return Authorization.of((effect) => effect)
+    const remote = yield* RemoteService.Service
     return Authorization.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
+        if (/^Bearer\s/i.test(request.headers.authorization ?? "")) {
+          yield* HttpEffect.appendPreResponseHandler((_request, response) =>
+            Effect.succeed(
+              response.status < 400
+                ? response
+                : HttpServerResponse.jsonUnsafe(
+                    { _tag: "RemoteRequestError", message: "Remote operation refused or failed" },
+                    { status: response.status },
+                  ),
+            ),
+          )
+          const principal = remote.authenticate(request.headers.authorization ?? "")
+          if (!principal || !(yield* RemoteAccess.check(request)) || !remote.current(principal))
+            return yield* new UnauthorizedError({ message: "Remote access refused" })
+          return yield* effect.pipe(Effect.provideService(RemoteService.Principal, principal))
+        }
+        if (!ServerAuth.required(config)) return yield* effect
         // Browsers cannot set headers on WebSocket upgrades, so a ticketed PTY connect skips
         // credential checks here; the connect handler consumes and validates the ticket.
         const url = new URL(request.url, "http://localhost")

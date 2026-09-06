@@ -5,6 +5,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { InvalidCursorError } from "@opencode-ai/protocol/errors"
 import { failedMessageDecode, missingSession } from "./session-error"
+import { RemoteProjection } from "../remote-projection"
 
 const DefaultMessagesLimit = 50
 
@@ -53,7 +54,7 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
         const first = messages[0]
         const last = messages.at(-1)
         return {
-          data: messages,
+          data: (yield* RemoteProjection.isRemote) ? messages.map(RemoteProjection.message) : messages,
           cursor: {
             previous: first ? cursor.encode(first, order, "previous") : undefined,
             next: last ? cursor.encode(last, order, "next") : undefined,

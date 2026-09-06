@@ -35,6 +35,7 @@ import { VcsEvent } from "./vcs-event.js"
 import { WorkspaceEvent } from "./workspace-event.js"
 import { WorktreeEvent } from "./worktree-event.js"
 import { WebSearch } from "./websearch.js"
+import { RemoteControl } from "./remote-control.js"
 
 const coreDefinitions = Event.inventory(...SessionEvent.Definitions)
 
@@ -48,6 +49,8 @@ const foundationDefinitions = Event.inventory(
 )
 
 const featureDefinitions = Event.inventory(
+  RemoteControl.Changed,
+  RemoteControl.Sync,
   ...FileSystem.Event.Definitions,
   ...Reference.Event.Definitions,
   ...Permission.Event.Definitions,

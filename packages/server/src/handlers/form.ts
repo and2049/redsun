@@ -13,6 +13,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { requestRef, response, sessionInfo } from "../location"
+import { RemoteProjection } from "../remote-projection"
 
 function missingForm(id: Form.ID) {
   return new FormNotFoundError({ id, message: `Form not found: ${id}` })
@@ -27,6 +28,7 @@ export const FormHandler = HttpApiBuilder.group(Api, "server.form", (handlers) =
       const form = yield* Form.Service
       const info = yield* form.get(formID).pipe(Effect.catchTag("Form.NotFoundError", () => missingForm(formID)))
       if (info.sessionID !== sessionID) return yield* missingForm(formID)
+      if ((yield* RemoteProjection.isRemote) && !RemoteProjection.formAllowed(info)) return yield* missingForm(formID)
       return { form, info }
     })
 
@@ -47,7 +49,11 @@ export const FormHandler = HttpApiBuilder.group(Api, "server.form", (handlers) =
           const forms = yield* session
             ? read.pipe(instances.provide(session))
             : read.pipe(Effect.provide(locations.get(requestRef(ctx.request))))
-          return { data: forms }
+          return {
+            data: yield* RemoteProjection.project(forms, (items) =>
+              items.filter(RemoteProjection.formAllowed).map(RemoteProjection.form),
+            ),
+          }
         }),
       )
       .handle(
@@ -76,7 +82,7 @@ export const FormHandler = HttpApiBuilder.group(Api, "server.form", (handlers) =
         "session.form.get",
         Effect.fn(function* (ctx) {
           const owned = yield* requireOwnedForm(ctx.params.sessionID, ctx.params.formID)
-          return { data: owned.info }
+          return { data: yield* RemoteProjection.project(owned.info, RemoteProjection.form) }
         }),
       )
       .handle(

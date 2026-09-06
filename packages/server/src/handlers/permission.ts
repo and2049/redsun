@@ -9,6 +9,7 @@ import { Api } from "../api"
 import { PermissionNotFoundError } from "@opencode-ai/protocol/errors"
 import { response, sessionInfo } from "../location"
 import { missingSession } from "./session-error"
+import { RemoteProjection } from "../remote-projection"
 
 function missingRequest(id: Permission.ID) {
   return new PermissionNotFoundError({ requestID: id, message: `Permission request not found: ${id}` })
@@ -78,14 +79,14 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const requests = yield* Permission.Service.use((permission) =>
             permission.forSession(ctx.params.sessionID),
           ).pipe(instances.provide(session))
-          return { data: requests }
+          return { data: yield* RemoteProjection.project(requests, (items) => items.map(RemoteProjection.permission)) }
         }),
       )
       .handle(
         "session.permission.get",
         Effect.fn(function* (ctx) {
           const owned = yield* requireOwnedRequest(ctx.params.sessionID, ctx.params.requestID)
-          return { data: owned.request }
+          return { data: yield* RemoteProjection.project(owned.request, RemoteProjection.permission) }
         }),
       )
       .handle(

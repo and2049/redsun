@@ -6,6 +6,14 @@ import { HttpApiClient } from "effect/unstable/httpapi"
 import { ClientApi } from "../../contract"
 import type {
   HealthGetOutput,
+  RemoteStatusOutput,
+  RemotePolicyInput,
+  RemotePolicyOutput,
+  RemoteEnrollInput,
+  RemoteEnrollOutput,
+  RemoteRevokeOutput,
+  RemoteHeartbeatInput,
+  RemoteHeartbeatOutput,
   ServerGetOutput,
   LocationGetInput,
   LocationGetOutput,
@@ -13,6 +21,10 @@ import type {
   AgentListOutput,
   AgentGetInput,
   AgentGetOutput,
+  RemoteCatalogAgentsInput,
+  RemoteCatalogAgentsOutput,
+  RemoteCatalogModelsInput,
+  RemoteCatalogModelsOutput,
   PluginListInput,
   PluginListOutput,
   PluginAwaitActivationInput,
@@ -299,6 +311,37 @@ const EndpointHealthGet = (raw: RawClient["server.health"]) => () =>
 
 const adaptGroupHealth = (raw: RawClient["server.health"]) => ({ get: EndpointHealthGet(raw) })
 
+const EndpointRemoteStatus = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteStatusOutput>()(raw["remote.status"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemotePolicy = (raw: RawClient["server.remote"]) => (input: RemotePolicyInput) =>
+  preserveEffect<RemotePolicyOutput>()(
+    raw["remote.policy"]({ payload: { enabled: input["enabled"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteEnroll = (raw: RawClient["server.remote"]) => (input: RemoteEnrollInput) =>
+  preserveEffect<RemoteEnrollOutput>()(
+    raw["remote.enroll"]({
+      payload: { backendID: input["backendID"], credentialID: input["credentialID"], digest: input["digest"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteRevoke = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteRevokeOutput>()(raw["remote.revoke"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteHeartbeat = (raw: RawClient["server.remote"]) => (input: RemoteHeartbeatInput) =>
+  preserveEffect<RemoteHeartbeatOutput>()(
+    raw["remote.heartbeat"]({ payload: { connected: input["connected"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupRemote = (raw: RawClient["server.remote"]) => ({
+  status: EndpointRemoteStatus(raw),
+  policy: EndpointRemotePolicy(raw),
+  enroll: EndpointRemoteEnroll(raw),
+  revoke: EndpointRemoteRevoke(raw),
+  heartbeat: EndpointRemoteHeartbeat(raw),
+})
+
 const EndpointServerGet = (raw: RawClient["server.server"]) => () =>
   preserveEffect<ServerGetOutput>()(raw["server.get"]({}).pipe(Effect.mapError(mapClientError)))
 
@@ -326,6 +369,21 @@ const EndpointAgentGet = (raw: RawClient["server.agent"]) => (input: AgentGetInp
 const adaptGroupAgent = (raw: RawClient["server.agent"]) => ({
   list: EndpointAgentList(raw),
   get: EndpointAgentGet(raw),
+})
+
+const EndpointRemoteCatalogAgents = (raw: RawClient["server.remoteCatalog"]) => (input?: RemoteCatalogAgentsInput) =>
+  preserveEffect<RemoteCatalogAgentsOutput>()(
+    raw["remoteCatalog.agents"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteCatalogModels = (raw: RawClient["server.remoteCatalog"]) => (input?: RemoteCatalogModelsInput) =>
+  preserveEffect<RemoteCatalogModelsOutput>()(
+    raw["remoteCatalog.models"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupRemoteCatalog = (raw: RawClient["server.remoteCatalog"]) => ({
+  agents: EndpointRemoteCatalogAgents(raw),
+  models: EndpointRemoteCatalogModels(raw),
 })
 
 const EndpointPluginList = (raw: RawClient["server.plugin"]) => (input?: PluginListInput) =>
@@ -1622,9 +1680,11 @@ const adaptGroupConfig = (raw: RawClient["server.config"]) => ({ get: EndpointCo
 
 const adaptClient = (raw: RawClient) => ({
   health: adaptGroupHealth(raw["server.health"]),
+  remote: adaptGroupRemote(raw["server.remote"]),
   server: adaptGroupServer(raw["server.server"]),
   location: adaptGroupLocation(raw["server.location"]),
   agent: adaptGroupAgent(raw["server.agent"]),
+  remoteCatalog: adaptGroupRemoteCatalog(raw["server.remoteCatalog"]),
   plugin: adaptGroupPlugin(raw["server.plugin"]),
   session: adaptGroupSession(raw["server.session"]),
   message: adaptGroupMessage(raw["server.message"]),
