@@ -111,7 +111,10 @@ The trusted OS user, root and Windows administrators are outside this isolation 
 The managed service publishes `<ordinary-registration-path>.remote` under its global
 state directory, containing **only** `{id,version,url,pid}`. Unlike the ordinary
 registration file it has no service password. Its absolute path is in the handoff.
-It can be stale after a crash; existence is not readiness.
+It can be stale after a crash; existence is not readiness. The service removes a stale
+sidecar and recreates it through the same protected private-file helper as the handoff
+(owner-only Windows ACL, POSIX 0600) so a companion's owner-only check can accept it;
+an inherited state-directory ACL is not sufficient on Windows.
 
 1. Read and validate this discovery file. Allow only local loopback HTTP URLs with no
    userinfo, query or fragment. Never follow redirects or send the token to a network

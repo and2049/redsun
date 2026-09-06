@@ -10,6 +10,23 @@ import { Schema } from "effect"
 import { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { Service } from "@opencode-ai/client/effect/service"
 
+async function expectPrivate(file: string) {
+  if (process.platform !== "win32") {
+    expect((await stat(file)).mode & 0o777).toBe(0o600)
+    return
+  }
+  const check =
+    '$acl = [IO.File]::GetAccessControl($args[0]); $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $rules = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]); if (!$acl.AreAccessRulesProtected) { exit 1 }; foreach ($rule in $rules) { if ($rule.IdentityReference.Value -ne $sid -or $rule.AccessControlType -ne "Allow") { exit 2 } }; if ($rules.Count -ne 1) { exit 3 }'
+  const encoded = Buffer.from(`& { ${check} } '${file.replaceAll("'", "''")}'`, "utf16le").toString("base64")
+  expect(() =>
+    execFileSync(
+      path.join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+      { stdio: "pipe" },
+    ),
+  ).not.toThrow()
+}
+
 test("private handoff is created without overwriting an existing file", async () => {
   await using temporary = await tmpdir()
   const file = path.join(temporary.path, "handoff-東京.json")
@@ -17,19 +34,7 @@ test("private handoff is created without overwriting an existing file", async ()
   expect(await readFile(file, "utf8")).toBe("isolated-test-material")
   await expect(createPrivateFile(file, "replacement")).rejects.toThrow()
   expect(await readFile(file, "utf8")).toBe("isolated-test-material")
-  if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600)
-  else {
-    const check =
-      '$acl = [IO.File]::GetAccessControl($args[0]); $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $rules = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]); if (!$acl.AreAccessRulesProtected) { exit 1 }; foreach ($rule in $rules) { if ($rule.IdentityReference.Value -ne $sid -or $rule.AccessControlType -ne "Allow") { exit 2 } }; if ($rules.Count -ne 1) { exit 3 }'
-    const encoded = Buffer.from(`& { ${check} } '${file.replaceAll("'", "''")}'`, "utf16le").toString("base64")
-    expect(() =>
-      execFileSync(
-        path.join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-        ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-        { stdio: "pipe" },
-      ),
-    ).not.toThrow()
-  }
+  await expectPrivate(file)
 })
 
 test("local enrollment creates the handoff before issuing, prints no credential, and never overwrites", async () => {
@@ -152,6 +157,7 @@ test("managed service publishes password-free discovery with matching RC process
           expect(status.backendID).toBeDefined()
           expect(info.password).toBeDefined()
           expect(await readFile(`${registration}.remote`, "utf8")).not.toContain(info.password!)
+          await expectPrivate(`${registration}.remote`)
           ready = true
           break
         }
