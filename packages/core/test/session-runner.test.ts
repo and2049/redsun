@@ -1600,7 +1600,6 @@ describe("SessionRunnerLLM", () => {
     yield* s.resume
 
     expect(s.requests.at(-1)?.system.map((part) => part.text)).toEqual([
-      defaultSystem,
       expect.stringContaining("# Delegation"),
       "Initial context",
     ])
@@ -1621,7 +1620,6 @@ describe("SessionRunnerLLM", () => {
     yield* s.resume
 
     expect(s.requests.at(-1)?.system.map((part) => part.text)).toEqual([
-      defaultSystem,
       expect.stringContaining("# Delegation"),
       "Initial context",
     ])
