@@ -21,6 +21,7 @@ import {
 } from "@opencode-ai/protocol/errors"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { failedMessageDecode, missingSession } from "./session-error"
+import { RemoteProjection } from "../remote-projection"
 
 const DefaultSessionsLimit = 50
 
@@ -62,7 +63,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const first = sessions[0]
           const last = sessions.at(-1)
           return {
-            data: sessions,
+            data: (yield* RemoteProjection.isRemote) ? sessions.map(RemoteProjection.session) : sessions,
             cursor: {
               previous: first
                 ? SessionsCursor.make({
@@ -122,7 +123,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 metadata: ctx.payload.metadata,
                 location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
               })
-              .pipe(Effect.orDie),
+              .pipe(
+                Effect.orDie,
+                Effect.flatMap((value) =>
+                  RemoteProjection.isRemote.pipe(
+                    Effect.map((remote) => (remote ? RemoteProjection.session(value) : value)),
+                  ),
+                ),
+              ),
           }
         }),
       )
@@ -175,9 +183,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.get",
         Effect.fn(function* (ctx) {
           return {
-            data: yield* session
-              .get(ctx.params.sessionID)
-              .pipe(Effect.catchTag("Session.NotFoundError", missingSession)),
+            data: yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", missingSession),
+              Effect.flatMap((value) =>
+                RemoteProjection.isRemote.pipe(
+                  Effect.map((remote) => (remote ? RemoteProjection.session(value) : value)),
+                ),
+              ),
+            ),
           }
         }),
       )
@@ -318,6 +331,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 Effect.catchTag("Session.SkillNotFoundError", (error) =>
                   Effect.fail(new InvalidRequestError({ message: `Skill not found: ${error.skill}`, field: "skills" })),
                 ),
+                Effect.flatMap((value) => RemoteProjection.project(value, RemoteProjection.user)),
               ),
           }
         }),
@@ -531,9 +545,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.inbox.list",
         Effect.fn(function* (ctx) {
           return {
-            data: yield* session
-              .inbox(ctx.params.sessionID)
-              .pipe(Effect.catchTag("Session.NotFoundError", missingSession)),
+            data: yield* session.inbox(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", missingSession),
+              Effect.flatMap((value) => RemoteProjection.project(value, (items) => items.map(RemoteProjection.inbox))),
+            ),
           }
         }),
       )
@@ -635,7 +650,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           yield* session.get(ctx.params.sessionID).pipe(Effect.catchTag("Session.NotFoundError", missingSession))
           const message = yield* session.message(ctx.params)
-          if (message) return { data: message }
+          if (message) return { data: yield* RemoteProjection.project(message, RemoteProjection.message) }
           return yield* new MessageNotFoundError({
             sessionID: ctx.params.sessionID,
             messageID: ctx.params.messageID,

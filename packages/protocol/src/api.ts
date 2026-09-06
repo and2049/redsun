@@ -35,10 +35,13 @@ import { VcsGroup } from "./groups/vcs.js"
 import { MigrationGroup } from "./groups/migration.js"
 import { ConfigGroup } from "./groups/config.js"
 import { WorkspaceGroup } from "./groups/workspace.js"
+import { RemoteControlGroup } from "./groups/remote-control.js"
+import { RemoteCatalogGroup } from "./groups/remote-catalog.js"
 
 type LocationGroups<LocationId extends HttpApiMiddleware.AnyId> =
   | HttpApiGroup.AddMiddleware<typeof LocationGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof AgentGroup, LocationId>
+  | HttpApiGroup.AddMiddleware<typeof RemoteCatalogGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof PluginGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ModelGroup, LocationId>
   | HttpApiGroup.AddMiddleware<typeof ProviderGroup, LocationId>
@@ -86,6 +89,7 @@ type ApiGroups<
   Event extends HttpApiGroup.Constraint,
 > =
   | typeof HealthGroup
+  | typeof RemoteControlGroup
   | typeof ServerGroup
   | typeof DebugGroup
   | typeof MigrationGroup
@@ -152,9 +156,11 @@ const makeApiFromGroup = <
 > =>
   HttpApi.make("server")
     .add(HealthGroup)
+    .add(RemoteControlGroup)
     .add(ServerGroup)
     .add(LocationGroup.middleware(locationMiddleware))
     .add(AgentGroup.middleware(locationMiddleware))
+    .add(RemoteCatalogGroup.middleware(locationMiddleware))
     .add(PluginGroup.middleware(locationMiddleware))
     .add(makeSessionGroup(sessionLocationMiddleware))
     .add(MessageGroup)

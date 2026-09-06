@@ -101,6 +101,8 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           port,
           cors: options.cors ?? config.cors,
           password,
+          remoteControl:
+            options.mode === "service" ? { file: yield* ServiceConfig.configPath, processID: instanceID } : undefined,
           pty: { handoff },
           simulation: truthy(process.env.OPENCODE_SIMULATE),
           database: {

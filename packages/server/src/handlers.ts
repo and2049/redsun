@@ -32,8 +32,12 @@ import { EventFeed } from "./event-feed"
 import { MigrationHandler } from "./handlers/migration"
 import { ConfigHandler } from "./handlers/config"
 import { WorkspaceHandler } from "./handlers/workspace"
+import { RemoteHandler } from "./handlers/remote-control"
+import { RemoteCatalogHandler } from "./handlers/remote-catalog"
 
 export const handlers = Layer.mergeAll(
+  RemoteHandler,
+  RemoteCatalogHandler,
   HealthHandler,
   ServerHandler,
   DebugHandler,

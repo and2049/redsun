@@ -1,5 +1,13 @@
 import type {
   HealthGetOutput,
+  RemoteStatusOutput,
+  RemotePolicyInput,
+  RemotePolicyOutput,
+  RemoteEnrollInput,
+  RemoteEnrollOutput,
+  RemoteRevokeOutput,
+  RemoteHeartbeatInput,
+  RemoteHeartbeatOutput,
   ServerGetOutput,
   LocationGetInput,
   LocationGetOutput,
@@ -7,6 +15,10 @@ import type {
   AgentListOutput,
   AgentGetInput,
   AgentGetOutput,
+  RemoteCatalogAgentsInput,
+  RemoteCatalogAgentsOutput,
+  RemoteCatalogModelsInput,
+  RemoteCatalogModelsOutput,
   PluginListInput,
   PluginListOutput,
   PluginAwaitActivationInput,
@@ -420,6 +432,60 @@ export function make(options: ClientOptions) {
           requestOptions,
         ),
     },
+    remote: {
+      status: (requestOptions?: RequestOptions) =>
+        request<RemoteStatusOutput>(
+          { method: "GET", path: `/api/remote`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
+          requestOptions,
+        ),
+      policy: (input: RemotePolicyInput, requestOptions?: RequestOptions) =>
+        request<RemotePolicyOutput>(
+          {
+            method: "PUT",
+            path: `/api/remote/policy`,
+            body: { enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      enroll: (input: RemoteEnrollInput, requestOptions?: RequestOptions) =>
+        request<RemoteEnrollOutput>(
+          {
+            method: "POST",
+            path: `/api/remote/enrollment`,
+            body: { backendID: input["backendID"], credentialID: input["credentialID"], digest: input["digest"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 409, 503],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      revoke: (requestOptions?: RequestOptions) =>
+        request<RemoteRevokeOutput>(
+          {
+            method: "DELETE",
+            path: `/api/remote/enrollment`,
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      heartbeat: (input: RemoteHeartbeatInput, requestOptions?: RequestOptions) =>
+        request<RemoteHeartbeatOutput>(
+          {
+            method: "POST",
+            path: `/api/remote/heartbeat`,
+            body: { connected: input["connected"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
     server: {
       get: (requestOptions?: RequestOptions) =>
         request<ServerGetOutput>(
@@ -462,6 +528,32 @@ export function make(options: ClientOptions) {
             query: { location: input["location"] },
             successStatus: 200,
             declaredStatuses: [400, 401, 404],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    remoteCatalog: {
+      agents: (input?: RemoteCatalogAgentsInput, requestOptions?: RequestOptions) =>
+        request<RemoteCatalogAgentsOutput>(
+          {
+            method: "GET",
+            path: `/api/remote/agent`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      models: (input?: RemoteCatalogModelsInput, requestOptions?: RequestOptions) =>
+        request<RemoteCatalogModelsOutput>(
+          {
+            method: "GET",
+            path: `/api/remote/model`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 503],
             empty: false,
           },
           requestOptions,

@@ -58,6 +58,8 @@ import { DataProvider, useData } from "./context/data"
 import { LocationProvider, useLocation } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
+import { RemoteControlProvider } from "./context/remote-control"
+import { DialogRemote } from "./component/dialog-remote"
 import { DialogModel } from "./component/dialog-model"
 import { useWorkerModelDialog, useWorkerVariantDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
@@ -358,52 +360,54 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                           >
                                             <ClientProvider api={api} url={input.server.endpoint.url} service={service}>
                                               <PermissionProvider>
-                                                <DataProvider directory={directory}>
-                                                  <LocationProvider>
-                                                    <VimProvider>
-                                                      <ThemeProvider source={createThemeSource(global.config)}>
-                                                        <ThemeErrorToast />
-                                                        <LocalProvider>
-                                                          <PromptStashProvider>
-                                                            <DialogProvider>
-                                                              <VimKeyHandler>
-                                                                <FrecencyProvider>
-                                                                  <PromptHistoryProvider>
-                                                                    <PromptRefProvider>
-                                                                      <EditorContextProvider>
-                                                                        <AttentionProvider>
-                                                                          <UpdateNotificationProvider
-                                                                            updater={input.updater}
-                                                                          >
-                                                                            <PluginProvider
-                                                                              packages={input.packages}
-                                                                              directories={pluginDirectories}
+                                                <RemoteControlProvider>
+                                                  <DataProvider directory={directory}>
+                                                    <LocationProvider>
+                                                      <VimProvider>
+                                                        <ThemeProvider source={createThemeSource(global.config)}>
+                                                          <ThemeErrorToast />
+                                                          <LocalProvider>
+                                                            <PromptStashProvider>
+                                                              <DialogProvider>
+                                                                <VimKeyHandler>
+                                                                  <FrecencyProvider>
+                                                                    <PromptHistoryProvider>
+                                                                      <PromptRefProvider>
+                                                                        <EditorContextProvider>
+                                                                          <AttentionProvider>
+                                                                            <UpdateNotificationProvider
+                                                                              updater={input.updater}
                                                                             >
-                                                                              <App
-                                                                                pair={
-                                                                                  input.server.endpoint.auth
-                                                                                    ? input.server.endpoint.auth
-                                                                                    : {
-                                                                                        username: "opencode",
-                                                                                        password: "",
-                                                                                      }
-                                                                                }
-                                                                              />
-                                                                            </PluginProvider>
-                                                                          </UpdateNotificationProvider>
-                                                                        </AttentionProvider>
-                                                                      </EditorContextProvider>
-                                                                    </PromptRefProvider>
-                                                                  </PromptHistoryProvider>
-                                                                </FrecencyProvider>
-                                                              </VimKeyHandler>
-                                                            </DialogProvider>
-                                                          </PromptStashProvider>
-                                                        </LocalProvider>
-                                                      </ThemeProvider>
-                                                    </VimProvider>
-                                                  </LocationProvider>
-                                                </DataProvider>
+                                                                              <PluginProvider
+                                                                                packages={input.packages}
+                                                                                directories={pluginDirectories}
+                                                                              >
+                                                                                <App
+                                                                                  pair={
+                                                                                    input.server.endpoint.auth
+                                                                                      ? input.server.endpoint.auth
+                                                                                      : {
+                                                                                          username: "opencode",
+                                                                                          password: "",
+                                                                                        }
+                                                                                  }
+                                                                                />
+                                                                              </PluginProvider>
+                                                                            </UpdateNotificationProvider>
+                                                                          </AttentionProvider>
+                                                                        </EditorContextProvider>
+                                                                      </PromptRefProvider>
+                                                                    </PromptHistoryProvider>
+                                                                  </FrecencyProvider>
+                                                                </VimKeyHandler>
+                                                              </DialogProvider>
+                                                            </PromptStashProvider>
+                                                          </LocalProvider>
+                                                        </ThemeProvider>
+                                                      </VimProvider>
+                                                    </LocationProvider>
+                                                  </DataProvider>
+                                                </RemoteControlProvider>
                                               </PermissionProvider>
                                             </ClientProvider>
                                           </RouteProvider>
@@ -726,6 +730,13 @@ function App(props: { pair?: DialogPairCredentials }) {
         category: "Agent",
         description: "Re-fetch the models.dev catalog and repopulate the model list",
         run: refreshModels,
+      },
+      {
+        name: "remote.control",
+        title: "Remote control",
+        category: "System",
+        slash: { name: "remote" },
+        run: () => dialog.replace(() => <DialogRemote />),
       },
       {
         name: "worker.model",
