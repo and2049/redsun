@@ -58,7 +58,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
   },
   commands: [
     Spec.make("remote", {
-      description: "Manage local remote-control policy and companion enrollment",
+      description: "Manage local remote-control policy, enrollment, and the companion",
       params: {
         action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke"]),
         handoff: Flag.string("handoff").pipe(
@@ -66,6 +66,12 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
           Flag.optional,
         ),
       },
+      commands: [
+        Spec.make("companion", {
+          description: "Run the local remote-control companion",
+          params: { args: Argument.string("args").pipe(Argument.variadic({ min: 0 })) },
+        }),
+      ],
     }),
     Spec.make("upgrade", {
       description: "Upgrade redsun to the latest or a specific version",

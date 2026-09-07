@@ -1,17 +1,14 @@
 import { createMemo, createSignal, Show } from "solid-js"
-import os from "node:os"
-import path from "node:path"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
-import { DialogPrompt } from "../ui/dialog-prompt"
 import { remoteLabel, useRemoteControl } from "../context/remote-control"
 import { useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 
-export function DialogRemote(props: { handoff?: string } = {}) {
-  const dialog = useDialog()
+export function DialogRemote() {
+  useDialog().setSize("xlarge")
   const remote = useRemoteControl()
   const theme = useTheme("elevated")
-  const [confirm, setConfirm] = createSignal(false)
+  const [confirm, setConfirm] = createSignal<"enroll" | "revoke">()
   const [busy, setBusy] = createSignal(false)
   const color = () => {
     const state = remote.status()?.state
@@ -48,13 +45,13 @@ export function DialogRemote(props: { handoff?: string } = {}) {
       })
     if (status?.supported && status.backendID)
       rows.push({
-        title: "Enroll a companion",
+        title: confirm() === "enroll" ? "Confirm: enroll a companion on this host" : "Enroll a companion",
         value: "enroll",
-        description: "Creates a private handoff file to import on the companion. Does not enable remote control.",
+        description: "Stores the credential for the companion on this host. Does not enable remote control.",
       })
     if (status?.enrolled)
       rows.push({
-        title: confirm() ? "Confirm: revoke all companion credentials" : "Revoke companion credentials",
+        title: confirm() === "revoke" ? "Confirm: revoke all companion credentials" : "Revoke companion credentials",
         value: "revoke",
         description: "All companion credentials are removed; companion must enroll again. Requires confirmation.",
       })
@@ -62,18 +59,14 @@ export function DialogRemote(props: { handoff?: string } = {}) {
   })
   const change = async (action: "enable" | "disable" | "enroll" | "revoke") => {
     if (busy()) return
-    if (action === "enroll") {
-      setConfirm(false)
-      dialog.replace(() => <DialogRemoteEnroll />)
-      return
-    }
-    if (action === "revoke" && !confirm()) {
-      setConfirm(true)
+    if ((action === "enroll" || action === "revoke") && confirm() !== action) {
+      setConfirm(action)
       return
     }
     setBusy(true)
-    await remote.change(action)
-    setConfirm(false)
+    if (action === "enroll") await remote.enroll()
+    else await remote.change(action)
+    setConfirm(undefined)
     setBusy(false)
   }
   return (
@@ -93,57 +86,35 @@ export function DialogRemote(props: { handoff?: string } = {}) {
             <text>{remote.status()?.enrolled ? "Enrolled" : "Not enrolled"}</text>
           </Show>
           <text>{guidance()}</text>
+          <Show when={remote.error()}>
+            <text fg={theme.text.feedback.warning.default}>{remote.error()}</text>
+          </Show>
           <Show when={remote.status()?.supported && !remote.status()?.backendID}>
             <text fg={theme.text.feedback.warning.default}>
               Backend identity has not been persisted; fix service configuration access and run remote disable to
               initialize it.
             </text>
           </Show>
-          <Show when={props.handoff}>
+          <Show when={remote.status()?.enrolled}>
             <text>
-              Private handoff: {props.handoff}. Import on the companion with `import-backend &lt;path&gt;` in
-              redsun-remote-control.{remote.status()?.enabled ? "" : " Then enable remote control."}
+              {
+                "Start the companion: redsun remote companion serve --origin https://<machine>.<tailnet>.ts.net --port 43123 --backend"
+              }
+            </text>
+            <text>Expose it privately: tailscale serve --bg --https=443 http://127.0.0.1:43123</text>
+            <text>
+              {
+                "In the companion terminal type enroll, then approve <requestID> <fingerprint> after comparing with the phone."
+              }
+            </text>
+            <text>
+              Tailscale HTTPS and Serve setup: https://tailscale.com/kb/1153/enabling-https and
+              https://tailscale.com/kb/1242/tailscale-serve
             </text>
           </Show>
           <text>Companion-reported status; not a Tailscale connectivity test.</text>
-          <Show when={remote.error()}>
-            <text fg={theme.text.feedback.warning.default}>{remote.error()}</text>
-          </Show>
         </box>
       }
-    />
-  )
-}
-
-function DialogRemoteEnroll() {
-  const dialog = useDialog()
-  const remote = useRemoteControl()
-  const theme = useTheme("elevated")
-  const [busy, setBusy] = createSignal(false)
-  const enroll = async (value: string) => {
-    if (busy() || !value.trim()) return
-    setBusy(true)
-    const file = await remote.enroll(value.trim())
-    setBusy(false)
-    if (file) dialog.replace(() => <DialogRemote handoff={file} />)
-  }
-  return (
-    <DialogPrompt
-      title="Enroll companion"
-      value={path.join(os.tmpdir(), `redsun-remote-handoff-${Date.now()}.json`)}
-      busy={busy()}
-      description={() => (
-        <box>
-          <text>
-            Creates a private handoff file containing a companion credential. Import it on the companion; never send it
-            to a browser. Choose a new file path.
-          </text>
-          <Show when={remote.error()}>
-            <text fg={theme.text.feedback.warning.default}>{remote.error()}</text>
-          </Show>
-        </box>
-      )}
-      onConfirm={(value) => void enroll(value)}
     />
   )
 }
