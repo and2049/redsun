@@ -37,7 +37,8 @@ test("exported remote client attaches without workspace runtime dependencies", a
       ),
     })
     expect((await api.remote.status()).version).toBe(1)
-    expect(requested).toEqual(["/api/remote"])
+    await api.remoteCatalog.theme()
+    expect(requested).toEqual(["/api/remote", "/api/remote/theme"])
     expect(await readFile(path.join(target, "handoff.schema.json"), "utf8")).toContain('"token"')
     await expect(exportRemoteClient(target)).rejects.toThrow()
   } finally {

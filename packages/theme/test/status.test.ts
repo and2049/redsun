@@ -6,7 +6,7 @@ import type { ThemeV1Json } from "../src/tui/v1.js"
 
 test.each(["light", "dark"] as const)("built-in %s themes resolve status colors", async (mode) => {
   const source: ThemeV1Json = await Bun.file(
-    new URL("../../tui/src/theme/assets/dusk.json", import.meta.url),
+    new URL("../src/tui/assets/dusk.json", import.meta.url),
   ).json()
   for (const document of [DEFAULT_THEME, migrateV1(source)]) {
     const theme = resolveThemeDocument(document, mode)

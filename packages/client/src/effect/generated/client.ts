@@ -21,6 +21,7 @@ import type {
   AgentListOutput,
   AgentGetInput,
   AgentGetOutput,
+  RemoteCatalogThemeOutput,
   RemoteCatalogAgentsInput,
   RemoteCatalogAgentsOutput,
   RemoteCatalogModelsInput,
@@ -371,6 +372,9 @@ const adaptGroupAgent = (raw: RawClient["server.agent"]) => ({
   get: EndpointAgentGet(raw),
 })
 
+const EndpointRemoteCatalogTheme = (raw: RawClient["server.remoteCatalog"]) => () =>
+  preserveEffect<RemoteCatalogThemeOutput>()(raw["remoteCatalog.theme"]({}).pipe(Effect.mapError(mapClientError)))
+
 const EndpointRemoteCatalogAgents = (raw: RawClient["server.remoteCatalog"]) => (input?: RemoteCatalogAgentsInput) =>
   preserveEffect<RemoteCatalogAgentsOutput>()(
     raw["remoteCatalog.agents"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
@@ -382,6 +386,7 @@ const EndpointRemoteCatalogModels = (raw: RawClient["server.remoteCatalog"]) => 
   )
 
 const adaptGroupRemoteCatalog = (raw: RawClient["server.remoteCatalog"]) => ({
+  theme: EndpointRemoteCatalogTheme(raw),
   agents: EndpointRemoteCatalogAgents(raw),
   models: EndpointRemoteCatalogModels(raw),
 })

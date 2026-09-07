@@ -5,6 +5,7 @@ import { RemoteControl } from "@opencode-ai/schema/remote-control"
 const id = "ses_[A-Za-z0-9_-]+"
 const reads = [
   /^\/api\/remote$/,
+  /^\/api\/remote\/theme$/,
   /^\/api\/remote\/(agent|model)$/,
   /^\/api\/location$/,
   /^\/api\/session$/,

@@ -11,6 +11,7 @@ import { it } from "../../core/test/lib/effect"
 import { RemoteService } from "../src/remote-control"
 import { RemoteAccess } from "../src/remote-access"
 import { ServerProcess } from "../src/process"
+import { DEFAULT_THEMES } from "@opencode-ai/theme/tui"
 
 const token = randomBytes(32).toString("base64url")
 const credentialID = randomBytes(16).toString("hex")
@@ -18,6 +19,7 @@ const digest = createHash("sha256").update(token).digest("hex")
 const bearer = `Bearer rc1.${credentialID}.${token}`
 const local = `Basic ${btoa("opencode:fixture-password")}`
 const decodeStatus = Schema.decodeUnknownSync(RemoteControl.Status)
+const decodeTheme = Schema.decodeUnknownSync(RemoteControl.Theme)
 const decodeSession = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.toEncoded(Session.Info) }))
 const decodeIdentity = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.Struct({ id: Schema.String }) }))
 const decodePermission = Schema.decodeUnknownSync(
@@ -34,6 +36,8 @@ const captureLogs = Logger.layer(
 )
 
 test("remote route and structured payload allowlists are closed", () => {
+  expect(RemoteAccess.route("GET", "/api/remote/theme")).toBe(true)
+  for (const method of ["POST", "PUT", "DELETE"]) expect(RemoteAccess.route(method, "/api/remote/theme")).toBe(false)
   for (const route of [
     "/api/config",
     "/api/credential",
@@ -161,6 +165,97 @@ test("leases expire independently, stale principals cannot report, and unmanaged
     ),
   )
 })
+
+it.live(
+  "scoped theme reads global CLI selection and custom files afresh, with safe fallback and admission",
+  () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      const server = yield* ServerProcess.start<never, never>({
+        hostname: "127.0.0.1",
+        port: 0,
+        password: "fixture-password",
+        database: { path: ":memory:" },
+        config: { directory: dir.path, project: false },
+        models: { fetch: false },
+        fs: { filewatcher: false },
+        remoteControl: { file: path.join(dir.path, "service.json") },
+      })
+      const base = HttpServer.formatAddress(server.address)
+      const request = (route: string, authorization = bearer, method = "GET", body?: unknown) =>
+        Effect.promise(() =>
+          fetch(base + route, {
+            method,
+            headers: { authorization, "content-type": "application/json" },
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: AbortSignal.timeout(5000),
+          }),
+        )
+      const read = (response: Response) => Effect.promise(async (): Promise<unknown> => response.json())
+      const status = decodeStatus(yield* read(yield* request("/api/remote", local)))
+      yield* request("/api/remote/enrollment", local, "POST", { backendID: status.backendID, credentialID, digest })
+      expect((yield* request("/api/remote/theme")).status).toBe(401)
+      yield* request("/api/remote/policy", local, "PUT", { enabled: true })
+      expect((yield* request("/api/remote/theme", "")).status).toBe(401)
+      for (const query of ["?name=dawn", "?location[directory]=ignored", "?token=ignored"])
+        expect((yield* request("/api/remote/theme" + query)).status).toBe(401)
+      const get = Effect.gen(function* () {
+        const response = yield* request("/api/remote/theme")
+        expect(response.status).toBe(200)
+        return decodeTheme(yield* read(response))
+      })
+      const fallback = yield* get
+      expect(fallback).toMatchObject({ name: "dusk", mode: "dark" })
+      expect(fallback.colors.text.default).toMatch(/^#[0-9a-f]{6}([0-9a-f]{2})?$/)
+      expect(() =>
+        decodeTheme({
+          ...fallback,
+          colors: { ...fallback.colors, border: { default: "red" } },
+        }),
+      ).toThrow()
+      expect(Object.keys(fallback.colors)).toEqual(["text", "background", "border", "diff", "markdown"])
+      const file = path.join(dir.path, "cli.json")
+      const custom = path.join(dir.path, "themes", "fixture.json")
+      yield* Effect.promise(async () => {
+        await mkdir(path.dirname(custom))
+        await writeFile(custom, JSON.stringify(DEFAULT_THEMES.dawn))
+        await writeFile(file, '{ // CLI supports JSONC\n "theme": { "name": "fixture", }, }')
+      })
+      const theme = yield* get
+      expect(theme).toMatchObject({ name: "fixture", mode: "light" })
+      expect(theme.colors.text.default).toBe("#141414")
+      expect(theme.colors.text.subdued).toBe("#141414ad")
+      yield* Effect.promise(() => writeFile(custom, JSON.stringify(DEFAULT_THEMES.dusk)))
+      expect(yield* get).toEqual({ ...fallback, name: "fixture" })
+      for (const source of ['{"version":2}', "{broken", "null"]) {
+        yield* Effect.promise(() => writeFile(custom, source))
+        expect(yield* get).toEqual(fallback)
+      }
+      for (const name of ["missing", "../fixture", "toString", "__proto__"]) {
+        yield* Effect.promise(() => writeFile(file, JSON.stringify({ theme: { name } })))
+        expect(yield* get).toEqual(fallback)
+      }
+      yield* Effect.promise(() => writeFile(file, "{broken"))
+      expect(yield* get).toEqual(fallback)
+      yield* Effect.promise(async () => {
+        const projectThemes = path.join(dir.path, ".redsun", "themes")
+        await mkdir(projectThemes, { recursive: true })
+        await writeFile(path.join(projectThemes, "project-only.json"), JSON.stringify(DEFAULT_THEMES.dawn))
+        await writeFile(file, JSON.stringify({ theme: { name: "project-only" } }))
+      })
+      expect(yield* get).toEqual(fallback)
+      yield* Effect.promise(() =>
+        writeFile(path.join(dir.path, "themes", "dusk.json"), JSON.stringify(DEFAULT_THEMES.dawn)),
+      )
+      expect(yield* get).toMatchObject({ name: "dusk", mode: "light", colors: theme.colors })
+      yield* request("/api/remote/policy", local, "PUT", { enabled: false })
+      expect((yield* request("/api/remote/theme")).status).toBe(401)
+    }),
+  30_000,
+)
 
 it.live(
   "managed policy and credential identity survive real API restarts and project selection cannot enable RC",

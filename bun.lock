@@ -372,9 +372,11 @@
         "@opencode-ai/protocol": "workspace:*",
         "@opencode-ai/schema": "workspace:*",
         "@opencode-ai/simulation": "workspace:*",
+        "@opencode-ai/theme": "workspace:*",
         "@opencode-ai/util": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
+        "jsonc-parser": "3.3.1",
       },
       "devDependencies": {
         "@opencode-ai/client": "workspace:*",

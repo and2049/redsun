@@ -11,7 +11,7 @@ import { resolveTheme as resolveV1 } from "../../../src/theme"
 import { v1Theme } from "../../fixture/fixture"
 import { RGBA } from "@opentui/core"
 import { parseTheme } from "../../../src/theme"
-import dusk from "../../../src/theme/assets/dusk.json" with { type: "json" }
+import dusk from "../../../../theme/src/tui/assets/dusk.json" with { type: "json" }
 
 test("migrates resolved V1 modes into V2 tokens", () => {
   const migrated = migrateV1(v1Theme())
