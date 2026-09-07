@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { readFile, writeFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { Schema } from "effect"
 import { createAppFixture } from "./fixture/app"
@@ -115,12 +115,26 @@ function rcIndicator(setup: Awaited<ReturnType<typeof createAppFixture>>) {
   return undefined
 }
 
-test.each(["success", "conflict", "network", "existing"] as const)(
-  "enrollment %s is private and file-first",
+function companionEnvironment(directory: string) {
+  const previous = { LOCALAPPDATA: process.env.LOCALAPPDATA, XDG_DATA_HOME: process.env.XDG_DATA_HOME }
+  process.env.LOCALAPPDATA = directory
+  process.env.XDG_DATA_HOME = directory
+  return {
+    [Symbol.dispose]() {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    },
+  }
+}
+
+test.each(["success", "conflict", "network"] as const)(
+  "enrollment %s is private and store-first",
   async (outcome) => {
     await using temporary = await tmpdir()
-    const file = path.join(temporary.path, "handoff.json")
-    if (outcome === "existing") await writeFile(file, "keep existing")
+    using environment = companionEnvironment(temporary.path)
+    const file = path.join(temporary.path, "redsun-remote-control", "backend.json")
     let issued = 0
     let handoff: RemoteControl.Handoff | undefined
     let status: RemoteControl.Status = {
@@ -134,6 +148,8 @@ test.each(["success", "conflict", "network", "existing"] as const)(
       leaseSeconds: 30,
     }
     await using setup = await createAppFixture({
+      width: 180,
+      height: 60,
       state: temporary.path,
       service: {
         registration: path.join(temporary.path, "service.json.remote"),
@@ -170,34 +186,47 @@ test.each(["success", "conflict", "network", "existing"] as const)(
     setup.mockInput.pressArrow("down")
     await setup.renderOnce()
     setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Enroll companion") && frame.includes("redsun-remote-handoff-"))
-    setup.mockInput.pressKey("a", { ctrl: true })
-    setup.mockInput.pressKey("k", { ctrl: true })
-    await setup.mockInput.typeText(file)
+    await setup.waitForFrame((frame) => frame.includes("Confirm: enroll a companion on this host"))
+    expect(issued).toBe(0)
+    expect(await Bun.file(file).exists()).toBe(false)
     setup.mockInput.pressEnter()
     await setup.waitForFrame(
-      (frame) =>
-        frame.includes(
-          outcome === "success"
-            ? "Private handoff:"
-            : outcome === "existing"
-              ? "Handoff file could not be"
-              : "Enrollment not confirmed",
-        ),
+      (frame) => frame.includes(outcome === "success" ? "Start the companion:" : "Enrollment not confirmed"),
       { maxPasses: 500 },
     )
-    expect(issued).toBe(outcome === "existing" ? 0 : 1)
+    expect(issued).toBe(1)
+    expect(handoff !== undefined).toBe(true)
     if (handoff) {
       const frame = setup.captureCharFrame()
       expect(frame.includes(handoff.token)).toBe(false)
       expect(frame.includes(createHash("sha256").update(handoff.token).digest("hex"))).toBe(false)
       expect((await readFile(file, "utf8")).includes(handoff.token)).toBe(true)
-    } else expect(await readFile(file, "utf8")).toBe("keep existing")
+    }
     if (outcome === "success") {
-      expect(setup.captureCharFrame()).toContain("import-backend")
+      const frame = setup.captureCharFrame()
+      for (const line of [
+        "Start the companion: redsun remote companion serve --origin https://<machine>.<tailnet>.ts.net --port 43123 --backend",
+        "Expose it privately: tailscale serve --bg --https=443 http://127.0.0.1:43123",
+        "In the companion terminal type enroll, then approve <requestID> <fingerprint> after comparing with the phone.",
+        "Tailscale HTTPS and Serve setup: https://tailscale.com/kb/1153/enabling-https and https://tailscale.com/kb/1242/tailscale-serve",
+        "Companion-reported status; not a Tailscale connectivity test.",
+      ])
+        expect(frame.replace(/\s/g, "")).toContain(line.replace(/\s/g, ""))
       expect(status.enabled).toBe(false)
       expect(status.enrolled).toBe(true)
+    } else {
+      expect(setup.captureCharFrame()).toContain("the companion store holds an unconfirmed credential")
     }
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) => frame.includes("Confirm: enroll a companion on this host"))
+    expect(issued).toBe(1)
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) => frame.includes("A companion is already enrolled on this host"), {
+      maxPasses: 500,
+    })
+    expect(issued).toBe(1)
+    expect((await readFile(file, "utf8")).includes(handoff!.token)).toBe(true)
+    expect(setup.captureCharFrame().includes(handoff!.token)).toBe(false)
   },
   15_000,
 )

@@ -20,7 +20,10 @@ const Handlers = Runtime.handlers(Commands, {
   upgrade: () => import("./commands/handlers/upgrade"),
   acp: () => import("./commands/handlers/acp"),
   api: () => import("./commands/handlers/api"),
-  remote: () => import("./commands/handlers/remote"),
+  remote: {
+    $: () => import("./commands/handlers/remote"),
+    companion: () => import("./commands/handlers/remote-companion"),
+  },
   auth: {
     list: () => import("./commands/handlers/auth/list"),
     login: () => import("./commands/handlers/auth/login"),
@@ -89,7 +92,11 @@ Effect.gen(function* () {
     local: OPENCODE_LOCAL,
     args: process.argv.slice(2),
   })
-  return yield* Runtime.run(Commands, Handlers, { version: OPENCODE_VERSION })
+  const args = process.argv.slice(2)
+  return yield* Runtime.run(Commands, Handlers, {
+    version: OPENCODE_VERSION,
+    args: args[0] === "remote" && args[1] === "companion" ? [...args.slice(0, 2), "--", ...args.slice(2)] : args,
+  })
 }).pipe(
   Effect.catchCause((cause) =>
     Effect.logError("cli process failed", {

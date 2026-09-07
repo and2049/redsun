@@ -1,7 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createHash, randomBytes } from "node:crypto"
-import path from "node:path"
-import { createPrivateFile } from "@opencode-ai/util/private-file"
+import { Effect } from "effect"
+import { importHandoff } from "redsun-remote-control"
 import type { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
@@ -65,7 +65,7 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         await refresh()
       }
     }
-    const enroll = async (target: string) => {
+    const enroll = async () => {
       setError(undefined)
       const backendID = status()?.backendID
       if (!status()?.supported || !backendID || !client.registration) {
@@ -74,11 +74,9 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         )
         return undefined
       }
-      let file: string
       let credentialID: string
       let token: string
       try {
-        file = path.resolve(target)
         credentialID = randomBytes(16).toString("hex")
         token = randomBytes(32).toString("base64url")
         const handoff: RemoteControl.Handoff = {
@@ -88,9 +86,11 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
           credentialID,
           token,
         }
-        await createPrivateFile(file, JSON.stringify(handoff, null, 2) + "\n")
+        await Effect.runPromise(importHandoff(handoff))
       } catch {
-        setError("Handoff file could not be created; no credential was issued. Choose a new path.")
+        setError(
+          "A companion is already enrolled on this host or its private store is unavailable; revoke companion credentials and remove the companion store before enrolling again",
+        )
         return undefined
       }
       try {
@@ -101,13 +101,12 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         })
       } catch {
         setError(
-          "Enrollment not confirmed; keep the private handoff for reconciliation or revoke credentials before removing it.",
+          "Enrollment not confirmed; the companion store holds an unconfirmed credential. Revoke companion credentials, then remove the companion store before retrying",
         )
         await refresh()
         return undefined
       }
       await refresh()
-      return file
     }
     return { status, error, change, refresh, enroll }
   },
