@@ -36,7 +36,7 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "jsonc-parser": "3.3.1",
-    "redsun-remote-control": "0.2.0"
+    "redsun-remote-control": "0.3.0"
   },
   "devDependencies": {
     "@opencode-ai/client": "workspace:*",

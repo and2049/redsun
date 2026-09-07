@@ -1,5 +1,13 @@
 import { Context, Effect, Exit, Layer, Schema, Scope, Semaphore, Schedule } from "effect"
-import { serveCompanion, inspectTailscale, applyServe, StorageError, type Local } from "redsun-remote-control"
+import {
+  serveCompanion,
+  inspectTailscale,
+  applyServe,
+  removeHandoff,
+  StorageError,
+  type BackendSnapshot,
+  type Local,
+} from "redsun-remote-control"
 import { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
 import { readFile, rename, mkdir, rm } from "node:fs/promises"
@@ -17,9 +25,14 @@ type Stored = typeof Stored.Type
 const decode = Schema.decodeUnknownSync(RemoteControl.Settings)
 
 export type CompanionHost = {
-  start(options: { origin: string; port: number }): Effect.Effect<{ local: Local; stop: Effect.Effect<void> }, Error>
+  start(options: { origin: string; port: number }): Effect.Effect<
+    { local: Local; stop: Effect.Effect<void>; backend: () => BackendSnapshot | undefined },
+    Error
+  >
+  clear: Effect.Effect<void, Error>
 }
 const defaultHost: CompanionHost = {
+  clear: Effect.suspend(() => removeHandoff()),
   start: (options) =>
     Effect.gen(function* () {
       const scope = yield* Scope.make()
@@ -28,7 +41,7 @@ const defaultHost: CompanionHost = {
         Scope.provide(scope),
         Effect.onError(() => stop),
       )
-      return { local: companion.local, stop }
+      return { local: companion.local, stop, backend: companion.backend }
     }).pipe(Effect.uninterruptible),
 }
 
@@ -136,9 +149,15 @@ export const make = Effect.fnUntraced(function* (
       }),
     )
   })
+  const stopped = (snapshot: BackendSnapshot | undefined) => {
+    if (snapshot?.state !== "stopped") return undefined
+    if (snapshot.reason === "refused")
+      return "This backend rejected the companion credential; revoke companion credentials and enroll a companion again"
+    return `Companion stopped (${snapshot.reason}); check the service log and re-enable remote control`
+  }
   const view = Effect.gen(function* (): Effect.fn.Return<RemoteControl.Companion> {
     const pending = hosted ? yield* hosted.local.pending.pipe(Effect.orElseSucceed(() => [])) : []
-    return { running: hosted !== undefined, error, origin: state.origin, port: port(), pending }
+    return { running: hosted !== undefined, error: error ?? stopped(hosted?.backend()), origin: state.origin, port: port(), pending }
   })
   const localAction = <A>(action: (local: Local) => Effect.Effect<A, Error>) =>
     lock
@@ -296,6 +315,7 @@ export const make = Effect.fnUntraced(function* (
         Effect.gen(function* () {
           state = { ...state, credentials: [] }
           yield* stop
+          yield* host.clear.pipe(Effect.ignore)
           invalidate()
           const persisted = file ? yield* persist(state) : false
           if (!persisted) state = { ...state, enabled: false }
