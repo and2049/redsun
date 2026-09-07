@@ -32,6 +32,15 @@ describe("provider package entrypoints", () => {
       import("@opencode-ai/ai/providers/cerebras"),
       import("@opencode-ai/ai/providers/deepinfra"),
       import("@opencode-ai/ai/providers/groq"),
+      import("@opencode-ai/ai/providers/baseten"),
+      import("@opencode-ai/ai/providers/deepseek"),
+      import("@opencode-ai/ai/providers/fireworks"),
+      import("@opencode-ai/ai/providers/cloudflare-ai-gateway"),
+      import("@opencode-ai/ai/providers/cloudflare-workers-ai"),
+      import("@opencode-ai/ai/providers/minimax"),
+      import("@opencode-ai/ai/providers/minimax/messages"),
+      import("@opencode-ai/ai/providers/minimax/chat"),
+      import("@opencode-ai/ai/providers/minimax/responses"),
     ])
 
     for (const module of modules) expect(module.model).toBeFunction()
@@ -40,6 +49,31 @@ describe("provider package entrypoints", () => {
     expect(modules[12].model).toBe(modules[13].model)
     expect(modules[19].model).toBe(modules[21].model)
     expect(modules[19].model).not.toBe(modules[20].model)
+  })
+
+  test("maps MiniMax API entrypoints onto provider-owned routes", async () => {
+    const modules = await Promise.all([
+      import("@opencode-ai/ai/providers/minimax"),
+      import("@opencode-ai/ai/providers/minimax/messages"),
+      import("@opencode-ai/ai/providers/minimax/chat"),
+      import("@opencode-ai/ai/providers/minimax/responses"),
+    ])
+    expect(modules[0].model).toBe(modules[1].model)
+    const settings = {
+      apiKey: "fixture",
+      baseURL: "https://gateway.example/v1",
+      headers: { "x-application": "opencode" },
+      body: { service_tier: "priority" },
+    }
+    const routes = ["minimax-messages", "minimax-messages", "minimax-chat", "minimax-responses"]
+    modules.forEach((module, index) => {
+      const selected = module.model("MiniMax-M3", settings)
+      expect(selected.provider).toBe("minimax")
+      expect(selected.route.id).toBe(routes[index])
+      expect(selected.route.endpoint.baseURL).toBe(settings.baseURL)
+      expect(selected.route.defaults.headers).toEqual(settings.headers)
+      expect(selected.route.defaults.http?.body).toEqual(settings.body)
+    })
   })
 
   test("maps DeepInfra package settings onto its native executable model", async () => {
@@ -58,6 +92,27 @@ describe("provider package entrypoints", () => {
     expect(deepinfra.route.defaults.providerOptions).toEqual(settings.providerOptions)
     expect(deepinfra.route.defaults.headers).toEqual(settings.headers)
     expect(deepinfra.route.defaults.http?.body).toEqual(settings.body)
+  })
+
+  test("maps Cloudflare package settings onto provider-owned models", async () => {
+    const modules = await Promise.all([
+      import("@opencode-ai/ai/providers/cloudflare-ai-gateway"),
+      import("@opencode-ai/ai/providers/cloudflare-workers-ai"),
+    ])
+    for (const provider of modules) {
+      const selected = provider.model("provider-model", {
+        accountId: "account",
+        apiKey: "fixture",
+        headers: { "x-application": "opencode" },
+        body: { custom: true },
+        providerOptions: { reasoningEffort: "high" },
+      })
+      expect(selected.provider).toBe(provider.id)
+      expect(selected.route.endpoint.baseURL).toBe(provider.baseURL({ accountId: "account" }))
+      expect(selected.route.defaults.headers).toEqual({ "x-application": "opencode" })
+      expect(selected.route.defaults.http?.body).toEqual({ custom: true })
+      expect(selected.route.defaults.providerOptions).toEqual({ reasoningEffort: "high" })
+    }
   })
 
   test("maps OpenRouter and xAI package settings onto executable models", async () => {

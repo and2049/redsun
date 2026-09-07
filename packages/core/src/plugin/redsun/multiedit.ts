@@ -10,7 +10,7 @@ import { Environment } from "../../environment/index.js"
 import { FileMutation } from "../../file-mutation.js"
 import { Formatter } from "../../formatter.js"
 import { Location } from "../../location.js"
-import { LocationMutation } from "../../location-mutation.js"
+import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "../../tool/plugin/file-diff.js"
 import { findMatches } from "../../tool/plugin/edit.js"
@@ -45,7 +45,7 @@ export const DESCRIPTION =
 export const Plugin = define({
   id: "redsun.tool.multiedit",
   effect: Effect.fn(function* (ctx) {
-    const mutation = yield* LocationMutation.Service
+    const access = yield* FileAccess.Service
     const fileMutation = yield* FileMutation.Service
     const environment = yield* Environment.Service
     const formatter = yield* Formatter.Service
@@ -65,16 +65,8 @@ export const Plugin = define({
               if (input.edits.length === 0)
                 return yield* new ToolFailure({ message: "No edits to apply: edits is empty." })
 
-              const target = yield* mutation.resolve({ path: input.path, kind: "file" })
-              const external = target.externalDirectory
-              if (external) {
-                yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external),
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source: { type: "tool", messageID: context.messageID, id: context.id },
-                })
-              }
+              const target = yield* access.resolve({ path: input.path, kind: "file" })
+              yield* access.authorizeExternal([target], context)
 
               const original = yield* FileMutation.readText(environment.files, target.absolute).pipe(
                 Effect.catchTag("Environment.NotFound", () =>
