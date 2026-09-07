@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Schema } from "effect"
-import { RemoteControl } from "../src/remote-control"
+import { RemoteControl } from "../src/remote-control.js"
 
 test("remote settings preserve optional origin and bounded integer port", () => {
   const decode = Schema.decodeUnknownSync(RemoteControl.Settings)
