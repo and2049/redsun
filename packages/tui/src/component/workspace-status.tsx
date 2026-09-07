@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { usePermission } from "../context/permission"
 import { useTheme } from "../context/theme"
-import { remoteLabel, useRemoteControl } from "../context/remote-control"
+import { useRemoteControl } from "../context/remote-control"
 
 export function WorkspaceStatus() {
   const permission = usePermission()
@@ -10,12 +10,17 @@ export function WorkspaceStatus() {
   const remote = useRemoteControl()
   const dimensions = useTerminalDimensions()
   const compact = () => dimensions().width < 80
+  const rcState = () => remote.status()?.state
+  const rcColor = () =>
+    rcState() === "unavailable" ? theme.text.feedback.warning.default : theme.text.feedback.success.default
 
   return (
     <box flexShrink={0} height={1} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="flex-end">
-      <text wrapMode="none" fg={theme.text.subdued}>
-        {remoteLabel(remote.status(), compact())}{" "}
-      </text>
+      <Show when={rcState() === "ready" || rcState() === "connected" || rcState() === "unavailable"}>
+        <text wrapMode="none" fg={rcColor()}>
+          {"/RC "}
+        </text>
+      </Show>
       <text wrapMode="none" onMouseDown={() => permission.toggle()}>
         <Show
           when={permission.mode === "auto"}
