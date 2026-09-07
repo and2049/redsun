@@ -3,12 +3,8 @@ import type { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
 
-export function remoteLabel(status?: Pick<RemoteControl.Status, "state">, compact = false) {
-  if (!status) return compact ? "RC unknown" : "RC status unknown"
-  if (compact)
-    return { disabled: "RC off", unavailable: "RC on/unavailable", ready: "RC ready", connected: "RC connected" }[
-      status.state
-    ]
+export function remoteLabel(status?: Pick<RemoteControl.Status, "state">) {
+  if (!status) return "RC status unknown"
   return {
     disabled: "RC disabled",
     unavailable: "RC enabled, unavailable",

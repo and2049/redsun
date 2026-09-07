@@ -41,7 +41,7 @@ test("remote command works from Home without a model prompt and reports persiste
     },
   })
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("RC enabled, unavailable"))
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Enable remote control"))
@@ -50,6 +50,8 @@ test("remote command works from Home without a model prompt and reports persiste
   await setup.waitForFrame((frame) => frame.includes("Restart persistence was NOT updated"))
   expect(actions).toEqual(["PUT"])
   expect(setup.captureCharFrame()).toContain("RC disabled")
+  setup.mockInput.pressEscape()
+  await setup.waitForFrame((frame) => !frame.includes("/RC"))
   expect(status.enrolled).toBe(true)
 })
 
@@ -86,15 +88,25 @@ test.each([44, 100])("remote indicator survives Home/session navigation at width
     },
   })
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("RC connected") && frame.includes("Auto-approve"))
+  await setup.waitForFrame((frame) => frame.includes("/RC") && frame.includes("Auto-approve"))
+  const connectedFg = rcIndicator(setup)?.fg
+  expect(connectedFg).toBeDefined()
   status = { ...status, state: "unavailable" }
   setup.events.emit({ id: "evt_remote", created: 1, type: "remote.status", data: status })
-  await setup.waitForFrame((frame) => frame.includes(width < 80 ? "RC on/unavailable" : "RC enabled, unavailable"))
+  await setup.waitFor(() => {
+    const fg = rcIndicator(setup)?.fg
+    return fg !== undefined && !fg.equals(connectedFg)
+  })
   await setup.mockInput.typeText("/new")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame(
-    (frame) =>
-      frame.includes("commands") && frame.includes(width < 80 ? "RC on/unavailable" : "RC enabled, unavailable"),
-  )
+  await setup.waitForFrame((frame) => frame.includes("commands") && frame.includes("/RC"))
   expect(status.enabled).toBe(true)
 })
+
+function rcIndicator(setup: Awaited<ReturnType<typeof createAppFixture>>) {
+  for (const line of setup.captureSpans().lines) {
+    const span = line.spans.find((span) => span.text.includes("/RC"))
+    if (span) return span
+  }
+  return undefined
+}
