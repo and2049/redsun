@@ -129,6 +129,213 @@ function companionEnvironment(directory: string) {
   }
 }
 
+test("enable prompts for detected origin, configures, then enables", async () => {
+  await using temporary = await tmpdir()
+  using environment = companionEnvironment(temporary.path)
+  const actions: string[] = []
+  let companion: RemoteControl.Companion = { running: false, port: 43123, pending: [] }
+  let status: RemoteControl.Status = {
+    supported: true,
+    enabled: false,
+    enrolled: true,
+    state: "disabled",
+    backendID: "fixture",
+    processID: "process",
+    version: 1,
+    leaseSeconds: 30,
+  }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    width: 140,
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion") {
+        if (request.method === "PUT") {
+          const config = Schema.decodeUnknownSync(RemoteControl.CompanionConfig)(await request.json())
+          actions.push(`configure:${config.origin}`)
+          companion = { ...companion, ...config }
+        }
+        return json(companion)
+      }
+      if (url.pathname === "/api/remote/tailscale")
+        return json({ host: "fixture.ts.net", origin: "https://fixture.ts.net", certificate: true, mapping: "ready" })
+      if (url.pathname === "/api/remote/policy") {
+        actions.push("enable")
+        status = { ...status, enabled: true, state: "unavailable" }
+        return json({ status, persisted: true })
+      }
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Enable remote control"))
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Companion origin") && frame.includes("https://fixture.ts.net"))
+  expect(actions).toEqual([])
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Disable remote control"))
+  expect(actions).toEqual(["configure:https://fixture.ts.net", "enable"])
+})
+
+test.each(["success", "registered"] as const)(
+  "phone registration %s reports the local approval flow",
+  async (outcome) => {
+    await using temporary = await tmpdir()
+    using environment = companionEnvironment(temporary.path)
+    const actions: string[] = []
+    await using setup = await createAppFixture({
+      state: temporary.path,
+      width: 180,
+      height: 60,
+      fetch: (url, request) => {
+        if (url.pathname === "/api/remote")
+          return json({
+            supported: true,
+            enabled: true,
+            enrolled: true,
+            state: "ready",
+            backendID: "fixture",
+            processID: "process",
+            version: 1,
+            leaseSeconds: 30,
+          })
+        if (url.pathname === "/api/remote/companion")
+          return json({ running: true, origin: "https://fixture.ts.net", port: 43123, pending: [] })
+        if (url.pathname === "/api/remote/tailscale")
+          return json({ host: "fixture.ts.net", origin: "https://fixture.ts.net", certificate: true, mapping: "ready" })
+        if (url.pathname === "/api/remote/companion/registration") {
+          actions.push(request.method)
+          if (outcome === "registered")
+            return Response.json(
+              { _tag: "ConflictError", message: "An owner passkey is already registered" },
+              { status: 409 },
+            )
+          return new Response(null, { status: 204 })
+        }
+      },
+    })
+    await setup.ready
+    await setup.waitForFrame((frame) => frame.includes("/RC"))
+    await setup.mockInput.typeText("/remote")
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) => frame.includes("Register a phone"))
+    for (let i = 0; i < 4; i++) setup.mockInput.pressArrow("down")
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) =>
+      frame.includes(
+        outcome === "registered"
+          ? "An owner passkey is already registered"
+          : "within five minutes and choose Register this device",
+      ),
+    )
+    expect(actions).toEqual(["POST"])
+    if (outcome === "success") {
+      await setup.renderOnce()
+      setup.mockInput.pressArrow("down")
+      setup.mockInput.pressEnter()
+      await setup.waitForFrame((frame) => !frame.includes("Cancel phone registration"))
+      expect(actions).toEqual(["POST", "DELETE"])
+    }
+  },
+)
+
+test.each(["missing", "conflict", "ready"] as const)(
+  "phone approvals and Tailscale %s stay local and confirmed",
+  async (mapping) => {
+    await using temporary = await tmpdir()
+    using environment = companionEnvironment(temporary.path)
+    let approved = 0
+    let applied = 0
+    let inspected = 0
+    let companion: RemoteControl.Companion = {
+      running: true,
+      origin: "https://fixture.ts.net",
+      port: 43123,
+      pending: [{ requestID: "fixture-request", fingerprint: "ABCD-EFGH" }],
+    }
+    let tailscale: RemoteControl.Tailscale = {
+      host: "fixture.ts.net",
+      origin: "https://fixture.ts.net",
+      certificate: mapping !== "conflict",
+      mapping,
+    }
+    const status: RemoteControl.Status = {
+      supported: true,
+      enabled: true,
+      enrolled: true,
+      state: "ready",
+      backendID: "fixture",
+      processID: "process",
+      version: 1,
+      leaseSeconds: 30,
+    }
+    await using setup = await createAppFixture({
+      state: temporary.path,
+      width: 160,
+      height: 60,
+      fetch: async (url, request) => {
+        if (url.pathname === "/api/remote") return json(status)
+        if (url.pathname === "/api/remote/companion") return json(companion)
+        if (url.pathname === "/api/remote/tailscale") {
+          if (request.method === "POST") {
+            applied++
+            tailscale = { ...tailscale, mapping: "ready" }
+          } else inspected++
+          return json(tailscale)
+        }
+        if (url.pathname === "/api/remote/companion/approval") {
+          expect(Schema.decodeUnknownSync(RemoteControl.Approval)(await request.json())).toEqual(companion.pending[0])
+          approved++
+          companion = { ...companion, pending: [] }
+          return new Response(null, { status: 204 })
+        }
+      },
+    })
+    await setup.ready
+    await setup.waitForFrame((frame) => frame.includes("/RC"))
+    expect(inspected).toBe(0)
+    await setup.mockInput.typeText("/remote")
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame(
+      (frame) => frame.includes("Approve phone ABCD-EFGH") && frame.includes("Inspect Tailscale Serve"),
+    )
+    expect(applied).toBe(0)
+    expect(inspected).toBe(1)
+    for (let i = 0; i < 5; i++) setup.mockInput.pressArrow("down")
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) => frame.includes("Confirm: approve ABCD-EFGH"))
+    expect(approved).toBe(0)
+    expect(setup.captureCharFrame()).toContain("must match the phone screen exactly")
+    setup.mockInput.pressEnter()
+    await setup.waitFor(() => approved === 1)
+    await setup.waitForFrame((frame) => !frame.includes("Approve phone ABCD-EFGH"))
+    await setup.renderOnce()
+    if (mapping === "missing") {
+      setup.mockInput.pressArrow("up")
+      setup.mockInput.pressEnter()
+      await setup.waitForFrame((frame) =>
+        frame.includes("Confirm: tailscale serve --bg --https=443 http://127.0.0.1:43123"),
+      )
+      expect(applied).toBe(0)
+      setup.mockInput.pressEnter()
+      await setup.waitForFrame(
+        (frame) => !frame.includes("Map Tailscale Serve") && !frame.includes("Confirm: tailscale"),
+      )
+      expect(applied).toBe(1)
+    } else {
+      expect(setup.captureCharFrame()).not.toContain("Map Tailscale Serve to the companion")
+      if (mapping === "conflict") {
+        expect(setup.captureCharFrame()).toContain("inspect tailscale serve status")
+        expect(setup.captureCharFrame()).toContain(
+          "Enable HTTPS certificates: https://tailscale.com/kb/1153/enabling-https",
+        )
+      }
+    }
+  },
+)
+
 test.each(["success", "conflict", "network"] as const)(
   "enrollment %s is private and store-first",
   async (outcome) => {
@@ -191,7 +398,7 @@ test.each(["success", "conflict", "network"] as const)(
     expect(await Bun.file(file).exists()).toBe(false)
     setup.mockInput.pressEnter()
     await setup.waitForFrame(
-      (frame) => frame.includes(outcome === "success" ? "Start the companion:" : "Enrollment not confirmed"),
+      (frame) => frame.includes(outcome === "success" ? "Change companion origin" : "Enrollment not confirmed"),
       { maxPasses: 500 },
     )
     expect(issued).toBe(1)
@@ -205,10 +412,8 @@ test.each(["success", "conflict", "network"] as const)(
     if (outcome === "success") {
       const frame = setup.captureCharFrame()
       for (const line of [
-        "Start the companion: redsun remote companion serve --origin https://<machine>.<tailnet>.ts.net --port 43123 --backend",
-        "Expose it privately: tailscale serve --bg --https=443 http://127.0.0.1:43123",
-        "In the companion terminal type enroll, then approve <requestID> <fingerprint> after comparing with the phone.",
-        "Tailscale HTTPS and Serve setup: https://tailscale.com/kb/1153/enabling-https and https://tailscale.com/kb/1242/tailscale-serve",
+        "Enable remote control so the companion can attach.",
+        "Change companion origin",
         "Companion-reported status; not a Tailscale connectivity test.",
       ])
         expect(frame.replace(/\s/g, "")).toContain(line.replace(/\s/g, ""))
@@ -245,7 +450,12 @@ test("dialog title uses ready and unavailable colors and state guidance", async 
   }
   await using setup = await createAppFixture({
     state: temporary.path,
-    fetch: (url) => (url.pathname === "/api/remote" ? json(status) : undefined),
+    fetch: (url) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion")
+        return json({ running: true, origin: "https://fixture.ts.net", port: 43123, pending: [] })
+      return undefined
+    },
   })
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("/RC"))
@@ -261,7 +471,7 @@ test("dialog title uses ready and unavailable colors and state guidance", async 
   expect(ready).toBeDefined()
   status = { ...status, state: "unavailable" }
   setup.events.emit({ id: "evt_remote", created: 1, type: "remote.status", data: status })
-  await setup.waitForFrame((frame) => frame.includes("no live companion heartbeat"))
+  await setup.waitForFrame((frame) => frame.includes("Companion starting"))
   expect(title()?.equals(ready)).toBe(false)
 })
 
@@ -282,6 +492,8 @@ test("enable and confirmed revoke report persistence failures without losing nav
     state: temporary.path,
     fetch: (url, request) => {
       if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion")
+        return json({ running: false, origin: "https://fixture.ts.net", port: 43123, pending: [] })
       if (url.pathname === "/api/remote/policy") {
         actions.push(request.method)
         status = { ...status, enabled: true, state: "unavailable" }

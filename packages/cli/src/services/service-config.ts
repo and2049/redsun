@@ -147,7 +147,18 @@ export const get = Effect.fn("cli.service-config.get")(function* (key?: string, 
   if (key === undefined) {
     const { password: _password, remote_control, ...safe } = yield* read()
     return JSON.stringify(
-      { ...safe, ...(remote_control ? { remote_control: { enabled: remote_control.enabled } } : {}) },
+      {
+        ...safe,
+        ...(remote_control
+          ? {
+              remote_control: {
+                enabled: remote_control.enabled,
+                origin: remote_control.origin,
+                port: remote_control.port,
+              },
+            }
+          : {}),
+      },
       null,
       2,
     )

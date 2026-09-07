@@ -48,6 +48,33 @@ export interface HealthApi<E = never> {
   readonly get: HealthGetOperation<E>
 }
 
+export type RemoteCompanionGetOutput = RemoteControl.Companion
+export type RemoteCompanionGetOperation<E = never> = () => Effect.Effect<RemoteCompanionGetOutput, E>
+
+export type RemoteCompanionConfigureInput = { readonly origin: string; readonly port?: number | undefined }
+export type RemoteCompanionConfigureOutput = RemoteControl.Companion
+export type RemoteCompanionConfigureOperation<E = never> = (
+  input: RemoteCompanionConfigureInput,
+) => Effect.Effect<RemoteCompanionConfigureOutput, E>
+
+export type RemoteCompanionRegisterOutput = void
+export type RemoteCompanionRegisterOperation<E = never> = () => Effect.Effect<RemoteCompanionRegisterOutput, E>
+
+export type RemoteCompanionCancelOutput = void
+export type RemoteCompanionCancelOperation<E = never> = () => Effect.Effect<RemoteCompanionCancelOutput, E>
+
+export type RemoteCompanionApproveInput = { readonly requestID: string; readonly fingerprint: string }
+export type RemoteCompanionApproveOutput = void
+export type RemoteCompanionApproveOperation<E = never> = (
+  input: RemoteCompanionApproveInput,
+) => Effect.Effect<RemoteCompanionApproveOutput, E>
+
+export type RemoteTailscaleGetOutput = RemoteControl.Tailscale
+export type RemoteTailscaleGetOperation<E = never> = () => Effect.Effect<RemoteTailscaleGetOutput, E>
+
+export type RemoteTailscaleApplyOutput = RemoteControl.Tailscale
+export type RemoteTailscaleApplyOperation<E = never> = () => Effect.Effect<RemoteTailscaleApplyOutput, E>
+
 export type RemoteStatusOutput = RemoteControl.Status
 export type RemoteStatusOperation<E = never> = () => Effect.Effect<RemoteStatusOutput, E>
 
@@ -69,6 +96,14 @@ export type RemoteHeartbeatOperation<E = never> = (
 ) => Effect.Effect<RemoteHeartbeatOutput, E>
 
 export interface RemoteApi<E = never> {
+  readonly companion: {
+    readonly get: RemoteCompanionGetOperation<E>
+    readonly configure: RemoteCompanionConfigureOperation<E>
+    readonly register: RemoteCompanionRegisterOperation<E>
+    readonly cancel: RemoteCompanionCancelOperation<E>
+    readonly approve: RemoteCompanionApproveOperation<E>
+  }
+  readonly tailscale: { readonly get: RemoteTailscaleGetOperation<E>; readonly apply: RemoteTailscaleApplyOperation<E> }
   readonly status: RemoteStatusOperation<E>
   readonly policy: RemotePolicyOperation<E>
   readonly enroll: RemoteEnrollOperation<E>
