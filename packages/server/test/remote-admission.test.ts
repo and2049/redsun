@@ -76,6 +76,25 @@ it.live(
       )
       yield* Effect.promise(() => local.remote.policy({ enabled: true }))
       const remote = makeClient(`Bearer rc1.${credentialID}.${token}`)
+      for (const [method, route] of [
+        ["GET", "/api/remote/companion"],
+        ["PUT", "/api/remote/companion"],
+        ["POST", "/api/remote/companion/registration"],
+        ["DELETE", "/api/remote/companion/registration"],
+        ["POST", "/api/remote/companion/approval"],
+        ["GET", "/api/remote/tailscale"],
+        ["POST", "/api/remote/tailscale"],
+      ]) {
+        const response = yield* Effect.promise(() =>
+          handler(
+            new Request(`http://localhost${route}`, {
+              method,
+              headers: { authorization: `Bearer rc1.${credentialID}.${token}` },
+            }),
+          ),
+        )
+        expect(response.status).toBe(401)
+      }
       const session = yield* Effect.promise(() =>
         remote.session.create({ title: "Admission fixture", location: { directory: temporary.path } }),
       )

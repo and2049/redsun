@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Schema, Semaphore, Schedule } from "effect"
+import { Context, Effect, Exit, Layer, Schema, Scope, Semaphore, Schedule } from "effect"
+import { serveCompanion, inspectTailscale, applyServe, StorageError, type Local } from "redsun-remote-control"
 import { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
 import { readFile, rename, mkdir, rm } from "node:fs/promises"
@@ -9,9 +10,27 @@ const Stored = Schema.Struct({
   enabled: Schema.Boolean,
   backendID: Schema.String,
   credentials: Schema.Array(RemoteControl.Enrollment),
+  origin: RemoteControl.Settings.fields.origin,
+  port: RemoteControl.Settings.fields.port,
 })
 type Stored = typeof Stored.Type
 const decode = Schema.decodeUnknownSync(RemoteControl.Settings)
+
+export type CompanionHost = {
+  start(options: { origin: string; port: number }): Effect.Effect<{ local: Local; stop: Effect.Effect<void> }, Error>
+}
+const defaultHost: CompanionHost = {
+  start: (options) =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const stop = Scope.close(scope, Exit.void)
+      const companion = yield* serveCompanion({ ...options, backend: true }).pipe(
+        Scope.provide(scope),
+        Effect.onError(() => stop),
+      )
+      return { local: companion.local, stop }
+    }).pipe(Effect.uninterruptible),
+}
 
 export class Principal extends Context.Service<Principal, { readonly id: string; readonly epoch: number }>()(
   "redsun/RemotePrincipal",
@@ -22,6 +41,7 @@ export const make = Effect.fnUntraced(function* (
   publish: (status: RemoteControl.Status) => Effect.Effect<void> = () => Effect.void,
   now: () => number = () => performance.now(),
   processID = randomUUID(),
+  host: CompanionHost = defaultHost,
 ) {
   const lock = yield* Semaphore.make(1)
   let state: Stored = { enabled: false, backendID: randomUUID(), credentials: [] }
@@ -73,7 +93,13 @@ export const make = Effect.fnUntraced(function* (
         new Set(credentials.map((entry) => entry.credentialID)).size !== credentials.length
       )
         return yield* Effect.fail(new Error("Invalid remote control enrollment"))
-      state = { enabled: settings.enabled ?? false, backendID: settings.backendID ?? state.backendID, credentials }
+      state = {
+        enabled: settings.enabled ?? false,
+        backendID: settings.backendID ?? state.backendID,
+        credentials,
+        origin: settings.origin,
+        port: settings.port,
+      }
       durableIdentity = settings.backendID !== undefined || (yield* persist(state))
     } else durableIdentity = yield* persist(state)
     if (!durableIdentity) state = { ...state, enabled: false }
@@ -84,7 +110,44 @@ export const make = Effect.fnUntraced(function* (
     for (const close of connections) close()
     connections.clear()
   }
-  yield* Effect.addFinalizer(() => Effect.sync(invalidate))
+  let hosted: Effect.Success<ReturnType<CompanionHost["start"]>> | undefined
+  let error: string | undefined
+  const port = () => state.port ?? 43123
+  const stop = Effect.gen(function* () {
+    const previous = hosted
+    hosted = undefined
+    error = undefined
+    if (previous) yield* previous.stop
+  })
+  const start = Effect.gen(function* () {
+    if (hosted || !file || !state.enabled || !state.origin) return
+    yield* host.start({ origin: state.origin, port: port() }).pipe(
+      Effect.match({
+        onSuccess: (value) => {
+          hosted = value
+          error = undefined
+        },
+        onFailure: (failure) => {
+          error =
+            failure instanceof StorageError
+              ? "Companion is not enrolled on this host; enroll a companion first"
+              : failure.message
+        },
+      }),
+    )
+  })
+  const view = Effect.gen(function* (): Effect.fn.Return<RemoteControl.Companion> {
+    const pending = hosted ? yield* hosted.local.pending.pipe(Effect.orElseSucceed(() => [])) : []
+    return { running: hosted !== undefined, error, origin: state.origin, port: port(), pending }
+  })
+  const localAction = <A>(action: (local: Local) => Effect.Effect<A, Error>) =>
+    lock
+      .withPermits(1)(
+        Effect.suspend(() => (hosted ? action(hosted.local) : Effect.fail(new Error("Companion is not running")))),
+      )
+      .pipe(Effect.uninterruptible)
+  yield* Effect.addFinalizer(() => lock.withPermits(1)(Effect.sync(invalidate).pipe(Effect.andThen(stop))))
+  yield* start.pipe(Effect.uninterruptible)
   const status = (): RemoteControl.Status => {
     const live = [...leases.values()].filter((lease) => lease.expires > now())
     return {
@@ -116,6 +179,50 @@ export const make = Effect.fnUntraced(function* (
   }).pipe(Effect.repeat(Schedule.spaced("1 second")), Effect.forkScoped)
   return {
     status,
+    companion: () => lock.withPermits(1)(view),
+    configure: (config: RemoteControl.CompanionConfig) =>
+      lock
+        .withPermits(1)(
+          Effect.gen(function* () {
+            const origin = yield* Effect.try({
+              try: () => {
+                const parsed = new URL(config.origin)
+                if (
+                  parsed.protocol !== "https:" ||
+                  parsed.username ||
+                  parsed.password ||
+                  parsed.pathname !== "/" ||
+                  parsed.search ||
+                  parsed.hash ||
+                  !/^https:\/\/[^/?#]+\/?$/.test(config.origin)
+                )
+                  throw new Error()
+                Schema.decodeUnknownSync(RemoteControl.CompanionConfig)(config)
+                return parsed.origin
+              },
+              catch: () =>
+                new Error(
+                  "Companion origin must be an https origin without a path or credentials; port must be an integer from 1 to 65535",
+                ),
+            })
+            const next = { ...state, origin, port: config.port ?? port() }
+            if (!(yield* persist(next)))
+              return yield* Effect.fail(new Error("Unable to persist companion configuration"))
+            const changed = state.origin !== next.origin || port() !== next.port
+            state = next
+            durableIdentity = true
+            if (changed) yield* stop
+            yield* start
+            return yield* view
+          }),
+        )
+        .pipe(Effect.uninterruptible),
+    registration: { open: localAction((local) => local.open), cancel: localAction((local) => local.cancel) },
+    approve: (requestID: string, fingerprint: string) => localAction((local) => local.approve(requestID, fingerprint)),
+    tailscale: {
+      inspect: lock.withPermits(1)(Effect.suspend(() => inspectTailscale(port()))),
+      apply: lock.withPermits(1)(Effect.suspend(() => applyServe(port()))),
+    },
     authenticate(header: string) {
       const match = /^Bearer rc1\.([a-f0-9]{32})\.([A-Za-z0-9_-]{43})$/.exec(header)
       if (!match || !state.enabled) return undefined
@@ -149,6 +256,7 @@ export const make = Effect.fnUntraced(function* (
             if (!enabled) {
               state = { ...state, enabled: false }
               invalidate()
+              yield* stop
             }
             const next = { ...state, enabled }
             const persisted = yield* persist(next)
@@ -156,6 +264,7 @@ export const make = Effect.fnUntraced(function* (
               state = next
               durableIdentity = true
             }
+            if (enabled) yield* start
             return { status: status(), persisted }
           }),
         )
@@ -166,11 +275,18 @@ export const make = Effect.fnUntraced(function* (
           Effect.gen(function* () {
             if (!file || !durableIdentity || input.backendID !== state.backendID) return false
             const existing = state.credentials.find((entry) => entry.credentialID === input.credentialID)
-            if (existing) return existing.digest === input.digest
+            if (existing) {
+              if (existing.digest !== input.digest) return false
+              yield* stop
+              yield* start
+              return true
+            }
             if (state.credentials.length >= 8) return false
             const next = { ...state, credentials: [...state.credentials, input] }
             if (!(yield* persist(next))) return false
             state = next
+            yield* stop
+            yield* start
             return true
           }),
         )
@@ -179,6 +295,7 @@ export const make = Effect.fnUntraced(function* (
       .withPermits(1)(
         Effect.gen(function* () {
           state = { ...state, credentials: [] }
+          yield* stop
           invalidate()
           const persisted = file ? yield* persist(state) : false
           if (!persisted) state = { ...state, enabled: false }

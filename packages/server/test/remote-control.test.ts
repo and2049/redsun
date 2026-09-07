@@ -12,6 +12,7 @@ import { RemoteService } from "../src/remote-control"
 import { RemoteAccess } from "../src/remote-access"
 import { ServerProcess } from "../src/process"
 import { DEFAULT_THEMES } from "@opencode-ai/theme/tui"
+import { StorageError } from "redsun-remote-control"
 
 const token = randomBytes(32).toString("base64url")
 const credentialID = randomBytes(16).toString("hex")
@@ -34,6 +35,158 @@ const captureLogs = Logger.layer(
   ],
   { mergeWithExisting: false },
 )
+
+function companionEnvironment(directory: string) {
+  const previous = { LOCALAPPDATA: process.env.LOCALAPPDATA, XDG_DATA_HOME: process.env.XDG_DATA_HOME }
+  process.env.LOCALAPPDATA = directory
+  process.env.XDG_DATA_HOME = directory
+  return {
+    [Symbol.dispose]() {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    },
+  }
+}
+
+test("managed companion starts, restarts, stops and round-trips settings without credentials in its view", async () => {
+  await using dir = await tmpdir()
+  using environment = companionEnvironment(dir.path)
+  const file = path.join(dir.path, "service.json")
+  const calls: unknown[] = []
+  const pending = [{ requestID: "request", fingerprint: "ABCD-EFGH" }]
+  const host: RemoteService.CompanionHost = {
+    start: (options) =>
+      Effect.sync(() => {
+        calls.push(options)
+        return {
+          stop: Effect.sync(() => {
+            calls.push("stop")
+          }),
+          local: {
+            pending: Effect.succeed(pending),
+            open: Effect.sync(() => {
+              calls.push("open")
+              return { lifetimeMs: 300000 }
+            }),
+            cancel: Effect.sync(() => {
+              calls.push("cancel")
+            }),
+            recover: Effect.void,
+            approve: (requestID, fingerprint) =>
+              fingerprint !== pending[0].fingerprint
+                ? Effect.fail(new Error("Fingerprint does not match"))
+                : Effect.sync(() => {
+                    calls.push({ requestID, fingerprint })
+                  }),
+          },
+        }
+      }),
+  }
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* RemoteService.make(file, undefined, undefined, undefined, host)
+        expect(yield* service.companion()).toMatchObject({ running: false, port: 43123, pending: [] })
+        yield* service.configure({ origin: "https://fixture.ts.net" })
+        expect(calls).toEqual([])
+        yield* service.policy(true)
+        expect(calls).toEqual([{ origin: "https://fixture.ts.net", port: 43123 }])
+        yield* service.policy(true)
+        expect(calls.length).toBe(1)
+        expect((yield* service.companion()).pending).toEqual(pending)
+        yield* service.registration.open
+        yield* service.approve("request", "ABCD-EFGH")
+        expect((yield* service.approve("request", "WRONG").pipe(Effect.flip)).message).toBe(
+          "Fingerprint does not match",
+        )
+        yield* service.registration.cancel
+        expect(calls.slice(-3)).toEqual(["open", pending[0], "cancel"])
+        yield* service.policy(false)
+        expect(calls.at(-1)).toBe("stop")
+        expect(yield* service.companion()).toMatchObject({ running: false, pending: [] })
+        expect(yield* service.registration.open.pipe(Effect.flip)).toBeInstanceOf(Error)
+        expect(yield* service.approve("request", "ABCD-EFGH").pipe(Effect.flip)).toBeInstanceOf(Error)
+        yield* service.policy(true)
+        yield* service.enroll({ backendID: service.status().backendID!, credentialID, digest })
+        expect(calls.slice(-2)).toEqual(["stop", { origin: "https://fixture.ts.net", port: 43123 }])
+        yield* service.configure({ origin: "https://changed.ts.net", port: 43124 })
+        expect(calls.slice(-2)).toEqual(["stop", { origin: "https://changed.ts.net", port: 43124 }])
+        for (const origin of [
+          "http://fixture.ts.net",
+          "https://user:secret@fixture.ts.net",
+          "https://fixture.ts.net/path",
+          "https://fixture.ts.net?x=1",
+        ]) {
+          expect(yield* service.configure({ origin }).pipe(Effect.flip)).toBeInstanceOf(Error)
+        }
+        for (const port of [0, 65536, 1.5])
+          expect(yield* service.configure({ origin: "https://fixture.ts.net", port }).pipe(Effect.flip)).toBeInstanceOf(
+            Error,
+          )
+        yield* service.revoke
+        expect(calls.at(-1)).toBe("stop")
+        yield* service.policy(true)
+      }),
+    ),
+  )
+  expect(calls.at(-1)).toBe("stop")
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* RemoteService.make(file, undefined, undefined, undefined, host)
+        expect(yield* service.companion()).toMatchObject({
+          running: true,
+          origin: "https://changed.ts.net",
+          port: 43124,
+        })
+      }),
+    ),
+  )
+  const stored = Schema.decodeUnknownSync(
+    Schema.fromJsonString(Schema.Struct({ remote_control: RemoteControl.Settings })),
+  )(await readFile(file, "utf8"))
+  expect(stored.remote_control).toMatchObject({ enabled: true, origin: "https://changed.ts.net", port: 43124 })
+})
+
+test("companion startup errors do not disable policy and enrollment retries startup", async () => {
+  await using dir = await tmpdir()
+  using environment = companionEnvironment(dir.path)
+  for (const failure of [new StorageError(), new Error("Port is busy")]) {
+    let attempts = 0
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const service = yield* RemoteService.make(
+            path.join(dir.path, `${attempts}-${failure.name}.json`),
+            undefined,
+            undefined,
+            undefined,
+            {
+              start: () =>
+                Effect.suspend(() => {
+                  attempts++
+                  return Effect.fail(failure)
+                }),
+            },
+          )
+          yield* service.configure({ origin: "https://fixture.ts.net" })
+          expect((yield* service.policy(true)).status.enabled).toBe(true)
+          expect(yield* service.companion()).toMatchObject({
+            running: false,
+            error:
+              failure instanceof StorageError
+                ? "Companion is not enrolled on this host; enroll a companion first"
+                : "Port is busy",
+          })
+          yield* service.enroll({ backendID: service.status().backendID!, credentialID, digest })
+          expect(attempts).toBe(2)
+        }),
+      ),
+    )
+  }
+})
 
 test("remote route and structured payload allowlists are closed", () => {
   expect(RemoteAccess.route("GET", "/api/remote/theme")).toBe(true)

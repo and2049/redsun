@@ -6,6 +6,15 @@ import { HttpApiClient } from "effect/unstable/httpapi"
 import { ClientApi } from "../../contract"
 import type {
   HealthGetOutput,
+  RemoteCompanionGetOutput,
+  RemoteCompanionConfigureInput,
+  RemoteCompanionConfigureOutput,
+  RemoteCompanionRegisterOutput,
+  RemoteCompanionCancelOutput,
+  RemoteCompanionApproveInput,
+  RemoteCompanionApproveOutput,
+  RemoteTailscaleGetOutput,
+  RemoteTailscaleApplyOutput,
   RemoteStatusOutput,
   RemotePolicyInput,
   RemotePolicyOutput,
@@ -312,6 +321,39 @@ const EndpointHealthGet = (raw: RawClient["server.health"]) => () =>
 
 const adaptGroupHealth = (raw: RawClient["server.health"]) => ({ get: EndpointHealthGet(raw) })
 
+const EndpointRemoteCompanionGet = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteCompanionGetOutput>()(raw["remote.companion"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteCompanionConfigure = (raw: RawClient["server.remote"]) => (input: RemoteCompanionConfigureInput) =>
+  preserveEffect<RemoteCompanionConfigureOutput>()(
+    raw["remote.companion.configure"]({ payload: { origin: input["origin"], port: input["port"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointRemoteCompanionRegister = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteCompanionRegisterOutput>()(
+    raw["remote.companion.register"]({}).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteCompanionCancel = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteCompanionCancelOutput>()(
+    raw["remote.companion.cancel"]({}).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteCompanionApprove = (raw: RawClient["server.remote"]) => (input: RemoteCompanionApproveInput) =>
+  preserveEffect<RemoteCompanionApproveOutput>()(
+    raw["remote.companion.approve"]({
+      payload: { requestID: input["requestID"], fingerprint: input["fingerprint"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteTailscaleGet = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteTailscaleGetOutput>()(raw["remote.tailscale"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteTailscaleApply = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteTailscaleApplyOutput>()(raw["remote.tailscale.apply"]({}).pipe(Effect.mapError(mapClientError)))
+
 const EndpointRemoteStatus = (raw: RawClient["server.remote"]) => () =>
   preserveEffect<RemoteStatusOutput>()(raw["remote.status"]({}).pipe(Effect.mapError(mapClientError)))
 
@@ -336,6 +378,14 @@ const EndpointRemoteHeartbeat = (raw: RawClient["server.remote"]) => (input: Rem
   )
 
 const adaptGroupRemote = (raw: RawClient["server.remote"]) => ({
+  companion: {
+    get: EndpointRemoteCompanionGet(raw),
+    configure: EndpointRemoteCompanionConfigure(raw),
+    register: EndpointRemoteCompanionRegister(raw),
+    cancel: EndpointRemoteCompanionCancel(raw),
+    approve: EndpointRemoteCompanionApprove(raw),
+  },
+  tailscale: { get: EndpointRemoteTailscaleGet(raw), apply: EndpointRemoteTailscaleApply(raw) },
   status: EndpointRemoteStatus(raw),
   policy: EndpointRemotePolicy(raw),
   enroll: EndpointRemoteEnroll(raw),

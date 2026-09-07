@@ -92,8 +92,35 @@ export const Enrollment = Schema.Struct({
 }).annotate({ identifier: "RemoteControl.Enrollment" })
 export interface Enrollment extends Schema.Schema.Type<typeof Enrollment> {}
 
+const Port = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))
+export const Approval = Schema.Struct({ requestID: Schema.String, fingerprint: Schema.String }).annotate({
+  identifier: "RemoteControl.Approval",
+})
+export interface Approval extends Schema.Schema.Type<typeof Approval> {}
+export const Companion = Schema.Struct({
+  running: Schema.Boolean,
+  error: optional(Schema.String),
+  origin: optional(Schema.String),
+  port: Port,
+  pending: Schema.Array(Approval),
+}).annotate({ identifier: "RemoteControl.Companion" })
+export interface Companion extends Schema.Schema.Type<typeof Companion> {}
+export const CompanionConfig = Schema.Struct({ origin: Schema.String, port: optional(Port) }).annotate({
+  identifier: "RemoteControl.CompanionConfig",
+})
+export interface CompanionConfig extends Schema.Schema.Type<typeof CompanionConfig> {}
+export const Tailscale = Schema.Struct({
+  host: Schema.String,
+  origin: Schema.String,
+  certificate: Schema.Boolean,
+  mapping: Schema.Literals(["missing", "ready", "conflict"]),
+}).annotate({ identifier: "RemoteControl.Tailscale" })
+export interface Tailscale extends Schema.Schema.Type<typeof Tailscale> {}
+
 export const Settings = Schema.Struct({
   enabled: optional(Schema.Boolean),
+  origin: optional(Schema.String),
+  port: optional(Port),
   backendID: optional(Schema.String),
   credentials: optional(Schema.Array(Enrollment).check(Schema.isMaxLength(8))),
 }).annotate({ identifier: "RemoteControl.Settings" })

@@ -1,5 +1,14 @@
 import type {
   HealthGetOutput,
+  RemoteCompanionGetOutput,
+  RemoteCompanionConfigureInput,
+  RemoteCompanionConfigureOutput,
+  RemoteCompanionRegisterOutput,
+  RemoteCompanionCancelOutput,
+  RemoteCompanionApproveInput,
+  RemoteCompanionApproveOutput,
+  RemoteTailscaleGetOutput,
+  RemoteTailscaleApplyOutput,
   RemoteStatusOutput,
   RemotePolicyInput,
   RemotePolicyOutput,
@@ -434,6 +443,89 @@ export function make(options: ClientOptions) {
         ),
     },
     remote: {
+      companion: {
+        get: (requestOptions?: RequestOptions) =>
+          request<RemoteCompanionGetOutput>(
+            {
+              method: "GET",
+              path: `/api/remote/companion`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        configure: (input: RemoteCompanionConfigureInput, requestOptions?: RequestOptions) =>
+          request<RemoteCompanionConfigureOutput>(
+            {
+              method: "PUT",
+              path: `/api/remote/companion`,
+              body: { origin: input["origin"], port: input["port"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        register: (requestOptions?: RequestOptions) =>
+          request<RemoteCompanionRegisterOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/companion/registration`,
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
+        cancel: (requestOptions?: RequestOptions) =>
+          request<RemoteCompanionCancelOutput>(
+            {
+              method: "DELETE",
+              path: `/api/remote/companion/registration`,
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
+        approve: (input: RemoteCompanionApproveInput, requestOptions?: RequestOptions) =>
+          request<RemoteCompanionApproveOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/companion/approval`,
+              body: { requestID: input["requestID"], fingerprint: input["fingerprint"] },
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
+      },
+      tailscale: {
+        get: (requestOptions?: RequestOptions) =>
+          request<RemoteTailscaleGetOutput>(
+            {
+              method: "GET",
+              path: `/api/remote/tailscale`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 503],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        apply: (requestOptions?: RequestOptions) =>
+          request<RemoteTailscaleApplyOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/tailscale`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 503],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
       status: (requestOptions?: RequestOptions) =>
         request<RemoteStatusOutput>(
           { method: "GET", path: `/api/remote`, successStatus: 200, declaredStatuses: [400, 401], empty: false },

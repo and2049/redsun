@@ -2,6 +2,15 @@ export type JsonValue = null | boolean | number | string | Array<JsonValue> | { 
 
 export type ServiceHealth = { healthy: true; version: string; pid: number }
 
+export type RemoteControlApproval = { requestID: string; fingerprint: string }
+
+export type RemoteControlTailscale = {
+  host: string
+  origin: string
+  certificate: boolean
+  mapping: "missing" | "ready" | "conflict"
+}
+
 export type RemoteControlStatus = {
   supported: boolean
   enabled: boolean
@@ -487,6 +496,14 @@ export type WebSearchProvider = { id: string; name: string }
 export type WebSearchResult = { url: string; title?: string; content?: string; time: { published?: number } }
 
 export type ConfigWorktree = { directory: string }
+
+export type RemoteControlCompanion = {
+  running: boolean
+  error?: string
+  origin?: string
+  port: number
+  pending: Array<RemoteControlApproval>
+}
 
 export type RemoteControlPolicyResult = { status: RemoteControlStatus; persisted: boolean }
 
@@ -2649,6 +2666,30 @@ export const isWorktreeError = (value: unknown): value is WorktreeError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "WorktreeError"
 
 export type HealthGetOutput = ServiceHealth
+
+export type RemoteCompanionGetOutput = RemoteControlCompanion
+
+export type RemoteCompanionConfigureInput = {
+  readonly origin: { readonly origin: string; readonly port?: number }["origin"]
+  readonly port?: { readonly origin: string; readonly port?: number }["port"]
+}
+
+export type RemoteCompanionConfigureOutput = RemoteControlCompanion
+
+export type RemoteCompanionRegisterOutput = void
+
+export type RemoteCompanionCancelOutput = void
+
+export type RemoteCompanionApproveInput = {
+  readonly requestID: { readonly requestID: string; readonly fingerprint: string }["requestID"]
+  readonly fingerprint: { readonly requestID: string; readonly fingerprint: string }["fingerprint"]
+}
+
+export type RemoteCompanionApproveOutput = void
+
+export type RemoteTailscaleGetOutput = RemoteControlTailscale
+
+export type RemoteTailscaleApplyOutput = RemoteControlTailscale
 
 export type RemoteStatusOutput = RemoteControlStatus
 

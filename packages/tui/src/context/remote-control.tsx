@@ -22,6 +22,28 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
     const client = useClient()
     const [status, setStatus] = createSignal<RemoteControl.Status>()
     const [error, setError] = createSignal<string>()
+    const [companion, setCompanion] = createSignal<RemoteControl.Companion>()
+    const [tailscaleState, setTailscaleState] = createSignal<RemoteControl.Tailscale>()
+    const [phoneRegistered, setPhoneRegistered] = createSignal(false)
+    createEffect(() => {
+      if (status()?.state === "connected") setPhoneRegistered(true)
+    })
+    let subscribers = 0
+    let companionGeneration = 0
+    const refreshCompanion = async () => {
+      const request = ++companionGeneration
+      try {
+        const value = await client.api.remote.companion.get()
+        if (active && request === companionGeneration) setCompanion(value)
+      } catch {
+        if (active && request === companionGeneration) setCompanion(undefined)
+      }
+    }
+    const subscribe = () => {
+      subscribers++
+      void refreshCompanion()
+      onCleanup(() => subscribers--)
+    }
     let active = true
     let generation = 0
     const refresh = () =>
@@ -42,9 +64,13 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
     })
     const unsubscribe = client.event.on("remote.status", () => void refresh())
     const timer = setInterval(() => void refresh(), 5000)
+    const companionTimer = setInterval(() => {
+      if (subscribers > 0) void refreshCompanion()
+    }, 2000)
     onCleanup(() => {
       active = false
       clearInterval(timer)
+      clearInterval(companionTimer)
       unsubscribe()
     })
     const change = async (operation: "enable" | "disable" | "revoke") => {
@@ -56,6 +82,7 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
             : await client.api.remote.policy({ enabled: operation === "enable" })
         generation++
         setStatus(result.status)
+        if (operation === "revoke") setPhoneRegistered(false)
         if (!result.persisted)
           setError(
             "Restart persistence was NOT updated. Running state is shown above; fix configuration access and retry.",
@@ -64,7 +91,42 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         setError("Operation was not confirmed. Refresh status and retry; do not assume remote access was disabled.")
         await refresh()
       }
+      await refreshCompanion()
     }
+    const action = async <A,>(run: () => Promise<A>) => {
+      setError(undefined)
+      try {
+        return await run()
+      } catch (failure) {
+        const message =
+          typeof failure === "object" && failure !== null && "message" in failure && typeof failure.message === "string"
+            ? failure.message
+            : "Companion operation failed"
+        setError(message)
+        return undefined
+      } finally {
+        await refreshCompanion()
+      }
+    }
+    const configure = (config: RemoteControl.CompanionConfig) =>
+      action(async () => {
+        const result = await client.api.remote.companion.configure(config)
+        setCompanion(result)
+        setTailscaleState(undefined)
+        return result
+      })
+    const tailscale = () =>
+      action(async () => {
+        const result = await client.api.remote.tailscale.get()
+        setTailscaleState(result)
+        return result
+      })
+    const applyTailscale = () =>
+      action(async () => {
+        const result = await client.api.remote.tailscale.apply()
+        setTailscaleState(result)
+        return result
+      })
     const enroll = async () => {
       setError(undefined)
       const backendID = status()?.backendID
@@ -72,6 +134,7 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         setError(
           "Enrollment requires a local managed service with a persisted backend identity. Use redsun remote enroll --handoff <new-private-file> locally.",
         )
+        await refreshCompanion()
         return undefined
       }
       let credentialID: string
@@ -91,6 +154,7 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         setError(
           "A companion is already enrolled on this host or its private store is unavailable; revoke companion credentials and remove the companion store before enrolling again",
         )
+        await refreshCompanion()
         return undefined
       }
       try {
@@ -104,10 +168,43 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
           "Enrollment not confirmed; the companion store holds an unconfirmed credential. Revoke companion credentials, then remove the companion store before retrying",
         )
         await refresh()
+        await refreshCompanion()
         return undefined
       }
       await refresh()
+      await refreshCompanion()
+      setPhoneRegistered(false)
     }
-    return { status, error, change, refresh, enroll }
+    return {
+      status,
+      error,
+      change,
+      refresh,
+      refreshCompanion,
+      enroll,
+      companion,
+      phoneRegistered,
+      subscribe,
+      configure,
+      tailscale,
+      tailscaleState,
+      applyTailscale,
+      register: () =>
+        action(async () => {
+          await client.api.remote.companion.register()
+          return true
+        }),
+      cancelRegistration: () =>
+        action(async () => {
+          await client.api.remote.companion.cancel()
+          return true
+        }),
+      approve: (requestID: string, fingerprint: string) =>
+        action(async () => {
+          await client.api.remote.companion.approve({ requestID, fingerprint })
+          setPhoneRegistered(true)
+          return true
+        }),
+    }
   },
 })

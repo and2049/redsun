@@ -6,9 +6,38 @@ import path from "node:path"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { createPrivateFile } from "@opencode-ai/util/private-file"
 import { isolatedEnv } from "./fixture/environment"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
+import { NodeFileSystem } from "@effect/platform-node"
+import { Global } from "@opencode-ai/util/global"
+import { ServiceConfig } from "../src/services/service-config"
 import { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { Service } from "@opencode-ai/client/effect/service"
+
+test("service get exposes companion settings but never enrollment credentials", async () => {
+  await using temporary = await tmpdir()
+  await writeFile(
+    path.join(temporary.path, "service-local.json"),
+    JSON.stringify({
+      password: "fixture-private-password",
+      remote_control: {
+        enabled: true,
+        origin: "https://fixture.ts.net",
+        port: 43124,
+        backendID: "fixture",
+        credentials: [{ backendID: "fixture", credentialID: "a".repeat(32), digest: "b".repeat(64) }],
+      },
+    }),
+  )
+  const output = await Effect.runPromise(
+    ServiceConfig.get().pipe(
+      Effect.provide(Global.layerWith({ config: temporary.path, state: temporary.path })),
+      Effect.provide(NodeFileSystem.layer),
+    ),
+  )
+  expect(JSON.parse(output)).toEqual({
+    remote_control: { enabled: true, origin: "https://fixture.ts.net", port: 43124 },
+  })
+})
 
 async function expectPrivate(file: string) {
   if (process.platform !== "win32") {
