@@ -73,7 +73,7 @@
         "immer": "11.1.4",
         "jsonc-parser": "3.3.1",
         "open": "10.1.2",
-        "redsun-remote-control": "0.2.0",
+        "redsun-remote-control": "0.3.0",
         "solid-js": "catalog:",
         "tree-sitter-bash": "0.25.0",
         "tree-sitter-powershell": "0.25.10",
@@ -378,7 +378,7 @@
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "jsonc-parser": "3.3.1",
-        "redsun-remote-control": "0.2.0",
+        "redsun-remote-control": "0.3.0",
       },
       "devDependencies": {
         "@opencode-ai/client": "workspace:*",
@@ -445,7 +445,7 @@
         "get-east-asian-width": "catalog:",
         "open": "10.1.2",
         "opentui-spinner": "catalog:",
-        "redsun-remote-control": "0.2.0",
+        "redsun-remote-control": "0.3.0",
         "remeda": "catalog:",
         "solid-js": "catalog:",
         "string-width": "catalog:",
@@ -2136,7 +2136,7 @@
 
     "redis": ["redis@6.2.1", "", { "dependencies": { "@redis/bloom": "6.2.1", "@redis/client": "6.2.1", "@redis/json": "6.2.1", "@redis/search": "6.2.1", "@redis/time-series": "6.2.1" } }, "sha512-Z9VHtgYs48PiQC77X9O2Er8Hj4T+5BtFjT91/vi5Is1D04N72cA946ZslM1ImJw8ZctFBZWAVjM7S5wJNeHMpg=="],
 
-    "redsun-remote-control": ["redsun-remote-control@0.2.0", "", { "dependencies": { "@simplewebauthn/server": "14.0.1", "effect": "4.0.0-rc.112" }, "bin": { "redsun-remote-control": "dist/cli.js" } }, "sha512-+cBugeszUqdFlaPs9ZnpuLQ0Tt7yJWoXD6iBsOfXtEK4Qh5cPgwj4IQ1MLXSX4quFxGGftTKCRlNFCK+4Y++Ig=="],
+    "redsun-remote-control": ["redsun-remote-control@0.3.0", "", { "dependencies": { "@simplewebauthn/server": "14.0.1", "effect": "4.0.0-rc.112" }, "bin": { "redsun-remote-control": "dist/cli.js" } }, "sha512-NDDaC7zBmy3MhL7hZ7jJygAqo9sLur2p6jIBTkTUi9VjIqnZgRpiSw4gmhm6Jfu3x4IaZcLu2K0vQUbNsflRXg=="],
 
     "reflect-metadata": ["reflect-metadata@0.2.2", "", {}, "sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q=="],
 
