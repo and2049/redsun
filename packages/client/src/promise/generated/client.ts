@@ -15,6 +15,7 @@ import type {
   AgentListOutput,
   AgentGetInput,
   AgentGetOutput,
+  RemoteCatalogThemeOutput,
   RemoteCatalogAgentsInput,
   RemoteCatalogAgentsOutput,
   RemoteCatalogModelsInput,
@@ -534,6 +535,11 @@ export function make(options: ClientOptions) {
         ),
     },
     remoteCatalog: {
+      theme: (requestOptions?: RequestOptions) =>
+        request<RemoteCatalogThemeOutput>(
+          { method: "GET", path: `/api/remote/theme`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
+          requestOptions,
+        ),
       agents: (input?: RemoteCatalogAgentsInput, requestOptions?: RequestOptions) =>
         request<RemoteCatalogAgentsOutput>(
           {

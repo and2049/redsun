@@ -111,6 +111,9 @@ export interface AgentApi<E = never> {
   readonly get: AgentGetOperation<E>
 }
 
+export type RemoteCatalogThemeOutput = RemoteControl.Theme
+export type RemoteCatalogThemeOperation<E = never> = () => Effect.Effect<RemoteCatalogThemeOutput, E>
+
 export type RemoteCatalogAgentsInput = {
   readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
 }
@@ -134,6 +137,7 @@ export type RemoteCatalogModelsOperation<E = never> = (
 ) => Effect.Effect<RemoteCatalogModelsOutput, E>
 
 export interface RemoteCatalogApi<E = never> {
+  readonly theme: RemoteCatalogThemeOperation<E>
   readonly agents: RemoteCatalogAgentsOperation<E>
   readonly models: RemoteCatalogModelsOperation<E>
 }

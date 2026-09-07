@@ -37,6 +37,44 @@ export const ModelChoice = Schema.Struct({
 }).annotate({ identifier: "RemoteControl.ModelChoice" })
 export interface ModelChoice extends Schema.Schema.Type<typeof ModelChoice> {}
 
+const Color = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/))
+const Actions = Schema.Struct({ primary: Color, secondary: Color, destructive: Color })
+const Feedback = Schema.Struct({ error: Color, warning: Color, success: Color, info: Color })
+
+export const Theme = Schema.Struct({
+  name: Schema.String,
+  mode: Schema.Literals(["light", "dark"]),
+  colors: Schema.Struct({
+    text: Schema.Struct({
+      default: Color,
+      subdued: Color,
+      action: Actions,
+      status: Schema.Struct({ running: Color, question: Color, permission: Color, unread: Color }),
+      feedback: Feedback,
+    }),
+    background: Schema.Struct({ default: Color, offset: Color, overlay: Color, action: Actions, feedback: Feedback }),
+    border: Schema.Struct({ default: Color }),
+    diff: Schema.Struct({ added: Color, removed: Color }),
+    markdown: Schema.Struct({
+      text: Color,
+      heading: Color,
+      link: Color,
+      linkText: Color,
+      code: Color,
+      blockQuote: Color,
+      emphasis: Color,
+      strong: Color,
+      horizontalRule: Color,
+      listItem: Color,
+      listEnumeration: Color,
+      image: Color,
+      imageText: Color,
+      codeBlock: Color,
+    }),
+  }),
+}).annotate({ identifier: "RemoteControl.Theme" })
+export interface Theme extends Schema.Schema.Type<typeof Theme> {}
+
 export const PolicyResult = Schema.Struct({
   status: Status,
   persisted: Schema.Boolean,

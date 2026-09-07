@@ -152,6 +152,7 @@ envelopes; this table narrows their authorization surface.
 | Method and route | Allowed input / result |
 | --- | --- |
 | GET `/api/remote` | `RemoteControl.Status` |
+| GET `/api/remote/theme` | No query; `RemoteControl.Theme` |
 | POST `/api/remote/heartbeat` | `{connected:boolean}`; Status |
 | GET `/api/remote/agent` | Location query; `{location,data:[{id,name,mode}]}`; visible non-subagent choices |
 | GET `/api/remote/model` | Location query; `{location,data:[{id,providerID,name,variants:[{id}]}]}` |
@@ -177,6 +178,13 @@ envelopes; this table narrows their authorization surface.
 | POST `/api/session/:sessionID/form/:formID/reply` | `{answer:{...}}`; canonical Form answer validation; 204 |
 | POST `/api/session/:sessionID/form/:formID/cancel` | No body fields; 204 |
 | GET `/api/event` | Scoped live SSE; see below |
+
+The theme route returns the host TUI theme name, mode and resolved hex colors from the
+global `cli.json` selection and global `themes` directory; project-level `.redsun/themes`
+directories and TUI plugin-installed themes are not consulted. Configuration and theme
+files are read on every request, with no cross-request cache; missing or invalid selections
+fall back to `dusk`, and documents with both modes use dark. Colors use `#rrggbb`, with an
+alpha suffix only when alpha is less than 1.
 
 Location objects allow only `{directory,workspaceID?}`, model references only
 `{id,providerID,variant?}`. Paths remain backend OS paths; a browser pathname is not a
@@ -284,7 +292,7 @@ and SHA-256 artifact hashes. Vendor this directory into the companion and pin th
 commit alongside the manifest. It has no workspace runtime dependencies; the isolated
 export test exercises it. Import `OpenCode` from its `index.ts`, use `OpenCode.make`
 with baseUrl and a server-only Authorization header. Catalog methods are
-`client.remoteCatalog.agents/models`; policy/status methods are `client.remote.*`.
+`client.remoteCatalog.agents/models/theme`; policy/status methods are `client.remote.*`.
 Other methods retain the generated session/form/permission API. Its full method surface
 is **not** the authorization allowlist. Use a redirect-refusing, loopback-validating
 server-side fetch wrapper. No separate npm package was published.
@@ -311,8 +319,17 @@ Verification commands are run from their package directories:
 - Core wrapper: `bun run test ../server/test` (offline/environment isolation).
 - Core wrapper: `bun run test ../cli/test/redsun-remote-handoff.test.ts`.
 - TUI: `bun test test/remote-control.test.tsx test/app-lifecycle.test.tsx`.
+- TUI themes: `bun test test/theme.test.ts test/theme test/cli/tui/theme-mode.test.tsx test/cli/tui/dialog-theme-list.test.tsx`.
+- Theme: `bun test`.
 - Client: `bun test test/remote-export.test.ts`; `bun run generate`.
 - Root: `bun turbo typecheck --concurrency=3`; `bun lint`.
+
+Theme-route verification on Windows, 2026-09-07: full server suite **66 passed, 3 skipped,
+0 failed**; TUI remote-control **4 passed**, TUI themes (including mode and picker)
+**72 passed**; theme package **9 passed**; client export **1 passed**. Client generation
+and an explicit temporary-directory export succeeded, and the temporary export was
+deleted. All **18 workspace typecheck tasks** passed. Root lint reported **0 errors,
+2,601 warnings**. No managed service was started, stopped or restarted.
 
 Verified on Windows, 2026-09-06: the combined full server suite plus CLI handoff tests
 passed **67 tests, 3 skipped, 0 failed**; TUI remote/lifecycle tests passed **36**;

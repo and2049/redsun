@@ -21,6 +21,45 @@ export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
 
+export type RemoteControlTheme = {
+  name: string
+  mode: "light" | "dark"
+  colors: {
+    text: {
+      default: string
+      subdued: string
+      action: { primary: string; secondary: string; destructive: string }
+      status: { running: string; question: string; permission: string; unread: string }
+      feedback: { error: string; warning: string; success: string; info: string }
+    }
+    background: {
+      default: string
+      offset: string
+      overlay: string
+      action: { primary: string; secondary: string; destructive: string }
+      feedback: { error: string; warning: string; success: string; info: string }
+    }
+    border: { default: string }
+    diff: { added: string; removed: string }
+    markdown: {
+      text: string
+      heading: string
+      link: string
+      linkText: string
+      code: string
+      blockQuote: string
+      emphasis: string
+      strong: string
+      horizontalRule: string
+      listItem: string
+      listEnumeration: string
+      image: string
+      imageText: string
+      codeBlock: string
+    }
+  }
+}
+
 export type RemoteControlAgentChoice = { id: string; name: string; mode: "subagent" | "primary" | "all" }
 
 export type RemoteControlModelChoice = { id: string; providerID: string; name: string; variants: Array<{ id: string }> }
@@ -2675,6 +2714,8 @@ export type AgentGetOutput = {
   location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
   data: AgentInfo
 }
+
+export type RemoteCatalogThemeOutput = RemoteControlTheme
 
 export type RemoteCatalogAgentsInput = {
   readonly location?: {
