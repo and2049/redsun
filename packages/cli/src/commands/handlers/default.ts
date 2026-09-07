@@ -67,6 +67,7 @@ export default Runtime.handler(Commands, (input) =>
         endpoint: server.endpoint,
         service: service
           ? {
+              registration: service.registration,
               reconnect: (signal) => runServicePromise(service.reconnect(), { signal }),
               restart: () => runServicePromise(service.restart()),
             }

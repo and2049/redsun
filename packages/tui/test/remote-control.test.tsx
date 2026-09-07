@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test"
+import path from "node:path"
+import { readFile, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { Schema } from "effect"
 import { createAppFixture } from "./fixture/app"
 import { tmpdir } from "./fixture/fixture"
 import { directory, json } from "./fixture/tui-client"
 import { remoteLabel } from "../src/context/remote-control"
-import type { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode-ai/schema/remote-control"
 
 test("remote labels distinguish disabled, unavailable, ready and connected", () => {
   expect(
@@ -44,12 +48,12 @@ test("remote command works from Home without a model prompt and reports persiste
   await setup.waitForFrame((frame) => frame.includes("/RC"))
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Enable remote control"))
-  setup.mockInput.pressArrow("down")
+  await setup.waitForFrame((frame) => frame.includes("Disable remote control"))
+  expect(setup.captureCharFrame()).not.toContain("Enable remote control")
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Restart persistence was NOT updated"))
   expect(actions).toEqual(["PUT"])
-  expect(setup.captureCharFrame()).toContain("RC disabled")
+  expect(setup.captureCharFrame()).toContain("disabled")
   setup.mockInput.pressEscape()
   await setup.waitForFrame((frame) => !frame.includes("/RC"))
   expect(status.enrolled).toBe(true)
@@ -110,3 +114,212 @@ function rcIndicator(setup: Awaited<ReturnType<typeof createAppFixture>>) {
   }
   return undefined
 }
+
+test.each(["success", "conflict", "network", "existing"] as const)(
+  "enrollment %s is private and file-first",
+  async (outcome) => {
+    await using temporary = await tmpdir()
+    const file = path.join(temporary.path, "handoff.json")
+    if (outcome === "existing") await writeFile(file, "keep existing")
+    let issued = 0
+    let handoff: RemoteControl.Handoff | undefined
+    let status: RemoteControl.Status = {
+      supported: true,
+      enabled: false,
+      enrolled: false,
+      state: "disabled",
+      backendID: "fixture",
+      processID: "process",
+      version: 1,
+      leaseSeconds: 30,
+    }
+    await using setup = await createAppFixture({
+      state: temporary.path,
+      service: {
+        registration: path.join(temporary.path, "service.json.remote"),
+        reconnect: async () => {
+          throw new Error("Unexpected reconnect")
+        },
+        restart: async () => {
+          throw new Error("Unexpected restart")
+        },
+      },
+      fetch: async (url, request) => {
+        if (url.pathname === "/api/remote") return json(status)
+        if (url.pathname !== "/api/remote/enrollment") return undefined
+        issued++
+        handoff = Schema.decodeUnknownSync(Schema.fromJsonString(RemoteControl.Handoff))(await readFile(file, "utf8"))
+        const body = Schema.decodeUnknownSync(RemoteControl.Enrollment)(await request.json())
+        expect(body.backendID).toBe("fixture")
+        expect(body.credentialID).toBe(handoff.credentialID)
+        expect(body.digest === createHash("sha256").update(handoff.token).digest("hex")).toBe(true)
+        expect(handoff.registration).toBe(path.join(temporary.path, "service.json.remote"))
+        if (outcome === "conflict") return new Response(null, { status: 409 })
+        if (outcome === "network") return new Response(null, { status: 503 })
+        status = { ...status, enrolled: true }
+        return new Response(null, { status: 204 })
+      },
+    })
+    await setup.ready
+    await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
+    await setup.mockInput.typeText("/remote")
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) => frame.includes("Enroll a companion"))
+    expect(setup.captureCharFrame()).toContain("Enable remote control")
+    expect(setup.captureCharFrame()).not.toContain("Revoke companion credentials")
+    setup.mockInput.pressArrow("down")
+    await setup.renderOnce()
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) => frame.includes("Enroll companion") && frame.includes("redsun-remote-handoff-"))
+    setup.mockInput.pressKey("a", { ctrl: true })
+    setup.mockInput.pressKey("k", { ctrl: true })
+    await setup.mockInput.typeText(file)
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame(
+      (frame) =>
+        frame.includes(
+          outcome === "success"
+            ? "Private handoff:"
+            : outcome === "existing"
+              ? "Handoff file could not be"
+              : "Enrollment not confirmed",
+        ),
+      { maxPasses: 500 },
+    )
+    expect(issued).toBe(outcome === "existing" ? 0 : 1)
+    if (handoff) {
+      const frame = setup.captureCharFrame()
+      expect(frame.includes(handoff.token)).toBe(false)
+      expect(frame.includes(createHash("sha256").update(handoff.token).digest("hex"))).toBe(false)
+      expect((await readFile(file, "utf8")).includes(handoff.token)).toBe(true)
+    } else expect(await readFile(file, "utf8")).toBe("keep existing")
+    if (outcome === "success") {
+      expect(setup.captureCharFrame()).toContain("import-backend")
+      expect(status.enabled).toBe(false)
+      expect(status.enrolled).toBe(true)
+    }
+  },
+  15_000,
+)
+
+test("dialog title uses ready and unavailable colors and state guidance", async () => {
+  await using temporary = await tmpdir()
+  let status: RemoteControl.Status = {
+    supported: true,
+    enabled: true,
+    enrolled: true,
+    state: "ready",
+    backendID: "fixture",
+    processID: "process",
+    version: 1,
+    leaseSeconds: 30,
+  }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    fetch: (url) => (url.pathname === "/api/remote" ? json(status) : undefined),
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Companion attached"))
+  const title = () =>
+    setup
+      .captureSpans()
+      .lines.flatMap((line) => line.spans)
+      .find((span) => span.text === status.state)?.fg
+  const ready = title()
+  expect(ready).toBeDefined()
+  status = { ...status, state: "unavailable" }
+  setup.events.emit({ id: "evt_remote", created: 1, type: "remote.status", data: status })
+  await setup.waitForFrame((frame) => frame.includes("no live companion heartbeat"))
+  expect(title()?.equals(ready)).toBe(false)
+})
+
+test("enable and confirmed revoke report persistence failures without losing navigation", async () => {
+  await using temporary = await tmpdir()
+  const actions: string[] = []
+  let status: RemoteControl.Status = {
+    supported: true,
+    enabled: false,
+    enrolled: true,
+    state: "disabled",
+    backendID: "fixture",
+    processID: "process",
+    version: 1,
+    leaseSeconds: 30,
+  }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    fetch: (url, request) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/policy") {
+        actions.push(request.method)
+        status = { ...status, enabled: true, state: "unavailable" }
+        return json({ status, persisted: false })
+      }
+      if (url.pathname === "/api/remote/enrollment") {
+        actions.push(request.method)
+        status = { ...status, enrolled: false }
+        return json({ status, persisted: false })
+      }
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Enable remote control"))
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Restart persistence was NOT updated"))
+  expect(setup.captureCharFrame()).toContain("Disable remote control")
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Confirm: revoke"))
+  expect(actions).toEqual(["PUT"])
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Not enrolled"))
+  expect(actions).toEqual(["PUT", "DELETE"])
+  expect(setup.captureCharFrame()).toContain("Restart persistence was NOT updated")
+})
+
+test.each(["unsupported", "identity", "unknown"] as const)(
+  "dialog explains %s without offering unusable actions",
+  async (state) => {
+    await using temporary = await tmpdir()
+    const status: RemoteControl.Status = {
+      supported: state !== "unsupported",
+      enabled: false,
+      enrolled: false,
+      state: "disabled",
+      processID: "process",
+      version: 1,
+      leaseSeconds: 30,
+    }
+    await using setup = await createAppFixture({
+      state: temporary.path,
+      fetch: (url) =>
+        url.pathname === "/api/remote"
+          ? state === "unknown"
+            ? new Response(null, { status: 503 })
+            : json(status)
+          : undefined,
+    })
+    await setup.ready
+    await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
+    await setup.mockInput.typeText("/remote")
+    setup.mockInput.pressEnter()
+    await setup.waitForFrame((frame) =>
+      frame.includes(
+        state === "unknown"
+          ? "status unknown"
+          : state === "identity"
+            ? "Backend identity"
+            : "Requires a managed service",
+      ),
+    )
+    expect(setup.captureCharFrame()).not.toContain("Enroll a companion Creates")
+    expect(setup.captureCharFrame()).not.toContain("Revoke companion credentials")
+  },
+)

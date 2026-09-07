@@ -95,7 +95,9 @@ export default Runtime.handler(
             "Enrollment not confirmed; keep the private handoff for reconciliation or revoke backend credentials before removing it",
           ),
         )
-      console.log("Companion enrolled. Import the private handoff locally; never send it to a browser.")
+      console.log(
+        "Companion enrolled. Import the private handoff locally; never send it to a browser. /remote in the TUI performs the same flow interactively.",
+      )
       return
     }
     const result = yield* request(
