@@ -8,6 +8,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
+import type { BackendSnapshot } from "redsun-remote-control"
 import { RemoteService } from "../src/remote-control"
 import { RemoteAccess } from "../src/remote-access"
 import { ServerProcess } from "../src/process"
@@ -56,11 +57,16 @@ test("managed companion starts, restarts, stops and round-trips settings without
   const file = path.join(dir.path, "service.json")
   const calls: unknown[] = []
   const pending = [{ requestID: "request", fingerprint: "ABCD-EFGH" }]
+  let backend: BackendSnapshot = { state: "connecting" }
   const host: RemoteService.CompanionHost = {
+    clear: Effect.sync(() => {
+      calls.push("clear")
+    }),
     start: (options) =>
       Effect.sync(() => {
         calls.push(options)
         return {
+          backend: () => backend,
           stop: Effect.sync(() => {
             calls.push("stop")
           }),
@@ -125,8 +131,12 @@ test("managed companion starts, restarts, stops and round-trips settings without
           expect(yield* service.configure({ origin: "https://fixture.ts.net", port }).pipe(Effect.flip)).toBeInstanceOf(
             Error,
           )
+        backend = { state: "stopped", reason: "refused" }
+        expect((yield* service.companion()).error).toContain("rejected the companion credential")
+        backend = { state: "connecting" }
+        expect((yield* service.companion()).error).toBeUndefined()
         yield* service.revoke
-        expect(calls.at(-1)).toBe("stop")
+        expect(calls.slice(-2)).toEqual(["stop", "clear"])
         yield* service.policy(true)
       }),
     ),
@@ -164,6 +174,7 @@ test("companion startup errors do not disable policy and enrollment retries star
             undefined,
             undefined,
             {
+              clear: Effect.void,
               start: () =>
                 Effect.suspend(() => {
                   attempts++
