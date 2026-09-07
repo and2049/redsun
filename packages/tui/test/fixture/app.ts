@@ -14,6 +14,7 @@ export async function createAppFixture(
     config?: Config.Info
     args?: TuiInput["args"]
     fetch?: FetchHandler
+    service?: TuiInput["server"]["service"]
   } = {},
 ) {
   const { run } = await import("../../src/app")
@@ -31,7 +32,7 @@ export async function createAppFixture(
   const task = Effect.runPromise(
     run({
       app: { name: "test", version: "test", channel: "test" },
-      server: { endpoint: { url: server.url.toString() } },
+      server: { endpoint: { url: server.url.toString() }, service: input.service },
       config: { get: async () => input.config ?? { animations: false }, update: async () => ({}) },
       packages: { prepare: async () => ({ directory: "" }) },
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),

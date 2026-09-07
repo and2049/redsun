@@ -107,6 +107,7 @@ test("local enrollment creates the handoff before issuing, prints no credential,
     }
     const first = await run()
     expect(first.output).toContain("Companion enrolled")
+    expect(first.output).toContain("/remote in the TUI performs the same flow interactively")
     expect(first.code).toBe(0)
     expect(issued).toBe(1)
     const contents = await readFile(file, "utf8")

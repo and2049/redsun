@@ -161,6 +161,7 @@ export type TuiInput = {
   server: {
     endpoint: Endpoint
     service?: {
+      registration?: string
       reconnect: (signal: AbortSignal) => Promise<Endpoint>
       restart: () => Promise<void>
     }
@@ -199,6 +200,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const managed = input.server.service
   const service = managed
     ? {
+        registration: managed.registration,
         reconnect: async (signal: AbortSignal) => {
           const endpoint = await managed.reconnect(signal)
           const next = { baseUrl: endpoint.url, headers: Service.headers(endpoint) }

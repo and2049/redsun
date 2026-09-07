@@ -1,4 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js"
+import { createHash, randomBytes } from "node:crypto"
+import path from "node:path"
+import { createPrivateFile } from "@opencode-ai/util/private-file"
 import type { RemoteControl } from "@opencode-ai/schema/remote-control"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
@@ -62,6 +65,50 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         await refresh()
       }
     }
-    return { status, error, change, refresh }
+    const enroll = async (target: string) => {
+      setError(undefined)
+      const backendID = status()?.backendID
+      if (!status()?.supported || !backendID || !client.registration) {
+        setError(
+          "Enrollment requires a local managed service with a persisted backend identity. Use redsun remote enroll --handoff <new-private-file> locally.",
+        )
+        return undefined
+      }
+      let file: string
+      let credentialID: string
+      let token: string
+      try {
+        file = path.resolve(target)
+        credentialID = randomBytes(16).toString("hex")
+        token = randomBytes(32).toString("base64url")
+        const handoff: RemoteControl.Handoff = {
+          version: 1,
+          backendID,
+          registration: client.registration,
+          credentialID,
+          token,
+        }
+        await createPrivateFile(file, JSON.stringify(handoff, null, 2) + "\n")
+      } catch {
+        setError("Handoff file could not be created; no credential was issued. Choose a new path.")
+        return undefined
+      }
+      try {
+        await client.api.remote.enroll({
+          backendID,
+          credentialID,
+          digest: createHash("sha256").update(token).digest("hex"),
+        })
+      } catch {
+        setError(
+          "Enrollment not confirmed; keep the private handoff for reconciliation or revoke credentials before removing it.",
+        )
+        await refresh()
+        return undefined
+      }
+      await refresh()
+      return file
+    }
+    return { status, error, change, refresh, enroll }
   },
 })

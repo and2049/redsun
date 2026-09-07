@@ -6,6 +6,7 @@ import { createSimpleContext } from "./helper"
 import { useLog } from "./log"
 
 type ManagedService = {
+  registration?: string
   reconnect: (signal: AbortSignal) => Promise<{ api: OpenCodeClient; url?: string }>
   restart: () => Promise<void>
 }
@@ -56,6 +57,7 @@ export const { use: useClient, provider: ClientProvider } = createSimpleContext(
       },
       connection,
       restart: service?.restart,
+      registration: service?.registration,
     }
   },
 })
