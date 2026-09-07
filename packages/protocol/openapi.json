@@ -7407,7 +7407,7 @@
             }
           }
         },
-        "description": "Update project display metadata and workspace commands.",
+        "description": "Update the project canonical directory, display metadata, and workspace commands.",
         "summary": "Update project",
         "requestBody": {
           "content": {
@@ -7415,6 +7415,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "canonical": {
+                    "type": "string"
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -14381,6 +14384,9 @@
       "Config.ModelEncoded": {
         "type": "object",
         "properties": {
+          "compaction": {
+            "$ref": "#/components/schemas/Provider.Compaction"
+          },
           "modelID": {
             "type": "string"
           },
@@ -14486,6 +14492,9 @@
       "Config.ProviderEncoded": {
         "type": "object",
         "properties": {
+          "compaction": {
+            "$ref": "#/components/schemas/Provider.Compaction"
+          },
           "canonical": {
             "type": "string"
           },
@@ -14589,7 +14598,8 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["random"]
+                "enum": ["random"],
+                "description": "Reuse a randomly selected provider until it is rate limited, then switch to another available provider."
               },
               {
                 "type": "string"
@@ -16428,6 +16438,9 @@
           "package": {
             "type": "string"
           },
+          "compaction": {
+            "$ref": "#/components/schemas/Provider.Compaction"
+          },
           "settings": {
             "type": "object"
           },
@@ -17361,6 +17374,36 @@
         "required": ["id"],
         "additionalProperties": false
       },
+      "Provider.Compaction": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["local"]
+              }
+            },
+            "required": ["mode"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["provider"]
+              },
+              "threshold": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": ["mode"],
+            "additionalProperties": false
+          }
+        ]
+      },
       "Provider.Info": {
         "type": "object",
         "properties": {
@@ -17382,6 +17425,9 @@
           },
           "package": {
             "type": "string"
+          },
+          "compaction": {
+            "$ref": "#/components/schemas/Provider.Compaction"
           },
           "settings": {
             "type": "object"
@@ -18351,6 +18397,9 @@
           },
           "recent": {
             "type": "string"
+          },
+          "providerContext": {
+            "$ref": "#/components/schemas/Session.ProviderContext"
           }
         },
         "required": ["type", "id", "time", "status", "reason", "summary", "recent"],
@@ -18898,6 +18947,46 @@
       },
       "Session.Metadata": {
         "type": "object"
+      },
+      "Session.ProviderContext": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "enum": [1]
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Session.ProviderContext.Provenance"
+          },
+          "messages": {}
+        },
+        "required": ["version", "provenance", "messages"],
+        "additionalProperties": false
+      },
+      "Session.ProviderContext.Provenance": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "modelID": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          }
+        },
+        "required": ["providerID", "provider", "modelID", "route", "protocol", "endpoint"],
+        "additionalProperties": false
       },
       "Session.Revert": {
         "type": "object",
