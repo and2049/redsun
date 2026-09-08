@@ -473,7 +473,8 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
               time: { created: 1 },
               status: "completed",
               reason: "manual",
-              summary: "```latex\ny^2\n```",
+              summary:
+                "Condensed earlier turns. The fixture rendered custom fences, tables and math across the whole first exchange of the session.",
               recent: "msg_markdown",
             },
           ],
@@ -493,11 +494,25 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
       frame.includes("DiagramStart") &&
       frame.includes("DiagramEnd") &&
       frame.includes("x\u00b2") &&
-      frame.includes("y\u00b2"),
+      frame.includes("Compaction"),
   )
-  expect(streaming).toContain("Compaction")
   expect(streaming).not.toContain("initial final")
   expect(streaming).not.toContain("MARKDOWN_END")
+
+  // The completed compaction is pre-collapsed like a thinking trace: a single
+  // "▶ Compaction: …tail" line of plain text instead of a rendered block, so the
+  // summary only shows its tail until it is expanded.
+  expect(streaming).toContain("\u25b6 Compaction:")
+  expect(streaming).toContain("first exchange")
+  expect(streaming).not.toContain("Condensed earlier turns")
+
+  // Clicking the row expands the full summary beneath the "▼ Compaction:" head.
+  const collapsedLines = streaming.split("\n")
+  const compactionRow = collapsedLines.findIndex((line) => line.includes("Compaction"))
+  expect(compactionRow).toBeGreaterThanOrEqual(0)
+  await setup.mockMouse.click(collapsedLines[compactionRow].indexOf("Compaction"), compactionRow)
+  const expanded = await setup.waitForFrame((frame) => frame.includes("Condensed earlier turns"))
+  expect(expanded).toContain("\u25bc Compaction:")
 
   // Queue final text and completion together to exercise TextPart's reactive property order.
   setup.events.emit({
@@ -531,12 +546,20 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
   expect(frame).toContain("DiagramStart")
   expect(frame).toContain("DiagramEnd")
   expect(frame).toContain("x\u00b2")
-  expect(frame).toContain("y\u00b2")
   expect(frame).toContain("initial final")
   expect(frame).not.toContain("graph LR")
   expect(frame).not.toContain("x^2")
-  expect(frame).not.toContain("y^2")
   expect(frame).not.toContain("```")
+
+  // Clicking again collapses the summary back to the teaser. A different
+  // column than the first click: clicking the same cell twice reads as a
+  // double-click word selection, which the toggle deliberately ignores.
+  const expandedLines = frame.split("\n")
+  const expandedRow = expandedLines.findIndex((line) => line.includes("Compaction"))
+  expect(expandedRow).toBeGreaterThanOrEqual(0)
+  await setup.mockMouse.click(expandedLines[expandedRow].indexOf("Compaction") + 2, expandedRow)
+  const collapsedAgain = await setup.waitForFrame((frame2) => !frame2.includes("Condensed earlier turns"))
+  expect(collapsedAgain).toContain("\u25b6 Compaction:")
 })
 
 test("keeps assistant footer metrics current after prepend, same-length refresh, and revert", async () => {

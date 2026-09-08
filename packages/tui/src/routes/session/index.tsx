@@ -23,7 +23,7 @@ import { createStore } from "solid-js/store"
 import { useData } from "../../context/data"
 import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
-import { Spinner, SPINNER_FRAMES } from "../../component/spinner"
+import { Spinner } from "../../component/spinner"
 import { PatchDiff } from "../../component/patch-diff"
 import { ThemeContextProvider, useTheme, useThemes } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, MouseEvent } from "@opentui/core"
@@ -1980,7 +1980,9 @@ function SessionReasoningGroupView(props: {
         when={ctx.thinkingMode() === "hide"}
         fallback={<For each={props.refs}>{(ref) => <SessionPartView partRef={ref} message={props.message} />}</For>}
       >
-        <ThinkingDisclosure
+        <Disclosure
+          label="Thinking"
+          italic
           content={content()}
           title={latest()}
           done={props.completed}
@@ -1995,35 +1997,42 @@ function SessionReasoningGroupView(props: {
 
 const THINKING_LABEL = "▶ Thinking: "
 
-// The collapsed thinking row shows the *end* of the trace, not its start: what
-// the model concluded is more useful at a glance than how it opened. Sized so
-// the row never wraps -- the chevron, the label and the gutters come off the
+// The collapsed disclosure row shows the *end* of the content, not its start:
+// what the model concluded is more useful at a glance than how it opened. Sized
+// so the row never wraps -- the chevron, the label and the gutters come off the
 // available width before the tail is taken.
-export function thinkingTeaser(content: string, width: number) {
-  const available = Math.max(10, width - 3 - THINKING_LABEL.length - 4)
+export function thinkingTeaser(content: string, width: number, label = THINKING_LABEL) {
+  const available = Math.max(10, width - 3 - label.length - 4)
   const flat = content.replace(/\s+/g, " ").trim()
   if (flat.length <= available) return flat
   return "..." + flat.slice(flat.length - available)
 }
 
-// Collapsed thinking is a single "▶ Thinking: …tail" line showing the end of the
-// trace; clicking flips the chevron down and reveals the full italic trace flush
-// beneath it. The show mode (`session.toggle.thinking`) renders the same look
-// pinned open. Muted italic throughout -- reasoning is an aside, and colouring
-// it competes with the tool rows for attention.
-function ThinkingDisclosure(props: {
-  content: string
+// A pre-collapsed disclosure: a single "▶ Label: …tail" line that clicking flips
+// to "▼ Label:" with the full content indented flush beneath it. The show mode
+// (`session.toggle.thinking`) renders the same look pinned open. Muted
+// throughout -- reasoning traces and compaction summaries are asides, and
+// colouring them competes with the tool rows for attention. Thinking renders
+// italic; compaction reuses the identical shape without the italic flag.
+function Disclosure(props: {
+  label: string
   title: string | null
+  content: string
   done: boolean
   toggleable: boolean
   open: boolean
   onToggle: () => void
+  italic?: boolean
+  color?: string | RGBA | undefined
 }) {
   const ctx = use()
   const theme = useTheme()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
-  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width))
+  const collapsedLabel = `▶ ${props.label}: `
+  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel))
+  const color = () => props.color ?? theme.text.subdued
+  const attributes = () => (props.italic ? TextAttributes.ITALIC : undefined)
 
   return (
     <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER} flexDirection="column" flexShrink={0}>
@@ -2032,7 +2041,7 @@ function ThinkingDisclosure(props: {
         fallback={
           <box flexDirection="row">
             <Spinner color={theme.text.feedback.warning.default}>
-              {props.title ? "Thinking: " + props.title : "Thinking"}
+              {props.title ? `${props.label}: ${props.title}` : props.label}
             </Spinner>
           </box>
         }
@@ -2046,18 +2055,14 @@ function ThinkingDisclosure(props: {
             props.onToggle()
           }}
         >
-          <text
-            fg={hover() ? theme.text.default : theme.text.subdued}
-            wrapMode="none"
-            attributes={TextAttributes.ITALIC}
-          >
-            {props.open ? "▼ Thinking:" : THINKING_LABEL + teaser()}
+          <text fg={hover() ? theme.text.default : color()} wrapMode="none" attributes={attributes()}>
+            {props.open ? `▼ ${props.label}:` : collapsedLabel + teaser()}
           </text>
         </box>
       </Show>
       <Show when={props.open && props.content}>
         <box paddingLeft={2}>
-          <text fg={theme.text.subdued} attributes={TextAttributes.ITALIC}>
+          <text fg={color()} attributes={attributes()}>
             {props.content}
           </text>
         </box>
@@ -2338,72 +2343,52 @@ function SessionSkillMessage(props: { message: Extract<SessionMessageInfo, { typ
   )
 }
 
+// A compaction renders as the same pre-collapsed disclosure as a thinking trace
+// (plain, no italics): a spinner while running, then "▶ Compaction: …tail"
+// expandable into the full summary. A failure stays pinned open in the error
+// colour so the message is never hidden behind the toggle.
 function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type: "compaction" }> }) {
-  const ctx = use()
   const theme = useTheme()
-  const { currentSyntax: syntax } = useThemes()
-  const plugins = usePlugin()
+  const [expanded, setExpanded] = createSignal(false)
   const status = () => props.message.status
   const cancelled = () => props.message.status === "failed" && props.message.error.type === "aborted"
-  const text = () =>
-    props.message.status === "failed" ? (cancelled() ? "" : props.message.error.message) : props.message.summary
+  const failed = () => props.message.status === "failed" && !cancelled()
+  const text = () => {
+    if (props.message.status === "failed") return cancelled() ? "" : props.message.error.message
+    return props.message.summary
+  }
   const content = createMemo(() => text().trim())
-  const color = () => (status() === "failed" && !cancelled() ? theme.text.feedback.error.default : theme.text.subdued)
+  const label = () =>
+    props.message.status === "completed" && props.message.providerContext ? "Provider compaction" : "Compaction"
+  const color = () => (failed() ? theme.text.feedback.error.default : theme.text.subdued)
   return (
-    <box>
-      <box flexDirection="row" alignItems="center">
-        <box border={["top"]} borderColor={color()} flexGrow={1} />
-        <box flexDirection="row" gap={1} paddingLeft={1} paddingRight={1}>
-          <Switch>
-            <Match when={status() === "running"}>
-              <Show when={ctx.config.animations ?? true} fallback={<text fg={color()}>⋯</text>}>
-                <spinner frames={SPINNER_FRAMES} interval={80} color={color()} />
-              </Show>
-            </Match>
-            <Match when={status() === "failed" && !cancelled()}>
-              <text fg={color()}>✗</text>
-            </Match>
-          </Switch>
-          <text fg={color()}>
-            {props.message.status === "completed" && props.message.providerContext
-              ? "Provider compaction"
-              : "Compaction"}
-          </text>
-          <Show when={cancelled()}>
-            <text fg={color()}>· cancelled</text>
-          </Show>
+    <Show
+      when={status() === "running" || content()}
+      fallback={
+        <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
+          <text fg={color()}>{cancelled() ? `${label()} · cancelled` : label()}</text>
         </box>
-        <box border={["top"]} borderColor={color()} flexGrow={1} />
-      </box>
-      <Show when={content()}>
-        <box paddingTop={1} paddingLeft={TRANSCRIPT_GUTTER}>
-          <markdown
-            syntaxStyle={syntax()}
-            renderNode={plugins.markdown()}
-            streaming={true}
-            internalBlockMode="top-level"
-            content={content()}
-            tableOptions={{ style: "grid", cellPaddingX: 1 }}
-            conceal={ctx.markdownMode() === "rendered"}
-            fg={theme.markdown.text}
-            bg={theme.background.default}
-          />
-        </box>
-      </Show>
-    </box>
+      }
+    >
+      <Disclosure
+        label={label()}
+        title={null}
+        content={content()}
+        done={status() !== "running"}
+        toggleable={true}
+        open={expanded() || failed()}
+        onToggle={() => setExpanded((value) => !value)}
+        color={failed() ? theme.text.feedback.error.default : undefined}
+      />
+    </Show>
   )
 }
 
 function CompactionQueued() {
   const theme = useTheme()
   return (
-    <box flexDirection="row" alignItems="center">
-      <box border={["top"]} borderColor={theme.border.default} flexGrow={1} />
-      <box flexDirection="row" gap={1} paddingLeft={1} paddingRight={1}>
-        <text fg={theme.text.subdued}>◇</text>
-        <text fg={theme.text.subdued}>Compaction queued</text>
-      </box>
-      <box border={["top"]} borderColor={theme.border.default} flexGrow={1} />
+    <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
+      <text fg={theme.text.subdued}>◇ Compaction queued</text>
     </box>
   )
 }
@@ -2719,7 +2704,9 @@ function ReasoningPart(props: {
 
   return (
     <Show when={content()}>
-      <ThinkingDisclosure
+      <Disclosure
+        label="Thinking"
+        italic
         content={content()}
         title={summary().title}
         done={isDone()}
