@@ -2,10 +2,12 @@ import { createMemo } from "solid-js"
 import { useLocal } from "../context/local"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
+import { useLanguage } from "../i18n"
 
 export function DialogAgent() {
   const local = useLocal()
   const dialog = useDialog()
+  const { t } = useLanguage()
 
   const options = createMemo(() =>
     local.agent.list().map((item) => {
@@ -19,7 +21,7 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title="Select agent"
+      title={t("Select agent")}
       current={local.agent.current()?.id}
       options={options()}
       onSelect={(option) => {

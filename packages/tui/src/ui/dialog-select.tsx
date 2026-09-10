@@ -12,6 +12,7 @@ import { Locale } from "../util/locale"
 import { getScrollAcceleration } from "../util/scroll"
 import { useConfig } from "../config"
 import { moveSelection, reconcileSelection } from "./select-controller"
+import { useLanguage } from "../i18n"
 
 export interface DialogSelectProps<T> {
   title: string
@@ -110,6 +111,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dialog = useDialog()
   const theme = useTheme("elevated")
   const config = useConfig().data
+  const { t } = useLanguage()
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
   const renderer = useRenderer()
 
@@ -488,13 +490,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           ? [
               {
                 bind: "tab",
-                title: "Next dialog action",
+                title: t("Next dialog action"),
                 group: "Dialog",
                 run: () => moveAction(1),
               },
               {
                 bind: "shift+tab",
-                title: "Previous dialog action",
+                title: t("Previous dialog action"),
                 group: "Dialog",
                 run: () => moveAction(-1),
               },
@@ -672,7 +674,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                   r.focus()
                 }, 1)
               }}
-              placeholder={props.placeholder ?? "Search"}
+              placeholder={props.placeholder ?? t("Search")}
               placeholderColor={theme.text.subdued}
             />
           </box>
@@ -687,14 +689,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               fallback={
                 props.emptyView ?? (
                   <box paddingLeft={4} paddingRight={4}>
-                    <text fg={theme.text.subdued}>No items available</text>
+                    <text fg={theme.text.subdued}>{t("No items available")}</text>
                   </box>
                 )
               }
             >
               {props.noMatchView ?? (
                 <box paddingLeft={4} paddingRight={4}>
-                  <text fg={theme.text.subdued}>No results found</text>
+                  <text fg={theme.text.subdued}>{t("No results found")}</text>
                 </box>
               )}
             </Show>

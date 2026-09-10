@@ -2,6 +2,7 @@ import { useDialog } from "../ui/dialog"
 import { DialogSelect } from "../ui/dialog-select"
 import { createMemo, createSignal } from "solid-js"
 import { Locale } from "../util/locale"
+import { useLanguage } from "../i18n"
 import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
 import { usePromptStash, type StashEntry } from "../prompt/stash"
@@ -27,6 +28,7 @@ function getStashPreview(input: string, maxLength: number = 50): string {
 }
 
 export function DialogStash(props: { onSelect: (entry: StashEntry) => void }) {
+  const { t } = useLanguage()
   const dialog = useDialog()
   const stash = usePromptStash()
   const theme = useTheme("elevated")
@@ -57,7 +59,7 @@ export function DialogStash(props: { onSelect: (entry: StashEntry) => void }) {
 
   return (
     <DialogSelect
-      title="Stash"
+      title={t("Stash")}
       options={options()}
       onMove={() => {
         setToDelete(undefined)

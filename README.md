@@ -12,6 +12,20 @@ curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | 
 irm https://github.com/and2049/redsun/releases/latest/download/install.ps1 | iex
 ```
 
+## Interface language
+
+Open **Settings → Appearance → Interface language**, or run **`/language`**, to choose
+English, 简体中文 (Simplified Chinese), Español (Spanish), 한국어 (Korean), or Français (French).
+The interface updates immediately and remembers your choice in the global `cli.json`.
+The picker supports native language names, English names, and locale codes.
+
+English is the default and the fallback for untranslated text. This preference controls
+interface labels; conversation content remains in its original language.
+
+```json
+{ "language": "zh-CN" }
+```
+
 ## Context settings
 
 In **Settings → Context**, configure global backend defaults:

@@ -28,6 +28,7 @@ import { PatchDiff } from "../../component/patch-diff"
 import { ThemeContextProvider, useTheme, useThemes } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, MouseEvent } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
+import { useLanguage } from "../../i18n"
 import type {
   ModelInfo,
   SessionMessageInfo,
@@ -192,6 +193,7 @@ export function Session() {
   const configState = useConfig()
   const config = configState.data
   const theme = useTheme()
+  const language = useLanguage()
   const promptRef = usePromptRef()
   const session = createMemo(() => data.session.get(route.sessionID))
   const messages = () => data.session.message.list(route.sessionID)
@@ -609,7 +611,7 @@ export function Session() {
         actions={[
           {
             command: "queued_prompt.delete",
-            title: "delete",
+            title: language.t("delete"),
             onTrigger: (option) => {
               const last = queuedPrompts().length === 1
               void mutatePending("cancel", option.value).then((cancelled) => {
@@ -739,55 +741,55 @@ export function Session() {
     }
   })
 
-  const globalCommands = [
+  const globalCommands = () => [
     {
       id: "session.page.up",
-      title: "Page up",
+      title: language.t("Page up"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(-scroll.height / 2),
     },
     {
       id: "session.page.down",
-      title: "Page down",
+      title: language.t("Page down"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(scroll.height / 2),
     },
     {
       id: "session.line.up",
-      title: "Line up",
+      title: language.t("Line up"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(-1),
     },
     {
       id: "session.line.down",
-      title: "Line down",
+      title: language.t("Line down"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(1),
     },
     {
       id: "session.half.page.up",
-      title: "Half page up",
+      title: language.t("Half page up"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(-scroll.height / 4),
     },
     {
       id: "session.half.page.down",
-      title: "Half page down",
+      title: language.t("Half page down"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(scroll.height / 4),
     },
   ]
 
-  const baseAndUnfocusedCommands = [
+  const baseAndUnfocusedCommands = () => [
     {
       id: "session.first",
-      title: "First message",
+      title: language.t("First message"),
       group: "Session",
       palette: undefined,
       run: () => {
@@ -855,7 +857,7 @@ export function Session() {
     },
     {
       id: "session.last",
-      title: "Last message",
+      title: language.t("Last message"),
       group: "Session",
       palette: undefined,
       run: () => {
@@ -865,17 +867,17 @@ export function Session() {
     },
   ]
 
-  const listCommands = [
+  const listCommands = () => [
     {
       id: "session.child.list.next",
-      title: "Next active subagent",
+      title: language.t("Next active subagent"),
       group: "Session",
       palette: undefined,
       run: () => moveActive(1),
     },
     {
       id: "session.child.list.previous",
-      title: "Previous active subagent",
+      title: language.t("Previous active subagent"),
       group: "Session",
       palette: undefined,
       run: () => moveActive(-1),
@@ -884,7 +886,7 @@ export function Session() {
 
   const baseCommands = createMemo(() => [
     {
-      title: "Share session",
+      title: language.t("Share session"),
       id: "session.share",
       suggested: route.type === "session",
       group: "Session",
@@ -892,7 +894,7 @@ export function Session() {
       run: () => unavailable("Sharing"),
     },
     {
-      title: "Rename session",
+      title: language.t("Rename session"),
       id: "session.rename",
       group: "Session",
       slash: { name: "rename", arguments: true as const },
@@ -907,7 +909,7 @@ export function Session() {
       },
     },
     {
-      title: "Jump to message",
+      title: language.t("Jump to message"),
       id: "session.timeline",
       group: "Session",
       slash: { name: "timeline" },
@@ -922,7 +924,7 @@ export function Session() {
       },
     },
     {
-      title: "Fork session",
+      title: language.t("Fork session"),
       id: "session.fork",
       group: "Session",
       slash: { name: "fork" },
@@ -939,7 +941,7 @@ export function Session() {
       },
     },
     {
-      title: "Set or clear a session goal",
+      title: language.t("Set or clear a session goal"),
       id: "session.goal",
       group: "Session",
       slash: {
@@ -999,7 +1001,7 @@ export function Session() {
       },
     },
     {
-      title: "Compact session",
+      title: language.t("Compact session"),
       id: "session.compact",
       group: "Session",
       slash: {
@@ -1023,7 +1025,7 @@ export function Session() {
       },
     },
     {
-      title: "Unshare session",
+      title: language.t("Unshare session"),
       id: "session.unshare",
       group: "Session",
       enabled: false,
@@ -1031,7 +1033,7 @@ export function Session() {
       run: () => unavailable("Unsharing"),
     },
     {
-      title: "Undo previous message",
+      title: language.t("Undo previous message"),
       id: "session.undo",
       group: "Session",
       slash: { name: "undo" },
@@ -1063,7 +1065,7 @@ export function Session() {
       },
     },
     {
-      title: "Redo",
+      title: language.t("Redo"),
       id: "session.redo",
       group: "Session",
       enabled: !!session()?.revert?.messageID,
@@ -1119,7 +1121,7 @@ export function Session() {
       },
     },
     {
-      title: "Toggle session scrollbar",
+      title: language.t("Toggle session scrollbar"),
       id: "session.toggle.scrollbar",
       group: "Session",
       palette: undefined,
@@ -1147,7 +1149,7 @@ export function Session() {
       },
     },
     {
-      title: "Jump to last user message",
+      title: language.t("Jump to last user message"),
       id: "session.messages_last_user",
       group: "Session",
       palette: undefined,
@@ -1167,35 +1169,35 @@ export function Session() {
       },
     },
     {
-      title: "Next message",
+      title: language.t("Next message"),
       id: "session.message.next",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("next", dialog),
     },
     {
-      title: "Previous message",
+      title: language.t("Previous message"),
       id: "session.message.previous",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("prev", dialog),
     },
     {
-      title: "Next user message",
+      title: language.t("Next user message"),
       id: "session.message.user.next",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("next", dialog, true),
     },
     {
-      title: "Previous user message",
+      title: language.t("Previous user message"),
       id: "session.message.user.previous",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("prev", dialog, true),
     },
     {
-      title: "Copy last assistant message",
+      title: language.t("Copy last assistant message"),
       id: "messages.copy",
       group: "Session",
       run: () => {
@@ -1236,7 +1238,7 @@ export function Session() {
       },
     },
     {
-      title: "Copy session ID",
+      title: language.t("Copy session ID"),
       id: "session.copy.id",
       group: "Session",
       run: () => {
@@ -1248,7 +1250,7 @@ export function Session() {
       },
     },
     {
-      title: "Copy session transcript",
+      title: language.t("Copy session transcript"),
       id: "session.copy",
       group: "Session",
       slash: {
@@ -1268,7 +1270,7 @@ export function Session() {
       },
     },
     {
-      title: "Export session transcript",
+      title: language.t("Export session transcript"),
       id: "session.export",
       group: "Session",
       slash: {
@@ -1312,7 +1314,7 @@ export function Session() {
       },
     },
     {
-      title: "Background blocking tools",
+      title: language.t("Background blocking tools"),
       id: "session.background",
       group: "Session",
       palette: undefined,
@@ -1322,7 +1324,7 @@ export function Session() {
       },
     },
     {
-      title: "Go to first child session",
+      title: language.t("Go to first child session"),
       id: "session.child.first",
       group: "Session",
       palette: undefined,
@@ -1333,14 +1335,14 @@ export function Session() {
       },
     },
     {
-      title: "View queued prompts",
+      title: language.t("View queued prompts"),
       id: "session.queued_prompts",
       group: "Prompt",
       enabled: queuedPrompts().length > 0,
       run: openQueuedPrompts,
     },
     {
-      title: "Go to parent session",
+      title: language.t("Go to parent session"),
       id: "session.parent",
       group: "Session",
       palette: undefined,
@@ -1351,7 +1353,7 @@ export function Session() {
       }),
     },
     {
-      title: "Go to next child session",
+      title: language.t("Go to next child session"),
       id: "session.child.next",
       group: "Session",
       palette: undefined,
@@ -1359,7 +1361,7 @@ export function Session() {
       run: childSessionHandler(() => moveChild(1)),
     },
     {
-      title: "Go to previous child session",
+      title: language.t("Go to previous child session"),
       id: "session.child.previous",
       group: "Session",
       palette: undefined,
@@ -1369,12 +1371,13 @@ export function Session() {
   ])
 
   const commands = createMemo(() =>
-    [...globalCommands, ...baseAndUnfocusedCommands, ...listCommands, ...baseCommands()].map(
+    [...globalCommands(), ...baseAndUnfocusedCommands(), ...listCommands(), ...baseCommands()].map(
       (command) =>
         ({
           bind: false,
           palette: true as const,
           ...command,
+          group: language.t(command.group),
         }) satisfies KeymapCommand,
     ),
   )
@@ -1382,21 +1385,21 @@ export function Session() {
   Keymap.createLayer(() => ({
     mode: "global",
     commands: commands(),
-    bindings: globalCommands.map((command) => command.id),
+    bindings: globalCommands().map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
     enabled: () => renderer.currentFocusedEditor === null,
-    bindings: baseAndUnfocusedCommands.map((command) => command.id),
+    bindings: baseAndUnfocusedCommands().map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
     enabled: () => renderer.currentFocusedEditor === null && activeSessions().length > 0,
-    bindings: listCommands.map((command) => command.id),
+    bindings: listCommands().map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
-    bindings: [...baseAndUnfocusedCommands, ...baseCommands()].map((command) => command.id),
+    bindings: [...baseAndUnfocusedCommands(), ...baseCommands()].map((command) => command.id),
   }))
 
   createEffect(
@@ -1530,7 +1533,7 @@ export function Session() {
             </box>
             <box height={1} flexShrink={0} flexDirection="row" justifyContent="center">
               <Show when={firstJump()}>
-                <text fg={theme.text.feedback.info.default}>Loading session history…</text>
+                <text fg={theme.text.feedback.info.default}>{language.t("Loading session history…")}</text>
               </Show>
               <Show when={!firstJump() && awayFromBottom()}>
                 <box
@@ -1949,6 +1952,7 @@ function SessionReasoningGroupView(props: {
   completed: boolean
   message: (messageID: string) => SessionMessageInfo | undefined
 }) {
+  const { t } = useLanguage()
   const ctx = use()
   const [expanded, setExpanded] = createSignal(false)
   const parts = createMemo(() =>
@@ -1981,7 +1985,7 @@ function SessionReasoningGroupView(props: {
         fallback={<For each={props.refs}>{(ref) => <SessionPartView partRef={ref} message={props.message} />}</For>}
       >
         <Disclosure
-          label="Thinking"
+          label={t("Thinking")}
           italic
           content={content()}
           title={latest()}
@@ -2002,7 +2006,7 @@ const THINKING_LABEL = "▶ Thinking: "
 // so the row never wraps -- the chevron, the label and the gutters come off the
 // available width before the tail is taken.
 export function thinkingTeaser(content: string, width: number, label = THINKING_LABEL) {
-  const available = Math.max(10, width - 3 - label.length - 4)
+  const available = Math.max(10, width - 3 - stringWidth(label) - 4)
   const flat = content.replace(/\s+/g, " ").trim()
   if (flat.length <= available) return flat
   return "..." + flat.slice(flat.length - available)
@@ -2029,8 +2033,8 @@ function Disclosure(props: {
   const theme = useTheme()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
-  const collapsedLabel = `▶ ${props.label}: `
-  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel))
+  const collapsedLabel = () => `▶ ${props.label}: `
+  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel()))
   const color = () => props.color ?? theme.text.subdued
   const attributes = () => (props.italic ? TextAttributes.ITALIC : undefined)
 
@@ -2056,7 +2060,7 @@ function Disclosure(props: {
           }}
         >
           <text fg={hover() ? theme.text.default : color()} wrapMode="none" attributes={attributes()}>
-            {props.open ? `▼ ${props.label}:` : collapsedLabel + teaser()}
+            {props.open ? `▼ ${props.label}:` : collapsedLabel() + teaser()}
           </text>
         </box>
       </Show>
@@ -2153,6 +2157,7 @@ function completionDuration(ms: number) {
 }
 
 function AssistantFooter(props: { message: SessionMessageAssistant }) {
+  const { t } = useLanguage()
   const ctx = use()
   const config = useConfig()
   const data = useData()
@@ -2187,19 +2192,21 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
   const verb = createMemo(() => {
     const seed = turnInput(props.message, messages())?.id ?? props.message.id
     const past = completionVerb(seed)
-    return generating() ? past.replace(/ed$/, "ing") : past
+    return t(generating() ? past.replace(/ed$/, "ing") : past)
   })
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
         <box paddingLeft={TRANSCRIPT_GUTTER}>
-          <text fg={theme.text.feedback.error.default}>Error: {errorMessage(props.message.error)}</text>
+          <text fg={theme.text.feedback.error.default}>
+            {t("Error")}: {errorMessage(props.message.error)}
+          </text>
         </box>
       </Show>
       <AssistantRetry retry={props.message.retry} />
       <Show when={interrupted()}>
         <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={props.message.retry ? 1 : 0}>
-          <text fg={theme.text.subdued}>Interrupted</text>
+          <text fg={theme.text.subdued}>{t("Interrupted")}</text>
         </box>
       </Show>
       <Show when={!props.message.error && (generating() || duration() > 0)}>
@@ -2213,14 +2220,17 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
               fallback={
                 <>
                   <span style={{ fg: theme.text.subdued }}>
-                    {verb()} for {completionDuration(duration())}
+                    {t("{{verb}} for {{duration}}", { verb: verb(), duration: completionDuration(duration()) })}
                   </span>
                   <Show when={config.data.session.tps && tokensPerSecond()}>
                     {(value) => <span style={{ fg: theme.text.subdued }}> · {value().toFixed(1)} tok/s</span>}
                   </Show>
                   <Show when={props.message.time.completed}>
                     {(completed) => (
-                      <span style={{ fg: theme.text.subdued }}> · done {completionStamp(completed(), Date.now())}</span>
+                      <span style={{ fg: theme.text.subdued }}>
+                        {" "}
+                        · {t("done {{time}}", { time: completionStamp(completed(), Date.now()) })}
+                      </span>
                     )}
                   </Show>
                 </>
@@ -2271,21 +2281,25 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
 function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   const ctx = use()
   const theme = useTheme()
+  const language = useLanguage()
   const metadata = () => (props.message.type === "synthetic" ? props.message.metadata : undefined)
   const source = () => stringValue(metadata()?.source)
   const completion = () => source() === "subagent" || source() === "shell"
   const state = () => stringValue(metadata()?.state)
-  const actor = () => (source() === "shell" ? "Shell" : Locale.titlecase(stringValue(metadata()?.agent) ?? "Subagent"))
+  const actor = () =>
+    source() === "shell"
+      ? language.t("Shell")
+      : Locale.titlecase(stringValue(metadata()?.agent) ?? language.t("Subagent"))
   const text = () => {
-    if (props.message.type === "system") return props.message.description ?? "Instructions updated"
+    if (props.message.type === "system") return props.message.description ?? language.t("Instructions updated")
     if (props.message.type === "synthetic") return props.message.description ?? ""
     return ""
   }
   const description = () => (source() === "shell" ? text().replace(/\s+/g, " ").trim() : text())
   const status = () => {
-    if (state() === "completed") return "finished"
-    if (state() === "error") return "failed"
-    return state() ?? "finished"
+    if (state() === "completed") return language.t("finished")
+    if (state() === "error") return language.t("failed")
+    return language.t(state() ?? "finished")
   }
   const heading = () => `${state() === "completed" ? "↳" : "!"} ${actor()} ${status()}`
   const suffix = () => Locale.truncateWidth(` · ${description()}`, Math.max(0, ctx.width - 3 - stringWidth(heading())))
@@ -2302,7 +2316,13 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
   const modelSubstituted = () => metadata()?.[MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
   const noticeLabel = () =>
-    goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : modelSubstituted() ? "Model" : "Notice"
+    goalVerdict()
+      ? language.t("Goal")
+      : advisorNote()
+        ? language.t("Advisor")
+        : modelSubstituted()
+          ? language.t("Model")
+          : language.t("Notice")
   const noticeIcon = () => (goalVerdict() ? "◎" : "◈")
   const noticeColor = () => {
     const verdict = goalVerdict()
@@ -2359,7 +2379,8 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
   }
   const content = createMemo(() => text().trim())
   const label = () => {
-    const name = props.message.status === "completed" && props.message.providerContext ? "Provider compaction" : "Compaction"
+    const name =
+      props.message.status === "completed" && props.message.providerContext ? "Provider compaction" : "Compaction"
     if (props.message.status === "running" || !props.message.tokens) return name
     const tokens = props.message.tokens
     const input = tokens.input + tokens.cache.read + tokens.cache.write
@@ -2508,6 +2529,7 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
 
 function UserMessage(props: { message: SessionMessageUser }) {
   const ctx = use()
+  const language = useLanguage()
   const data = useData()
   const local = useLocal()
   const files = createMemo(() => deduplicateVisibleImages(props.message.files ?? []))
@@ -2547,10 +2569,10 @@ function UserMessage(props: { message: SessionMessageUser }) {
             if (delivery() === "steer") {
               dialog.replace(() => (
                 <DialogSelect
-                  title="Pending steer"
+                  title={language.t("Pending steer")}
                   options={[
-                    { title: "Move to queue", value: "queue" as const },
-                    { title: "Delete", value: "cancel" as const },
+                    { title: language.t("Move to queue"), value: "queue" as const },
+                    { title: language.t("Delete"), value: "cancel" as const },
                   ]}
                   onSelect={(option) => {
                     void updatePendingSteer(option.value)
@@ -2696,6 +2718,7 @@ function ReasoningPart(props: {
   part: SessionMessageAssistantReasoning
   message: SessionMessageAssistant
 }) {
+  const { t } = useLanguage()
   const ctx = use()
   // Collapsed by default in hide mode: a single line throughout, so the layout
   // never shifts. Click to open the full trace, click to close.
@@ -2711,7 +2734,7 @@ function ReasoningPart(props: {
   return (
     <Show when={content()}>
       <Disclosure
-        label="Thinking"
+        label={t("Thinking")}
         italic
         content={content()}
         title={summary().title}
@@ -4149,7 +4172,12 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined
 }
 
-function formatSessionTranscript(session: SessionInfo, messages: SessionMessageInfo[], thinking: boolean, tools = true) {
+function formatSessionTranscript(
+  session: SessionInfo,
+  messages: SessionMessageInfo[],
+  thinking: boolean,
+  tools = true,
+) {
   const body = messages.flatMap((message) => {
     if (message.type === "user") return [`## User\n\n${message.text}`]
     if (message.type === "shell")

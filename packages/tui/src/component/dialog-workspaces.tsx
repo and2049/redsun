@@ -11,6 +11,7 @@ import { useData } from "../context/data"
 import { abbreviateHome } from "../runtime"
 import { useTuiPaths } from "../context/runtime"
 import { Locale } from "../util/locale"
+import { useLanguage } from "../i18n"
 import { errorMessage } from "../util/error"
 import { isRecord } from "../util/record"
 import { useToast } from "../ui/toast"
@@ -37,6 +38,7 @@ type DialogWorkspacesProps = {
 }
 
 export function DialogWorkspaces(props: DialogWorkspacesProps) {
+  const { t } = useLanguage()
   const dialog = useDialog()
   const client = useClient()
   const dimensions = useTerminalDimensions()
@@ -314,11 +316,11 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
   return (
     <box minHeight={showError() ? 5 : fullHeight()}>
       <DialogSelect
-        title="Worktrees"
+        title={t("Worktrees")}
         titleView={
           <box flexDirection="row" gap={1}>
             <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
-              Worktrees
+              {t("Worktrees")}
             </text>
             <Show when={working() || directories.loading || loadedProject.loading}>
               <Spinner />
@@ -332,24 +334,24 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
           showError() ? (
             <box paddingLeft={4} paddingRight={4}>
               <text fg={theme.text.feedback.error.default} attributes={TextAttributes.BOLD}>
-                Could not load worktrees
+                {t("Could not load worktrees")}
               </text>
               <text fg={theme.text.subdued}>{errorMessage(loadError())}</text>
-              <text fg={theme.text.subdued}>Close and reopen Worktrees to try again.</text>
+              <text fg={theme.text.subdued}>{t("Close and reopen Worktrees to try again.")}</text>
             </box>
           ) : directories.loading || loadedProject.loading ? (
             <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>Loading worktrees…</text>
+              <text fg={theme.text.subdued}>{t("Loading worktrees…")}</text>
             </box>
           ) : (
             <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>No worktrees available</text>
+              <text fg={theme.text.subdued}>{t("No worktrees available")}</text>
             </box>
           )
         }
         noMatchView={
           <box paddingLeft={4} paddingRight={4}>
-            <text fg={theme.text.subdued}>No worktrees found</text>
+            <text fg={theme.text.subdued}>{t("No worktrees found")}</text>
           </box>
         }
         locked={showError() || directories.loading || loadedProject.loading || Boolean(removing())}
@@ -363,17 +365,17 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
             ? []
             : [
                 ...(route.data.type === "session"
-                  ? [{ command: "dialog.move_session.move", title: "move", onTrigger: move }]
+                  ? [{ command: "dialog.move_session.move", title: t("move"), onTrigger: move }]
                   : []),
                 {
                   command: "dialog.move_session.new",
-                  title: "new",
+                  title: t("new"),
                   selection: "none",
                   onTrigger: () => void create(),
                 },
                 {
                   command: "dialog.move_session.delete",
-                  title: "delete",
+                  title: t("delete"),
                   disabled: (option) => {
                     const value = option?.value
                     if (!value || value.type !== "directory" || value.subdirectory) return true
@@ -383,7 +385,7 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
                 },
                 {
                   command: "dialog.move_session.refresh",
-                  title: "refresh",
+                  title: t("refresh"),
                   selection: "none",
                   onTrigger: () => void refetch(),
                 },

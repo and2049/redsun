@@ -193,6 +193,7 @@ describe("TUI inline tool wrapping", () => {
     expect(teased.length).toBeLessThanOrEqual(60)
     // Never narrower than a usable tail, however cramped the terminal.
     expect(thinkingTeaser(long, 4).length).toBe(13)
+    expect(thinkingTeaser(long, 60, "▶ 思考: ")).toBe(thinkingTeaser(long, 60, "▶ Test: "))
   })
 
   test("filters malformed nested tool wire data", () => {

@@ -101,6 +101,8 @@ import { AttentionProvider } from "./context/attention"
 import { StorageProvider, useStorage } from "./context/storage"
 import { Session } from "./routes/session"
 import { createTuiClipboard } from "./clipboard"
+import { useLanguage } from "./i18n"
+import { DialogLanguage } from "./component/dialog-language"
 
 registerOpencodeSpinner()
 
@@ -136,6 +138,7 @@ const appBindingCommands = [
   "variant.list",
   "provider.connect",
   "opencode.settings",
+  "language.switch",
   "opencode.status",
   "opencode.update",
   "server.pair",
@@ -447,6 +450,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
 })
 
 function App(props: { pair?: DialogPairCredentials }) {
+  const { t } = useLanguage()
   const log = useLog({ component: "app" })
   const app = useTuiApp()
   const startup = useTuiStartup()
@@ -463,8 +467,8 @@ function App(props: { pair?: DialogPairCredentials }) {
   const refreshModels = () =>
     client.api.model
       .refresh()
-      .then(() => toast.show({ variant: "success", message: "Model catalog refreshed" }))
-      .catch(() => toast.show({ variant: "error", message: "Failed to refresh model catalog" }))
+      .then(() => toast.show({ variant: "success", message: t("Model catalog refreshed") }))
+      .catch(() => toast.show({ variant: "error", message: t("Failed to refresh model catalog") }))
   const updater = useUpdateNotification()
   const theme = useTheme()
   const tabsTheme = useTheme("elevated")
@@ -506,16 +510,16 @@ function App(props: { pair?: DialogPairCredentials }) {
       if (status.status === "needs_auth")
         toast.show({
           variant: "warning",
-          title: "MCP server needs authentication",
-          message: `Connect "${server.name}" to use its tools.`,
-          action: { label: "Open MCP servers", run: () => keymap.dispatch("mcp.list") },
+          title: t("MCP server needs authentication"),
+          message: t('Connect "{{name}}" to use its tools.', { name: server.name }),
+          action: { label: t("Open MCP servers"), run: () => keymap.dispatch("mcp.list") },
         })
       else
         toast.show({
           variant: "error",
-          title: `MCP server failed: ${server.name}`,
-          message: "Run /mcps to view details.",
-          action: { label: "Open MCP servers", run: () => keymap.dispatch("mcp.list") },
+          title: t("MCP server failed: {{name}}", { name: server.name }),
+          message: t("Run /mcps to view details."),
+          action: { label: t("Open MCP servers"), run: () => keymap.dispatch("mcp.list") },
         })
     }
   })
@@ -541,7 +545,7 @@ function App(props: { pair?: DialogPairCredentials }) {
 
     await clipboard
       .write(text)
-      .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+      .then(() => toast.show({ message: t("Copied to clipboard"), variant: "info" }))
       .catch(toast.error)
 
     renderer.clearSelection()
@@ -709,7 +713,7 @@ function App(props: { pair?: DialogPairCredentials }) {
       },
       ...Array.from({ length: 9 }, (_, i) => ({
         name: `session.quick_switch.${i + 1}`,
-        title: `Switch to session in quick slot ${i + 1}`,
+        title: t("Switch to session in quick slot {{slot}}", { slot: i + 1 }),
         category: "Session",
         palette: undefined,
         run: () => local.session.quickSwitch(i + 1),
@@ -730,7 +734,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         name: "model.refresh",
         title: "Refresh model catalog",
         category: "Agent",
-        description: "Re-fetch the models.dev catalog and repopulate the model list",
+        description: t("Re-fetch the models.dev catalog and repopulate the model list"),
         run: refreshModels,
       },
       {
@@ -757,7 +761,9 @@ function App(props: { pair?: DialogPairCredentials }) {
           if (openWorkerVariant()) return
           toast.show({
             variant: "info",
-            message: local.model.worker.current() ? "This worker model has no variants" : "Select a worker model first",
+            message: t(
+              local.model.worker.current() ? "This worker model has no variants" : "Select a worker model first",
+            ),
             duration: 3000,
           })
         },
@@ -842,8 +848,8 @@ function App(props: { pair?: DialogPairCredentials }) {
         run: () => {
           if (local.model.variant.list().length === 0) {
             return toast.show({
-              title: "No variants available",
-              message: "The current model does not support any variants.",
+              title: t("No variants available"),
+              message: t("The current model does not support any variants."),
               variant: "info",
             })
           }
@@ -882,6 +888,13 @@ function App(props: { pair?: DialogPairCredentials }) {
           dialog.replace(() => <DialogConfig />)
         },
         category: "System",
+      },
+      {
+        name: "language.switch",
+        title: "Interface language",
+        category: "Settings",
+        slash: { name: "language", aliases: ["languages", "lang"] },
+        run: () => dialog.replace(() => <DialogLanguage />),
       },
       {
         name: "opencode.status",
@@ -1096,10 +1109,11 @@ function App(props: { pair?: DialogPairCredentials }) {
       ({ name, category, ...command }) =>
         ({
           id: name,
-          group: category,
+          group: category ? t(category) : undefined,
           bind: false,
           palette: true as const,
           ...command,
+          title: t(command.title),
         }) satisfies KeymapCommand,
     ),
   )

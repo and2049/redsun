@@ -13,6 +13,7 @@ import { useLocation } from "../context/location"
 import { useTheme, useThemes } from "../context/theme"
 import { Keymap } from "../context/keymap"
 import { Locale } from "../util/locale"
+import { useLanguage } from "../i18n"
 import { abbreviateHome } from "../runtime"
 import { useTuiPaths } from "../context/runtime"
 import { truncateFilePath } from "../ui/file-path"
@@ -35,6 +36,7 @@ type OpenView = { type: "projects" } | { type: "worktrees"; projectID: string; w
 type OpenSelection = { view: OpenView; filter: string; selected?: OpenTarget }
 
 export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: SessionInfo[]) => void }) {
+  const { t } = useLanguage()
   const dialog = useDialog()
   const route = useRoute()
   const data = useData()
@@ -232,7 +234,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
             ...(item.workspaceID ? { workspaceID: item.workspaceID } : {}),
             ...(git ? { projectID: item.project!.id } : {}),
           } as OpenTarget,
-          category: "Projects",
+          category: t("Projects"),
           gutter:
             item.workspaceID === current.workspaceID &&
             (item.directory === current.directory ||
@@ -309,8 +311,12 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
               pending = undefined
               restore(previous)
             }}
-            title={projectID() ? `${projectName(data.project.get(projectID()!)) ?? "Project"} / Worktrees` : "Open"}
-            placeholder={projectID() ? "Search worktrees…" : "Search sessions and projects…"}
+            title={
+              projectID()
+                ? `${projectName(data.project.get(projectID()!)) ?? t("Project")} / ${t("Worktrees")}`
+                : t("Open")
+            }
+            placeholder={t(projectID() ? "Search worktrees…" : "Search sessions and projects…")}
             options={projectID() ? worktreeOptions() : options()}
             current={
               currentSessionID() ? ({ type: "session", sessionID: currentSessionID()! } as OpenTarget) : undefined
@@ -327,7 +333,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
             emptyView={
               <Show when={!recent.loading && !projects.loading}>
                 <box paddingLeft={4} paddingRight={4}>
-                  <text fg={theme.text.subdued}>No recent sessions or projects</text>
+                  <text fg={theme.text.subdued}>{t("No recent sessions or projects")}</text>
                 </box>
               </Show>
             }
@@ -341,15 +347,20 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
               >
                 <box>
                   <Show when={projectID() && worktrees.loading}>
-                    <Spinner color={theme.text.subdued}>Loading worktrees…</Spinner>
+                    <Spinner color={theme.text.subdued}>{t("Loading worktrees…")}</Spinner>
                   </Show>
                   <Show when={!projectID() && (recent.loading || projects.loading)}>
-                    <Spinner color={theme.text.subdued}>Refreshing sessions and projects…</Spinner>
+                    <Spinner color={theme.text.subdued}>{t("Refreshing sessions and projects…")}</Spinner>
                   </Show>
                   <Show when={!projectID() && (recent() === false || projects() === false)}>
                     <text fg={theme.text.feedback.error.default}>
-                      Could not refresh{" "}
-                      {recent() === false ? (projects() === false ? "sessions and projects" : "sessions") : "projects"}.
+                      {t(
+                        recent() === false
+                          ? projects() === false
+                            ? "Could not refresh sessions and projects."
+                            : "Could not refresh sessions."
+                          : "Could not refresh projects.",
+                      )}
                     </text>
                   </Show>
                 </box>
@@ -360,7 +371,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
                 ? [
                     {
                       bind: "right",
-                      title: "Show project worktrees",
+                      title: t("Show project worktrees"),
                       group: "Dialog",
                       run: () => {
                         const target = select?.selected?.value
@@ -383,15 +394,15 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
                 ? [
                     {
                       bind: "left",
-                      title: "Return to projects",
+                      title: t("Return to projects"),
                       group: "Dialog",
                       run: back,
                     },
-                    { bind: "ctrl+n", title: "New worktree", group: "Dialog", run: newWorktree },
+                    { bind: "ctrl+n", title: t("New worktree"), group: "Dialog", run: newWorktree },
                   ]
                 : []),
             ]}
-            footerHints={[...(projectID() ? [{ title: "new worktree", label: "ctrl+n" }] : [])]}
+            footerHints={[...(projectID() ? [{ title: t("new worktree"), label: "ctrl+n" }] : [])]}
             noMatchView={
               <box paddingLeft={4} paddingRight={4}>
                 <text fg={theme.text.subdued}>
@@ -425,11 +436,11 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
       >
         <DialogPrompt
           size="large"
-          title={`${projectName(data.project.get(projectID()!)) ?? "Project"} / New worktree`}
-          placeholder="Worktree name (optional)"
-          description={() => <text fg={theme.text.subdued}>Leave blank for a random name.</text>}
+          title={`${projectName(data.project.get(projectID()!)) ?? t("Project")} / ${t("New worktree")}`}
+          placeholder={t("Worktree name (optional)")}
+          description={() => <text fg={theme.text.subdued}>{t("Leave blank for a random name.")}</text>}
           busy={creating()}
-          busyText="Creating worktree…"
+          busyText={t("Creating worktree…")}
           onCancel={cancelCreation}
           onConfirm={(value) => {
             const id = projectID()!

@@ -8,6 +8,8 @@ import { createStore, reconcile } from "solid-js/store"
 import { watch } from "fs"
 import path from "path"
 import { TuiKeybind } from "./keybind"
+import { locales } from "../i18n/locale"
+import { LanguageContext } from "../i18n/context"
 
 export interface Interface {
   readonly path?: string
@@ -46,6 +48,9 @@ export const Cursor = Schema.Struct({
 }).annotate({ description: "Terminal cursor settings" })
 
 export const Info = Schema.Struct({
+  language: Schema.optional(Schema.Literals(locales)).annotate({
+    description: "Interface language; defaults to English",
+  }),
   theme: Schema.optional(
     Schema.Struct({
       name: Schema.optional(Schema.String).annotate({ description: "Theme name" }),
@@ -278,7 +283,9 @@ export function ConfigProvider(props: {
     : undefined
   onCleanup(() => watcher?.close())
   return (
-    <ConfigContext.Provider value={{ data: config, path: host?.path, update }}>{props.children}</ConfigContext.Provider>
+    <ConfigContext.Provider value={{ data: config, path: host?.path, update }}>
+      <LanguageContext.Provider value={() => config.language ?? "en"}>{props.children}</LanguageContext.Provider>
+    </ConfigContext.Provider>
   )
 }
 

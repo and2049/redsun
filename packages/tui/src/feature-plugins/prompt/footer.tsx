@@ -3,6 +3,7 @@ import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
 import { contextUsage, formatContextUsage } from "../../util/session"
 import { useTerminalDimensions } from "@opentui/solid"
 import { stringWidth } from "../../util/string-width"
+import { useLanguage } from "../../i18n"
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -16,20 +17,21 @@ export function PromptFooter(props: {
   showDetails: boolean
 }) {
   const dimensions = useTerminalDimensions()
+  const language = useLanguage()
   const [liveHovered, setLiveHovered] = createSignal(false)
   const subagents = createMemo(() => {
     if (!props.sessionID) return 0
     const count = props.context.data.session
       .family(props.sessionID)
       .filter((id) => id !== props.sessionID && props.context.data.session.status(id) === "running").length
-    return count ? `${count} subagent${count === 1 ? "" : "s"}` : undefined
+    return count ? language.t(count === 1 ? "{{count}} subagent" : "{{count}} subagents", { count }) : undefined
   })
   const shells = createMemo(() => {
     if (!props.sessionID) return 0
     const count = props.context.data.shell
       .list(props.context.location)
       .filter((shell) => shell.metadata.sessionID === props.sessionID).length
-    return count ? `${count} shell${count === 1 ? "" : "s"}` : undefined
+    return count ? language.t(count === 1 ? "{{count}} shell" : "{{count}} shells", { count }) : undefined
   })
   const status = createMemo(() => {
     if (!props.sessionID) return []
@@ -54,7 +56,7 @@ export function PromptFooter(props: {
     return promptFooterLayout({
       width: Math.max(0, dimensions().width - 8),
       usage: status(),
-      shortcuts: command ? [`${command} commands`] : [],
+      shortcuts: command ? [`${command} ${language.t("commands")}`] : [],
     })
   })
 
@@ -94,13 +96,15 @@ export function PromptFooter(props: {
           </Match>
           <Match when={props.showDetails && layout().shortcuts}>
             <text fg={props.context.theme.text.default} flexShrink={0}>
-              {shortcut("agent.cycle")} <span style={{ fg: props.context.theme.text.subdued }}>agents</span>
+              {shortcut("agent.cycle")}{" "}
+              <span style={{ fg: props.context.theme.text.subdued }}>{language.t("agents")}</span>
             </text>
           </Match>
         </Switch>
         <Show when={props.showDetails && layout().shortcuts}>
           <text fg={props.context.theme.text.default} wrapMode="none" flexShrink={0}>
-            {shortcut("command.palette.show")} <span style={{ fg: props.context.theme.text.subdued }}>commands</span>
+            {shortcut("command.palette.show")}{" "}
+            <span style={{ fg: props.context.theme.text.subdued }}>{language.t("commands")}</span>
           </text>
         </Show>
       </Match>
@@ -108,7 +112,7 @@ export function PromptFooter(props: {
         <text fg={props.context.theme.text.default} flexShrink={0}>
           esc{" "}
           <span style={{ fg: props.context.theme.text.subdued }}>
-            {dimensions().width < 44 ? "shell" : "exit shell mode"}
+            {dimensions().width < 44 ? language.t("shell") : language.t("exit shell mode")}
           </span>
         </text>
       </Match>

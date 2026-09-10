@@ -6,6 +6,7 @@ import { Keymap } from "../../context/keymap"
 import { useRouteData } from "../../context/route"
 import { useTheme } from "../../context/theme"
 import { Locale } from "../../util/locale"
+import { useLanguage } from "../../i18n"
 
 const AGENT_PATTERN = /@([\w-]+) subagent/
 
@@ -23,6 +24,7 @@ export function SubagentFooter() {
   const theme = useTheme()
   const keymap = Keymap.use()
   const shortcuts = Keymap.useShortcuts()
+  const language = useLanguage()
   const [hover, setHover] = createSignal<string | undefined>()
   useTerminalDimensions()
 
@@ -30,7 +32,7 @@ export function SubagentFooter() {
 
   const position = createMemo(() => {
     const current = session()
-    if (!current) return { label: "Subagent", index: 0, total: 0 }
+    if (!current) return { label: language.t("Subagent"), index: 0, total: 0 }
     const label = Locale.titlecase(AGENT_PATTERN.exec(current.title ?? "")?.[1] ?? "subagent")
     if (!current.parentID) return { label, index: 0, total: 0 }
     const siblings = data.session
@@ -51,7 +53,11 @@ export function SubagentFooter() {
         message.type === "assistant" && (message.tokens?.output ?? 0) > 0,
     )
     const tokens = last?.tokens
-      ? last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+      ? last.tokens.input +
+        last.tokens.output +
+        last.tokens.reasoning +
+        last.tokens.cache.read +
+        last.tokens.cache.write
       : 0
     if (tokens <= 0 && cost <= 0) return undefined
     const limit = last
@@ -97,7 +103,8 @@ export function SubagentFooter() {
                   backgroundColor={hover() === action.key ? theme.background.surface.offset : undefined}
                 >
                   <text fg={theme.text.default}>
-                    {action.label} <span style={{ fg: theme.text.subdued }}>{shortcuts.get(action.command)}</span>
+                    {language.t(action.label)}{" "}
+                    <span style={{ fg: theme.text.subdued }}>{shortcuts.get(action.command)}</span>
                   </text>
                 </box>
               )}

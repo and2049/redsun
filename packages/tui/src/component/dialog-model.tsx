@@ -9,7 +9,8 @@ import { useConnected } from "./use-connected"
 import { useData } from "../context/data"
 import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
-import { groupByProvider, providerRowDescription, providerRowTitle } from "../util/provider-menu"
+import { groupByProvider, providerRowTitle } from "../util/provider-menu"
+import { useLanguage } from "../i18n"
 
 export function DialogModel(props: {
   providerID?: string
@@ -22,6 +23,7 @@ export function DialogModel(props: {
   const data = useData()
   const dialog = useDialog()
   const location = useLocation()
+  const { t } = useLanguage()
   dialog.setPlacement("bottom")
   const [query, setQuery] = createSignal("")
   const [expanded, setExpanded] = createSignal(new Set<string>())
@@ -64,7 +66,7 @@ export function DialogModel(props: {
             releaseDate: model.time.released,
             description: provider?.name ?? model.providerID,
             category,
-            footer: free(model) ? "Free" : undefined,
+            footer: free(model) ? t("Free") : undefined,
             onSelect: () => {
               onSelect(model.providerID, model.id)
             },
@@ -73,12 +75,12 @@ export function DialogModel(props: {
       })
     }
 
-    const favoriteOptions = toOptions(favorites, "Favorites")
+    const favoriteOptions = toOptions(favorites, t("Favorites"))
     const recentOptions = toOptions(
       recents.filter(
         (item) => !favorites.some((fav) => fav.providerID === item.providerID && fav.modelID === item.modelID),
       ),
-      "Recent",
+      t("Recent"),
     )
 
     const modelOptions = sortModelOptions(
@@ -95,9 +97,9 @@ export function DialogModel(props: {
             providerName: provider?.name ?? model.providerID,
             title: model.name,
             releaseDate: model.time.released,
-            description: favorite ? "(Favorite)" : undefined,
+            description: favorite ? `(${t("Favorite")})` : undefined,
             category: connected() ? (provider?.name ?? model.providerID) : undefined,
-            footer: free(model) ? "Free" : undefined,
+            footer: free(model) ? t("Free") : undefined,
             onSelect() {
               onSelect(model.providerID, model.id)
             },
@@ -140,11 +142,11 @@ export function DialogModel(props: {
         {
           value: { providerID },
           title: providerRowTitle(items[0]?.providerName ?? providerID, open),
-          description: providerRowDescription(items.length),
-          category: "Providers",
+          description: t(items.length === 1 ? "{{count}} model" : "{{count}} models", { count: items.length }),
+          category: t("Providers"),
           onSelect: () => toggleProvider(providerID),
         },
-        ...(open ? items.map((option) => ({ ...option, category: "Providers", title: `  ${option.title}` })) : []),
+        ...(open ? items.map((option) => ({ ...option, category: t("Providers"), title: `  ${option.title}` })) : []),
       ]
     }).flat()
 
@@ -156,7 +158,7 @@ export function DialogModel(props: {
   const title = createMemo(() => {
     if (props.title) return props.title
     const value = provider()
-    if (!value) return "Select model"
+    if (!value) return t("Select model")
     return value.name
   })
 
@@ -186,7 +188,7 @@ export function DialogModel(props: {
       actions={[
         {
           command: "model.dialog.provider",
-          title: connected() ? "Connect an integration" : "View all integrations",
+          title: connected() ? t("Connect an integration") : t("View all integrations"),
           selection: "none",
           onTrigger() {
             dialog.replace(() => (
@@ -198,7 +200,7 @@ export function DialogModel(props: {
         },
         {
           command: "model.dialog.favorite",
-          title: "Favorite",
+          title: t("Favorite"),
           hidden: !connected(),
           disabled: (option) => !option || !(option.value as { modelID?: string }).modelID,
           onTrigger: (option) => {

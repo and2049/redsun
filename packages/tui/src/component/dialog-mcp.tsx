@@ -5,6 +5,7 @@ import { Keymap } from "../context/keymap"
 import { pipe, sortBy } from "remeda"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
+import { useLanguage } from "../i18n"
 import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
 import type { McpServer } from "@opencode/client"
@@ -19,22 +20,24 @@ function statusError(status: McpServer["status"]) {
 }
 
 function Status(props: { status: McpServer["status"]; loading: boolean }) {
+  const { t } = useLanguage()
   if (props.loading || props.status.status === "pending") {
-    return <>Connecting …</>
+    return <>{t("Connecting …")}</>
   }
   if (props.status.status === "connected") {
-    return <span style={{ attributes: TextAttributes.BOLD }}>Connected ✓</span>
+    return <span style={{ attributes: TextAttributes.BOLD }}>{t("Connected ✓")}</span>
   }
   if (props.status.status === "failed") {
-    return <>Failed !</>
+    return <>{t("Failed !")}</>
   }
   if (props.status.status === "needs_auth") {
-    return <>Sign in required →</>
+    return <>{t("Sign in required →")}</>
   }
-  return <>Disabled ○</>
+  return <>{t("Disabled ○")}</>
 }
 
 export function DialogMcp(props: { initialServer?: string; details?: boolean } = {}) {
+  const { t } = useLanguage()
   const data = useData()
   const dialog = useDialog()
   const client = useClient()
@@ -130,7 +133,7 @@ export function DialogMcp(props: { initialServer?: string; details?: boolean } =
         when={detail()}
         fallback={
           <DialogSelect
-            title="MCP servers"
+            title={t("MCP servers")}
             options={options()}
             preserveSelection
             onMove={(option) => setFocused(option.value as string)}
@@ -147,7 +150,7 @@ export function DialogMcp(props: { initialServer?: string; details?: boolean } =
             ]}
             footer={
               <Show when={focusedError()}>
-                <text fg={theme.text.subdued}>enter to view error</text>
+                <text fg={theme.text.subdued}>{t("enter to view error")}</text>
               </Show>
             }
           />

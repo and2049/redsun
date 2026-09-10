@@ -8,6 +8,7 @@ import { errorMessage } from "../../util/error"
 import { DialogFork } from "./dialog-fork"
 import type { PromptInfo } from "../../prompt/history"
 import { projectedPromptInput } from "../../prompt/codec"
+import { useLanguage } from "../../i18n"
 
 export function DialogMessage(props: {
   messageID: string
@@ -19,21 +20,22 @@ export function DialogMessage(props: {
   const toast = useToast()
   const client = useClient()
   const message = createMemo(() => data.session.message.get(props.sessionID, props.messageID))
+  const { t } = useLanguage()
 
   return (
     <DialogSelect
-      title="Message Actions"
+      title={t("Message Actions")}
       options={[
         {
-          title: "Jump to",
+          title: t("Jump to"),
           value: "message.jump",
-          description: "view message in session",
+          description: t("view message in session"),
           onSelect: (dialog) => dialog.clear(),
         },
         {
-          title: "Revert",
+          title: t("Revert"),
           value: "session.revert",
-          description: "undo messages and file changes",
+          description: t("undo messages and file changes"),
           onSelect: (dialog) => {
             const value = message()
             if (value?.type === "user") {
@@ -49,9 +51,9 @@ export function DialogMessage(props: {
           },
         },
         {
-          title: "Copy",
+          title: t("Copy"),
           value: "message.copy",
-          description: "message text to clipboard",
+          description: t("message text to clipboard"),
           onSelect: async (dialog) => {
             const value = message()
             if (!value) return
@@ -75,9 +77,9 @@ export function DialogMessage(props: {
           },
         },
         {
-          title: "Fork",
+          title: t("Fork"),
           value: "session.fork",
-          description: "create a new session",
+          description: t("create a new session"),
           onSelect: (dialog) => {
             const value = message()
             if (!value || value.type !== "user") return
