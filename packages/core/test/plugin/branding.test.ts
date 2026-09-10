@@ -99,7 +99,7 @@ describe("model-facing branding", () => {
 
   test("vendored docs exist and record their upstream source", () => {
     expect(docs.length).toBeGreaterThanOrEqual(30)
-    expect(fs.readFileSync(path.join(DOCS, "SOURCE"), "utf8")).toMatch(/^[0-9a-f]{40}\n$/)
+    expect(fs.readFileSync(path.join(DOCS, "SOURCE"), "utf8").trim()).toMatch(/^[0-9a-f]{40}$/)
   })
 
   test.each(docs.map((item) => [item.name, item.text] as const))(

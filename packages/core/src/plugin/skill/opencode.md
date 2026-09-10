@@ -63,6 +63,11 @@ Not vendored: the HTTP API reference, which is generated from the running
 server's `/openapi.json`, and the OpenCode Console pages, which describe an
 upstream hosted service.
 
+Upstream features redsun deliberately does not carry, even though the vendored
+pages still describe them: the `session.panel` slot and `ui.panel` API in
+`build/plugins/cli.md` (redsun has no session panes), and session tabs, whose
+`ui.tabs` methods exist but always report disabled. Do not build on either.
+
 ## Naming differences from upstream
 
 The local pages already use redsun names. The upstream site and the upstream
