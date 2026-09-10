@@ -1,4 +1,6 @@
 import { describe, expect } from "bun:test"
+import fs from "fs/promises"
+import path from "path"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Config } from "@opencode/core/config"
 import { Document, Info } from "@opencode/schema/config"
@@ -9,6 +11,11 @@ import { testEffect } from "../lib/effect"
 import { host } from "./host"
 
 const it = testEffect(AppNodeBuilder.build(Skill.node))
+const exists = (file: string) =>
+  fs.access(file).then(
+    () => true,
+    () => false,
+  )
 const config = (plugins: Info["plugins"] = []) =>
   Layer.succeed(
     Config.Service,
@@ -56,6 +63,40 @@ describe("SkillPlugin.Plugin", () => {
     }),
   )
 
+  it.effect("writes the vendored docs next to the redsun skill and skips rewrites for a matching stamp", () =>
+    Effect.gen(function* () {
+      const skill = yield* Skill.Service
+      const directory = SkillPlugin.docsDirectory()
+      const page = path.join(directory, "build", "plugins", "cli.md")
+      const setup = (app: { version: string; channel: string }) =>
+        SkillPlugin.Plugin.effect(
+          host({
+            app: { name: "test", ...app },
+            skill: { list: () => Effect.die("unused skill.list"), transform: skill.transform, reload: skill.reload },
+          }),
+        ).pipe(Effect.provide(config()))
+
+      yield* setup({ version: "1.2.3", channel: "beta" })
+      const redsun = (yield* skill.list()).find((item) => item.id === "redsun")!
+      expect(String(redsun.location)).toBe(path.join(directory, "SKILL.md"))
+      expect(redsun.content).toContain(directory)
+      expect(redsun.content).not.toContain(SkillPlugin.DOCS_PLACEHOLDER)
+      expect(yield* Effect.promise(() => fs.readFile(page, "utf8"))).toContain("# CLI")
+      expect(yield* Effect.promise(() => fs.readFile(path.join(directory, "SKILL.md"), "utf8"))).toBe(redsun.content)
+
+      yield* Effect.promise(() => fs.rm(page))
+      yield* setup({ version: "1.2.3", channel: "beta" })
+      expect(yield* Effect.promise(() => exists(page))).toBe(false)
+
+      yield* setup({ version: "1.2.4", channel: "beta" })
+      expect(yield* Effect.promise(() => exists(page))).toBe(true)
+
+      yield* Effect.promise(() => fs.rm(page))
+      yield* setup({ version: "1.2.4", channel: "local" })
+      expect(yield* Effect.promise(() => exists(page))).toBe(true)
+    }),
+  )
+
   it.effect("reports canonical configured plugin sources with existing labels and ordering", () =>
     Effect.gen(function* () {
       const skill = yield* Skill.Service
@@ -72,12 +113,7 @@ describe("SkillPlugin.Plugin", () => {
       expect(report?.content).toContain("- Active plugins: -disabled, local.ts, package-plugin, package-plugin")
     }).pipe(
       Effect.provide(
-        config([
-          "package-plugin",
-          "-disabled",
-          "local.ts",
-          { package: "package-plugin", options: { enabled: true } },
-        ]),
+        config(["package-plugin", "-disabled", "local.ts", { package: "package-plugin", options: { enabled: true } }]),
       ),
     ),
   )
