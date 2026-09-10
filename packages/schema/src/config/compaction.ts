@@ -14,6 +14,9 @@ export class Info extends Schema.Class<Info>("Config.Compaction")({
   auto: Schema.Boolean.pipe(optional),
   keep: Keep.pipe(optional),
   buffer: NonNegativeInt.pipe(optional),
-  strategy: Strategy.pipe(optional),
+  strategy: Strategy.pipe(optional).annotate({
+    description:
+      "Compaction strategy: llm (default), hybrid with a structured inventory, or algorithmic without an LLM call",
+  }),
   max_tool_results: NonNegativeInt.pipe(optional),
 }) {}

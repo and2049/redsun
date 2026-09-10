@@ -317,10 +317,10 @@ const staleReads = (messages: readonly SessionMessage.Info[]) =>
     ),
   )
 
-const splitHistory = (messages: readonly SessionMessage.Info[], keepTokens: number) => {
+const splitHistory = (messages: readonly SessionMessage.Info[], keepTokens: number, dedupe: boolean) => {
   const tailStart = findTailStart(messages, keepTokens)
   if (tailStart === undefined) return
-  const stale = staleReads(messages)
+  const stale = dedupe ? staleReads(messages) : new Set<string>()
   return {
     messages: messages.slice(0, tailStart),
     recent: messages
@@ -422,7 +422,7 @@ export const layer = Layer.effect(
         auto: true,
         buffer: DEFAULT_BUFFER,
         tokens: DEFAULT_KEEP_TOKENS,
-        strategy: "hybrid",
+        strategy: "llm",
         maxToolResults: CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS,
       }),
       editor: (editor) => ({
@@ -585,7 +585,7 @@ export const layer = Layer.effect(
     })
     const execute = Effect.fn("SessionCompaction.execute")(function* (input: ExecuteInput) {
       const context = input.context
-      const history = splitHistory(context.messages, state.get().tokens)
+      const history = splitHistory(context.messages, state.get().tokens, state.get().strategy === "hybrid")
       if (!history)
         return yield* failed({
           sessionID: context.session.id,
@@ -738,7 +738,7 @@ export const layer = Layer.effect(
       readonly inputID?: SessionMessage.ID
       readonly started?: boolean
     }) {
-      const history = splitHistory(input.messages, state.get().tokens)
+      const history = splitHistory(input.messages, state.get().tokens, true)
       const previous = input.messages.findLast(
         (message): message is SessionMessage.CompactionCompleted =>
           message.type === "compaction" && message.status === "completed",

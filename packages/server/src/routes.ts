@@ -10,6 +10,7 @@ import { EventLogger } from "@opencode/core/event-logger"
 import { FileSystemSearch } from "@opencode/core/filesystem/search"
 import { Credential } from "@opencode/core/credential"
 import { Config } from "@opencode/core/config"
+import { ContextSettings } from "@opencode/core/config/context-settings"
 import { PermissionSaved } from "@opencode/core/permission/saved"
 import { PtyTicket } from "@opencode/core/pty/ticket"
 import { PersistentPty } from "@opencode/core/persistent-pty"
@@ -50,6 +51,7 @@ import { RemoteService } from "./remote-control"
 
 const applicationServiceNodes = [
   Global.node,
+  ContextSettings.node,
   Database.node,
   Bus.node,
   EventLogger.node,

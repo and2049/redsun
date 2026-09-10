@@ -291,6 +291,10 @@ import type {
   WebsearchQueryOutput,
   ConfigGetInput,
   ConfigGetOutput,
+  ConfigContextGetInput,
+  ConfigContextGetOutput,
+  ConfigContextUpdateInput,
+  ConfigContextUpdateOutput,
 } from "./types.js"
 import { ClientError } from "./client-error.js"
 
@@ -2425,6 +2429,33 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      context: {
+        get: (input?: ConfigContextGetInput, requestOptions?: RequestOptions) =>
+          request<ConfigContextGetOutput>(
+            {
+              method: "GET",
+              path: `/api/config/context`,
+              query: { location: input?.["location"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401, 500],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        update: (input: ConfigContextUpdateInput, requestOptions?: RequestOptions) =>
+          request<ConfigContextUpdateOutput>(
+            {
+              method: "PATCH",
+              path: `/api/config/context`,
+              query: { location: input["location"] },
+              body: input["payload"],
+              successStatus: 200,
+              declaredStatuses: [400, 401, 500],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
     },
   }
 }
