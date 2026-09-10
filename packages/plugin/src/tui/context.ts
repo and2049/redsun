@@ -246,6 +246,7 @@ export type SlotClaim<Path extends SlotPath = SlotPath> = Path extends SlotPath
   : never
 
 export interface App {
+  readonly name: string
   readonly version: string
   readonly channel: string
 }

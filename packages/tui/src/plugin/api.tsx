@@ -143,7 +143,7 @@ export function createPluginContext(input: {
     get location() {
       return host.location.current
     },
-    app: { version: host.app.version, channel: host.app.channel },
+    app: { name: host.app.name, version: host.app.version, channel: host.app.channel },
     renderer: host.renderer,
     client: host.client.api,
     data: host.data,

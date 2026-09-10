@@ -565,14 +565,14 @@ function App(props: { pair?: DialogPairCredentials }) {
     if (!terminalTitleEnabled()) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("redsun")
+      renderer.setTerminalTitle(app.name)
       return
     }
 
     if (route.data.type === "session") {
       const title = session?.title
       if (!title || isFallbackTitle(title)) {
-        renderer.setTerminalTitle("redsun")
+        renderer.setTerminalTitle(app.name)
         return
       }
 
@@ -581,7 +581,7 @@ function App(props: { pair?: DialogPairCredentials }) {
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`redsun | ${route.data.name}`)
+      renderer.setTerminalTitle(`${app.name} | ${route.data.name}`)
     }
   })
 
