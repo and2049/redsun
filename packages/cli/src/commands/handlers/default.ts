@@ -47,7 +47,7 @@ export default Runtime.handler(Commands, (input) =>
       ),
     )
     const updater = yield* Updater.Service
-    const update = yield* updater.run().pipe(Effect.forkScoped)
+    const update = yield* (server.service ? Effect.succeed(undefined) : updater.run()).pipe(Effect.forkScoped)
     preflight.loading()
     const config = yield* Config.Service
     const npm = yield* Npm.Service

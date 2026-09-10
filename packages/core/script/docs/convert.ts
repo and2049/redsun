@@ -93,6 +93,7 @@ const BRAND: ReadonlyArray<readonly [RegExp, string]> = [
   [/github\.com\/anomalyco\/opencode\b/g, "github.com/and2049/redsun"],
   [/\bopencode\.db\b/g, "redsun-release.db"],
   [/\ban redsun\b/g, "a redsun"],
+  [/When omitted, `update` defaults to `"notify"`\./g, 'When omitted, `update` defaults to `"auto"`.'],
 ]
 
 export function brand(text: string) {
