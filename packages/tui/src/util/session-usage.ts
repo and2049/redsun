@@ -1,5 +1,7 @@
 import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode/client/promise"
 import { Locale } from "./locale"
+import { translate, type Translator } from "../i18n/translate"
+import { stringWidth } from "./string-width"
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
 
@@ -14,6 +16,7 @@ export function sessionUsage(input: {
   messages: readonly SessionMessageInfo[]
   contextLimit?: (model: { providerID: string; id: string }) => number | undefined
   cost: number
+  t?: Translator
 }): SessionUsage | undefined {
   const last = input.messages.findLast(
     (item): item is SessionMessageAssistant => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
@@ -45,7 +48,7 @@ export function sessionUsage(input: {
   return {
     context: percent ? `${Locale.number(tokens)} (${percent})` : Locale.number(tokens),
     percent,
-    cache: ratio === undefined ? undefined : `cache ${ratio}%`,
+    cache: ratio === undefined ? undefined : (input.t ?? translate)("session.usage.cache", { percent: ratio }),
     cost: input.cost > 0 ? money.format(input.cost) : undefined,
   }
 }
@@ -60,5 +63,5 @@ export function fitSessionUsage(usage: SessionUsage, width: number) {
   ]
     .map((parts) => parts.filter((part): part is string => Boolean(part)).join(" · "))
     .filter((value, index, values) => value && values.indexOf(value) === index)
-    .find((value) => value.length <= width)
+    .find((value) => stringWidth(value) <= width)
 }

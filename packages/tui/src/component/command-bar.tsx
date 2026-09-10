@@ -1,4 +1,5 @@
 import { InputRenderable, type KeyEvent } from "@opentui/core"
+import { stringWidth } from "../util/string-width"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import fuzzysort from "fuzzysort"
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
@@ -11,10 +12,12 @@ import { useRoute } from "../context/route"
 import { useTheme } from "../context/theme"
 import { SplitBorder } from "../ui/border"
 import { fitSessionUsage, sessionUsage } from "../util/session-usage"
+import { useLanguage } from "../i18n"
 
 const MAX_SUGGESTIONS = 10
 
 export function CommandBar() {
+  const { t } = useLanguage()
   const vim = useVim()
   const theme = useTheme()
   const keymap = Keymap.use()
@@ -43,6 +46,7 @@ export function CommandBar() {
     if (!id) return undefined
     const models = data.location.model.list(location.current)
     return sessionUsage({
+      t,
       messages: data.session.message.list(id) ?? [],
       contextLimit: (model) =>
         models?.find((item) => item.providerID === model.providerID && item.id === model.id)?.limit.context,
@@ -53,7 +57,7 @@ export function CommandBar() {
     if (vim.mode === "command") return undefined
     const current = usage()
     if (!current) return undefined
-    const left = (workspace()?.length ?? 0) + (branch()?.length ?? 0) + 4
+    const left = stringWidth(workspace() ?? "") + stringWidth(branch() ?? "") + 4
     return fitSessionUsage(current, Math.max(0, dimensions().width - left - 4))
   })
 

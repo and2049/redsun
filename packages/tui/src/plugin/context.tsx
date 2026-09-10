@@ -34,6 +34,7 @@ import { discoverPluginTargets, localSource } from "./discovery"
 import { createPluginSources } from "./source"
 import { isMissingPath } from "../util/config-directories"
 import { createMarkdownRenderer } from "./markdown"
+import type { LanguageContribution } from "@opencode/plugin/tui/i18n"
 
 export interface PackageSource {
   readonly prepare: (spec: string, install?: boolean) => Promise<Host.Target>
@@ -76,6 +77,7 @@ type Registration = {
   routes: Record<string, Page>
   slots: Record<string, RegisteredSlot>
   markdown: Record<string, MarkdownCodeBlockRenderer>
+  i18n: Record<string, LanguageContribution>
   cleanups: Dispose[]
 }
 
@@ -108,6 +110,15 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // One save can emit several watch events. Remember setup failures so those
   // events do not repeatedly tear down and restore the last good generation.
   const setupFailures = new Map<string, { version: string; options: Registration["options"]; error: string }>()
+  let updatingLanguages = false
+  const publishLanguages = () => {
+    if (updatingLanguages) return
+    host.languageRegistry?.publish(
+      Object.values(store.registrations).flatMap((item) =>
+        item.active ? Object.values(unwrap(item.i18n)).map((value) => ({ plugin: item.plugin.id, value })) : [],
+      ),
+    )
+  }
   const markdown = createMarkdownRenderer(() =>
     Object.values(store.registrations).flatMap((registration) => (registration.active ? [registration.markdown] : [])),
   )
@@ -115,6 +126,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
     setStore("registrations", id, "routes", reconcileStore({}))
     setStore("registrations", id, "slots", reconcileStore({}))
     setStore("registrations", id, "markdown", reconcileStore({}))
+    setStore("registrations", id, "i18n", reconcileStore({}))
   }
 
   const activate = async (id: string) => {
@@ -134,18 +146,23 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       registry: {
         has: (kind, name) => Boolean(store.registrations[id]?.[kind][name]),
         set: (
-          kind: "routes" | "slots" | "markdown",
+          kind: "routes" | "slots" | "markdown" | "i18n",
           name: string,
-          value: Page | RegisteredSlot | MarkdownCodeBlockRenderer,
-        ) => setStore("registrations", id, kind, name, () => value),
-        remove: (kind, name) =>
+          value: Page | RegisteredSlot | MarkdownCodeBlockRenderer | LanguageContribution,
+        ) => {
+          setStore("registrations", id, kind, name, () => value)
+          if (kind === "i18n") publishLanguages()
+        },
+        remove: (kind, name) => {
           setStore(
             "registrations",
             produce((registrations) => {
               if (!registrations[id]) return
               delete registrations[id][kind][name]
             }),
-          ),
+          )
+          if (kind === "i18n") publishLanguages()
+        },
         active: () => Boolean(store.registrations[id]?.active),
       },
     })
@@ -207,7 +224,17 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // is serialized through one chain so generations can never interleave.
   let loading = Promise.resolve()
   const enqueue = <T,>(task: () => Promise<T>) => {
-    const result = loading.catch(() => undefined).then(task)
+    const result = loading
+      .catch(() => undefined)
+      .then(async () => {
+        updatingLanguages = true
+        try {
+          return await task()
+        } finally {
+          updatingLanguages = false
+          publishLanguages()
+        }
+      })
     loading = result.then(
       () => undefined,
       () => undefined,
@@ -523,7 +550,10 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
               .map(([id]) => deactivate(id).catch(() => undefined)),
           ),
         )
-        .then(() => setStore("registrations", reconcileStore({})))
+        .then(() => {
+          setStore("registrations", reconcileStore({}))
+          publishLanguages()
+        })
         .finally(sources.dispose)
       return disposing
     }
@@ -640,6 +670,7 @@ function toRegistration(item: Desired): Registration {
     routes: {},
     slots: {},
     markdown: {},
+    i18n: {},
     cleanups: [],
   }
 }

@@ -11,8 +11,16 @@ import Storybook from "../feature-plugins/system/storybook"
 import Stats from "../feature-plugins/system/stats"
 import Latex from "@opencode/latex/plugin"
 import Merman from "@opencode/merman/plugin"
+import Chinese from "../feature-plugins/languages/zh-CN"
+import Spanish from "../feature-plugins/languages/es"
+import Korean from "../feature-plugins/languages/ko"
+import French from "../feature-plugins/languages/fr"
 
 export const builtins = [
+  Chinese,
+  Spanish,
+  Korean,
+  French,
   GoalStatus,
   HomeFooter,
   PromptFooter,

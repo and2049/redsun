@@ -28,6 +28,7 @@ import { PatchDiff } from "../../component/patch-diff"
 import { ThemeContextProvider, useTheme, useThemes } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA, MouseEvent } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
+import { useLanguage } from "../../i18n"
 import type {
   ModelInfo,
   SessionMessageInfo,
@@ -192,6 +193,7 @@ export function Session() {
   const configState = useConfig()
   const config = configState.data
   const theme = useTheme()
+  const language = useLanguage()
   const promptRef = usePromptRef()
   const session = createMemo(() => data.session.get(route.sessionID))
   const messages = () => data.session.message.list(route.sessionID)
@@ -609,7 +611,7 @@ export function Session() {
         actions={[
           {
             command: "queued_prompt.delete",
-            title: "delete",
+            title: language.t("session.delete"),
             onTrigger: (option) => {
               const last = queuedPrompts().length === 1
               void mutatePending("cancel", option.value).then((cancelled) => {
@@ -739,55 +741,55 @@ export function Session() {
     }
   })
 
-  const globalCommands = [
+  const globalCommands = () => [
     {
       id: "session.page.up",
-      title: "Page up",
+      title: language.t("session.pageUp"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(-scroll.height / 2),
     },
     {
       id: "session.page.down",
-      title: "Page down",
+      title: language.t("session.pageDown"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(scroll.height / 2),
     },
     {
       id: "session.line.up",
-      title: "Line up",
+      title: language.t("session.lineUp"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(-1),
     },
     {
       id: "session.line.down",
-      title: "Line down",
+      title: language.t("session.lineDown"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(1),
     },
     {
       id: "session.half.page.up",
-      title: "Half page up",
+      title: language.t("session.halfPageUp"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(-scroll.height / 4),
     },
     {
       id: "session.half.page.down",
-      title: "Half page down",
+      title: language.t("session.halfPageDown"),
       group: "Session",
       palette: undefined,
       run: () => moveTranscript(scroll.height / 4),
     },
   ]
 
-  const baseAndUnfocusedCommands = [
+  const baseAndUnfocusedCommands = () => [
     {
       id: "session.first",
-      title: "First message",
+      title: language.t("session.firstMessage"),
       group: "Session",
       palette: undefined,
       run: () => {
@@ -855,7 +857,7 @@ export function Session() {
     },
     {
       id: "session.last",
-      title: "Last message",
+      title: language.t("session.lastMessage"),
       group: "Session",
       palette: undefined,
       run: () => {
@@ -865,17 +867,17 @@ export function Session() {
     },
   ]
 
-  const listCommands = [
+  const listCommands = () => [
     {
       id: "session.child.list.next",
-      title: "Next active subagent",
+      title: language.t("session.nextActiveSubagent"),
       group: "Session",
       palette: undefined,
       run: () => moveActive(1),
     },
     {
       id: "session.child.list.previous",
-      title: "Previous active subagent",
+      title: language.t("session.previousActiveSubagent"),
       group: "Session",
       palette: undefined,
       run: () => moveActive(-1),
@@ -884,7 +886,7 @@ export function Session() {
 
   const baseCommands = createMemo(() => [
     {
-      title: "Share session",
+      title: language.t("session.shareSession"),
       id: "session.share",
       suggested: route.type === "session",
       group: "Session",
@@ -892,7 +894,7 @@ export function Session() {
       run: () => unavailable("Sharing"),
     },
     {
-      title: "Rename session",
+      title: language.t("session.renameSession"),
       id: "session.rename",
       group: "Session",
       slash: { name: "rename", arguments: true as const },
@@ -907,7 +909,7 @@ export function Session() {
       },
     },
     {
-      title: "Jump to message",
+      title: language.t("session.jumpToMessage"),
       id: "session.timeline",
       group: "Session",
       slash: { name: "timeline" },
@@ -922,7 +924,7 @@ export function Session() {
       },
     },
     {
-      title: "Fork session",
+      title: language.t("session.forkSession"),
       id: "session.fork",
       group: "Session",
       slash: { name: "fork" },
@@ -939,7 +941,7 @@ export function Session() {
       },
     },
     {
-      title: "Set or clear a session goal",
+      title: language.t("session.setOrClearASessionGoal"),
       id: "session.goal",
       group: "Session",
       slash: {
@@ -992,14 +994,14 @@ export function Session() {
           },
         })
         toast.show({
-          message: parsed.budget ? `Goal set (budget: ${formatGoalBudget(parsed.budget)})` : "Goal set",
+          message: parsed.budget ? `Goal set (budget: ${formatGoalBudget(parsed.budget, language.t)})` : "Goal set",
           variant: "info",
         })
         dialog.clear()
       },
     },
     {
-      title: "Compact session",
+      title: language.t("command.session.compact"),
       id: "session.compact",
       group: "Session",
       slash: {
@@ -1023,7 +1025,7 @@ export function Session() {
       },
     },
     {
-      title: "Unshare session",
+      title: language.t("session.unshareSession"),
       id: "session.unshare",
       group: "Session",
       enabled: false,
@@ -1031,7 +1033,7 @@ export function Session() {
       run: () => unavailable("Unsharing"),
     },
     {
-      title: "Undo previous message",
+      title: language.t("application.undoPreviousMessage"),
       id: "session.undo",
       group: "Session",
       slash: { name: "undo" },
@@ -1063,7 +1065,7 @@ export function Session() {
       },
     },
     {
-      title: "Redo",
+      title: language.t("command.session.redo"),
       id: "session.redo",
       group: "Session",
       enabled: !!session()?.revert?.messageID,
@@ -1119,7 +1121,7 @@ export function Session() {
       },
     },
     {
-      title: "Toggle session scrollbar",
+      title: language.t("session.toggleSessionScrollbar"),
       id: "session.toggle.scrollbar",
       group: "Session",
       palette: undefined,
@@ -1147,7 +1149,7 @@ export function Session() {
       },
     },
     {
-      title: "Jump to last user message",
+      title: language.t("session.jumpToLastUserMessage"),
       id: "session.messages_last_user",
       group: "Session",
       palette: undefined,
@@ -1167,35 +1169,35 @@ export function Session() {
       },
     },
     {
-      title: "Next message",
+      title: language.t("command.message.next"),
       id: "session.message.next",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("next", dialog),
     },
     {
-      title: "Previous message",
+      title: language.t("command.message.previous"),
       id: "session.message.previous",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("prev", dialog),
     },
     {
-      title: "Next user message",
+      title: language.t("session.nextUserMessage"),
       id: "session.message.user.next",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("next", dialog, true),
     },
     {
-      title: "Previous user message",
+      title: language.t("session.previousUserMessage"),
       id: "session.message.user.previous",
       group: "Session",
       palette: undefined,
       run: () => scrollToMessage("prev", dialog, true),
     },
     {
-      title: "Copy last assistant message",
+      title: language.t("session.copyLastAssistantMessage"),
       id: "messages.copy",
       group: "Session",
       run: () => {
@@ -1236,7 +1238,7 @@ export function Session() {
       },
     },
     {
-      title: "Copy session ID",
+      title: language.t("session.copySessionId"),
       id: "session.copy.id",
       group: "Session",
       run: () => {
@@ -1248,7 +1250,7 @@ export function Session() {
       },
     },
     {
-      title: "Copy session transcript",
+      title: language.t("session.copySessionTranscript"),
       id: "session.copy",
       group: "Session",
       slash: {
@@ -1268,7 +1270,7 @@ export function Session() {
       },
     },
     {
-      title: "Export session transcript",
+      title: language.t("application.exportSessionTranscript"),
       id: "session.export",
       group: "Session",
       slash: {
@@ -1312,7 +1314,7 @@ export function Session() {
       },
     },
     {
-      title: "Background blocking tools",
+      title: language.t("session.backgroundBlockingTools"),
       id: "session.background",
       group: "Session",
       palette: undefined,
@@ -1322,7 +1324,7 @@ export function Session() {
       },
     },
     {
-      title: "Go to first child session",
+      title: language.t("session.goToFirstChildSession"),
       id: "session.child.first",
       group: "Session",
       palette: undefined,
@@ -1333,14 +1335,14 @@ export function Session() {
       },
     },
     {
-      title: "View queued prompts",
+      title: language.t("session.viewQueuedPrompts"),
       id: "session.queued_prompts",
       group: "Prompt",
       enabled: queuedPrompts().length > 0,
       run: openQueuedPrompts,
     },
     {
-      title: "Go to parent session",
+      title: language.t("session.goToParentSession"),
       id: "session.parent",
       group: "Session",
       palette: undefined,
@@ -1351,7 +1353,7 @@ export function Session() {
       }),
     },
     {
-      title: "Go to next child session",
+      title: language.t("session.goToNextChildSession"),
       id: "session.child.next",
       group: "Session",
       palette: undefined,
@@ -1359,7 +1361,7 @@ export function Session() {
       run: childSessionHandler(() => moveChild(1)),
     },
     {
-      title: "Go to previous child session",
+      title: language.t("session.goToPreviousChildSession"),
       id: "session.child.previous",
       group: "Session",
       palette: undefined,
@@ -1369,12 +1371,13 @@ export function Session() {
   ])
 
   const commands = createMemo(() =>
-    [...globalCommands, ...baseAndUnfocusedCommands, ...listCommands, ...baseCommands()].map(
+    [...globalCommands(), ...baseAndUnfocusedCommands(), ...listCommands(), ...baseCommands()].map(
       (command) =>
         ({
           bind: false,
           palette: true as const,
           ...command,
+          group: language.t(command.group),
         }) satisfies KeymapCommand,
     ),
   )
@@ -1382,21 +1385,21 @@ export function Session() {
   Keymap.createLayer(() => ({
     mode: "global",
     commands: commands(),
-    bindings: globalCommands.map((command) => command.id),
+    bindings: globalCommands().map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
     enabled: () => renderer.currentFocusedEditor === null,
-    bindings: baseAndUnfocusedCommands.map((command) => command.id),
+    bindings: baseAndUnfocusedCommands().map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
     enabled: () => renderer.currentFocusedEditor === null && activeSessions().length > 0,
-    bindings: listCommands.map((command) => command.id),
+    bindings: listCommands().map((command) => command.id),
   }))
 
   Keymap.createLayer(() => ({
-    bindings: [...baseAndUnfocusedCommands, ...baseCommands()].map((command) => command.id),
+    bindings: [...baseAndUnfocusedCommands(), ...baseCommands()].map((command) => command.id),
   }))
 
   createEffect(
@@ -1530,7 +1533,7 @@ export function Session() {
             </box>
             <box height={1} flexShrink={0} flexDirection="row" justifyContent="center">
               <Show when={firstJump()}>
-                <text fg={theme.text.feedback.info.default}>Loading session history…</text>
+                <text fg={theme.text.feedback.info.default}>{language.t("session.loadingSessionHistory")}</text>
               </Show>
               <Show when={!firstJump() && awayFromBottom()}>
                 <box
@@ -1686,12 +1689,13 @@ function SessionRowView(props: SessionRowViewProps) {
   )
 }
 
-function TurnTokenUsage(props: {
+export function TurnTokenUsage(props: {
   messageIDs: string[]
   previousCache?: CacheUsage
   message: (messageID: string) => SessionMessageInfo | undefined
 }) {
   const config = useConfig()
+  const { t, locale } = useLanguage()
   const theme = useTheme()
   const renderer = useRenderer()
   // Collapsed by default: one summary line for the whole turn. Click to
@@ -1733,6 +1737,21 @@ function TurnTokenUsage(props: {
     cached: Math.max("Cached".length, ...steps().map((item) => item.cached.toLocaleString().length)),
     total: Math.max("Total".length, ...steps().map((item) => item.total.toLocaleString().length)),
   }))
+  const headings = () => [
+    t("ai.step"),
+    locale() === "en" ? "New" : t("ai.newTokens"),
+    locale() === "en" ? "Cached" : t("ai.cachedTokens"),
+    locale() === "en" ? "Total" : t("context.stats.totalTokens"),
+  ]
+  const widths = () =>
+    [columns().step, columns().newTokens, columns().cached, columns().total].map((width, index) =>
+      Math.max(width, stringWidth(headings()[index])),
+    )
+  const heading = (index: number) => {
+    const text = headings()[index]
+    const width = widths()[index] + text.length - stringWidth(text)
+    return index === 0 ? text.padEnd(width + 2) : text.padStart(width)
+  }
   const summary = createMemo(() => {
     const items = steps()
     return {
@@ -1757,15 +1776,22 @@ function TurnTokenUsage(props: {
         >
           <text fg={hover() ? theme.text.default : theme.text.subdued} wrapMode="none">
             <span>{expanded() ? "- " : "+ "}</span>
-            <span style={{ attributes: TextAttributes.BOLD }}>Tokens</span>
+            <span style={{ attributes: TextAttributes.BOLD }}>{t("context.usage.tokens")}</span>
             <span>
-              : {summary().count} {summary().count === 1 ? "step" : "steps"} · {summary().newTokens.toLocaleString()}{" "}
-              new · {summary().cached.toLocaleString()} cached · {summary().total.toLocaleString()} total
+              : {t("session.usage.steps", { count: summary().count })} ·{" "}
+              {t("ai.newCachedTotal", {
+                new: summary().newTokens.toLocaleString(),
+                cached: summary().cached.toLocaleString(),
+                total: summary().total.toLocaleString(),
+              })}
             </span>
             <Show when={summary().reuseDrops > 0}>
               <span style={{ fg: theme.text.feedback.warning.default }}>
                 {" "}
-                · ! {summary().reuseDrops} likely cache {summary().reuseDrops === 1 ? "bust" : "busts"}
+                · !{" "}
+                {t("session.usage.cacheBusts", {
+                  count: summary().reuseDrops,
+                })}
               </span>
             </Show>
           </text>
@@ -1773,31 +1799,34 @@ function TurnTokenUsage(props: {
         <Show when={expanded()}>
           <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
             <text fg={theme.text.subdued} attributes={TextAttributes.ITALIC}>
-              {"Step".padEnd(columns().step + 2)}
-              {"New".padStart(columns().newTokens)}
+              {heading(0)}
+              {heading(1)}
               {"  "}
-              {"Cached".padStart(columns().cached)}
+              {heading(2)}
               {"  "}
-              {"Total".padStart(columns().total)}
+              {heading(3)}
             </text>
           </box>
           <For each={steps()}>
             {(item) => (
               <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexDirection="column">
                 <text fg={verbose() && item.finish === "tool-call" ? undefined : theme.text.subdued}>
-                  {item.finish.padEnd(columns().step + 2)}
+                  {item.finish.padEnd(widths()[0] + 2)}
                   <span style={{ attributes: TextAttributes.BOLD }}>
-                    {item.newTokens.toLocaleString().padStart(columns().newTokens)}
+                    {item.newTokens.toLocaleString().padStart(widths()[1])}
                   </span>
                   {"  "}
-                  {item.cached.toLocaleString().padStart(columns().cached)}
+                  {item.cached.toLocaleString().padStart(widths()[2])}
                   {"  "}
-                  {item.total.toLocaleString().padStart(columns().total)}
+                  {item.total.toLocaleString().padStart(widths()[3])}
                 </text>
                 <TurnTokenToolCalls tools={item.tools} />
                 <Show when={item.reuseDrop !== undefined}>
                   <text fg={theme.text.feedback.warning.default}>
-                    ! Likely cache bust: {item.reuseDrop?.toLocaleString()} fewer cached tokens than the previous step
+                    !{" "}
+                    {t("ai.likelyCacheBustFewerCachedTokensThanThe", {
+                      count: item.reuseDrop?.toLocaleString() ?? "",
+                    })}
                   </text>
                 </Show>
               </box>
@@ -1949,6 +1978,7 @@ function SessionReasoningGroupView(props: {
   completed: boolean
   message: (messageID: string) => SessionMessageInfo | undefined
 }) {
+  const { t } = useLanguage()
   const ctx = use()
   const [expanded, setExpanded] = createSignal(false)
   const parts = createMemo(() =>
@@ -1981,7 +2011,7 @@ function SessionReasoningGroupView(props: {
         fallback={<For each={props.refs}>{(ref) => <SessionPartView partRef={ref} message={props.message} />}</For>}
       >
         <Disclosure
-          label="Thinking"
+          label={t("application.thinking")}
           italic
           content={content()}
           title={latest()}
@@ -2002,7 +2032,7 @@ const THINKING_LABEL = "▶ Thinking: "
 // so the row never wraps -- the chevron, the label and the gutters come off the
 // available width before the tail is taken.
 export function thinkingTeaser(content: string, width: number, label = THINKING_LABEL) {
-  const available = Math.max(10, width - 3 - label.length - 4)
+  const available = Math.max(10, width - 3 - stringWidth(label) - 4)
   const flat = content.replace(/\s+/g, " ").trim()
   if (flat.length <= available) return flat
   return "..." + flat.slice(flat.length - available)
@@ -2029,8 +2059,8 @@ function Disclosure(props: {
   const theme = useTheme()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
-  const collapsedLabel = `▶ ${props.label}: `
-  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel))
+  const collapsedLabel = () => `▶ ${props.label}: `
+  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel()))
   const color = () => props.color ?? theme.text.subdued
   const attributes = () => (props.italic ? TextAttributes.ITALIC : undefined)
 
@@ -2056,7 +2086,7 @@ function Disclosure(props: {
           }}
         >
           <text fg={hover() ? theme.text.default : color()} wrapMode="none" attributes={attributes()}>
-            {props.open ? `▼ ${props.label}:` : collapsedLabel + teaser()}
+            {props.open ? `▼ ${props.label}:` : collapsedLabel() + teaser()}
           </text>
         </box>
       </Show>
@@ -2153,6 +2183,7 @@ function completionDuration(ms: number) {
 }
 
 function AssistantFooter(props: { message: SessionMessageAssistant }) {
+  const { t } = useLanguage()
   const ctx = use()
   const config = useConfig()
   const data = useData()
@@ -2187,19 +2218,21 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
   const verb = createMemo(() => {
     const seed = turnInput(props.message, messages())?.id ?? props.message.id
     const past = completionVerb(seed)
-    return generating() ? past.replace(/ed$/, "ing") : past
+    return t(generating() ? past.replace(/ed$/, "ing") : past)
   })
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
         <box paddingLeft={TRANSCRIPT_GUTTER}>
-          <text fg={theme.text.feedback.error.default}>Error: {errorMessage(props.message.error)}</text>
+          <text fg={theme.text.feedback.error.default}>
+            {t("session.error")}: {errorMessage(props.message.error)}
+          </text>
         </box>
       </Show>
       <AssistantRetry retry={props.message.retry} />
       <Show when={interrupted()}>
         <box paddingLeft={TRANSCRIPT_GUTTER} marginTop={props.message.retry ? 1 : 0}>
-          <text fg={theme.text.subdued}>Interrupted</text>
+          <text fg={theme.text.subdued}>{t("session.interrupted")}</text>
         </box>
       </Show>
       <Show when={!props.message.error && (generating() || duration() > 0)}>
@@ -2213,14 +2246,19 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
               fallback={
                 <>
                   <span style={{ fg: theme.text.subdued }}>
-                    {verb()} for {completionDuration(duration())}
+                    {t("session.for", { verb: verb(), duration: completionDuration(duration()) })}
                   </span>
                   <Show when={config.data.session.tps && tokensPerSecond()}>
-                    {(value) => <span style={{ fg: theme.text.subdued }}> · {value().toFixed(1)} tok/s</span>}
+                    {(value) => (
+                      <span style={{ fg: theme.text.subdued }}> · {t("ai.tokS", { rate: value().toFixed(1) })}</span>
+                    )}
                   </Show>
                   <Show when={props.message.time.completed}>
                     {(completed) => (
-                      <span style={{ fg: theme.text.subdued }}> · done {completionStamp(completed(), Date.now())}</span>
+                      <span style={{ fg: theme.text.subdued }}>
+                        {" "}
+                        · {t("session.done", { time: completionStamp(completed(), Date.now()) })}
+                      </span>
                     )}
                   </Show>
                 </>
@@ -2228,7 +2266,10 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
             >
               <span style={{ fg: theme.text.subdued }}>
                 {verb()}… ({completionDuration(duration())}
-                {config.data.session.tps && tokensPerSecond() ? ` · ${tokensPerSecond()?.toFixed(1)} tok/s` : ""})
+                {config.data.session.tps && tokensPerSecond()
+                  ? ` · ${t("ai.tokS", { rate: tokensPerSecond()?.toFixed(1) ?? "" })}`
+                  : ""}
+                )
               </span>
             </Show>
           </text>
@@ -2271,21 +2312,25 @@ function SessionSwitchMessageV2(props: { message: SessionMessageInfo }) {
 function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   const ctx = use()
   const theme = useTheme()
+  const language = useLanguage()
   const metadata = () => (props.message.type === "synthetic" ? props.message.metadata : undefined)
   const source = () => stringValue(metadata()?.source)
   const completion = () => source() === "subagent" || source() === "shell"
   const state = () => stringValue(metadata()?.state)
-  const actor = () => (source() === "shell" ? "Shell" : Locale.titlecase(stringValue(metadata()?.agent) ?? "Subagent"))
+  const actor = () =>
+    source() === "shell"
+      ? language.t("command.prompt.mode.shell")
+      : Locale.titlecase(stringValue(metadata()?.agent) ?? language.t("session.subagent"))
   const text = () => {
-    if (props.message.type === "system") return props.message.description ?? "Instructions updated"
+    if (props.message.type === "system") return props.message.description ?? language.t("session.instructionsUpdated")
     if (props.message.type === "synthetic") return props.message.description ?? ""
     return ""
   }
   const description = () => (source() === "shell" ? text().replace(/\s+/g, " ").trim() : text())
   const status = () => {
-    if (state() === "completed") return "finished"
-    if (state() === "error") return "failed"
-    return state() ?? "finished"
+    if (state() === "completed") return language.t("session.finished")
+    if (state() === "error") return language.t("mcp.status.failed")
+    return language.t(state() ?? "finished")
   }
   const heading = () => `${state() === "completed" ? "↳" : "!"} ${actor()} ${status()}`
   const suffix = () => Locale.truncateWidth(` · ${description()}`, Math.max(0, ctx.width - 3 - stringWidth(heading())))
@@ -2302,7 +2347,13 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
   const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
   const modelSubstituted = () => metadata()?.[MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
   const noticeLabel = () =>
-    goalVerdict() ? "Goal" : advisorNote() ? "Advisor" : modelSubstituted() ? "Model" : "Notice"
+    goalVerdict()
+      ? language.t("session.goal")
+      : advisorNote()
+        ? language.t("session.advisor")
+        : modelSubstituted()
+          ? language.t("command.category.model")
+          : language.t("session.notice")
   const noticeIcon = () => (goalVerdict() ? "◎" : "◈")
   const noticeColor = () => {
     const verdict = goalVerdict()
@@ -2348,6 +2399,7 @@ function SessionSkillMessage(props: { message: Extract<SessionMessageInfo, { typ
 // expandable into the full summary. A failure stays pinned open in the error
 // colour so the message is never hidden behind the toggle.
 function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type: "compaction" }> }) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const [expanded, setExpanded] = createSignal(false)
   const status = () => props.message.status
@@ -2359,12 +2411,20 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
   }
   const content = createMemo(() => text().trim())
   const label = () => {
-    const name = props.message.status === "completed" && props.message.providerContext ? "Provider compaction" : "Compaction"
+    const name = t(
+      props.message.status === "completed" && props.message.providerContext ? "ai.providerCompaction" : "ai.compaction",
+    )
     if (props.message.status === "running" || !props.message.tokens) return name
     const tokens = props.message.tokens
     const input = tokens.input + tokens.cache.read + tokens.cache.write
     const output = tokens.output + tokens.reasoning
-    return input + output > 0 ? `${name} · ${Locale.number(input)} in · ${Locale.number(output)} out` : name
+    return input + output > 0
+      ? t("ai.inOut", {
+          name,
+          input: Locale.number(input),
+          output: Locale.number(output),
+        })
+      : name
   }
   const color = () => (failed() ? theme.text.feedback.error.default : theme.text.subdued)
   return (
@@ -2372,7 +2432,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
       when={status() === "running" || content()}
       fallback={
         <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
-          <text fg={color()}>{cancelled() ? `${label()} · cancelled` : label()}</text>
+          <text fg={color()}>{cancelled() ? `${label()} · ${t("session.cancelled")}` : label()}</text>
         </box>
       }
     >
@@ -2391,10 +2451,11 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
 }
 
 function CompactionQueued() {
+  const { t } = useLanguage()
   const theme = useTheme()
   return (
     <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
-      <text fg={theme.text.subdued}>◇ Compaction queued</text>
+      <text fg={theme.text.subdued}>◇ {t("ai.compactionQueued")}</text>
     </box>
   )
 }
@@ -2508,6 +2569,7 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
 
 function UserMessage(props: { message: SessionMessageUser }) {
   const ctx = use()
+  const language = useLanguage()
   const data = useData()
   const local = useLocal()
   const files = createMemo(() => deduplicateVisibleImages(props.message.files ?? []))
@@ -2547,10 +2609,10 @@ function UserMessage(props: { message: SessionMessageUser }) {
             if (delivery() === "steer") {
               dialog.replace(() => (
                 <DialogSelect
-                  title="Pending steer"
+                  title={language.t("session.pendingSteer")}
                   options={[
-                    { title: "Move to queue", value: "queue" as const },
-                    { title: "Delete", value: "cancel" as const },
+                    { title: language.t("session.moveToQueue"), value: "queue" as const },
+                    { title: language.t("session.delete2"), value: "cancel" as const },
                   ]}
                   onSelect={(option) => {
                     void updatePendingSteer(option.value)
@@ -2663,6 +2725,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
 }
 
 function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const [seconds, setSeconds] = createSignal(0)
   createEffect(() => {
@@ -2680,8 +2743,8 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
       {(retry) => (
         <box paddingLeft={TRANSCRIPT_GUTTER}>
           <text fg={theme.text.feedback.warning.default}>
-            ⚠ {seconds() > 0 ? `Retrying in ${seconds()}s` : "Retry due"} · attempt {retry().attempt} ·{" "}
-            {retry().error.message}
+            ⚠ {seconds() > 0 ? t("ai.retryingInS", { seconds: seconds() }) : t("ai.retryDue")} ·{" "}
+            {t("ai.attempt", { count: retry().attempt })} · {retry().error.message}
           </text>
         </box>
       )}
@@ -2696,6 +2759,7 @@ function ReasoningPart(props: {
   part: SessionMessageAssistantReasoning
   message: SessionMessageAssistant
 }) {
+  const { t } = useLanguage()
   const ctx = use()
   // Collapsed by default in hide mode: a single line throughout, so the layout
   // never shifts. Click to open the full trace, click to close.
@@ -2711,7 +2775,7 @@ function ReasoningPart(props: {
   return (
     <Show when={content()}>
       <Disclosure
-        label="Thinking"
+        label={t("application.thinking")}
         italic
         content={content()}
         title={summary().title}
@@ -3344,6 +3408,7 @@ function ShellDisplay(props: {
   output?: string
   error?: string
 }) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const ctx = use()
   const client = useClient()
@@ -3461,9 +3526,9 @@ function ShellDisplay(props: {
             when={props.command}
             fallback={
               isRunning() || props.status === "streaming" ? (
-                <Spinner color={color()}>Writing command...</Spinner>
+                <Spinner color={color()}>{t("tools.writingCommand")}</Spinner>
               ) : (
-                <text fg={theme.text.subdued}>Writing command...</text>
+                <text fg={theme.text.subdued}>{t("tools.writingCommand")}</text>
               )
             }
           >
@@ -3476,10 +3541,12 @@ function ShellDisplay(props: {
             <Show when={collapsed().overflow}>
               <text fg={theme.text.subdued}>
                 {expanded()
-                  ? "click to collapse"
+                  ? t("tools.clickToCollapse")
                   : remaining() > 0
-                    ? `… +${remaining()} ${remaining() === 1 ? "line" : "lines"} (click to expand)`
-                    : "… (click to expand)"}
+                    ? t("tools.shell.expandLines", {
+                        count: remaining(),
+                      })
+                    : t("tools.clickToExpand")}
               </text>
             </Show>
           </Show>
@@ -3493,6 +3560,7 @@ function ShellDisplay(props: {
 }
 
 function Write(props: ToolProps) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
   const pathFormatter = usePathFormatter()
@@ -3504,7 +3572,7 @@ function Write(props: ToolProps) {
     <Switch>
       <Match when={props.part.state.status === "completed"}>
         <BlockTool
-          path={{ label: "# Wrote", value: pathFormatter.format(stringValue(props.input.path)) }}
+          path={{ label: t("tools.wrote"), value: pathFormatter.format(stringValue(props.input.path)) }}
           part={props.part}
         >
           <line_number fg={theme.text.subdued} minWidth={3} paddingRight={1}>
@@ -3523,7 +3591,7 @@ function Write(props: ToolProps) {
         <InlineTool
           icon="←"
           name="Write"
-          pending="Preparing write..."
+          pending={t("tools.preparingWrite")}
           complete={stringValue(props.input.path)}
           part={props.part}
         >
@@ -3560,6 +3628,7 @@ function TodoLine(props: { todo: TodoItem; depth: number }) {
 }
 
 function TodoWrite(props: ToolProps) {
+  const { t } = useLanguage()
   // Both writers land here: redsun's todowrite metadata and Claude Code's mirrored
   // TodoWrite input. Fall back to the call input while the result is streaming.
   const todos = createMemo(() => {
@@ -3576,7 +3645,7 @@ function TodoWrite(props: ToolProps) {
       <InlineTool
         icon="☰"
         name="Tasks"
-        pending="Updating tasks..."
+        pending={t("tools.updatingTasks")}
         complete={all().length > 0}
         part={props.part}
         onClick={() => setExpanded((value) => !value)}
@@ -3593,12 +3662,13 @@ function TodoWrite(props: ToolProps) {
 }
 
 function Glob(props: ToolProps) {
+  const { t } = useLanguage()
   const pathFormatter = usePathFormatter()
   return (
     <InlineTool
       icon="✱"
       name="Glob"
-      pending="Finding files..."
+      pending={t("tools.findingFiles")}
       complete={stringValue(props.input.pattern)}
       part={props.part}
     >
@@ -3612,6 +3682,7 @@ function Glob(props: ToolProps) {
 }
 
 function Read(props: ToolProps) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const pathFormatter = usePathFormatter()
   const isRunning = createMemo(() => props.part.state.status === "running")
@@ -3626,7 +3697,7 @@ function Read(props: ToolProps) {
       <InlineTool
         icon="→"
         name="Read"
-        pending="Reading file..."
+        pending={t("tools.readingFile")}
         complete={stringValue(props.input.path)}
         spinner={isRunning()}
         part={props.part}
@@ -3647,12 +3718,13 @@ function Read(props: ToolProps) {
 }
 
 function Grep(props: ToolProps) {
+  const { t } = useLanguage()
   const pathFormatter = usePathFormatter()
   return (
     <InlineTool
       icon="✱"
       name="Grep"
-      pending="Searching content..."
+      pending={t("tools.searchingContent")}
       complete={stringValue(props.input.pattern)}
       part={props.part}
     >
@@ -3666,11 +3738,12 @@ function Grep(props: ToolProps) {
 }
 
 function WebFetch(props: ToolProps) {
+  const { t } = useLanguage()
   return (
     <InlineTool
       icon="%"
       name="WebFetch"
-      pending="Fetching from the web..."
+      pending={t("tools.fetchingFromTheWeb")}
       complete={stringValue(props.input.url)}
       part={props.part}
     >
@@ -3680,13 +3753,14 @@ function WebFetch(props: ToolProps) {
 }
 
 function WebSearch(props: ToolProps) {
+  const { t } = useLanguage()
   const ctx = use()
   const provider = createMemo(() => stringValue(props.metadata.provider))
   return (
     <InlineTool
       icon="◈"
       name="Web Search"
-      pending="Searching web..."
+      pending={t("tools.searchingWeb")}
       complete={stringValue(props.input.query)}
       part={props.part}
     >
@@ -3711,6 +3785,7 @@ function WebSearch(props: ToolProps) {
 }
 
 function Subagent(props: ToolProps) {
+  const { t } = useLanguage()
   const { navigate } = useRoute()
   const data = useData()
   const sessionID = createMemo(() => stringValue(props.metadata.sessionID) ?? stringValue(props.metadata.sessionId))
@@ -3727,7 +3802,7 @@ function Subagent(props: ToolProps) {
       spinner={!continuation() && isRunning()}
       running={isRunning()}
       complete={description()}
-      pending="Delegating…"
+      pending={t("tools.delegating")}
       part={props.part}
       onClick={() => {
         const id = sessionID()
@@ -3865,6 +3940,7 @@ function Execute(props: ToolProps) {
 }
 
 function Edit(props: ToolProps) {
+  const { t } = useLanguage()
   const ctx = use()
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
@@ -3885,7 +3961,7 @@ function Edit(props: ToolProps) {
     <Switch>
       <Match when={file()}>
         {(item) => (
-          <BlockTool path={{ label: "← Edit", value: pathFormatter.format(path()) }} part={props.part}>
+          <BlockTool path={{ label: t("tools.edit"), value: pathFormatter.format(path()) }} part={props.part}>
             <box paddingLeft={1}>
               <PatchDiff
                 diff={item().patch}
@@ -3916,10 +3992,10 @@ function Edit(props: ToolProps) {
         <BlockTool
           path={
             stringValue(props.input.path)
-              ? { label: "← Edit", value: pathFormatter.format(stringValue(props.input.path)) }
+              ? { label: t("tools.edit"), value: pathFormatter.format(stringValue(props.input.path)) }
               : undefined
           }
-          title={stringValue(props.input.path) ? undefined : "# Preparing edit…"}
+          title={stringValue(props.input.path) ? undefined : t("tools.preparingEdit")}
           part={props.part}
           spinner={props.part.state.status === "streaming"}
         />
@@ -3929,6 +4005,7 @@ function Edit(props: ToolProps) {
 }
 
 function ApplyPatch(props: ToolProps) {
+  const { t } = useLanguage()
   const ctx = use()
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
@@ -3963,7 +4040,12 @@ function ApplyPatch(props: ToolProps) {
             {(file) => (
               <BlockTool
                 path={{
-                  label: file.type === "add" ? "# Created" : file.type === "delete" ? "# Deleted" : "← Patched",
+                  label:
+                    file.type === "add"
+                      ? t("tools.created")
+                      : file.type === "delete"
+                        ? t("tools.deleted")
+                        : t("tools.patched"),
                   value: pathFormatter.format(file.relativePath),
                 }}
                 part={props.part}
@@ -4010,7 +4092,12 @@ function ApplyPatch(props: ToolProps) {
             {(file) => (
               <BlockTool
                 path={{
-                  label: file.type === "add" ? "# Created" : file.type === "delete" ? "# Deleted" : "← Patched",
+                  label:
+                    file.type === "add"
+                      ? t("tools.created")
+                      : file.type === "delete"
+                        ? t("tools.deleted")
+                        : t("tools.patched"),
                   value: pathFormatter.format(file.resource),
                 }}
                 part={props.part}
@@ -4030,13 +4117,17 @@ function ApplyPatch(props: ToolProps) {
           path={
             targets().length === 1
               ? {
-                  label: props.part.state.status === "error" ? "# Patch failed" : "Patching",
+                  label: props.part.state.status === "error" ? t("tools.patchFailed") : t("tools.patching"),
                   value: pathFormatter.format(targets()[0]),
                 }
               : undefined
           }
           title={
-            targets().length === 1 ? undefined : props.part.state.status === "error" ? "# Patch failed" : "Patching"
+            targets().length === 1
+              ? undefined
+              : props.part.state.status === "error"
+                ? t("tools.patchFailed")
+                : t("tools.patching")
           }
           part={props.part}
           spinner={props.part.state.status === "streaming" || props.part.state.status === "running"}
@@ -4049,6 +4140,7 @@ function ApplyPatch(props: ToolProps) {
 }
 
 function Question(props: ToolProps) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const questions = createMemo(() => parseQuestions(props.input.questions))
   const answers = createMemo(() => parseQuestionAnswers(props.metadata.answers))
@@ -4076,7 +4168,7 @@ function Question(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="→" pending="Asking questions…" complete={count()} part={props.part}>
+        <InlineTool icon="→" pending={t("tools.askingQuestions")} complete={count()} part={props.part}>
           Asked {count()} question{count() !== 1 ? "s" : ""}
         </InlineTool>
       </Match>
@@ -4085,9 +4177,10 @@ function Question(props: ToolProps) {
 }
 
 function Skill(props: ToolProps) {
+  const { t } = useLanguage()
   const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
   return (
-    <InlineTool icon="→" name="Skill" pending="Loading skill..." complete={name()} part={props.part}>
+    <InlineTool icon="→" name="Skill" pending={t("tools.loadingSkill")} complete={name()} part={props.part}>
       "{name()}"
     </InlineTool>
   )
@@ -4149,7 +4242,12 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined
 }
 
-function formatSessionTranscript(session: SessionInfo, messages: SessionMessageInfo[], thinking: boolean, tools = true) {
+function formatSessionTranscript(
+  session: SessionInfo,
+  messages: SessionMessageInfo[],
+  thinking: boolean,
+  tools = true,
+) {
   const body = messages.flatMap((message) => {
     if (message.type === "user") return [`## User\n\n${message.text}`]
     if (message.type === "shell")

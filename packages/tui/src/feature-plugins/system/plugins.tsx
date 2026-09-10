@@ -7,6 +7,7 @@ import { Spinner } from "../../component/spinner"
 import { usePlugin } from "../../plugin/context"
 import { DialogSelect, type DialogSelectOption } from "../../ui/dialog-select"
 import { useDialog } from "../../ui/dialog"
+import { useLanguage } from "../../i18n"
 
 const id = "opencode.plugins"
 
@@ -28,6 +29,7 @@ export function PluginsDialog(props: {
   server?: () => readonly PluginInfo[]
 }) {
   const dialog = useDialog()
+  const language = useLanguage()
   const [locked, setLocked] = createSignal(false)
   const [checking, setChecking] = createSignal(false)
   const [focused, setFocused] = createSignal<string>()
@@ -95,6 +97,14 @@ export function PluginsDialog(props: {
         value: entry.key,
         category: entry.runtime === "tui" ? "TUI" : "Server",
         searchText: entry.runtime === "tui" ? entry.target : source(entry.plugin, props.context),
+        details:
+          entry.runtime === "tui"
+            ? language
+                .diagnostics()
+                .filter((item) => item.plugin === entry.id)
+                .map((item) => `${item.locale} · ${item.key}: ${item.message}`)
+            : undefined,
+        detailsWrap: true,
         footer: updating(entry) ? "updating" : footer(entry),
         footerColor:
           status(entry) === "failed"

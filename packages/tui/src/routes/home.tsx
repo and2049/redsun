@@ -15,6 +15,7 @@ import { useTheme } from "../context/theme"
 import { useUpdateNotification } from "../context/update-notification"
 import { useExit } from "../context/exit"
 import { FadeInText } from "../component/fade-in-text"
+import { useLanguage } from "../i18n"
 
 let once = false
 const placeholder = {
@@ -33,6 +34,11 @@ export function Home() {
   const location = useLocation()
   const dimensions = useTerminalDimensions()
   const theme = useTheme()
+  const language = useLanguage()
+  const localizedPlaceholder = createMemo(() => ({
+    normal: placeholder.normal.map((item) => language.t(item)),
+    shell: placeholder.shell,
+  }))
   const promptMaxWidth = createMemo(() => Math.max(75, Math.floor(dimensions().width * 0.7)))
   const [logoWidth, setLogoWidth] = createSignal(0)
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
@@ -97,10 +103,12 @@ export function Home() {
         <box height={1} flexShrink={0} />
         <UpdateNotification width={logoWidth()} />
         <box height={1} flexShrink={0} marginTop={1}>
-          <text fg={theme.text.subdued}>/ commands · ! shell · @ files</text>
+          <text fg={theme.text.subdued}>
+            / {language.t("session.commands")} · ! {language.t("session.shell")} · @ {language.t("session.files")}
+          </text>
         </box>
         <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
+          <Prompt ref={bind} placeholders={localizedPlaceholder()} disabled={forms().length > 0} />
         </box>
         <box flexGrow={1} minHeight={0} />
       </box>
@@ -124,6 +132,7 @@ function UpdateNotification(props: { width: number }) {
   const update = useUpdateNotification()
   const exit = useExit()
   const theme = useTheme()
+  const language = useLanguage()
   const [hovered, setHovered] = createSignal(false)
   const backdrop = () => (hovered() ? theme.background.action.primary.hovered : theme.background.default)
   createEffect(() => {
@@ -160,10 +169,10 @@ function UpdateNotification(props: { width: number }) {
                   </span>
                 </Show>
                 {remote
-                  ? "remote server update available"
+                  ? language.t("session.remoteServerUpdateAvailable")
                   : state.type === "installed"
-                    ? ` restart to use v${state.version}`
-                    : ` to install v${state.version}`}
+                    ? ` ${language.t("session.restartToUse", { version: `v${state.version}` })}`
+                    : ` ${language.t("session.toInstall", { version: `v${state.version}` })}`}
               </FadeInText>
             </box>
           </Show>

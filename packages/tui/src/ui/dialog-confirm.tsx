@@ -5,6 +5,7 @@ import { useDialog } from "./dialog"
 import { createStore } from "solid-js/store"
 import { For } from "solid-js"
 import { Locale } from "../util/locale"
+import { useLanguage } from "../i18n"
 
 export type DialogConfirmProps = {
   title: string
@@ -20,6 +21,7 @@ export type DialogConfirmProps = {
 export function DialogConfirm(props: DialogConfirmProps) {
   const dialog = useDialog()
   const theme = useTheme("elevated")
+  const { t } = useLanguage()
   const [store, setStore] = createStore({
     active: "confirm" as "confirm" | "cancel",
   })
@@ -29,7 +31,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
     commands: [
       {
         bind: "return",
-        title: "Confirm dialog selection",
+        title: t("ui.confirmDialogSelection"),
         group: "Dialog",
         run: () => {
           if (store.active === "confirm") props.onConfirm?.()
@@ -39,7 +41,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
       },
       {
         bind: "left",
-        title: "Previous dialog option",
+        title: t("ui.previousDialogOption"),
         group: "Dialog",
         run: () => {
           setStore("active", store.active === "confirm" ? "cancel" : "confirm")
@@ -47,7 +49,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
       },
       {
         bind: "right",
-        title: "Next dialog option",
+        title: t("ui.nextDialogOption"),
         group: "Dialog",
         run: () => {
           setStore("active", store.active === "confirm" ? "cancel" : "confirm")
@@ -82,7 +84,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
               }}
             >
               <text fg={key === store.active ? theme.text.action.primary.focused : theme.text.subdued}>
-                {Locale.titlecase(props.label?.[key] ?? key)}
+                {props.label?.[key] ?? t(Locale.titlecase(key))}
               </text>
             </box>
           )}

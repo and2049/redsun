@@ -52,11 +52,11 @@ test.each(["success", "failure", "home"])("Copy session ID from Ctrl+P (%s)", as
     await setup.mockInput.typeText("Copy session ID")
     if (mode === "home") {
       await setup.waitForVisualIdle()
-      expect(setup.captureCharFrame()).not.toMatch(/Copy session ID\s+Session/)
+      expect(setup.captureCharFrame()).not.toMatch(/Copy session ID[^\S\r\n]+Session/)
       expect(copy).not.toHaveBeenCalled()
       return
     }
-    await setup.waitForFrame((frame) => /Copy session ID\s+Session/.test(frame))
+    await setup.waitForFrame((frame) => /Copy session ID[^\S\r\n]+Session/.test(frame))
     setup.mockInput.pressEnter()
     const frame = await setup.waitForFrame((frame) =>
       frame.includes(mode === "success" ? "Session ID copied to clipboard!" : "Failed to copy session ID"),

@@ -8,6 +8,9 @@ import { useLocation } from "../context/location"
 import { DialogSelect } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
 import { errorMessage } from "../util/error"
+import { useLanguage } from "../i18n"
+import { useDialog } from "../ui/dialog"
+import { DialogLanguage } from "./dialog-language"
 
 type Setting = {
   title: string
@@ -27,6 +30,13 @@ type Setting = {
 }
 
 export const settings: Setting[] = [
+  {
+    title: "Interface language",
+    category: "Appearance",
+    path: ["language"],
+    default: "en",
+    keywords: ["language", "locale", "translation", "中文", "Español", "한국어", "Français"],
+  },
   {
     title: "Stale-read deduplication",
     category: "Context",
@@ -313,6 +323,9 @@ export function settingID(setting: Setting) {
 }
 
 export function DialogConfig(props: { current?: string }) {
+  const language = useLanguage()
+  const { t } = language
+  const dialog = useDialog()
   const config = useConfig()
   const toast = useToast()
   const themes = useThemes()
@@ -356,16 +369,25 @@ export function DialogConfig(props: { current?: string }) {
       : setting.values
   const display = (setting: Setting) => {
     const current = value(setting)
+    if (settingID(setting) === "language")
+      return (
+        language.languages().find((item) => item.locale === (current ?? "en"))?.nativeName ??
+        String(current ?? "English")
+      )
     if (setting.format) return setting.format(current)
     const index = setting.values?.indexOf(current)
-    return index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current))
+    if (settingID(setting) === "theme.name") return String(current)
+    return t(index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current)))
   }
   const options = createMemo(() =>
     settings.map((setting, index) => ({
-      title: setting.title,
-      category: setting.category,
-      searchText: setting.keywords?.join(" "),
-      footer: setting.backend && !backend() ? (backend.loading ? "loading" : "unavailable") : display(setting),
+      title: t(setting.title),
+      category: t(setting.category),
+      searchText: [setting.title, setting.category, ...(setting.keywords ?? [])].join(" "),
+      footer:
+        setting.backend && !backend()
+          ? t(backend.loading ? "settings.loading" : "remote.unavailable")
+          : display(setting),
       value: index,
     })),
   )
@@ -373,6 +395,11 @@ export function DialogConfig(props: { current?: string }) {
   async function change(direction: number, index = selected()) {
     if (saving()) return
     const setting = settings[index]
+    if (settingID(setting) === "language") {
+      const back = () => dialog.replace(() => <DialogConfig current="language" />)
+      dialog.replace(() => <DialogLanguage onSelect={back} onCancel={back} />)
+      return
+    }
     if (setting.backend && !backend()) {
       void refetch()
       return
@@ -410,19 +437,19 @@ export function DialogConfig(props: { current?: string }) {
 
   return (
     <DialogSelect
-      title="Settings"
+      title={t("command.category.settings")}
       options={options()}
       current={current}
       filterThreshold={0.7}
       onMove={(option) => setSelected(option.value)}
       onSelect={(option) => void change(1, option.value)}
-      footerHints={[{ title: "←/→", label: "change" }]}
+      footerHints={[{ title: "←/→", label: t("settings.change") }]}
       footer={
         <Show when={settings[selected()]?.backend}>
           <box paddingLeft={4} paddingRight={4} flexDirection="column">
-            <text fg={theme.text.subdued}>Global defaults; other config sources can override.</text>
+            <text fg={theme.text.subdued}>{t("settings.globalDefaultsOtherConfigSourcesCanOverride")}</text>
             <text fg={settings[selected()]?.warning ? theme.text.feedback.warning.default : theme.text.subdued}>
-              {settings[selected()]?.warning ?? settings[selected()]?.description}
+              {t(settings[selected()]?.warning ?? settings[selected()]?.description ?? "")}
             </text>
           </box>
         </Show>

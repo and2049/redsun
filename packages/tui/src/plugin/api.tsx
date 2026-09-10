@@ -20,6 +20,10 @@ import { useToast } from "../ui/toast"
 import { useAttention } from "../context/attention"
 import { useStorage } from "../context/storage"
 import { abbreviateHome } from "../util/path-format"
+import type { LanguageContribution } from "@opencode/plugin/tui/i18n"
+import { useLanguage } from "../i18n"
+import { useLanguageRegistry } from "../i18n/context"
+import { normalizeContribution } from "../i18n/registry"
 
 export type Dispose = () => Promise<void>
 
@@ -39,11 +43,12 @@ const placements = ["prepend", "append", "before", "after", "replace"] as const 
 // route/slot registration lands there, but ordering and lifecycle stay owned
 // by the provider.
 export type Registry = {
-  has(kind: "routes" | "slots" | "markdown", name: string): boolean
+  has(kind: "routes" | "slots" | "markdown" | "i18n", name: string): boolean
   set(kind: "routes", name: string, page: Page): void
   set(kind: "slots", name: string, claim: RegisteredSlot): void
   set(kind: "markdown", name: string, render: MarkdownCodeBlockRenderer): void
-  remove(kind: "routes" | "slots" | "markdown", name: string): void
+  set(kind: "i18n", name: string, contribution: LanguageContribution): void
+  remove(kind: "routes" | "slots" | "markdown" | "i18n", name: string): void
   active(): boolean
 }
 
@@ -66,6 +71,8 @@ export function usePluginHost() {
     toast: useToast(),
     attention: useAttention(),
     storage: useStorage(),
+    language: useLanguage(),
+    languageRegistry: useLanguageRegistry(),
   }
 }
 
@@ -82,6 +89,11 @@ export function createPluginContext(input: {
   const host = input.host
   let context: Context
   let claims = 0
+  let languageClaims = 0
+  let alive = true
+  input.owned.push(async () => {
+    alive = false
+  })
   // Every dialog and registered render is wrapped so plugin components can
   // reach their own context through usePlugin().
   const provide = (render: () => JSX.Element) => (
@@ -95,7 +107,7 @@ export function createPluginContext(input: {
   }
   // Unregistering after deactivation is a no-op: deactivate already resets
   // the registration's routes and slots wholesale.
-  const registration = (kind: "routes" | "slots" | "markdown", name: string) => {
+  const registration = (kind: "routes" | "slots" | "markdown" | "i18n", name: string) => {
     let registered = true
     const unregister = () => {
       if (!registered) return
@@ -107,6 +119,26 @@ export function createPluginContext(input: {
     return unregister
   }
   context = {
+    i18n: {
+      locale: host.language.locale,
+      languages: host.language.languages,
+      diagnostics: host.language.diagnostics,
+      t: (key, values) => host.languageRegistry?.snapshot().t(host.language.locale(), key, values) ?? key,
+      register(value) {
+        if (!alive) return () => {}
+        const contribution = normalizeContribution(value)
+        const key = `language#${languageClaims++}`
+        input.registry.set("i18n", key, contribution)
+        let registered = true
+        const unregister = () => {
+          if (!registered || !alive) return
+          registered = false
+          input.registry.remove("i18n", key)
+        }
+        input.owned.push(async () => unregister())
+        return unregister
+      },
+    },
     options: input.options ?? {},
     get location() {
       return host.location.current

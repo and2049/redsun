@@ -8,6 +8,7 @@ import { errorMessage } from "../../util/error"
 import { DialogFork } from "./dialog-fork"
 import type { PromptInfo } from "../../prompt/history"
 import { projectedPromptInput } from "../../prompt/codec"
+import { useLanguage } from "../../i18n"
 
 export function DialogMessage(props: {
   messageID: string
@@ -19,21 +20,22 @@ export function DialogMessage(props: {
   const toast = useToast()
   const client = useClient()
   const message = createMemo(() => data.session.message.get(props.sessionID, props.messageID))
+  const { t } = useLanguage()
 
   return (
     <DialogSelect
-      title="Message Actions"
+      title={t("session.messageActions")}
       options={[
         {
-          title: "Jump to",
+          title: t("session.jumpTo"),
           value: "message.jump",
-          description: "view message in session",
+          description: t("session.viewMessageInSession"),
           onSelect: (dialog) => dialog.clear(),
         },
         {
-          title: "Revert",
+          title: t("session.revert"),
           value: "session.revert",
-          description: "undo messages and file changes",
+          description: t("session.undoMessagesAndFileChanges"),
           onSelect: (dialog) => {
             const value = message()
             if (value?.type === "user") {
@@ -49,9 +51,9 @@ export function DialogMessage(props: {
           },
         },
         {
-          title: "Copy",
+          title: t("session.copy"),
           value: "message.copy",
-          description: "message text to clipboard",
+          description: t("session.messageTextToClipboard"),
           onSelect: async (dialog) => {
             const value = message()
             if (!value) return
@@ -75,9 +77,9 @@ export function DialogMessage(props: {
           },
         },
         {
-          title: "Fork",
+          title: t("session.fork"),
           value: "session.fork",
-          description: "create a new session",
+          description: t("session.createANewSession"),
           onSelect: (dialog) => {
             const value = message()
             if (!value || value.type !== "user") return

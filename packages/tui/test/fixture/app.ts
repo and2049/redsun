@@ -12,6 +12,8 @@ export async function createAppFixture(
     height?: number
     state?: string
     config?: Config.Info
+    configDirectory?: string
+    configService?: Config.Interface
     args?: TuiInput["args"]
     fetch?: FetchHandler
     service?: TuiInput["server"]["service"]
@@ -33,13 +35,23 @@ export async function createAppFixture(
     run({
       app: { name: "test", version: "test", channel: "test" },
       server: { endpoint: { url: server.url.toString() }, service: input.service },
-      config: { get: async () => input.config ?? { animations: false }, update: async () => ({}) },
+      config: input.configService ?? {
+        get: async () => input.config ?? { animations: false },
+        update: async () => ({}),
+      },
       packages: { prepare: async () => ({ directory: "" }) },
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
       args: input.args ?? {},
       log: () => {},
     }).pipe(
-      Effect.provide(input.state ? Global.layerWith({ state: input.state }) : AppNodeBuilder.build(Global.node)),
+      Effect.provide(
+        input.state || input.configDirectory
+          ? Global.layerWith({
+              ...(input.state ? { state: input.state } : {}),
+              ...(input.configDirectory ? { config: input.configDirectory } : {}),
+            })
+          : AppNodeBuilder.build(Global.node),
+      ),
       Effect.provide(FileSystem.layerNoop({})),
     ),
   )

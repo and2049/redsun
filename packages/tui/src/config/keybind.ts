@@ -55,6 +55,7 @@ export const Definitions = {
   "help.show": keybind("none", "Open help dialog"),
   "docs.open": keybind("none", "Open documentation"),
   "opencode.settings": keybind("none", "Open settings"),
+  "language.switch": keybind("none", "Change interface language"),
   "server.pair": keybind("none", "Pair device"),
   "service.restart": keybind("none", "Restart service"),
   "permission.mode": keybind("shift+tab", "Toggle auto-approve permissions"),

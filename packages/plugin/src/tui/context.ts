@@ -27,6 +27,7 @@ import type { ResolvedTheme } from "@opencode/theme/tui"
 import type { CliRenderer, KeyEvent, MarkdownCodeBlockRenderer, Renderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type { Store } from "solid-js/store"
+import type { I18n } from "./i18n.js"
 
 export interface Storage {
   /**
@@ -477,6 +478,7 @@ export interface UI {
 }
 
 export interface Context {
+  readonly i18n: I18n
   readonly options: Readonly<Record<string, any>>
   readonly location: LocationRef | undefined
   readonly app: App

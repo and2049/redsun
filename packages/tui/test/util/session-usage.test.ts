@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client/promise"
 import { fitSessionUsage, sessionUsage } from "../../src/util/session-usage"
+import { translate } from "../fixture/languages"
 
 const model = { providerID: "anthropic", id: "claude" }
 
@@ -62,4 +63,16 @@ test("gives ground as the row narrows", () => {
   expect(fitSessionUsage(usage, 5)).toBe("60%")
   // Below the shortest form it shows nothing rather than a truncated number.
   expect(fitSessionUsage(usage, 2)).toBeUndefined()
+})
+
+test("localizes cache terminology and fits CJK labels by terminal cells", () => {
+  const usage = sessionUsage({
+    messages: [assistant({ input: 100, output: 10, read: 900 })],
+    cost: 0,
+    t: (key, values) => translate("zh-CN", key, values),
+  })
+  expect(usage?.cache).toBe("缓存 90%")
+  const compact = { context: "10K (10%)", percent: "10%", cache: "缓存 90%" }
+  expect(fitSessionUsage(compact, 12)).toBe("10%")
+  expect(fitSessionUsage(compact, 14)).toBe("10% · 缓存 90%")
 })

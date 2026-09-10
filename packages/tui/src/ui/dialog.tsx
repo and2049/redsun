@@ -2,7 +2,7 @@ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
-import { InputRenderable, MouseButton, Renderable, RGBA } from "@opentui/core"
+import { applyGain, InputRenderable, MouseButton, Renderable } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
@@ -55,7 +55,9 @@ export function Dialog(
       paddingTop={bottom() || props.centered ? 0 : dimensions().height / 4}
       left={0}
       top={0}
-      backgroundColor={bottom() ? undefined : RGBA.fromInts(0, 0, 0, 150)}
+      renderBefore={(buffer) => {
+        if (!bottom()) applyGain(buffer, 1 - 150 / 255)
+      }}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {

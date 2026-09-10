@@ -3,12 +3,14 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { usePermission } from "../context/permission"
 import { useTheme } from "../context/theme"
 import { useRemoteControl } from "../context/remote-control"
+import { useLanguage } from "../i18n"
 
 export function WorkspaceStatus() {
   const permission = usePermission()
   const theme = useTheme()
   const remote = useRemoteControl()
   const dimensions = useTerminalDimensions()
+  const language = useLanguage()
   const compact = () => dimensions().width < 80
   const rcState = () => remote.status()?.state
   const rcColor = () =>
@@ -26,12 +28,12 @@ export function WorkspaceStatus() {
           when={permission.mode === "auto"}
           fallback={
             <span style={{ fg: theme.text.subdued }}>
-              {compact() ? "Auto-approve: off" : "Auto-approve all disabled (Shift+Tab)"}
+              {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
             </span>
           }
         >
           <span style={{ fg: theme.text.feedback.success.default }}>
-            {compact() ? "Auto-approve: on" : "⏵⏵ Auto-approve all enabled "}
+            {compact() ? language.t("permission.autoApprove.on") : `⏵⏵ ${language.t("permission.autoApprove.enabled")}`}
           </span>
           <Show when={!compact()}>
             <span style={{ fg: theme.text.subdued }}>(Shift+Tab)</span>

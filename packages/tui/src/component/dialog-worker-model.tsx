@@ -5,6 +5,7 @@ import type { FormWithLocation } from "../context/data"
 import { DialogModel } from "./dialog-model"
 import { DialogVariant } from "./dialog-variant"
 import { formRequestOptions, isFormAnswerField } from "../util/form"
+import { useLanguage } from "../i18n"
 
 export const WORKER_MODEL_KEY = "redsun.worker-model"
 
@@ -31,6 +32,7 @@ export function parseWorkerModelRef(value: string) {
 export function useWorkerVariantDialog() {
   const dialog = useDialog()
   const local = useLocal()
+  const { t } = useLanguage()
 
   return () => {
     const current = local.model.worker.current()
@@ -38,7 +40,7 @@ export function useWorkerVariantDialog() {
     if (!current || variants.length === 0) return false
     dialog.replace(() => (
       <DialogVariant
-        title="Select worker model variant"
+        title={t("ui.selectWorkerModelVariant")}
         variants={variants}
         selected={current.variant}
         onSelect={(variant) => local.model.worker.setVariant(variant)}
@@ -53,6 +55,7 @@ export function useWorkerModelDialog() {
   const local = useLocal()
   const client = useClient()
   const openVariant = useWorkerVariantDialog()
+  const { t } = useLanguage()
 
   return (form?: FormWithLocation) => {
     const current = local.model.worker.current()
@@ -71,7 +74,7 @@ export function useWorkerModelDialog() {
     dialog.replace(
       () => (
         <DialogModel
-          title="Select worker model"
+          title={t("ui.selectWorkerModel")}
           current={current ? { providerID: current.providerID, modelID: current.modelID } : undefined}
           closeOnSelect={false}
           onSelect={(model) => {

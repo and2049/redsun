@@ -3,6 +3,7 @@ import { createMemo, createSignal, onCleanup } from "solid-js"
 import { DialogSelect, type DialogSelectRef } from "../ui/dialog-select"
 import { themeMode, useTheme, useThemes } from "../context/theme"
 import { useDialog } from "../ui/dialog"
+import { useLanguage } from "../i18n"
 
 // Built-in dark/light siblings; used to keep the highlight on the matching
 // theme when flipping between tabs.
@@ -27,6 +28,7 @@ export function DialogThemeList() {
   const themes = useThemes()
   const theme = useTheme("elevated")
   const dialog = useDialog()
+  const { t } = useLanguage()
   let confirmed = false
   let ref: DialogSelectRef<string>
   const initial = themes.selected
@@ -79,14 +81,14 @@ export function DialogThemeList() {
 
   return (
     <DialogSelect
-      title="Themes"
+      title={t("ui.themes")}
       titleView={
         <box flexDirection="row" gap={2}>
           <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
-            Themes
+            {t("ui.themes")}
           </text>
-          <Tab label="Dark" mode="dark" />
-          <Tab label="Light" mode="light" />
+          <Tab label={t("theme.scheme.dark")} mode="dark" />
+          <Tab label={t("theme.scheme.light")} mode="light" />
         </box>
       }
       options={options()}
@@ -130,7 +132,7 @@ export function DialogThemeList() {
           run: () => switchTab(tab() === "dark" ? "light" : "dark"),
         },
       ]}
-      footerHints={[{ title: tab() === "dark" ? "light themes" : "dark themes", label: "tab" }]}
+      footerHints={[{ title: tab() === "dark" ? t("ui.lightThemes") : t("ui.darkThemes"), label: "tab" }]}
     />
   )
 }
