@@ -10,6 +10,10 @@ import { session } from "../src/i18n/session"
 import { settings } from "../src/i18n/settings"
 import { application } from "../src/i18n/application"
 import { remote } from "../src/i18n/remote"
+import { ai } from "../src/i18n/ai"
+import { activity } from "../src/i18n/activity"
+import { tools } from "../src/i18n/tools"
+import { upstreamAliases } from "../src/i18n/aliases"
 import { messages, translate } from "../src/i18n/translate"
 
 test("accepts supported interface languages without changing other preferences", () => {
@@ -26,7 +30,7 @@ test("accepts supported interface languages without changing other preferences",
 
 test("catalogs contain complete translations with the original interpolation parameters", () => {
   const placeholders = (text: string) => [...new Set(text.match(/\{\{\w+\}\}/g) ?? [])].sort()
-  for (const entries of [catalog, ui, session, settings, application, remote]) {
+  for (const entries of [catalog, ui, session, settings, application, remote, ai, activity, tools]) {
     expect(Object.keys(entries).length).toBeGreaterThan(0)
     for (const [source, translations] of Object.entries(entries)) {
       expect(translations, source).toHaveLength(4)
@@ -61,6 +65,16 @@ test("localized counts use whole messages instead of English plural suffixes", (
   expect(translate("es", "{{count}} MCP servers", { count: 2 })).toBe("2 servidores MCP")
   expect(translate("fr", "{{count}} MCP servers", { count: 2 })).toBe("2 serveurs MCP")
   expect(translate("en", "{{count}} model", { count: 1 })).toBe("1 model")
+})
+
+test("semantic upstream aliases retain English wording and source translations", () => {
+  for (const [message, source] of Object.entries(upstreamAliases)) {
+    expect(Object.hasOwn(catalog, source), message).toBeTrue()
+    expect(translate("en", message)).toBe(message)
+    for (const [index, locale] of locales.slice(1).entries()) {
+      expect(translate(locale, message)).toBe(catalog[source][index])
+    }
+  }
 })
 
 test("every explicitly localized string has a catalog entry", async () => {

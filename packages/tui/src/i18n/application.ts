@@ -44,8 +44,6 @@ export const application: Readonly<Record<string, readonly [string, string, stri
     "이전 즐겨찾기 모델",
     "Modèle favori précédent",
   ],
-  "Agent cycle": ["切换下一个智能体", "Siguiente agente", "다음 에이전트", "Agent suivant"],
-  "Agent cycle reverse": ["切换上一个智能体", "Agente anterior", "이전 에이전트", "Agent précédent"],
   "Variant cycle": ["切换下一个模型变体", "Siguiente variante", "다음 변형", "Variante suivante"],
   "Switch model variant": [
     "切换模型变体",

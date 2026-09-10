@@ -1,6 +1,6 @@
 # TUI translation catalog
 
-`catalog.ts` contains 64 exact upstream translation reuses. The source is
+`catalog.ts` contains 77 exact upstream translation reuses. The source is
 `upstream/beta` at commit
 `20aff6d9f643afe9abf8a048e68f019d049f5329`:
 
@@ -27,6 +27,9 @@ apply to mounted views. Keep canonical IDs and native language names unchanged.
 Use complete singular/plural messages instead of appending an English `s`.
 `catalog.ts` takes precedence for shared upstream wording; TUI-specific meanings
 need distinct English source text instead of an ambiguous duplicate key.
+`aliases.ts` adds seven reviewed semantic aliases to upstream messages, including
+Thinking → Reasoning and Undo previous message → Undo the last message. See
+`GLOSSARY.md` for domain terminology and distinctions that must survive reuse.
 
 Tests from `packages/tui`:
 
@@ -46,7 +49,8 @@ manifest is compact because it groups unambiguous upstream namespaces:
 ```text
 command.category.{server,session,theme,context,terminal,model,mcp,agent,permissions,settings,suggested}
 command.settings.open
-command.session.{previous,next,new,compact,redo}
+command.session.{previous,next,new,compact,redo,undo.description,export}
+command.agent.{cycle,cycle.reverse}
 command.palette
 command.theme.{cycle,set}
 command.file.open
@@ -56,7 +60,7 @@ command.message.{previous,next}
 command.model.choose
 command.prompt.mode.shell
 dialog.model.select.title
-common.{search.placeholder,cancel,open,submit}
+common.{search.placeholder,cancel,open,submit,goBack,default}
 palette.{empty,group.commands}
 dialog.{provider.search.placeholder,model.search.placeholder,directory.search.placeholder}
 home.sessions.{search.placeholder,search.sessions}
@@ -64,6 +68,9 @@ session.{header.searchFiles,new.workspace.triggerLocal,header.open.copyPath,head
 sidebar.help
 settings.{providers.title,general.section.appearance,general.row.showFileTree.title}
 model.tag.free
+model.tooltip.reasoning
+context.stats.{totalTokens,inputTokens,outputTokens,reasoningTokens,cacheTokens}
+context.usage.tokens
 theme.scheme.{dark,light,system}
 language.en
 status.popover.trigger
@@ -79,7 +86,7 @@ provider.connect.{method.apiKey,oauth.code.placeholder}
 The manifest is checked against all current TUI dictionaries (`ui.ts`,
 `session.ts`, `settings.ts`, and `application.ts`) by matching their English
 keys to upstream `en.ts`, then requiring the same upstream key to exist in
-`zh.ts`, `es.ts`, `ko.ts`, and `fr.ts`. Current audit result: 64 exact reuses,
+`zh.ts`, `es.ts`, `ko.ts`, and `fr.ts`. Current audit result: 77 exact reuses,
 zero case adaptations, and zero authored entries in `catalog.ts`.
 
 ## Deliberate exclusions
