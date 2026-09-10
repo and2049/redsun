@@ -1,6 +1,6 @@
 # Intro
 
-redsun is used by millions every day. Build on top of it to create your own
+Build on top of it to create your own
 applications, integrations, and agent experiences without starting from
 scratch.
 

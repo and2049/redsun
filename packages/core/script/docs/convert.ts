@@ -79,6 +79,7 @@ export function links(text: string, from: string, pages: ReadonlySet<string>) {
 }
 
 const BRAND: ReadonlyArray<readonly [RegExp, string]> = [
+  [/OpenCode is used by millions every day\. /g, ""],
   [/\bopencode\.json(c?)\b/g, "redsun.json$1"],
   [/\.opencode\b/g, ".redsun"],
   [/((?:\.config|\.local\/share|\.local\/state|\.cache|XDG_[A-Z]+_HOME|\/var\/run)\/)opencode\b/g, "$1redsun"],
