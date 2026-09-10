@@ -1,5 +1,5 @@
 import type { PluginInfo } from "@opencode/client"
-import type { Plugin } from "@opencode/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import type { MarkdownCodeBlockRenderer, MarkdownOptions } from "@opentui/core"
 import {
   batch,
@@ -611,6 +611,8 @@ async function disposeAll(cleanups: Dispose[]) {
 }
 
 async function setup(plugin: Plugin.Definition, context: Plugin.Context, owned: Dispose[]) {
+  if (plugin.api !== undefined && plugin.api > Plugin.API)
+    throw new Error(`${plugin.id} requires plugin API ${plugin.api}; this redsun supports ${Plugin.API}`)
   try {
     return await plugin.setup(context)
   } catch (error) {
