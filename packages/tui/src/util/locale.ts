@@ -80,6 +80,14 @@ export function truncateWidth(str: string, width: number): string {
   return takeWidth(str, width - 1) + "…"
 }
 
+export function truncateWidthWithSuffix(str: string, width: number, suffix: string): string {
+  if (width <= 0) return ""
+  if (stringWidth(str) <= width) return str
+  const suffixWidth = stringWidth(suffix)
+  if (suffixWidth >= width) return takeWidth(suffix, width)
+  return truncateWidth(str.slice(0, -suffix.length), width - suffixWidth) + suffix
+}
+
 export function truncateLeft(str: string, len: number): string {
   if (str.length <= len) return str
   return "…" + str.slice(-(len - 1))

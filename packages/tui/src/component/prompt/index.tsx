@@ -1656,7 +1656,9 @@ export function Prompt(props: PromptProps) {
     })()
     if (!value) return undefined
     const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5
-    return Locale.takeWidth(value, Math.max(1, width)).trimEnd()
+    const graphemes = Locale.graphemes(value)
+    const suffix = graphemes[graphemes.length - 1] ?? ""
+    return Locale.truncateWidthWithSuffix(value, Math.max(1, width), suffix).trimEnd()
   })
   const spinnerDef = createMemo(() => {
     const color = promptDisplay().agentColor ?? theme.border.default
