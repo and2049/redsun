@@ -41,11 +41,21 @@ export const pollUpdates = Effect.fnUntraced(function* (input: {
   const interval = input.interval ?? "10 minutes"
   return yield* input.check.pipe(
     Effect.repeat(Schedule.spaced(interval)),
-    Effect.delay(input.initialDelay ?? "1 minute"),
+    Effect.delay(input.initialDelay ?? "5 seconds"),
   )
 })
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/cli/Updater") {}
+
+export const DEFAULT_POLICY: Policy = "auto"
+
+export function resolvePolicy(texts: ReadonlyArray<string | undefined>): Policy {
+  return (
+    texts
+      .map((text) => (text === undefined ? undefined : decodePolicy(text)))
+      .findLast((value) => value !== undefined) ?? DEFAULT_POLICY
+  )
+}
 
 export function decodePolicy(text: string): Policy | undefined {
   // The CLI only projects this host-level preference instead of initializing
@@ -71,13 +81,10 @@ const make = Effect.gen(function* () {
   const installedVersion = yield* Ref.make(OPENCODE_VERSION)
 
   const readPolicy = Effect.fnUntraced(function* () {
-    const values = yield* Effect.forEach(["config.json", "redsun.json", "redsun.jsonc"], (name) =>
-      fs.readFileString(path.join(global.config, name)).pipe(
-        Effect.map(decodePolicy),
-        Effect.orElseSucceed(() => undefined),
-      ),
+    const texts = yield* Effect.forEach(["config.json", "redsun.json", "redsun.jsonc"], (name) =>
+      fs.readFileString(path.join(global.config, name)).pipe(Effect.orElseSucceed(() => undefined)),
     )
-    return values.findLast((value) => value !== undefined) ?? "notify"
+    return resolvePolicy(texts)
   })
 
   const exec = Effect.fnUntraced(function* (command: string[], timeout: Duration.Input = "10 seconds") {

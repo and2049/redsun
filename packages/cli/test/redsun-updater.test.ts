@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test"
-import { INSTALLER, INSTALLER_WINDOWS, RELEASE_API, REPOSITORY, versionFromRelease } from "../src/services/updater"
+import {
+  INSTALLER,
+  INSTALLER_WINDOWS,
+  RELEASE_API,
+  REPOSITORY,
+  resolvePolicy,
+  versionFromRelease,
+} from "../src/services/updater"
 
 describe("updater release resolution", () => {
   it("points every upgrade source at the redsun repository", () => {
@@ -20,5 +27,19 @@ describe("updater release resolution", () => {
     expect(versionFromRelease({})).toBeUndefined()
     expect(versionFromRelease({ tag_name: "" })).toBeUndefined()
     expect(versionFromRelease({ tag_name: 3 })).toBeUndefined()
+  })
+})
+
+describe("update policy", () => {
+  it("installs updates automatically unless configured otherwise", () => {
+    expect(resolvePolicy([])).toBe("auto")
+    expect(resolvePolicy([undefined, "{ not json"])).toBe("auto")
+    expect(resolvePolicy(['{ "update": "notify" }'])).toBe("notify")
+    expect(resolvePolicy(['{ "autoupdate": false }'])).toBe("disable")
+  })
+
+  it("lets the last configured file win", () => {
+    expect(resolvePolicy(['{ "update": "disable" }', undefined, '{ "update": "notify" }'])).toBe("notify")
+    expect(resolvePolicy(['{ "update": "disable" }', '{ "update": "wat" }'])).toBe("disable")
   })
 })

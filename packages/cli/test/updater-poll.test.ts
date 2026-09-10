@@ -6,14 +6,14 @@ import { Updater } from "../src/services/updater"
 
 const it = testEffect(Layer.empty)
 
-it.effect("polls after 1 minute and every 10 minutes after that", () =>
+it.effect("polls 5 seconds after start and every 10 minutes after that", () =>
   Effect.gen(function* () {
     const checks = yield* Queue.unbounded<void>()
     yield* Updater.pollUpdates({ check: Queue.offer(checks, undefined).pipe(Effect.asVoid) }).pipe(Effect.forkScoped)
 
     yield* Effect.yieldNow
     expect(yield* Queue.size(checks)).toBe(0)
-    yield* TestClock.adjust("59 seconds")
+    yield* TestClock.adjust("4 seconds")
     expect(yield* Queue.size(checks)).toBe(0)
     yield* TestClock.adjust("1 second")
     yield* Queue.take(checks)

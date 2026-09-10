@@ -58,6 +58,7 @@ describe("docs convert", () => {
     expect(brand("https://github.com/anomalyco/opencode/issues")).toBe("https://github.com/and2049/redsun/issues")
     expect(brand("an OpenCode server")).toBe("a redsun server")
     expect(brand("OpenCode is used by millions every day. Build on it.")).toBe("Build on it.")
+    expect(brand('When omitted, `update` defaults to `"notify"`.')).toBe('When omitted, `update` defaults to `"auto"`.')
   })
 
   test("brand keeps package names, env vars, identifiers, urls, and upstream products", () => {
