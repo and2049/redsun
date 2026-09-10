@@ -135,6 +135,8 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       })
     if (url.pathname === "/api/session") return json({ data: [], cursor: {} })
     if (url.pathname === "/api/config") return json([])
+    if (url.pathname === "/api/config/context")
+      return json({ stale_read_deduplication: false, compaction: { strategy: "llm" } })
     if (url.pathname === "/api/remote")
       return json({
         supported: false,

@@ -99,6 +99,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description:
       "Maximum characters of each instruction file (AGENTS.md, .redsun/memory.md, ...) included in model context before truncation (default: 24000)",
   }),
+  stale_read_deduplication: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Replace superseded read results to reduce context (default: false). Can break prompt-cache reuse and increase costs.",
+  }),
   references: ConfigReference.Info.pipe(optional).annotate({
     description: "Named local directories or Git repositories available as external context",
   }),
@@ -119,6 +123,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   claude_code: ConfigClaudeCode.Info.pipe(optional).annotate({
     description: "Delegated Claude Code provider settings",
   }),
+}) {}
+
+export class ContextSettings extends Schema.Class<ContextSettings>("Config.ContextSettings")({
+  stale_read_deduplication: Info.fields.stale_read_deduplication,
+  compaction: Schema.Struct({ strategy: ConfigCompaction.Info.fields.strategy }).pipe(optional),
 }) {}
 
 export class Document extends Schema.Class<Document>("Config.Document")({

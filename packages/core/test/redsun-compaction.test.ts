@@ -268,10 +268,10 @@ hybrid.effect("hybrid compaction sends the head as transcript plus the inventory
   }),
 )
 
-hybrid.effect("llm strategy sends no inventory", () =>
+hybrid.effect("compaction defaults to an LLM summary without an inventory", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ strategy: "llm", tokens: 0 })
+    const compaction = yield* configured({ tokens: 0 })
     const { session } = yield* seedSession("llm")
     const messages = conversation()
     expect(
@@ -343,47 +343,56 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
   }),
 )
 
-hybrid.effect("the retained tail serializes only the latest read of a file", () =>
-  Effect.gen(function* () {
-    requests = []
-    // The tail allowance fits the newest three messages but not the long opener, so the
-    // reads land in the retained tail rather than the summarized head.
-    const compaction = yield* configured({ strategy: "hybrid", tokens: 200 })
-    const { session, store } = yield* seedSession("stale-read")
-    const read = (id: string, text: string) => ({
-      type: "tool",
-      id,
-      name: "read",
-      state: { status: "completed", input: { path: "src/auth/redirect.ts" }, content: [{ type: "text", text }] },
-      time: { created: 0 },
-    })
-    const messages = [
-      message({ id: "msg_user_zero", type: "user", text: "x".repeat(4_000) }),
-      message({ id: "msg_user_stale", type: "user", text: "Fix the login redirect bug in the auth flow." }),
-      message({
-        id: "msg_assistant_stale",
-        type: "assistant",
-        agent: "build",
-        model: { id: "test-model", providerID: "test-provider" },
-        content: [read("call_read_old", "OLD_READ_CONTENT"), read("call_read_new", "NEW_READ_CONTENT")],
-        time: { created: 0 },
+for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
+  hybrid.effect(
+    `${strategy} compaction ${strategy === "llm" ? "preserves" : "deduplicates"} reads in the retained tail`,
+    () =>
+      Effect.gen(function* () {
+        requests = []
+        // The tail allowance fits the newest three messages but not the long opener, so the
+        // reads land in the retained tail rather than the summarized head.
+        const compaction = yield* configured({ strategy, tokens: 200 })
+        const { session, store } = yield* seedSession("stale-read")
+        const read = (id: string, text: string) => ({
+          type: "tool",
+          id,
+          name: "read",
+          state: { status: "completed", input: { path: "src/auth/redirect.ts" }, content: [{ type: "text", text }] },
+          time: { created: 0 },
+        })
+        const messages = [
+          message({ id: "msg_user_zero", type: "user", text: "x".repeat(4_000) }),
+          message({ id: "msg_user_stale", type: "user", text: "Fix the login redirect bug in the auth flow." }),
+          message({
+            id: "msg_assistant_stale",
+            type: "assistant",
+            agent: "build",
+            model: { id: "test-model", providerID: "test-provider" },
+            content: [read("call_read_old", "OLD_READ_CONTENT"), read("call_read_new", "NEW_READ_CONTENT")],
+            time: { created: 0 },
+          }),
+          message({ id: "msg_user_stale_two", type: "user", text: "Also keep the fragment intact." }),
+        ]
+        expect(
+          yield* compaction.compactManual({
+            session,
+            resolveContext: () => Effect.succeed(loaded(session, messages)),
+            prepare: (yield* SessionModelRequest.Service).compaction,
+            messages,
+            inputID: SessionMessage.ID.make("msg_compact_stale"),
+          }),
+        ).toEqual({ status: "completed" })
+        const context = yield* store.context(session.id)
+        const recent = context.at(-1)
+        const tail = recent?.type === "compaction" && recent.status === "completed" ? recent.recent : ""
+        expect(tail).toContain("[Tool result]: NEW_READ_CONTENT")
+        if (strategy === "llm") {
+          expect(tail).toContain("[Tool result]: OLD_READ_CONTENT")
+          expect(tail).not.toContain("superseded by a later read")
+        } else {
+          expect(tail).toContain("[Tool result]: [superseded by a later read of the same file]")
+          expect(tail).not.toContain("[Tool result]: OLD_READ_CONTENT")
+        }
       }),
-      message({ id: "msg_user_stale_two", type: "user", text: "Also keep the fragment intact." }),
-    ]
-    expect(
-      yield* compaction.compactManual({
-        session,
-        resolveContext: () => Effect.succeed(loaded(session, messages)),
-        prepare: (yield* SessionModelRequest.Service).compaction,
-        messages,
-        inputID: SessionMessage.ID.make("msg_compact_stale"),
-      }),
-    ).toEqual({ status: "completed" })
-    const context = yield* store.context(session.id)
-    const recent = context.at(-1)
-    const tail = recent?.type === "compaction" && recent.status === "completed" ? recent.recent : ""
-    expect(tail).toContain("[Tool result]: [superseded by a later read of the same file]")
-    expect(tail).toContain("[Tool result]: NEW_READ_CONTENT")
-    expect(tail).not.toContain("[Tool result]: OLD_READ_CONTENT")
-  }),
-)
+  )
+}

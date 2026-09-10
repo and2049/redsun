@@ -2130,6 +2130,7 @@ export type ConfigEntry =
         }
         instructions?: Array<string>
         instruction_max_chars?: number
+        stale_read_deduplication?: boolean
         references?: {
           [x: string]:
             | string
@@ -6624,3 +6625,29 @@ export type ConfigGetInput = {
 }
 
 export type ConfigGetOutput = Array<ConfigEntry>
+
+export type ConfigContextGetInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type ConfigContextGetOutput = {
+  stale_read_deduplication?: boolean
+  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
+}
+
+export type ConfigContextUpdateInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly payload: {
+    readonly stale_read_deduplication?: boolean
+    readonly compaction?: { readonly strategy?: "hybrid" | "algorithmic" | "llm" }
+  }
+}
+
+export type ConfigContextUpdateOutput = {
+  stale_read_deduplication?: boolean
+  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
+}

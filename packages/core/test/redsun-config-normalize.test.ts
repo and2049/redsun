@@ -19,6 +19,18 @@ const normalized = (input: unknown) => {
 
 const decoded = (input: unknown) => Schema.decodeUnknownSync(Info, options)(normalized(input))
 
+test("context settings survive normalization with deduplication omitted or explicitly disabled", () => {
+  expect(decoded({}).stale_read_deduplication).toBeUndefined()
+  for (const enabled of [false, true]) {
+    for (const strategy of ["llm", "hybrid", "algorithmic"]) {
+      expect(decoded({ stale_read_deduplication: enabled, compaction: { strategy } })).toMatchObject({
+        stale_read_deduplication: enabled,
+        compaction: { strategy },
+      })
+    }
+  }
+})
+
 const full = {
   enabled: true,
   binary_path: "C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd",

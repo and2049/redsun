@@ -31,8 +31,7 @@ const staleRead = (part: ContentPart & { type: "tool-result" }, file: string): C
 /**
  * Replace read results superseded by a later read of the same path and range with a short
  * pointer. Results are never removed, so tool-call pairing stays intact. Rewrites are
- * deferred until the superseded results total at least minChars: history only grows, so the
- * decision is monotone and provider prefix caches survive between crossings.
+ * deferred until the superseded results total at least minChars.
  */
 export const dedupeStaleReads = (messages: Array<Message>, minChars = STALE_READ_REWRITE_MIN_CHARS): Array<Message> => {
   const calls = messages.flatMap((message) =>
@@ -140,9 +139,14 @@ export const Plugin = define({
     const config = yield* Config.Service
     const maxChars = instructionMaxChars(yield* config.entries())
     yield* ctx.session.hook("context", (event) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
+        const entries = yield* config.entries()
+        const messages =
+          Config.latest(entries, "stale_read_deduplication") === true
+            ? dedupeStaleReads(event.messages)
+            : event.messages
         event.system = event.system.map((part) => boundSystem(part, maxChars))
-        event.messages = dedupeStaleReads(event.messages).map((message) => boundMessage(message, maxChars))
+        event.messages = messages.map((message) => boundMessage(message, maxChars))
       }),
     )
   }),

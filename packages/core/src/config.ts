@@ -5,15 +5,7 @@ import path from "path"
 import { isDeepStrictEqual } from "node:util"
 import { type ParseError, parse } from "jsonc-parser"
 import { Context, Effect, FiberMap, Layer, Option, PubSub, Ref, Schema, Semaphore, Stream } from "effect"
-import {
-  AgentsDirectory,
-  ClaudeDirectory,
-  Directory,
-  Document,
-  Info,
-  type Entry,
-  Event,
-} from "@opencode/schema/config"
+import { AgentsDirectory, ClaudeDirectory, Directory, Document, Info, type Entry, Event } from "@opencode/schema/config"
 import { Credential } from "./credential.js"
 import { Bus } from "./bus.js"
 import { Watcher } from "./filesystem/watcher.js"
@@ -35,6 +27,7 @@ export function latest<K extends keyof Info>(entries: readonly Entry[], key: K):
 export interface Interface {
   /** Returns location config documents and discovery sources from lowest to highest priority. */
   readonly entries: () => Effect.Effect<Entry[]>
+  readonly reload: () => Effect.Effect<void>
   /**
    * Streams raw filesystem updates under config roots. Config owns root
    * topology and watch reconciliation; domain owners filter this feed for the
@@ -72,6 +65,7 @@ export const testLayer = (initial: Entry[] = []) =>
       const updates = yield* PubSub.unbounded<Watcher.Update>()
       const service = Test.of({
         entries: () => Ref.get(entries),
+        reload: () => Effect.void,
         changes: () => Stream.fromPubSub(updates),
         setEntries: (next) => Ref.set(entries, next),
         emitChange: (update) => PubSub.publish(updates, update).pipe(Effect.asVoid),
@@ -85,6 +79,7 @@ export const layer = (options?: Options) =>
     Service,
     Effect.gen(function* () {
       const fs = yield* FSUtil.Service
+      const global = yield* Global.Service
       const location = yield* Location.Service
       const watcher = yield* Watcher.Service
       const bus = yield* Bus.Service
@@ -321,6 +316,12 @@ export const layer = (options?: Options) =>
         entries: Effect.fnUntraced(function* () {
           return configs
         }),
+        reload: () =>
+          reload().pipe(
+            Effect.provideService(FSUtil.Service, fs),
+            Effect.provideService(Global.Service, global),
+            Effect.provideService(Location.Service, location),
+          ),
         changes: () => Stream.fromPubSub(updates),
       })
     }),

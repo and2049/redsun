@@ -1,8 +1,13 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createResource, createSignal, Show } from "solid-js"
+import type { Config } from "@opencode/schema/config"
 import { useConfig } from "../config"
-import { useThemes } from "../context/theme"
+import { useTheme, useThemes } from "../context/theme"
+import { useClient } from "../context/client"
+import { useData } from "../context/data"
+import { useLocation } from "../context/location"
 import { DialogSelect } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
+import { errorMessage } from "../util/error"
 
 type Setting = {
   title: string
@@ -16,9 +21,34 @@ type Setting = {
   max?: number
   format?: (value: unknown) => string
   keywords?: readonly string[]
+  backend?: boolean
+  description?: string
+  warning?: string
 }
 
 export const settings: Setting[] = [
+  {
+    title: "Stale-read deduplication",
+    category: "Context",
+    path: ["stale_read_deduplication"],
+    default: false,
+    values: [false, true],
+    labels: ["off", "on"],
+    backend: true,
+    warning: "Warning: may break prompt caching and increase costs.",
+    keywords: ["cache", "context optimizer", "pruning", "reads"],
+  },
+  {
+    title: "Compaction mode",
+    category: "Context",
+    path: ["compaction", "strategy"],
+    default: "llm",
+    values: ["llm", "hybrid", "algorithmic"],
+    labels: ["LLM", "Hybrid", "Algorithmic"],
+    backend: true,
+    description: "LLM: model summary. Hybrid: adds an inventory. Algorithmic: inventory only, no model call.",
+    keywords: ["summary", "compression", "context", "hybrid", "algorithmic"],
+  },
   {
     title: "Theme",
     category: "Appearance",
@@ -286,18 +316,37 @@ export function DialogConfig(props: { current?: string }) {
   const config = useConfig()
   const toast = useToast()
   const themes = useThemes()
+  const theme = useTheme()
+  const client = useClient()
+  const location = useLocation()
+  const data = useData()
+  const ref = () => {
+    const target = location.ref ?? data.location.default()
+    return { directory: target.directory, workspace: target.workspaceID }
+  }
   const current = Math.max(
     0,
     settings.findIndex((setting) => settingID(setting) === props.current),
   )
   const [selected, setSelected] = createSignal(current)
   const [saving, setSaving] = createSignal(false)
+  const [backend, { mutate, refetch }] = createResource(async () => {
+    try {
+      return await client.api.config.context.get({ location: ref() })
+    } catch (error) {
+      toast.show({ variant: "error", message: errorMessage(error) })
+      return undefined
+    }
+  })
 
   const value = (setting: Setting) => {
-    const current = setting.path.reduce<unknown>((result, key) => {
-      if (!result || typeof result !== "object") return undefined
-      return (result as Record<string, unknown>)[key]
-    }, config.data)
+    const current = setting.path.reduce<unknown>(
+      (result, key) => {
+        if (!result || typeof result !== "object") return undefined
+        return (result as Record<string, unknown>)[key]
+      },
+      setting.backend ? backend() : config.data,
+    )
     if (setting.path.join(".") === "theme.name") return current ?? themes.selected
     return current ?? setting.default
   }
@@ -316,7 +365,7 @@ export function DialogConfig(props: { current?: string }) {
       title: setting.title,
       category: setting.category,
       searchText: setting.keywords?.join(" "),
-      footer: display(setting),
+      footer: setting.backend && !backend() ? (backend.loading ? "loading" : "unavailable") : display(setting),
       value: index,
     })),
   )
@@ -324,6 +373,10 @@ export function DialogConfig(props: { current?: string }) {
   async function change(direction: number, index = selected()) {
     if (saving()) return
     const setting = settings[index]
+    if (setting.backend && !backend()) {
+      void refetch()
+      return
+    }
     const current = value(setting)
     const choices = values(setting)
     const next = choices
@@ -331,6 +384,18 @@ export function DialogConfig(props: { current?: string }) {
       : Math.min(setting.max!, Math.max(setting.min!, Number(current) + direction * setting.step!))
     if (next === current) return
     setSaving(true)
+    if (setting.backend) {
+      const update: Config.ContextSettings =
+        setting.path[0] === "stale_read_deduplication"
+          ? { stale_read_deduplication: next === true }
+          : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
+      await client.api.config.context
+        .update({ location: ref(), payload: update })
+        .then(mutate)
+        .catch((error) => toast.show({ variant: "error", message: errorMessage(error) }))
+        .finally(() => setSaving(false))
+      return
+    }
     await config
       .update((draft) => {
         const parent = setting.path.slice(0, -1).reduce<Record<string, unknown>>((result, key) => {
@@ -352,6 +417,16 @@ export function DialogConfig(props: { current?: string }) {
       onMove={(option) => setSelected(option.value)}
       onSelect={(option) => void change(1, option.value)}
       footerHints={[{ title: "←/→", label: "change" }]}
+      footer={
+        <Show when={settings[selected()]?.backend}>
+          <box paddingLeft={4} paddingRight={4} flexDirection="column">
+            <text fg={theme.text.subdued}>Global defaults; other config sources can override.</text>
+            <text fg={settings[selected()]?.warning ? theme.text.feedback.warning.default : theme.text.subdued}>
+              {settings[selected()]?.warning ?? settings[selected()]?.description}
+            </text>
+          </box>
+        </Show>
+      }
       bindings={[
         {
           bind: "left",

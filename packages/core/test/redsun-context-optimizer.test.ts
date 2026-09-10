@@ -108,12 +108,13 @@ test("boundInstructionText bounds each block and leaves other text alone", () =>
   expect(boundInstructionText(bounded, 1_000)).toBe(bounded)
 })
 
-it.effect("the plugin's context hook bounds instructions and tool replay through the real entry point", () =>
+it.effect("the context hook preserves cached reads by default and honors live config precedence", () =>
   Effect.gen(function* () {
     const hooks: Record<string, (event: never) => Effect.Effect<unknown, unknown, never>> = {}
+    const document = (info: Record<string, unknown>) => new Document({ type: "document", info: decodeConfig(info) })
+    let entries = [document({ instruction_max_chars: 400 })]
     const config = Layer.mock(Config.Service)({
-      entries: () =>
-        Effect.succeed([new Document({ type: "document", info: decodeConfig({ instruction_max_chars: 400 }) })]),
+      entries: () => Effect.sync(() => entries),
     })
     yield* RedsunContextOptimizer.Plugin.effect(
       host({
@@ -129,7 +130,7 @@ it.effect("the plugin's context hook bounds instructions and tool replay through
     expect(callback).toBeDefined()
 
     const big = Array.from({ length: 100 }, (_, index) => `rule ${index}`).join("\n")
-    const event = {
+    const makeEvent = () => ({
       system: [{ type: "text", text: `Instructions from: AGENTS.md\n${big}` }],
       messages: [
         Message.user(`Instructions from: memory.md\n${big}`),
@@ -137,7 +138,8 @@ it.effect("the plugin's context hook bounds instructions and tool replay through
         ...read("a2", { path: "a.ts" }, 300),
       ],
       tools: {},
-    }
+    })
+    const event = makeEvent()
     yield* callback!(event as never)
 
     expect(event.system[0]?.text.length).toBeLessThanOrEqual(400)
@@ -145,7 +147,20 @@ it.effect("the plugin's context hook bounds instructions and tool replay through
     const firstUser = event.messages[0] as Message
     const firstPart = firstUser.content[0]
     expect(firstPart?.type === "text" ? firstPart.text : "").toContain("truncated at line")
-    expect(resultText(event.messages[2] as Message)).toContain("superseded by a later read of a.ts")
+    expect(resultText(event.messages[2] as Message)).toBe("x".repeat(70_000))
     expect(resultText(event.messages[4] as Message)).toBe("x".repeat(300))
+
+    entries = [...entries, document({ stale_read_deduplication: true })]
+    const enabled = makeEvent()
+    yield* callback!(enabled as never)
+    expect(resultText(enabled.messages[2] as Message)).toContain("superseded by a later read of a.ts")
+    expect(resultText(enabled.messages[4] as Message)).toBe("x".repeat(300))
+
+    entries = [...entries, document({ stale_read_deduplication: false, instruction_max_chars: 800 })]
+    const disabled = makeEvent()
+    yield* callback!(disabled as never)
+    expect(resultText(disabled.messages[2] as Message)).toBe("x".repeat(70_000))
+    expect(disabled.system).toEqual(event.system)
+    expect(disabled.messages[0]).toEqual(event.messages[0])
   }),
 )
