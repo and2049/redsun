@@ -59,7 +59,7 @@ export default Runtime.handler(Commands, (input) =>
     const service = server.service
     yield* run({
       app: {
-        name: process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
+        name: Option.getOrUndefined(input.client) ?? process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
         version: OPENCODE_VERSION,
         channel: process.env.OPENCODE_TUI_CHANNEL ?? OPENCODE_CHANNEL,
       },
@@ -84,6 +84,7 @@ export default Runtime.handler(Commands, (input) =>
         get: () => runPromise(config.get()),
         update: (update) => runPromise(config.update(update)),
       },
+      plugins: input.plugin.length ? input.plugin : undefined,
       updater: {
         remote: requestedServer !== undefined,
         subscribe: (notify, signal) =>

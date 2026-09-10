@@ -22,7 +22,7 @@ import { resolveSlots, type Claim } from "./structure"
 import { createStore, produce, reconcile as reconcileStore, unwrap } from "solid-js/store"
 import { isDeepEqual } from "remeda"
 import "#runtime-plugin-support"
-import { useConfig } from "../config"
+import { useConfig, type Config } from "../config"
 import { useTuiLifecycle } from "../context/runtime"
 import { useClient } from "../context/client"
 import { useData } from "../context/data"
@@ -86,7 +86,9 @@ type Desired = Pick<Registration, "plugin" | "source" | "target" | "version" | "
 
 const PluginContext = createContext<Value>()
 
-export function PluginProvider(props: ParentProps<{ packages: PackageSource; directories: string[] }>) {
+export function PluginProvider(
+  props: ParentProps<{ packages: PackageSource; directories: string[]; plugins?: ReadonlyArray<Config.Plugin> }>,
+) {
   const host = usePluginHost()
   const config = useConfig()
   const lifecycle = useTuiLifecycle()
@@ -284,6 +286,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
         optional: true,
       })),
       ...(config.data.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
+      ...(props.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
     ]
 
     // Resolve: fold entries into one desired generation. A source that fails
@@ -494,7 +497,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   const resolved = createMemo(() => resolveSlots({ paths: new Set(Object.keys(mounted)), claims: claims() }))
   createEffect(
     on(
-      () => JSON.stringify([serverTuiPlugins(), config.data.plugins ?? []]),
+      () => JSON.stringify([serverTuiPlugins(), config.data.plugins ?? [], props.plugins ?? []]),
       () => {
         npmFailures.clear()
         void enqueue(reconcile).then(

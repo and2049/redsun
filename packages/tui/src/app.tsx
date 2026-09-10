@@ -171,6 +171,7 @@ export type TuiInput = {
   }
   args: Args
   config: Config.Interface
+  plugins?: ReadonlyArray<Config.Plugin>
   updater?: UpdateSource
   packages: PackageSource
   environment?: Readonly<Record<string, string>>
@@ -386,6 +387,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                               <PluginProvider
                                                                                 packages={input.packages}
                                                                                 directories={pluginDirectories}
+                                                                                plugins={input.plugins}
                                                                               >
                                                                                 <App
                                                                                   pair={
