@@ -476,7 +476,8 @@ function App(props: { pair?: DialogPairCredentials }) {
   const tabsTheme = useTheme("elevated")
   const openWorkerModel = useWorkerModelDialog()
   const openWorkerVariant = useWorkerVariantDialog()
-  const { mode } = useThemes()
+  const themes = useThemes()
+  const { mode } = themes
   const data = useData()
   const location = useLocation()
   const exit = useExit()
@@ -964,6 +965,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         name: "theme.switch",
         title: "Switch theme",
         slash: { name: "themes" },
+        enabled: () => !themes.locked(),
         run: () => {
           dialog.replace(() => <DialogThemeList />)
         },

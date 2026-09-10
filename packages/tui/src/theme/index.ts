@@ -77,4 +77,11 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
+export function removeTheme(name: string) {
+  if (pluginThemes[name] === undefined) return false
+  delete pluginThemes[name]
+  syncThemes()
+  return true
+}
+
 export { resolveV1 as resolveTheme } from "@opencode/theme/tui/v1"

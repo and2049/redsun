@@ -3,7 +3,7 @@ import type { JSX } from "solid-js"
 import type { Context, Dialog, Page, SlotClaim, SlotMap, SlotPath, Toast } from "@opencode/plugin/tui/context"
 import type { Placement, PlacementKind } from "./structure"
 import { infoStringToFiletype, type MarkdownCodeBlockRenderer } from "@opentui/core"
-import { useRenderer } from "@opentui/solid"
+import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { useClient } from "../context/client"
 import { useData } from "../context/data"
 import { Keymap } from "../context/keymap"
@@ -11,6 +11,7 @@ import { useRoute } from "../context/route"
 import { useTuiApp, useTuiPaths } from "../context/runtime"
 import { useLocation } from "../context/location"
 import { useThemes } from "../context/theme"
+import { useVim } from "../context/vim"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogConfirm } from "../ui/dialog-confirm"
 import { DialogPrompt } from "../ui/dialog-prompt"
@@ -57,6 +58,8 @@ export type Registry = {
 export function usePluginHost() {
   return {
     renderer: useRenderer(),
+    dimensions: useTerminalDimensions(),
+    vim: useVim(),
     client: useClient(),
     data: useData(),
     route: useRoute(),
@@ -94,6 +97,16 @@ export function createPluginContext(input: {
   input.owned.push(async () => {
     alive = false
   })
+  const owned = (dispose: () => void) => {
+    let done = false
+    const release = () => {
+      if (done) return
+      done = true
+      dispose()
+    }
+    input.owned.push(async () => release())
+    return release
+  }
   // Every dialog and registered render is wrapped so plugin components can
   // reach their own context through usePlugin().
   const provide = (render: () => JSX.Element) => (
@@ -154,6 +167,22 @@ export function createPluginContext(input: {
     get themeMode() {
       return host.themes.mode()
     },
+    themes: {
+      register(name, document) {
+        const dispose = host.themes.register(name, document)
+        if (!dispose) throw new Error(`Invalid theme document: ${name}`)
+        return owned(dispose)
+      },
+      select: host.themes.select,
+      lock: () => owned(host.themes.lock()),
+      current: () => host.themes.selected,
+      locked: host.themes.locked,
+    },
+    vim: {
+      get mode() {
+        return host.vim.mode
+      },
+    },
     markdown: {
       registerCodeBlockRenderer(language, render) {
         const name = infoStringToFiletype(language)
@@ -184,6 +213,7 @@ export function createPluginContext(input: {
       format: {
         path: (value) => abbreviateHome(value, host.paths.home),
       },
+      dimensions: host.dimensions,
       router: {
         register(page) {
           if (input.registry.has("routes", page.name)) throw new Error(`Route already registered: ${page.name}`)

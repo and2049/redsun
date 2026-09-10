@@ -7,6 +7,7 @@ import {
   allThemes,
   hasTheme,
   parseTheme,
+  removeTheme,
   selectedForeground,
   setCustomThemes,
   subscribeThemes,
@@ -91,6 +92,7 @@ type State = {
   themes: Record<string, ThemeDocumentSource>
   active: string
   ready: boolean
+  locked: number
 }
 
 type Themes = {
@@ -102,6 +104,10 @@ type Themes = {
   currentSyntax: Accessor<SyntaxStyle>
   mode: Accessor<"dark" | "light">
   set(theme: string): boolean
+  select(theme: string): boolean
+  register(name: string, document: unknown): (() => void) | undefined
+  lock(): () => void
+  locked: Accessor<boolean>
   onError(handler: ThemeErrorHandler): () => void
   readonly ready: boolean
 }
@@ -118,6 +124,7 @@ const [store, setStore] = createStore<State>({
   themes: allThemes(),
   active: FALLBACK_THEME,
   ready: false,
+  locked: 0,
 })
 
 subscribeThemes((themes) => setStore("themes", themes))
@@ -135,12 +142,13 @@ const themeContext = createSimpleContext({
         const active = config.theme?.name ?? FALLBACK_THEME
         draft.active = typeof active === "string" ? active : FALLBACK_THEME
         draft.ready = false
+        draft.locked = 0
       }),
     )
 
     createEffect(() => {
       const theme = config.theme?.name
-      if (theme) setStore("active", theme)
+      if (theme && !store.locked) setStore("active", theme)
     })
 
     function syncCustomThemes() {
@@ -203,7 +211,7 @@ const themeContext = createSimpleContext({
       has: hasTheme,
       mode,
       set(theme: string) {
-        if (!hasTheme(theme)) return false
+        if (store.locked || !hasTheme(theme)) return false
         setStore("active", theme)
         void configState
           .update((draft) => {
@@ -212,6 +220,25 @@ const themeContext = createSimpleContext({
           .catch(() => {})
         return true
       },
+      select(theme: string) {
+        if (!hasTheme(theme)) return false
+        setStore("active", theme)
+        return true
+      },
+      register(name: string, document: unknown) {
+        if (!upsertTheme(name, document)) return undefined
+        return () => void removeTheme(name)
+      },
+      lock() {
+        setStore("locked", (count) => count + 1)
+        let held = true
+        return () => {
+          if (!held) return
+          held = false
+          setStore("locked", (count) => Math.max(0, count - 1))
+        }
+      },
+      locked: () => store.locked > 0,
       onError: themeErrors.onError,
       get ready() {
         return store.ready

@@ -330,6 +330,9 @@ export function DialogConfig(props: { current?: string }) {
   const toast = useToast()
   const themes = useThemes()
   const theme = useTheme()
+  const items = createMemo(() =>
+    themes.locked() ? settings.filter((setting) => settingID(setting) !== "theme.name") : settings,
+  )
   const client = useClient()
   const location = useLocation()
   const data = useData()
@@ -339,7 +342,7 @@ export function DialogConfig(props: { current?: string }) {
   }
   const current = Math.max(
     0,
-    settings.findIndex((setting) => settingID(setting) === props.current),
+    items().findIndex((setting) => settingID(setting) === props.current),
   )
   const [selected, setSelected] = createSignal(current)
   const [saving, setSaving] = createSignal(false)
@@ -380,7 +383,7 @@ export function DialogConfig(props: { current?: string }) {
     return t(index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current)))
   }
   const options = createMemo(() =>
-    settings.map((setting, index) => ({
+    items().map((setting, index) => ({
       title: t(setting.title),
       category: t(setting.category),
       searchText: [setting.title, setting.category, ...(setting.keywords ?? [])].join(" "),
@@ -394,7 +397,7 @@ export function DialogConfig(props: { current?: string }) {
 
   async function change(direction: number, index = selected()) {
     if (saving()) return
-    const setting = settings[index]
+    const setting = items()[index]
     if (settingID(setting) === "language") {
       const back = () => dialog.replace(() => <DialogConfig current="language" />)
       dialog.replace(() => <DialogLanguage onSelect={back} onCancel={back} />)
@@ -445,11 +448,11 @@ export function DialogConfig(props: { current?: string }) {
       onSelect={(option) => void change(1, option.value)}
       footerHints={[{ title: "←/→", label: t("settings.change") }]}
       footer={
-        <Show when={settings[selected()]?.backend}>
+        <Show when={items()[selected()]?.backend}>
           <box paddingLeft={4} paddingRight={4} flexDirection="column">
             <text fg={theme.text.subdued}>{t("settings.globalDefaultsOtherConfigSourcesCanOverride")}</text>
-            <text fg={settings[selected()]?.warning ? theme.text.feedback.warning.default : theme.text.subdued}>
-              {t(settings[selected()]?.warning ?? settings[selected()]?.description ?? "")}
+            <text fg={items()[selected()]?.warning ? theme.text.feedback.warning.default : theme.text.subdued}>
+              {t(items()[selected()]?.warning ?? items()[selected()]?.description ?? "")}
             </text>
           </box>
         </Show>
