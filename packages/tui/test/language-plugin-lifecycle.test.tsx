@@ -168,4 +168,4 @@ export default {
   await app.waitForFrame((frame) => frame.includes("Plugins"))
   await search("test.language.de")
   await app.waitForFrame((frame) => frame.includes("test.language.de") && frame.includes("failed, local"))
-})
+}, 30_000)

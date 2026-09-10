@@ -46,6 +46,7 @@ test("remote command works from Home without a model prompt and reports persiste
   })
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Disable remote control"))
@@ -218,6 +219,7 @@ test.each(["success", "registered"] as const)(
     })
     await setup.ready
     await setup.waitForFrame((frame) => frame.includes("/RC"))
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     await setup.mockInput.typeText("/remote")
     setup.mockInput.pressEnter()
     await setup.waitForFrame((frame) => frame.includes("Register a phone"))
@@ -296,6 +298,7 @@ test.each(["missing", "conflict", "ready"] as const)(
     await setup.ready
     await setup.waitForFrame((frame) => frame.includes("/RC"))
     expect(inspected).toBe(0)
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     await setup.mockInput.typeText("/remote")
     setup.mockInput.pressEnter()
     await setup.waitForFrame(
@@ -398,7 +401,10 @@ test.each(["success", "conflict", "network"] as const)(
     expect(await Bun.file(file).exists()).toBe(false)
     setup.mockInput.pressEnter()
     await setup.waitForFrame(
-      (frame) => frame.includes(outcome === "success" ? "Change companion origin" : "Enrollment not confirmed"),
+      (frame) =>
+        frame.includes(outcome === "success" ? "Change companion origin" : "Enrollment not confirmed") &&
+        frame.includes("Stores the credential for the companion on this host") &&
+        !frame.includes("Confirm: enroll a companion on this host"),
       { maxPasses: 500 },
     )
     expect(issued).toBe(1)
@@ -459,6 +465,7 @@ test("dialog title uses ready and unavailable colors and state guidance", async 
   })
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Companion attached"))
