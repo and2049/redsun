@@ -24,14 +24,14 @@ export function PromptFooter(props: {
     const count = props.context.data.session
       .family(props.sessionID)
       .filter((id) => id !== props.sessionID && props.context.data.session.status(id) === "running").length
-    return count ? language.t(count === 1 ? "{{count}} subagent" : "{{count}} subagents", { count }) : undefined
+    return count ? language.t("session.subagents.count", { count }) : undefined
   })
   const shells = createMemo(() => {
     if (!props.sessionID) return 0
     const count = props.context.data.shell
       .list(props.context.location)
       .filter((shell) => shell.metadata.sessionID === props.sessionID).length
-    return count ? language.t(count === 1 ? "{{count}} shell" : "{{count}} shells", { count }) : undefined
+    return count ? language.t("session.shells.count", { count }) : undefined
   })
   const status = createMemo(() => {
     if (!props.sessionID) return []
@@ -56,7 +56,7 @@ export function PromptFooter(props: {
     return promptFooterLayout({
       width: Math.max(0, dimensions().width - 8),
       usage: status(),
-      shortcuts: command ? [`${command} ${language.t("commands")}`] : [],
+      shortcuts: command ? [`${command} ${language.t("session.commands")}`] : [],
     })
   })
 
@@ -97,14 +97,14 @@ export function PromptFooter(props: {
           <Match when={props.showDetails && layout().shortcuts}>
             <text fg={props.context.theme.text.default} flexShrink={0}>
               {shortcut("agent.cycle")}{" "}
-              <span style={{ fg: props.context.theme.text.subdued }}>{language.t("agents")}</span>
+              <span style={{ fg: props.context.theme.text.subdued }}>{language.t("session.agents")}</span>
             </text>
           </Match>
         </Switch>
         <Show when={props.showDetails && layout().shortcuts}>
           <text fg={props.context.theme.text.default} wrapMode="none" flexShrink={0}>
             {shortcut("command.palette.show")}{" "}
-            <span style={{ fg: props.context.theme.text.subdued }}>{language.t("commands")}</span>
+            <span style={{ fg: props.context.theme.text.subdued }}>{language.t("session.commands")}</span>
           </text>
         </Show>
       </Match>
@@ -112,7 +112,7 @@ export function PromptFooter(props: {
         <text fg={props.context.theme.text.default} flexShrink={0}>
           esc{" "}
           <span style={{ fg: props.context.theme.text.subdued }}>
-            {dimensions().width < 44 ? language.t("shell") : language.t("exit shell mode")}
+            {dimensions().width < 44 ? language.t("session.shell") : language.t("session.exitShellMode")}
           </span>
         </text>
       </Match>

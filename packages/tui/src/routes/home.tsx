@@ -104,7 +104,7 @@ export function Home() {
         <UpdateNotification width={logoWidth()} />
         <box height={1} flexShrink={0} marginTop={1}>
           <text fg={theme.text.subdued}>
-            / {language.t("commands")} · ! {language.t("shell")} · @ {language.t("files")}
+            / {language.t("session.commands")} · ! {language.t("session.shell")} · @ {language.t("session.files")}
           </text>
         </box>
         <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
@@ -169,10 +169,10 @@ function UpdateNotification(props: { width: number }) {
                   </span>
                 </Show>
                 {remote
-                  ? language.t("Remote server update available")
+                  ? language.t("session.remoteServerUpdateAvailable")
                   : state.type === "installed"
-                    ? ` ${language.t("restart to use {{version}}", { version: `v${state.version}` })}`
-                    : ` ${language.t("to install {{version}}", { version: `v${state.version}` })}`}
+                    ? ` ${language.t("session.restartToUse", { version: `v${state.version}` })}`
+                    : ` ${language.t("session.toInstall", { version: `v${state.version}` })}`}
               </FadeInText>
             </box>
           </Show>

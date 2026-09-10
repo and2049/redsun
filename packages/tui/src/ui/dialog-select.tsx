@@ -490,13 +490,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           ? [
               {
                 bind: "tab",
-                title: t("Next dialog action"),
+                title: t("ui.nextDialogAction"),
                 group: "Dialog",
                 run: () => moveAction(1),
               },
               {
                 bind: "shift+tab",
-                title: t("Previous dialog action"),
+                title: t("ui.previousDialogAction"),
                 group: "Dialog",
                 run: () => moveAction(-1),
               },
@@ -674,7 +674,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                   r.focus()
                 }, 1)
               }}
-              placeholder={props.placeholder ?? t("Search")}
+              placeholder={props.placeholder ?? t("common.search.placeholder")}
               placeholderColor={theme.text.subdued}
             />
           </box>
@@ -689,14 +689,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               fallback={
                 props.emptyView ?? (
                   <box paddingLeft={4} paddingRight={4}>
-                    <text fg={theme.text.subdued}>{t("No items available")}</text>
+                    <text fg={theme.text.subdued}>{t("ui.noItemsAvailable")}</text>
                   </box>
                 )
               }
             >
               {props.noMatchView ?? (
                 <box paddingLeft={4} paddingRight={4}>
-                  <text fg={theme.text.subdued}>{t("No results found")}</text>
+                  <text fg={theme.text.subdued}>{t("palette.empty")}</text>
                 </box>
               )}
             </Show>

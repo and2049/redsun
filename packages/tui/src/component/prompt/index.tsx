@@ -139,7 +139,7 @@ export function PromptInterruptStatus(props: {
       {props.shortcut ?? ""}
       {props.shortcut ? " " : ""}
       <span style={{ fg: props.armed ? armedColor() : props.subdued }}>
-        {props.armed ? language.t("again to interrupt") : language.t("interrupt")}
+        {props.armed ? language.t("session.againToInterrupt") : language.t("session.interrupt")}
       </span>
     </text>
   )
@@ -1649,10 +1649,10 @@ export function Prompt(props: PromptProps) {
     const value = (() => {
       if (store.mode === "shell") {
         if (!shell().length) return undefined
-        return language.t('Run a command… "{{command}}"', { command: shell()[store.placeholder % shell().length]! })
+        return language.t("session.runACommand", { command: shell()[store.placeholder % shell().length]! })
       }
       if (!list().length) return undefined
-      return language.t('Ask anything… "{{prompt}}"', { prompt: list()[store.placeholder % list().length]! })
+      return language.t("session.askAnything", { prompt: list()[store.placeholder % list().length]! })
     })()
     if (!value) return undefined
     const width = dimensions().width < 44 ? dimensions().width - 5 : Math.min(75, dimensions().width - 4) - 5

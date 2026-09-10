@@ -81,7 +81,7 @@ function EditBody(props: { file?: string; diff?: string; patch?: string }) {
           when={props.patch}
           fallback={
             <box paddingLeft={1}>
-              <text fg={theme.text.subdued}>{language.t("No diff provided")}</text>
+              <text fg={theme.text.subdued}>{language.t("session.noDiffProvided")}</text>
             </box>
           }
         >
@@ -204,7 +204,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
             <box flexDirection="column" gap={0}>
               <box flexDirection="row" gap={1} flexShrink={0}>
                 <text fg={theme.text.feedback.warning.default}>{"△"}</text>
-                <text fg={theme.text.default}>{language.t("Permission required")}</text>
+                <text fg={theme.text.default}>{language.t("notification.permission.title")}</text>
               </box>
               <Show when={props.request.action !== "shell" && current.title}>
                 <box flexDirection="row" gap={1} paddingLeft={2} flexShrink={0}>
@@ -219,7 +219,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 
           const body = (
             <SessionQuestion
-              title={language.t("Permission required")}
+              title={language.t("notification.permission.title")}
               semanticLabel={permissionSemanticLabel(props.request.action, current.title)}
               instance={props.request.id}
               header={header()}
@@ -331,10 +331,10 @@ function RejectPrompt(props: {
       <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
         <box flexDirection="row" gap={1} paddingLeft={1}>
           <text fg={theme.text.feedback.error.default}>{"△"}</text>
-          <text fg={theme.text.default}>{language.t("Reject permission")}</text>
+          <text fg={theme.text.default}>{language.t("session.rejectPermission")}</text>
         </box>
         <box paddingLeft={1}>
-          <text fg={theme.text.subdued}>{language.t("Tell redsun what to do differently")}</text>
+          <text fg={theme.text.subdued}>{language.t("session.tellRedsunWhatToDoDifferently")}</text>
         </box>
       </box>
       <box
@@ -356,7 +356,7 @@ function RejectPrompt(props: {
             SimulationSemantics.bind(() => ({
               instance: props.instance,
               role: "textbox",
-              label: language.t("Rejection reason"),
+              label: language.t("session.rejectionReason"),
               focused: val.focused,
               disabled: false,
             }))(val)
@@ -384,13 +384,13 @@ function RejectPrompt(props: {
             ref={SimulationSemantics.bind(() => ({
               instance: props.instance,
               role: "button",
-              label: language.t("Confirm rejection"),
+              label: language.t("session.confirmRejection"),
               disabled: false,
             }))}
             onMouseUp={() => props.onConfirm(input.plainText)}
           >
             <text fg={theme.text.default}>
-              enter <span style={{ fg: theme.text.subdued }}>{language.t("confirm")}</span>
+              enter <span style={{ fg: theme.text.subdued }}>{language.t("session.confirm")}</span>
             </text>
           </box>
           <box
@@ -398,13 +398,13 @@ function RejectPrompt(props: {
             ref={SimulationSemantics.bind(() => ({
               instance: props.instance,
               role: "button",
-              label: language.t("Cancel rejection"),
+              label: language.t("session.cancelRejection"),
               disabled: false,
             }))}
             onMouseUp={props.onCancel}
           >
             <text fg={theme.text.default}>
-              esc <span style={{ fg: theme.text.subdued }}>{language.t("cancel")}</span>
+              esc <span style={{ fg: theme.text.subdued }}>{language.t("session.cancel")}</span>
             </text>
           </box>
         </box>
@@ -454,7 +454,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         ? [
             {
               id: "app.exit",
-              title: language.t("Reject permission"),
+              title: language.t("session.rejectPermission"),
               group: group(),
               bind: false as const,
               run: dismiss,
@@ -465,7 +465,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         ? [
             {
               id: "permission.prompt.fullscreen",
-              title: language.t("Toggle permission fullscreen"),
+              title: language.t("session.togglePermissionFullscreen"),
               group: group(),
               bind: false as const,
               run: () => setStore("expanded", (value) => !value),
@@ -476,7 +476,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         ? [
             {
               bind: "left,h",
-              title: language.t("Previous option"),
+              title: language.t("session.previousOption"),
               group: group(),
               run: () => {
                 const index = keys.indexOf(store.selected)
@@ -485,7 +485,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
             },
             {
               bind: "right,l",
-              title: language.t("Next option"),
+              title: language.t("session.nextOption"),
               group: group(),
               run: () => {
                 const index = keys.indexOf(store.selected)
@@ -496,12 +496,12 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         : []),
       {
         bind: "return",
-        title: language.t("Select option"),
+        title: language.t("session.selectOption"),
         group: group(),
         run: () => props.onSelect(store.selected),
       },
       ...(props.escapeKey
-        ? [{ bind: "escape", title: language.t("Reject permission"), group: group(), run: dismiss }]
+        ? [{ bind: "escape", title: language.t("session.rejectPermission"), group: group(), run: dismiss }]
         : []),
     ],
     bindings: [...(props.escapeKey ? ["app.exit"] : []), ...(props.fullscreen ? ["permission.prompt.fullscreen"] : [])],
@@ -616,11 +616,11 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
           </Show>
           <Show when={keys.length > 1}>
             <text fg={theme.text.default}>
-              {"⇆"} <span style={{ fg: theme.text.subdued }}>{language.t("select")}</span>
+              {"⇆"} <span style={{ fg: theme.text.subdued }}>{language.t("settings.select")}</span>
             </text>
           </Show>
           <text fg={theme.text.default}>
-            enter <span style={{ fg: theme.text.subdued }}>{language.t("confirm")}</span>
+            enter <span style={{ fg: theme.text.subdued }}>{language.t("session.confirm")}</span>
           </text>
         </box>
       </box>

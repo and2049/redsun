@@ -40,7 +40,7 @@ export function useWorkerVariantDialog() {
     if (!current || variants.length === 0) return false
     dialog.replace(() => (
       <DialogVariant
-        title={t("Select worker model variant")}
+        title={t("ui.selectWorkerModelVariant")}
         variants={variants}
         selected={current.variant}
         onSelect={(variant) => local.model.worker.setVariant(variant)}
@@ -74,7 +74,7 @@ export function useWorkerModelDialog() {
     dialog.replace(
       () => (
         <DialogModel
-          title={t("Select worker model")}
+          title={t("ui.selectWorkerModel")}
           current={current ? { providerID: current.providerID, modelID: current.modelID } : undefined}
           closeOnSelect={false}
           onSelect={(model) => {

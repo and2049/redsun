@@ -16,6 +16,7 @@ import { Toast, ToastProvider } from "../../src/ui/toast"
 import { emptyThemeSource } from "../fixture/fixture"
 import { createApi, createFetch, json } from "../fixture/tui-client"
 import { TestTuiContexts } from "../fixture/tui-environment"
+import { TestLanguages } from "../fixture/languages"
 
 test("language picker saves, switches live, supports English search, and recovers from save failure", async () => {
   let stored: Info = { theme: { name: "dusk" }, mouse: false }
@@ -61,15 +62,17 @@ test("language picker saves, switches live, supports English search, and recover
                   },
                 }}
               >
-                <Keymap.Provider>
-                  <ThemeProvider source={emptyThemeSource}>
-                    <ToastProvider>
-                      <DialogProvider>
-                        <Fixture />
-                      </DialogProvider>
-                    </ToastProvider>
-                  </ThemeProvider>
-                </Keymap.Provider>
+                <TestLanguages>
+                  <Keymap.Provider>
+                    <ThemeProvider source={emptyThemeSource}>
+                      <ToastProvider>
+                        <DialogProvider>
+                          <Fixture />
+                        </DialogProvider>
+                      </ToastProvider>
+                    </ThemeProvider>
+                  </Keymap.Provider>
+                </TestLanguages>
               </ConfigProvider>
             </LocationProvider>
           </DataProvider>

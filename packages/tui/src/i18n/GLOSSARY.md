@@ -52,10 +52,11 @@ fork/revert distinctions, generic item labels, keycaps, companion terminology an
 command preservation. Stylistic suggestions that conflated distinct features
 were not used.
 
-`aliases.ts` records semantic reuse where TUI English differs from desktop
-English. English remains the TUI's original string; other locales use the
-referenced upstream tuple. The alias targets and runtime translations are tested.
-New aliases require checking meaning, not only lexical similarity.
+`manifest.json` records upstream provenance, including semantic reuse where TUI
+English differs from desktop English. Per-language plugin catalogs preserve the
+reviewed translations. New semantic mappings require checking meaning, not only
+lexical similarity. Public translation keys are stable IDs, independent of English
+copy and distinct from the manifest's internal legacy metadata aliases.
 
 The catalog-coverage test catches missing literal `t()` entries; it does not
 establish that every UI string is wired for localization. Remaining untranslated

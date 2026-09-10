@@ -1,106 +1,158 @@
-# TUI translation catalog
+# TUI language plugins
 
-`catalog.ts` contains 77 exact upstream translation reuses. The source is
-`upstream/beta` at commit
-`20aff6d9f643afe9abf8a048e68f019d049f5329`:
+Interface languages are ordinary TUI plugins. The host provides English defaults,
+lookup, interpolation and a per-TUI reactive registry. Bundled Chinese, Spanish,
+Korean and French live under `src/feature-plugins/languages/` and register through
+the same `context.i18n` API as external plugins.
 
-- `packages/app/src/runtime/i18n/en.ts`
-- `packages/app/src/runtime/i18n/zh.ts` (Simplified Chinese; the actual filename)
-- `packages/app/src/runtime/i18n/es.ts`
-- `packages/app/src/runtime/i18n/ko.ts`
-- `packages/app/src/runtime/i18n/fr.ts`
+## Add a language
 
-Catalog keys are English UI source text. Tuple order is `zh-CN`, `es`, `ko`,
-`fr`. Every reused interpolation token is preserved in all four values. The
-catalog contains only static author-owned UI strings; dynamic model, provider,
-path, status, tool, and user content is not translated automatically.
+Create `.redsun/plugins/language-de/tui.ts` and a dictionary beside it:
 
-## Runtime and authoring
+```ts
+import { Plugin } from "@opencode/plugin/tui"
+import messages from "./messages.json"
 
-`ConfigProvider` supplies a reactive `LanguageContext` from `cli.json`'s `language`
-preference. `useLanguage().t()` reads it at render time. Components used without a
-provider default to English. The picker at `/language` saves through the ordinary
-CLI config service; it does not change backend config or assistant instructions.
+export default Plugin.define({
+  id: "community.language.de",
+  setup(context) {
+    context.i18n.register({
+      locale: "de",
+      name: "German",
+      nativeName: "Deutsch",
+      catalogs: { tui: messages },
+    })
+  },
+})
+```
 
-Translate labels in JSX, memoized options, or command-layer accessors so changes
-apply to mounted views. Keep canonical IDs and native language names unchanged.
-Use complete singular/plural messages instead of appending an English `s`.
-`catalog.ts` takes precedence for shared upstream wording; TUI-specific meanings
-need distinct English source text instead of an ambiguous duplicate key.
-`aliases.ts` adds seven reviewed semantic aliases to upstream messages, including
-Thinking → Reasoning and Undo previous message → Undo the last message. See
-`GLOSSARY.md` for domain terminology and distinctions that must survive reuse.
+`messages.json` can start with a partial translation:
 
-Tests from `packages/tui`:
+```json
+{
+  "settings.language.title": "Sprache der Benutzeroberfläche",
+  "session.usage.cache": "Cache {{percent}} %",
+  "session.subagents.view": {
+    "plural": "count",
+    "forms": {
+      "one": "{{count}} Unteragent anzeigen",
+      "other": "{{count}} Unteragenten anzeigen"
+    }
+  }
+}
+```
+
+The language appears in `/language`. Local helper imports reload through the
+existing plugin source watcher. For a published package, export `./tui` and add
+its package name to `cli.json`'s `plugins` array using normal TUI plugin packaging.
+The language API is a redsun extension; a host must expose `context.i18n`.
+
+```json
+{
+  "plugins": ["redsun-language-de"],
+  "language": "de"
+}
+```
+
+That package name is illustrative. Put a local pack in the global config's
+`plugins/<name>/tui.ts` directory for availability across projects. Project-local
+packs follow the existing project discovery scope.
+
+## API and lifecycle
+
+Types are exported from `@opencode/plugin/tui/i18n`:
+
+- `register({locale, name?, nativeName?, fallback?, catalogs})` returns an
+  idempotent disposer. Contributions also dispose with their plugin activation.
+- `locale()` reads the requested locale, reactively.
+- `languages()` reads canonical locale IDs, English/native names, availability
+  and contributing plugin IDs. The unavailable requested locale remains listed.
+- `t("tui:settings.language.title", values?)` translates a fully qualified key.
+- `diagnostics()` exposes invalid and unmatched entries with plugin, locale and
+  key. `/plugins` also displays these in each TUI plugin's row details.
+
+Supply `name` and `nativeName` together to introduce a language. Omit them when
+contributing another dictionary for an already-described locale. Catalog-only
+contributions stay dormant until a descriptor exists. Metadata and individual
+message overrides use the existing resolved plugin order, then registration order
+within a plugin; the last valid entry wins. Reloading a plugin preserves its place.
+Removing an overlay restores the previous entry. Malformed/empty entries are
+skipped with diagnostics, while malformed registration structures fail setup.
+
+Setup stages contributions; they publish after the serialized lifecycle operation
+settles. Failed reloads use the existing last-good restoration path. The published
+language snapshot stays available during the swap. Old activation callbacks and
+disposers cannot register into a replacement generation.
+
+`cli.json` accepts well-formed locale tags, independent of installation. Missing or
+disabled selected packs render English and retain the requested preference.
+Reactivation restores the language. Explicit fallback chains may connect regional
+variants, e.g. `pt-BR` with `fallback: "pt"`; no sibling/script guessing is done.
+Cycles terminate at English. English host defaults are always available and cannot
+be overridden or disabled. Other UI plugins register their own namespace's English
+defaults through `register({locale: "en", catalogs: {"my.plugin": defaults}})`.
+Language packs may translate any named UI namespace. Unknown source keys are
+nonfatal diagnostics and are revalidated when their source namespace arrives.
+
+## Message contract
+
+`manifest.json` is the version-1 source contract: stable message IDs, English
+defaults, context and upstream provenance. IDs remain unchanged for compatible
+copy edits. A different meaning or incompatible parameters require a new ID.
+Record deprecation mappings before removing published IDs.
+
+Messages are strings or `{plural, forms}`. Parameters use `{{name}}`. Inserted
+values are string/number data and are interpolated once, never translated. Plural
+selectors require finite numeric values. `Intl.PluralRules` uses the locale of the
+chosen translation; a fallback message uses its own locale's rules. `other` is
+required, and `zero`, `one`, `two`, `few`, and `many` are optional. Missing forms
+use `other`. Unsupported plural locales or malformed count inputs fall back to
+English; an absent count remains visible as a placeholder. Plural forms may omit
+the count placeholder for natural wording such as "No items". Other required
+parameters must be preserved. Full ICU syntax and terminal bidirectional layout
+are not implied by accepting a locale tag.
+
+External UI components call `context.i18n.t()` in JSX/accessors so switching stays
+live. Internal TUI components use `useLanguage().t()` with IDs scoped to `tui`.
+The source manifest retains legacy English lookup aliases only for internal
+authored command/settings metadata; external catalogs key by stable ID. Formatting
+helpers receive a translator; their standalone default is English. Generic dialog
+props, model messages, user content, credentials and tool output stay verbatim.
+
+## Author tools
+
+From `packages/tui`:
 
 ```sh
-bun test test/i18n.test.ts test/language-lifecycle.test.tsx test/component/dialog-language.test.tsx test/component/dialog-localization.test.tsx
+bun run i18n:manifest
+bun run i18n:template > messages.json
+bun run i18n:check de messages.json
 ```
 
-`bun test test/config.test.ts` from `packages/cli` covers disk persistence. Literal
-translation calls are checked for catalog coverage, and every locale must preserve
-the source message's interpolation parameters.
+The template contains English defaults to translate or remove. Validation reports
+translated/total counts, missing IDs, invalid messages and unmatched newer keys.
+Partial catalogs and unmatched keys are accepted; invalid messages produce a
+nonzero exit status. Shape/parameter validation does not assess translation quality.
 
-## Machine-checkable source manifest
+## Upstream reuse and maintenance
 
-Each upstream key below maps to the English value used as the catalog key. The
-manifest is compact because it groups unambiguous upstream namespaces:
+Provenance records preserve 77 exact upstream translation reuses and seven semantic
+adaptations from commit `20aff6d9f643afe9abf8a048e68f019d049f5329`, using
+`packages/app/src/runtime/i18n/{en,zh,es,ko,fr}.ts`. Chinese upstream is `zh.ts`.
+`upstream.match` distinguishes exact and semantic reuse. The migration preserved
+all 2,336 prior translated values, including the eight singular/plural pairs.
+Review shared meanings before reusing entries; see `GLOSSARY.md` for terminology.
 
-```text
-command.category.{server,session,theme,context,terminal,model,mcp,agent,permissions,settings,suggested}
-command.settings.open
-command.session.{previous,next,new,compact,redo,undo.description,export}
-command.agent.{cycle,cycle.reverse}
-command.palette
-command.theme.{cycle,set}
-command.file.open
-command.input.focus
-command.steps.toggle
-command.message.{previous,next}
-command.model.choose
-command.prompt.mode.shell
-dialog.model.select.title
-common.{search.placeholder,cancel,open,submit,goBack,default}
-palette.{empty,group.commands}
-dialog.{provider.search.placeholder,model.search.placeholder,directory.search.placeholder}
-home.sessions.{search.placeholder,search.sessions}
-session.{header.searchFiles,new.workspace.triggerLocal,header.open.copyPath,header.open.app.zed,tab.review}
-sidebar.help
-settings.{providers.title,general.section.appearance,general.row.showFileTree.title}
-model.tag.free
-model.tooltip.reasoning
-context.stats.{totalTokens,inputTokens,outputTokens,reasoningTokens,cacheTokens}
-context.usage.tokens
-theme.scheme.{dark,light,system}
-language.en
-status.popover.trigger
-titlebar.update
-error.page.action.restart
-toast.update.title
-notification.permission.title
-mcp.status.failed
-prompt.example.{1,2,3}
-provider.connect.{method.apiKey,oauth.code.placeholder}
+Builtin language catalogs must cover the source manifest completely. Community
+catalogs may be partial. Update the manifest, relevant locale files and provenance
+together; never regenerate IDs from edited English text.
+
+```sh
+bun test test/i18n.test.ts test/i18n-registry.test.ts test/i18n-terminology.test.ts
+bun test test/language-plugin-lifecycle.test.tsx test/language-lifecycle.test.tsx
+bun test test/component/dialog-language.test.tsx test/component/dialog-backdrop.test.tsx
 ```
 
-The manifest is checked against all current TUI dictionaries (`ui.ts`,
-`session.ts`, `settings.ts`, and `application.ts`) by matching their English
-keys to upstream `en.ts`, then requiring the same upstream key to exist in
-`zh.ts`, `es.ts`, `ko.ts`, and `fr.ts`. Current audit result: 77 exact reuses,
-zero case adaptations, and zero authored entries in `catalog.ts`.
-
-## Deliberate exclusions
-
-`Parent` and `Next` are excluded because upstream has multiple meanings for
-each (directory navigation versus generic flow). `New worktree` is excluded
-because upstream's translation says workspace/tree inconsistently with the
-TUI's product term. `Notifications` and `No items available` are also not in
-the catalog: upstream does not provide all four locale values for those exact
-English sources. The owning manual dictionary should retain or author them.
-
-Matching manual duplicates are removed in favor of the audited upstream values.
-Do not expand this file with desktop-only entries merely because they exist upstream.
-
-When updating upstream, change the pinned SHA and all five source paths here,
-rerun the four-locale and placeholder audit, and update the manifest with any
-new exact reuse.
+The lifecycle tests load an actual local plugin through discovery, including
+helper-file hot reload, failed setup restoration, unregister and stale callbacks.
+CLI `test/config.test.ts` covers persisted `cli.json` preferences.

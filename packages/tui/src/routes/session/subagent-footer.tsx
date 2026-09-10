@@ -32,7 +32,7 @@ export function SubagentFooter() {
 
   const position = createMemo(() => {
     const current = session()
-    if (!current) return { label: language.t("Subagent"), index: 0, total: 0 }
+    if (!current) return { label: language.t("session.subagent"), index: 0, total: 0 }
     const label = Locale.titlecase(AGENT_PATTERN.exec(current.title ?? "")?.[1] ?? "subagent")
     if (!current.parentID) return { label, index: 0, total: 0 }
     const siblings = data.session

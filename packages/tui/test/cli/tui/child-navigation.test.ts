@@ -7,7 +7,7 @@ import {
   nextInActiveList,
 } from "../../../src/routes/session/child-navigation"
 import { alignDetails, subagentLabel } from "../../../src/routes/session/subagent-list"
-import { translate } from "../../../src/i18n/translate"
+import { translate } from "../../fixture/languages"
 import { stringWidth } from "../../../src/util/string-width"
 
 const parent = { id: "ses_a", parentID: undefined }

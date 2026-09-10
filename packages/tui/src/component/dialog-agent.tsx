@@ -21,7 +21,7 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title={t("Select agent")}
+      title={t("ui.selectAgent")}
       current={local.agent.current()?.id}
       options={options()}
       onSelect={(option) => {

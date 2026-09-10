@@ -1,14 +1,22 @@
 import { useContext } from "solid-js"
-import { LanguageContext } from "./context"
-import { translate, type Values } from "./translate"
+import { LanguageContext, useLanguageSnapshot } from "./context"
+import { sourceKey, sourceIDs, source } from "./source"
+import { interpolate } from "./registry"
+import type { Values } from "./translate"
 
-export { languages, locales, type Locale } from "./locale"
+export { type Locale } from "./locale"
 export { translate } from "./translate"
 
 export function useLanguage() {
   const locale = useContext(LanguageContext)
+  const snapshot = useLanguageSnapshot()
   return {
     locale,
-    t: (message: string, values?: Values): string => translate(locale(), message, values),
+    languages: () => snapshot().languages(locale()),
+    diagnostics: () => snapshot().diagnostics,
+    t: (message: string, values?: Values): string =>
+      !message.includes(":") && !Object.hasOwn(source, message) && !sourceIDs.has(message)
+        ? interpolate(message, values)
+        : snapshot().t(locale(), sourceKey(message), values),
   }
 }

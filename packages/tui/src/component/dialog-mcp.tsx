@@ -22,18 +22,18 @@ function statusError(status: McpServer["status"]) {
 function Status(props: { status: McpServer["status"]; loading: boolean }) {
   const { t } = useLanguage()
   if (props.loading || props.status.status === "pending") {
-    return <>{t("Connecting …")}</>
+    return <>{t("ui.connecting")}</>
   }
   if (props.status.status === "connected") {
-    return <span style={{ attributes: TextAttributes.BOLD }}>{t("Connected ✓")}</span>
+    return <span style={{ attributes: TextAttributes.BOLD }}>{t("ui.connected2")}</span>
   }
   if (props.status.status === "failed") {
-    return <>{t("Failed !")}</>
+    return <>{t("ui.failed")}</>
   }
   if (props.status.status === "needs_auth") {
-    return <>{t("Sign in required →")}</>
+    return <>{t("ui.signInRequired")}</>
   }
-  return <>{t("Disabled ○")}</>
+  return <>{t("ui.disabled")}</>
 }
 
 export function DialogMcp(props: { initialServer?: string; details?: boolean } = {}) {
@@ -133,7 +133,7 @@ export function DialogMcp(props: { initialServer?: string; details?: boolean } =
         when={detail()}
         fallback={
           <DialogSelect
-            title={t("MCP servers")}
+            title={t("ui.mcpServers")}
             options={options()}
             preserveSelection
             onMove={(option) => setFocused(option.value as string)}
@@ -150,7 +150,7 @@ export function DialogMcp(props: { initialServer?: string; details?: boolean } =
             ]}
             footer={
               <Show when={focusedError()}>
-                <text fg={theme.text.subdued}>{t("enter to view error")}</text>
+                <text fg={theme.text.subdued}>{t("ui.enterToViewError")}</text>
               </Show>
             }
           />

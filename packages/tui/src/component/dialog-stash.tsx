@@ -59,7 +59,7 @@ export function DialogStash(props: { onSelect: (entry: StashEntry) => void }) {
 
   return (
     <DialogSelect
-      title={t("Stash")}
+      title={t("ui.stash")}
       options={options()}
       onMove={() => {
         setToDelete(undefined)

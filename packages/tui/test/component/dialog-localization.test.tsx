@@ -10,6 +10,7 @@ import { DialogSelect } from "../../src/ui/dialog-select"
 import { ToastProvider } from "../../src/ui/toast"
 import { emptyThemeSource } from "../fixture/fixture"
 import { TestTuiContexts } from "../fixture/tui-environment"
+import { TestLanguages } from "../fixture/languages"
 
 test.each([
   ["zh-CN", "搜索", "未找到结果"],
@@ -37,15 +38,17 @@ test.each([
       () => (
         <TestTuiContexts>
           <ConfigProvider config={resolve({ language }, { terminalSuspend: true })}>
-            <Keymap.Provider>
-              <ThemeProvider source={emptyThemeSource}>
-                <ToastProvider>
-                  <DialogProvider>
-                    <Fixture />
-                  </DialogProvider>
-                </ToastProvider>
-              </ThemeProvider>
-            </Keymap.Provider>
+            <TestLanguages>
+              <Keymap.Provider>
+                <ThemeProvider source={emptyThemeSource}>
+                  <ToastProvider>
+                    <DialogProvider>
+                      <Fixture />
+                    </DialogProvider>
+                  </ToastProvider>
+                </ThemeProvider>
+              </Keymap.Provider>
+            </TestLanguages>
           </ConfigProvider>
         </TestTuiContexts>
       ),

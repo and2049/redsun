@@ -81,14 +81,14 @@ export function DialogThemeList() {
 
   return (
     <DialogSelect
-      title={t("Themes")}
+      title={t("ui.themes")}
       titleView={
         <box flexDirection="row" gap={2}>
           <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
-            {t("Themes")}
+            {t("ui.themes")}
           </text>
-          <Tab label={t("Dark")} mode="dark" />
-          <Tab label={t("Light")} mode="light" />
+          <Tab label={t("theme.scheme.dark")} mode="dark" />
+          <Tab label={t("theme.scheme.light")} mode="light" />
         </box>
       }
       options={options()}
@@ -132,7 +132,7 @@ export function DialogThemeList() {
           run: () => switchTab(tab() === "dark" ? "light" : "dark"),
         },
       ]}
-      footerHints={[{ title: tab() === "dark" ? t("light themes") : t("dark themes"), label: "tab" }]}
+      footerHints={[{ title: tab() === "dark" ? t("ui.lightThemes") : t("ui.darkThemes"), label: "tab" }]}
     />
   )
 }

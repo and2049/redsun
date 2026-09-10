@@ -28,12 +28,12 @@ export function WorkspaceStatus() {
           when={permission.mode === "auto"}
           fallback={
             <span style={{ fg: theme.text.subdued }}>
-              {compact() ? language.t("Auto-approve: off") : language.t("Auto-approve all disabled (Shift+Tab)")}
+              {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
             </span>
           }
         >
           <span style={{ fg: theme.text.feedback.success.default }}>
-            {compact() ? language.t("Auto-approve: on") : `⏵⏵ ${language.t("Auto-approve all enabled ")}`}
+            {compact() ? language.t("permission.autoApprove.on") : `⏵⏵ ${language.t("permission.autoApprove.enabled")}`}
           </span>
           <Show when={!compact()}>
             <span style={{ fg: theme.text.subdued }}>(Shift+Tab)</span>

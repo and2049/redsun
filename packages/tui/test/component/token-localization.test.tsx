@@ -11,6 +11,7 @@ import type { Locale } from "../../src/i18n/locale"
 import { TurnTokenUsage } from "../../src/routes/session"
 import { emptyThemeSource } from "../fixture/fixture"
 import { TestTuiContexts } from "../fixture/tui-environment"
+import { TestLanguages } from "../fixture/languages"
 
 test("token diagnostics switch language live and align translated CJK headers with numeric columns", async () => {
   const [language, setLanguage] = createSignal<Locale>("en")
@@ -32,7 +33,9 @@ test("token diagnostics switch language live and align translated CJK headers wi
           <Keymap.Provider>
             <ThemeProvider source={emptyThemeSource}>
               <LanguageContext.Provider value={language}>
-                <TurnTokenUsage messageIDs={[message.id]} message={() => message} />
+                <TestLanguages>
+                  <TurnTokenUsage messageIDs={[message.id]} message={() => message} />
+                </TestLanguages>
               </LanguageContext.Provider>
             </ThemeProvider>
           </Keymap.Provider>

@@ -24,18 +24,18 @@ export function DialogMessage(props: {
 
   return (
     <DialogSelect
-      title={t("Message Actions")}
+      title={t("session.messageActions")}
       options={[
         {
-          title: t("Jump to"),
+          title: t("session.jumpTo"),
           value: "message.jump",
-          description: t("view message in session"),
+          description: t("session.viewMessageInSession"),
           onSelect: (dialog) => dialog.clear(),
         },
         {
-          title: t("Revert"),
+          title: t("session.revert"),
           value: "session.revert",
-          description: t("undo messages and file changes"),
+          description: t("session.undoMessagesAndFileChanges"),
           onSelect: (dialog) => {
             const value = message()
             if (value?.type === "user") {
@@ -51,9 +51,9 @@ export function DialogMessage(props: {
           },
         },
         {
-          title: t("Copy"),
+          title: t("session.copy"),
           value: "message.copy",
-          description: t("message text to clipboard"),
+          description: t("session.messageTextToClipboard"),
           onSelect: async (dialog) => {
             const value = message()
             if (!value) return
@@ -77,9 +77,9 @@ export function DialogMessage(props: {
           },
         },
         {
-          title: t("Fork"),
+          title: t("session.fork"),
           value: "session.fork",
-          description: t("create a new session"),
+          description: t("session.createANewSession"),
           onSelect: (dialog) => {
             const value = message()
             if (!value || value.type !== "user") return

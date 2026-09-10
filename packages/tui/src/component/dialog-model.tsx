@@ -66,7 +66,7 @@ export function DialogModel(props: {
             releaseDate: model.time.released,
             description: provider?.name ?? model.providerID,
             category,
-            footer: free(model) ? t("Free") : undefined,
+            footer: free(model) ? t("model.tag.free") : undefined,
             onSelect: () => {
               onSelect(model.providerID, model.id)
             },
@@ -75,12 +75,12 @@ export function DialogModel(props: {
       })
     }
 
-    const favoriteOptions = toOptions(favorites, t("Favorites"))
+    const favoriteOptions = toOptions(favorites, t("ui.favorites"))
     const recentOptions = toOptions(
       recents.filter(
         (item) => !favorites.some((fav) => fav.providerID === item.providerID && fav.modelID === item.modelID),
       ),
-      t("Recent"),
+      t("ui.recent"),
     )
 
     const modelOptions = sortModelOptions(
@@ -97,9 +97,9 @@ export function DialogModel(props: {
             providerName: provider?.name ?? model.providerID,
             title: model.name,
             releaseDate: model.time.released,
-            description: favorite ? `(${t("Favorite")})` : undefined,
+            description: favorite ? `(${t("ui.favorite")})` : undefined,
             category: connected() ? (provider?.name ?? model.providerID) : undefined,
-            footer: free(model) ? t("Free") : undefined,
+            footer: free(model) ? t("model.tag.free") : undefined,
             onSelect() {
               onSelect(model.providerID, model.id)
             },
@@ -142,11 +142,13 @@ export function DialogModel(props: {
         {
           value: { providerID },
           title: providerRowTitle(items[0]?.providerName ?? providerID, open),
-          description: t(items.length === 1 ? "{{count}} model" : "{{count}} models", { count: items.length }),
-          category: t("Providers"),
+          description: t("models.count", { count: items.length }),
+          category: t("settings.providers.title"),
           onSelect: () => toggleProvider(providerID),
         },
-        ...(open ? items.map((option) => ({ ...option, category: t("Providers"), title: `  ${option.title}` })) : []),
+        ...(open
+          ? items.map((option) => ({ ...option, category: t("settings.providers.title"), title: `  ${option.title}` }))
+          : []),
       ]
     }).flat()
 
@@ -158,7 +160,7 @@ export function DialogModel(props: {
   const title = createMemo(() => {
     if (props.title) return props.title
     const value = provider()
-    if (!value) return t("Select model")
+    if (!value) return t("dialog.model.select.title")
     return value.name
   })
 
@@ -188,7 +190,7 @@ export function DialogModel(props: {
       actions={[
         {
           command: "model.dialog.provider",
-          title: connected() ? t("Connect an integration") : t("View all integrations"),
+          title: connected() ? t("ui.connectAnIntegration") : t("ui.viewAllIntegrations"),
           selection: "none",
           onTrigger() {
             dialog.replace(() => (
@@ -200,7 +202,7 @@ export function DialogModel(props: {
         },
         {
           command: "model.dialog.favorite",
-          title: t("Favorite"),
+          title: t("ui.favorite"),
           hidden: !connected(),
           disabled: (option) => !option || !(option.value as { modelID?: string }).modelID,
           onTrigger: (option) => {

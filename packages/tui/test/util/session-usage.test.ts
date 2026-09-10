@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client/promise"
 import { fitSessionUsage, sessionUsage } from "../../src/util/session-usage"
+import { translate } from "../fixture/languages"
 
 const model = { providerID: "anthropic", id: "claude" }
 
@@ -68,7 +69,7 @@ test("localizes cache terminology and fits CJK labels by terminal cells", () => 
   const usage = sessionUsage({
     messages: [assistant({ input: 100, output: 10, read: 900 })],
     cost: 0,
-    language: "zh-CN",
+    t: (key, values) => translate("zh-CN", key, values),
   })
   expect(usage?.cache).toBe("缓存 90%")
   const compact = { context: "10K (10%)", percent: "10%", cache: "缓存 90%" }

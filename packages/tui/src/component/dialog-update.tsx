@@ -46,13 +46,13 @@ export function DialogUpdate(props: {
     if (type === "installing") return []
     const confirm =
       type === "available"
-        ? { label: t("Update"), run: props.install }
+        ? { label: t("titlebar.update"), run: props.install }
         : type === "installed"
-          ? { label: t("Restart"), run: props.restart }
+          ? { label: t("error.page.action.restart"), run: props.restart }
           : undefined
     return [
       {
-        label: t("Skip"),
+        label: t("ui.skip"),
         run: () => {
           props.skip()
           dialog.clear()
@@ -69,13 +69,13 @@ export function DialogUpdate(props: {
     commands: [
       {
         bind: "return",
-        title: t("Confirm update action"),
+        title: t("ui.confirmUpdateAction"),
         group: "Dialog",
         run: () => void buttons()[active()]?.run(),
       },
       ...["left", "right", "tab", "shift+tab"].map((bind) => ({
         bind,
-        title: bind === "left" || bind === "shift+tab" ? t("Previous update action") : t("Next update action"),
+        title: bind === "left" || bind === "shift+tab" ? t("ui.previousUpdateAction") : t("ui.nextUpdateAction"),
         group: "Dialog",
         run: () => {
           const count = buttons().length
@@ -90,8 +90,8 @@ export function DialogUpdate(props: {
       <box flexDirection="row" justifyContent="space-between">
         <text attributes={TextAttributes.BOLD} fg={theme.text.default}>
           {state().type === "available" || state().type === "installing" || state().type === "failed"
-            ? t("Update available")
-            : t("Update")}
+            ? t("toast.update.title")
+            : t("titlebar.update")}
         </text>
         <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
           esc
@@ -102,27 +102,23 @@ export function DialogUpdate(props: {
           {(current) => (
             <Switch>
               <Match when={current.type === "checking"}>
-                <Spinner shimmer={theme.text.default}>{t("Checking for updates…")}</Spinner>
+                <Spinner shimmer={theme.text.default}>{t("ui.checkingForUpdates")}</Spinner>
               </Match>
               <Match when={current.type === "available"}>
-                <text fg={theme.text.subdued}>
-                  {t("An update is available. After installing, you'll be prompted to restart redsun.")}
-                </text>
+                <text fg={theme.text.subdued}>{t("ui.anUpdateIsAvailableAfterInstallingYouLl")}</text>
               </Match>
               <Match when={current.type === "installing"}>
                 <Spinner shimmer={theme.text.default}>
-                  {current.type === "installing"
-                    ? t("Installing redsun {{version}}…", { version: current.version })
-                    : ""}
+                  {current.type === "installing" ? t("ui.installingRedsun", { version: current.version }) : ""}
                 </Spinner>
               </Match>
               <Match when={current.type === "installed"}>
                 <text fg={theme.text.subdued} wrapMode="word">
-                  {t("Update successful! A restart is required. Any active sessions will be resumed automatically.")}
+                  {t("ui.updateSuccessfulARestartIsRequiredAnyActive")}
                 </text>
               </Match>
               <Match when={current.type === "current"}>
-                <text fg={theme.text.subdued}>{t("redsun is already up to date.")}</text>
+                <text fg={theme.text.subdued}>{t("ui.redsunIsAlreadyUpToDate")}</text>
               </Match>
               <Match when={current.type === "unavailable"}>
                 <text fg={theme.text.subdued} wrapMode="word">

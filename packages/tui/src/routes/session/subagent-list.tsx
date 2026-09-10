@@ -42,7 +42,7 @@ export function SubagentHint(props: { count: number }) {
     <box flexShrink={0} paddingTop={1} paddingLeft={1}>
       <text fg={theme.text.subdued} wrapMode="none">
         <span style={{ fg: theme.text.default }}>{shortcuts.get("session.child.list.next") ?? "down"}</span>{" "}
-        {language.t(props.count === 1 ? "view {{count}} subagent" : "view {{count}} subagents", {
+        {language.t("session.subagents.view", {
           count: props.count,
         })}
       </text>
@@ -87,7 +87,7 @@ export function SubagentList(props: {
         elapsed: elapsed(now() - info.time.created),
         tokens: Locale.number(tokens(info.id)),
       })),
-      (elapsed, tokens) => language.t("{{elapsed}} · ↓ {{tokens}} tokens", { elapsed, tokens }),
+      (elapsed, tokens) => language.t("activity.tokens", { elapsed, tokens }),
     ),
   )
 
@@ -130,11 +130,11 @@ export function SubagentList(props: {
 
   return (
     <box flexShrink={0} paddingTop={1}>
-      <Row id={props.root.id} description={language.t("main")} />
+      <Row id={props.root.id} description={language.t("activity.main")} />
       <For each={visible()}>
         {(info, index) => {
           const label = createMemo(() =>
-            subagentLabel(info.title, language.locale() === "en" ? "subagent" : language.t("Subagent")),
+            subagentLabel(info.title, language.locale() === "en" ? "subagent" : language.t("session.subagent")),
           )
           return (
             <Row id={info.id} agent={label().agent} description={label().description} detail={details()[index()]} />
@@ -143,7 +143,7 @@ export function SubagentList(props: {
       </For>
       <Show when={hidden() > 0}>
         <text fg={theme.text.subdued} paddingLeft={3}>
-          {language.t("{{count}} more", { count: hidden() })}
+          {language.t("activity.more", { count: hidden() })}
         </text>
       </Show>
     </box>

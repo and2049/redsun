@@ -21,17 +21,17 @@ export function SessionLocationUnavailable(props: { directory: string; onMove: (
   return (
     <SessionQuestion
       id="session.location-missing"
-      group={language.t("Session recovery")}
-      choicesLabel={language.t("Recovery actions")}
+      group={language.t("session.sessionRecovery")}
+      choicesLabel={language.t("session.recoveryActions")}
       instance={props.directory}
-      title={language.t("Session location unavailable")}
+      title={language.t("session.sessionLocationUnavailable")}
       body={
         <box paddingLeft={1} gap={1}>
           <text fg={theme.text.subdued}>{directory()}</text>
-          <text fg={theme.text.default}>{language.t("Choose another directory to continue this session.")}</text>
+          <text fg={theme.text.default}>{language.t("session.chooseAnotherDirectoryToContinueThisSession")}</text>
         </box>
       }
-      options={{ move: language.t("Choose directory") }}
+      options={{ move: language.t("session.chooseDirectory") }}
       onSelect={props.onMove}
     />
   )

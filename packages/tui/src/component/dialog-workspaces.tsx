@@ -316,11 +316,11 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
   return (
     <box minHeight={showError() ? 5 : fullHeight()}>
       <DialogSelect
-        title={t("Worktrees")}
+        title={t("ui.worktrees")}
         titleView={
           <box flexDirection="row" gap={1}>
             <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
-              {t("Worktrees")}
+              {t("ui.worktrees")}
             </text>
             <Show when={working() || directories.loading || loadedProject.loading}>
               <Spinner />
@@ -334,24 +334,24 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
           showError() ? (
             <box paddingLeft={4} paddingRight={4}>
               <text fg={theme.text.feedback.error.default} attributes={TextAttributes.BOLD}>
-                {t("Could not load worktrees")}
+                {t("ui.couldNotLoadWorktrees")}
               </text>
               <text fg={theme.text.subdued}>{errorMessage(loadError())}</text>
-              <text fg={theme.text.subdued}>{t("Close and reopen Worktrees to try again.")}</text>
+              <text fg={theme.text.subdued}>{t("ui.closeAndReopenWorktreesToTryAgain")}</text>
             </box>
           ) : directories.loading || loadedProject.loading ? (
             <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>{t("Loading worktrees…")}</text>
+              <text fg={theme.text.subdued}>{t("ui.loadingWorktrees")}</text>
             </box>
           ) : (
             <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>{t("No worktrees available")}</text>
+              <text fg={theme.text.subdued}>{t("ui.noWorktreesAvailable")}</text>
             </box>
           )
         }
         noMatchView={
           <box paddingLeft={4} paddingRight={4}>
-            <text fg={theme.text.subdued}>{t("No worktrees found")}</text>
+            <text fg={theme.text.subdued}>{t("ui.noWorktreesFound")}</text>
           </box>
         }
         locked={showError() || directories.loading || loadedProject.loading || Boolean(removing())}
@@ -365,17 +365,17 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
             ? []
             : [
                 ...(route.data.type === "session"
-                  ? [{ command: "dialog.move_session.move", title: t("move"), onTrigger: move }]
+                  ? [{ command: "dialog.move_session.move", title: t("ui.move"), onTrigger: move }]
                   : []),
                 {
                   command: "dialog.move_session.new",
-                  title: t("new"),
+                  title: t("ui.new"),
                   selection: "none",
                   onTrigger: () => void create(),
                 },
                 {
                   command: "dialog.move_session.delete",
-                  title: t("delete"),
+                  title: t("session.delete"),
                   disabled: (option) => {
                     const value = option?.value
                     if (!value || value.type !== "directory" || value.subdirectory) return true
@@ -385,7 +385,7 @@ export function DialogWorkspaces(props: DialogWorkspacesProps) {
                 },
                 {
                   command: "dialog.move_session.refresh",
-                  title: t("refresh"),
+                  title: t("ui.refresh"),
                   selection: "none",
                   onTrigger: () => void refetch(),
                 },

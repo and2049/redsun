@@ -13,8 +13,8 @@ export function DialogHelp() {
   Keymap.createLayer(() => ({
     mode: "modal",
     commands: [
-      { bind: "return", title: t("Close help"), group: "Dialog", run: () => dialog.clear() },
-      { bind: "escape", title: t("Close help"), group: "Dialog", run: () => dialog.clear() },
+      { bind: "return", title: t("ui.closeHelp"), group: "Dialog", run: () => dialog.clear() },
+      { bind: "escape", title: t("ui.closeHelp"), group: "Dialog", run: () => dialog.clear() },
     ],
   }))
 
@@ -22,7 +22,7 @@ export function DialogHelp() {
     <box paddingLeft={2} paddingRight={2} gap={1}>
       <box flexDirection="row" justifyContent="space-between">
         <text attributes={TextAttributes.BOLD} fg={theme.text.default}>
-          {t("Help")}
+          {t("sidebar.help")}
         </text>
         <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
           esc/enter
@@ -30,7 +30,7 @@ export function DialogHelp() {
       </box>
       <box paddingBottom={1}>
         <text fg={theme.text.subdued}>
-          {t("Press {{key}} to see all available actions and commands in any context.", {
+          {t("ui.pressToSeeAllAvailableActionsAndCommands", {
             key: shortcuts.get("command.palette.show") ?? "",
           })}
         </text>
@@ -42,7 +42,7 @@ export function DialogHelp() {
           backgroundColor={theme.background.action.primary.focused}
           onMouseUp={() => dialog.clear()}
         >
-          <text fg={theme.text.action.primary.focused}>{t("ok")}</text>
+          <text fg={theme.text.action.primary.focused}>{t("ui.ok")}</text>
         </box>
       </box>
     </box>

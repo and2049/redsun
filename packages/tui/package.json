@@ -7,6 +7,9 @@
   "license": "MIT",
   "scripts": {
     "test": "bun test --timeout 30000 --only-failures",
+    "i18n:manifest": "bun tools/i18n.ts manifest",
+    "i18n:template": "bun tools/i18n.ts template",
+    "i18n:check": "bun tools/i18n.ts check",
     "theme-preview": "bun tools/theme-preview/serve.ts",
     "typecheck": "tsgo -b"
   },

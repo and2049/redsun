@@ -467,8 +467,8 @@ function App(props: { pair?: DialogPairCredentials }) {
   const refreshModels = () =>
     client.api.model
       .refresh()
-      .then(() => toast.show({ variant: "success", message: t("Model catalog refreshed") }))
-      .catch(() => toast.show({ variant: "error", message: t("Failed to refresh model catalog") }))
+      .then(() => toast.show({ variant: "success", message: t("ui.modelCatalogRefreshed") }))
+      .catch(() => toast.show({ variant: "error", message: t("ui.failedToRefreshModelCatalog") }))
   const updater = useUpdateNotification()
   const theme = useTheme()
   const tabsTheme = useTheme("elevated")
@@ -510,16 +510,16 @@ function App(props: { pair?: DialogPairCredentials }) {
       if (status.status === "needs_auth")
         toast.show({
           variant: "warning",
-          title: t("MCP server needs authentication"),
-          message: t('Connect "{{name}}" to use its tools.', { name: server.name }),
-          action: { label: t("Open MCP servers"), run: () => keymap.dispatch("mcp.list") },
+          title: t("ui.mcpServerNeedsAuthentication"),
+          message: t("ui.connectToUseItsTools", { name: server.name }),
+          action: { label: t("ui.openMcpServers"), run: () => keymap.dispatch("mcp.list") },
         })
       else
         toast.show({
           variant: "error",
-          title: t("MCP server failed: {{name}}", { name: server.name }),
-          message: t("Run /mcps to view details."),
-          action: { label: t("Open MCP servers"), run: () => keymap.dispatch("mcp.list") },
+          title: t("application.mcpServerFailed", { name: server.name }),
+          message: t("ui.runMcpsToViewDetails"),
+          action: { label: t("ui.openMcpServers"), run: () => keymap.dispatch("mcp.list") },
         })
     }
   })
@@ -545,7 +545,7 @@ function App(props: { pair?: DialogPairCredentials }) {
 
     await clipboard
       .write(text)
-      .then(() => toast.show({ message: t("Copied to clipboard"), variant: "info" }))
+      .then(() => toast.show({ message: t("ui.copiedToClipboard"), variant: "info" }))
       .catch(toast.error)
 
     renderer.clearSelection()
@@ -713,7 +713,7 @@ function App(props: { pair?: DialogPairCredentials }) {
       },
       ...Array.from({ length: 9 }, (_, i) => ({
         name: `session.quick_switch.${i + 1}`,
-        title: t("Switch to session in quick slot {{slot}}", { slot: i + 1 }),
+        title: t("application.switchToSessionInQuickSlot", { slot: i + 1 }),
         category: "Session",
         palette: undefined,
         run: () => local.session.quickSwitch(i + 1),
@@ -734,7 +734,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         name: "model.refresh",
         title: "Refresh model catalog",
         category: "Agent",
-        description: t("Re-fetch the models.dev catalog and repopulate the model list"),
+        description: t("ui.reFetchTheModelsDevCatalogAndRepopulate"),
         run: refreshModels,
       },
       {
@@ -762,7 +762,9 @@ function App(props: { pair?: DialogPairCredentials }) {
           toast.show({
             variant: "info",
             message: t(
-              local.model.worker.current() ? "This worker model has no variants" : "Select a worker model first",
+              local.model.worker.current()
+                ? "application.thisWorkerModelHasNoVariants"
+                : "application.selectAWorkerModelFirst",
             ),
             duration: 3000,
           })
@@ -848,8 +850,8 @@ function App(props: { pair?: DialogPairCredentials }) {
         run: () => {
           if (local.model.variant.list().length === 0) {
             return toast.show({
-              title: t("No variants available"),
-              message: t("The current model does not support any variants."),
+              title: t("application.noVariantsAvailable"),
+              message: t("application.theCurrentModelDoesNotSupportAnyVariants"),
               variant: "info",
             })
           }

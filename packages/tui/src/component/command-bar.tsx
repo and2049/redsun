@@ -17,7 +17,7 @@ import { useLanguage } from "../i18n"
 const MAX_SUGGESTIONS = 10
 
 export function CommandBar() {
-  const { locale } = useLanguage()
+  const { t } = useLanguage()
   const vim = useVim()
   const theme = useTheme()
   const keymap = Keymap.use()
@@ -46,7 +46,7 @@ export function CommandBar() {
     if (!id) return undefined
     const models = data.location.model.list(location.current)
     return sessionUsage({
-      language: locale(),
+      t,
       messages: data.session.message.list(id) ?? [],
       contextLimit: (model) =>
         models?.find((item) => item.providerID === model.providerID && item.id === model.id)?.limit.context,

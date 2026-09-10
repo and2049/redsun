@@ -43,7 +43,7 @@ export function CommandPaletteDialog() {
       title: t(setting.title),
       category: t(setting.category),
       searchText: [setting.title, setting.category, ...(setting.keywords ?? [])].join(" "),
-      searchFooter: `${t("Settings")} · ${t(setting.category)}`,
+      searchFooter: `${t("command.category.settings")} · ${t(setting.category)}`,
       value: `setting:${settingID(setting)}`,
       onSelect: (dialog: DialogContext) => {
         dialog.replace(() => <DialogConfig current={settingID(setting)} />)
@@ -60,7 +60,7 @@ export function CommandPaletteDialog() {
         .map((option) => ({
           ...option,
           value: `suggested:${option.value}`,
-          category: t("Suggested"),
+          category: t("command.category.suggested"),
         })),
       ...options(),
     ]
@@ -69,7 +69,7 @@ export function CommandPaletteDialog() {
   return (
     <DialogSelect
       ref={(value) => (ref = value)}
-      title={t("Commands")}
+      title={t("palette.group.commands")}
       options={list()}
       flat={true}
       filterThreshold={0.7}

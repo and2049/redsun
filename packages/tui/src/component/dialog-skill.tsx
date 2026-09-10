@@ -57,7 +57,7 @@ export function DialogSkill(props: DialogSkillProps) {
 
   return (
     <DialogSelect
-      title={t("Skills")}
+      title={t("ui.skills")}
       options={options()}
       renderFilter={!showError() && !skills.loading}
       locked={showError() || skills.loading}
@@ -65,7 +65,7 @@ export function DialogSkill(props: DialogSkillProps) {
         <Switch
           fallback={
             <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>{t("No skills available")}</text>
+              <text fg={theme.text.subdued}>{t("ui.noSkillsAvailable")}</text>
             </box>
           }
         >
@@ -75,19 +75,19 @@ export function DialogSkill(props: DialogSkillProps) {
                 Could not load skills
               </text>
               <text fg={theme.text.subdued}>{errorMessage(loadError())}</text>
-              <text fg={theme.text.subdued}>{t("Close and reopen Skills to try again.")}</text>
+              <text fg={theme.text.subdued}>{t("ui.closeAndReopenSkillsToTryAgain")}</text>
             </box>
           </Match>
           <Match when={skills.loading}>
             <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>{t("Loading skills…")}</text>
+              <text fg={theme.text.subdued}>{t("ui.loadingSkills")}</text>
             </box>
           </Match>
         </Switch>
       }
       noMatchView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>{t("No skills found")}</text>
+          <text fg={theme.text.subdued}>{t("ui.noSkillsFound")}</text>
         </box>
       }
     />

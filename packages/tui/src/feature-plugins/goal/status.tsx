@@ -36,8 +36,8 @@ export function GoalStatus(props: { context: Plugin.Context; sessionID: string }
       {(value) => (
         <box paddingBottom={1} flexShrink={0}>
           <text fg={theme.text.feedback.warning.default} wrapMode="word">
-            {language.t("◎ {{goal}}: {{condition}}", { goal: language.t("Goal"), condition: value().condition })}
-            {value().budget ? ` · ${formatGoalBudget(value().budget!, language.locale())}` : ""}
+            {language.t("activity.label", { goal: language.t("session.goal"), condition: value().condition })}
+            {value().budget ? ` · ${formatGoalBudget(value().budget!, language.t)}` : ""}
           </text>
         </box>
       )}

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
-import { translate } from "../src/i18n/translate"
-import { locales } from "../src/i18n/locale"
+import { translate, locales } from "./fixture/languages"
 
 test("AI token and reasoning labels follow upstream domain terminology", () => {
   expect(translate("zh-CN", "Tokens")).toBe("词元数")

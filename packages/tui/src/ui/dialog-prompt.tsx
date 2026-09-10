@@ -44,7 +44,7 @@ export function DialogPrompt(props: DialogPromptProps) {
     commands: [
       {
         id: "dialog.prompt.submit",
-        title: t("Submit dialog prompt"),
+        title: t("ui.submitDialogPrompt"),
         group: "Dialog",
         run: confirm,
       },
@@ -58,7 +58,7 @@ export function DialogPrompt(props: DialogPromptProps) {
     commands: [
       {
         bind: "escape",
-        title: t("Back"),
+        title: t("application.back"),
         group: "Dialog",
         run: () => {
           if (renderer.getSelection()) {
@@ -122,7 +122,7 @@ export function DialogPrompt(props: DialogPromptProps) {
             setTextareaTarget(val)
           }}
           initialValue={props.value}
-          placeholder={props.placeholder ?? t("Enter text")}
+          placeholder={props.placeholder ?? t("ui.enterText")}
           placeholderColor={theme.text.subdued}
           textColor={props.busy ? theme.text.formfield.disabled : theme.text.formfield.default}
           focusedTextColor={props.busy ? theme.text.formfield.disabled : theme.text.formfield.default}
@@ -130,14 +130,15 @@ export function DialogPrompt(props: DialogPromptProps) {
           cursorStyle={config.cursor}
         />
         <Show when={props.busy}>
-          <Spinner color={theme.text.subdued}>{props.busyText ?? t("Working…")}</Spinner>
+          <Spinner color={theme.text.subdued}>{props.busyText ?? t("ui.working")}</Spinner>
         </Show>
       </box>
       <box paddingBottom={1} gap={1} flexDirection="row">
-        <Show when={!props.busy} fallback={<text fg={theme.text.subdued}>{t("processing…")}</text>}>
+        <Show when={!props.busy} fallback={<text fg={theme.text.subdued}>{t("ui.processing")}</text>}>
           <Show when={shortcuts.get("dialog.prompt.submit")}>
             <text fg={theme.text.default}>
-              {shortcuts.get("dialog.prompt.submit")} <span style={{ fg: theme.text.subdued }}>{t("submit")}</span>
+              {shortcuts.get("dialog.prompt.submit")}{" "}
+              <span style={{ fg: theme.text.subdued }}>{t("session.submit")}</span>
             </text>
           </Show>
         </Show>

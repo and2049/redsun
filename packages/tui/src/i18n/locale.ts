@@ -1,11 +1,16 @@
-export const locales = ["en", "zh-CN", "es", "ko", "fr"] as const
+export type Locale = string
 
-export type Locale = (typeof locales)[number]
+export function canonicalLocale(value: string): string {
+  const locale = Intl.getCanonicalLocales(value)[0]
+  if (!locale) throw new Error("Language locale is required")
+  return locale
+}
 
-export const languages: readonly { value: Locale; name: string; english: string }[] = [
-  { value: "en", name: "English", english: "English" },
-  { value: "zh-CN", name: "简体中文", english: "Simplified Chinese" },
-  { value: "es", name: "Español", english: "Spanish" },
-  { value: "ko", name: "한국어", english: "Korean" },
-  { value: "fr", name: "Français", english: "French" },
-]
+export function isLocale(value: string): boolean {
+  try {
+    canonicalLocale(value)
+    return true
+  } catch {
+    return false
+  }
+}

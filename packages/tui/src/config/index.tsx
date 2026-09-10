@@ -8,8 +8,8 @@ import { createStore, reconcile } from "solid-js/store"
 import { watch } from "fs"
 import path from "path"
 import { TuiKeybind } from "./keybind"
-import { locales } from "../i18n/locale"
-import { LanguageContext } from "../i18n/context"
+import { canonicalLocale, isLocale } from "../i18n/locale"
+import { createLanguageRegistry, LanguageContext, LanguageRegistryContext } from "../i18n/context"
 
 export interface Interface {
   readonly path?: string
@@ -48,7 +48,7 @@ export const Cursor = Schema.Struct({
 }).annotate({ description: "Terminal cursor settings" })
 
 export const Info = Schema.Struct({
-  language: Schema.optional(Schema.Literals(locales)).annotate({
+  language: Schema.optional(Schema.String.check(Schema.makeFilter(isLocale))).annotate({
     description: "Interface language; defaults to English",
   }),
   theme: Schema.optional(
@@ -220,6 +220,7 @@ export function resolve(input: Info, options: { terminalSuspend: boolean }): Res
 
   return {
     ...input,
+    ...(input.language ? { language: canonicalLocale(input.language) } : {}),
     attention: {
       enabled: input.attention?.enabled ?? false,
       notifications: input.attention?.notifications ?? true,
@@ -264,6 +265,7 @@ export function ConfigProvider(props: {
   children: JSX.Element
 }) {
   const [config, setConfig] = createStore(props.config)
+  const languages = createLanguageRegistry()
   const host = props.service
   const apply = (info: Info) => setConfig(reconcile(resolve(info, props.options ?? { terminalSuspend: true })))
   const update = async (update: (draft: any) => void) => {
@@ -284,7 +286,11 @@ export function ConfigProvider(props: {
   onCleanup(() => watcher?.close())
   return (
     <ConfigContext.Provider value={{ data: config, path: host?.path, update }}>
-      <LanguageContext.Provider value={() => config.language ?? "en"}>{props.children}</LanguageContext.Provider>
+      <LanguageRegistryContext.Provider value={languages}>
+        <LanguageContext.Provider value={() => canonicalLocale(config.language ?? "en")}>
+          {props.children}
+        </LanguageContext.Provider>
+      </LanguageRegistryContext.Provider>
     </ConfigContext.Provider>
   )
 }

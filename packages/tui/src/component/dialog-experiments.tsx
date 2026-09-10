@@ -52,14 +52,14 @@ export function DialogExperiments() {
 
   return (
     <DialogSelect
-      title={t("Experiments")}
+      title={t("ui.experiments")}
       options={options()}
       renderFilter={experiments.length > 0}
       onMove={(option) => setSelected(option.value)}
       onSelect={(option) => void change(option.value)}
       emptyView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>{t("No experiments available")}</text>
+          <text fg={theme.text.subdued}>{t("ui.noExperimentsAvailable")}</text>
         </box>
       }
       footerHints={experiments.length > 0 ? [{ title: "←/→", label: "change" }] : []}

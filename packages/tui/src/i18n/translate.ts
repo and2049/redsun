@@ -1,34 +1,14 @@
-import { catalog } from "./catalog"
-import { ui } from "./ui"
-import { session } from "./session"
-import { settings } from "./settings"
-import { application } from "./application"
-import { remote } from "./remote"
-import { ai } from "./ai"
-import { activity } from "./activity"
-import { tools } from "./tools"
-import { upstreamAliases } from "./aliases"
-import { locales, type Locale } from "./locale"
+import type { Values } from "@opencode/plugin/tui/i18n"
+import { interpolate, resolveCatalogs } from "./registry"
+import { source, sourceIDs, sourceKey } from "./source"
 
-export const messages: Readonly<Record<string, readonly [string, string, string, string]>> = {
-  ...ui,
-  ...session,
-  ...settings,
-  ...application,
-  ...remote,
-  ...ai,
-  ...activity,
-  ...tools,
-  ...catalog,
-  ...Object.fromEntries(Object.entries(upstreamAliases).map(([message, source]) => [message, catalog[source]])),
-}
+export type { Values }
+export type Translator = (key: string, values?: Values) => string
 
-export type Values = Readonly<Record<string, string | number>>
+const fallback = resolveCatalogs([])
 
-export function translate(locale: Locale, message: string, values?: Values): string {
-  const index = locales.indexOf(locale) - 1
-  const translated = Object.hasOwn(messages, message) ? messages[message]?.[index] : undefined
-  return (translated || message).replace(/\{\{(\w+)\}\}/g, (token, key: string) =>
-    values && Object.hasOwn(values, key) ? String(values[key]) : token,
-  )
+export function translate(message: string, values?: Values): string {
+  if (!message.includes(":") && !Object.hasOwn(source, message) && !sourceIDs.has(message))
+    return interpolate(message, values)
+  return fallback.t("en", sourceKey(message), values)
 }

@@ -8,7 +8,7 @@ import { useLocation } from "../context/location"
 import { DialogSelect } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
 import { errorMessage } from "../util/error"
-import { languages, useLanguage } from "../i18n"
+import { useLanguage } from "../i18n"
 import { useDialog } from "../ui/dialog"
 import { DialogLanguage } from "./dialog-language"
 
@@ -323,7 +323,8 @@ export function settingID(setting: Setting) {
 }
 
 export function DialogConfig(props: { current?: string }) {
-  const { t } = useLanguage()
+  const language = useLanguage()
+  const { t } = language
   const dialog = useDialog()
   const config = useConfig()
   const toast = useToast()
@@ -369,7 +370,10 @@ export function DialogConfig(props: { current?: string }) {
   const display = (setting: Setting) => {
     const current = value(setting)
     if (settingID(setting) === "language")
-      return languages.find((language) => language.value === current)?.name ?? "English"
+      return (
+        language.languages().find((item) => item.locale === (current ?? "en"))?.nativeName ??
+        String(current ?? "English")
+      )
     if (setting.format) return setting.format(current)
     const index = setting.values?.indexOf(current)
     if (settingID(setting) === "theme.name") return String(current)
@@ -380,7 +384,10 @@ export function DialogConfig(props: { current?: string }) {
       title: t(setting.title),
       category: t(setting.category),
       searchText: [setting.title, setting.category, ...(setting.keywords ?? [])].join(" "),
-      footer: setting.backend && !backend() ? t(backend.loading ? "loading" : "unavailable") : display(setting),
+      footer:
+        setting.backend && !backend()
+          ? t(backend.loading ? "settings.loading" : "remote.unavailable")
+          : display(setting),
       value: index,
     })),
   )
@@ -430,17 +437,17 @@ export function DialogConfig(props: { current?: string }) {
 
   return (
     <DialogSelect
-      title={t("Settings")}
+      title={t("command.category.settings")}
       options={options()}
       current={current}
       filterThreshold={0.7}
       onMove={(option) => setSelected(option.value)}
       onSelect={(option) => void change(1, option.value)}
-      footerHints={[{ title: "←/→", label: t("change") }]}
+      footerHints={[{ title: "←/→", label: t("settings.change") }]}
       footer={
         <Show when={settings[selected()]?.backend}>
           <box paddingLeft={4} paddingRight={4} flexDirection="column">
-            <text fg={theme.text.subdued}>{t("Global defaults; other config sources can override.")}</text>
+            <text fg={theme.text.subdued}>{t("settings.globalDefaultsOtherConfigSourcesCanOverride")}</text>
             <text fg={settings[selected()]?.warning ? theme.text.feedback.warning.default : theme.text.subdued}>
               {t(settings[selected()]?.warning ?? settings[selected()]?.description ?? "")}
             </text>

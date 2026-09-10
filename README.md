@@ -26,6 +26,11 @@ interface labels; conversation content remains in its original language.
 { "language": "zh-CN" }
 ```
 
+Additional languages can be installed as ordinary TUI plugins and appear automatically
+in `/language`. The bundled translations use the same plugin API. See the
+[language-plugin author guide](packages/tui/src/i18n/README.md) for a minimal example,
+translation templates, validation, fallback, and plural support.
+
 ## Context settings
 
 In **Settings → Context**, configure global backend defaults:

@@ -19,7 +19,7 @@ export function DialogVariant(props: {
   const options = createMemo(() => [
     {
       value: "default",
-      title: t("Default"),
+      title: t("common.default"),
       onSelect: () => {
         dialog.clear()
         if (props.onSelect) props.onSelect("default")
@@ -42,7 +42,7 @@ export function DialogVariant(props: {
   return (
     <DialogSelect<string>
       options={options()}
-      title={props.title ?? t("Select variant")}
+      title={props.title ?? t("ui.selectVariant")}
       current={props.selected ?? local.model.variant.current() ?? "default"}
       flat={true}
     />

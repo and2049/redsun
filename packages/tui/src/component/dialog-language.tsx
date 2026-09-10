@@ -1,6 +1,6 @@
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { useConfig } from "../config"
-import { languages, useLanguage, type Locale } from "../i18n"
+import { useLanguage, type Locale } from "../i18n"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
@@ -9,7 +9,7 @@ export function DialogLanguage(props: { onSelect?: () => void; onCancel?: () => 
   const config = useConfig()
   const dialog = useDialog()
   const toast = useToast()
-  const { t, locale } = useLanguage()
+  const { t, locale, languages } = useLanguage()
   const [saving, setSaving] = createSignal(false)
   let closed = false
   onCleanup(() => {
@@ -19,16 +19,17 @@ export function DialogLanguage(props: { onSelect?: () => void; onCancel?: () => 
     if (!closed) (props.onSelect ?? dialog.clear)()
   }
   const options = createMemo(() =>
-    languages.map((language) => ({
-      title: language.name,
-      value: language.value,
-      description: t(language.english),
-      searchText: `${language.english} ${language.value}`,
+    languages().map((language) => ({
+      title: language.nativeName,
+      value: language.locale,
+      description: language.available ? t(language.name) : t("settings.language.unavailable"),
+      searchText: `${language.name} ${language.locale} ${language.providers.join(" ")}`,
     })),
   )
 
   async function select(language: Locale) {
     if (saving()) return
+    if (!languages().some((item) => item.locale === language && item.available)) return
     if (language === locale()) {
       done()
       return
@@ -48,7 +49,7 @@ export function DialogLanguage(props: { onSelect?: () => void; onCancel?: () => 
 
   return (
     <DialogSelect
-      title={`${t("Interface language")} / Language`}
+      title={`${t("settings.language.title")} / Language`}
       current={locale()}
       options={options()}
       locked={saving()}

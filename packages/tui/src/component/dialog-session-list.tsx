@@ -111,14 +111,14 @@ export function DialogSessionList() {
   const searchState = createMemo(() => {
     const query = filter().trim()
     if (query !== search().trim() || searchResults.loading)
-      return { message: t(query ? "Searching sessions…" : "Loading sessions…"), error: false }
+      return { message: t(query ? "ui.searchingSessions" : "ui.loadingSessions"), error: false }
     const result = searchResults()
     if (result?.query === query && result.error)
       return {
-        message: t(query ? "Could not search sessions. Change the search to try again." : "Could not load sessions."),
+        message: t(query ? "ui.couldNotSearchSessionsChangeTheSearchTo" : "ui.couldNotLoadSessions"),
         error: true,
       }
-    return { message: t(query ? "No sessions found" : "No sessions available"), error: false }
+    return { message: t(query ? "ui.noSessionsFound" : "ui.noSessionsAvailable"), error: false }
   })
 
   const quickSwitchHint = createMemo(() => {
@@ -129,7 +129,7 @@ export function DialogSessionList() {
   })
   const quickSwitchFooterHints = createMemo(() => {
     const hint = quickSwitchHint()
-    return hint && local.session.slots().length > 0 ? [{ title: t("switch"), label: hint }] : []
+    return hint && local.session.slots().length > 0 ? [{ title: t("ui.switch"), label: hint }] : []
   })
   const currentProjectName = createMemo(() => {
     const current = data.location.info(pickerLocation())
@@ -162,7 +162,7 @@ export function DialogSessionList() {
       const deleting = toDelete() === session.id
       return {
         title: deleting
-          ? t("Press {{key}} again to confirm", { key: shortcuts.get("session.delete") ?? "" })
+          ? t("ui.pressAgainToConfirm", { key: shortcuts.get("session.delete") ?? "" })
           : withTimestampedFallback(session),
         value: session.id,
         category,
@@ -183,24 +183,24 @@ export function DialogSessionList() {
       .filter((session) => !session.parentID && !pinnedSet.has(session.id))
       .map((session) => {
         const date = new Date(session.time.updated).toDateString()
-        return option(session, date === today ? t("Today") : date)
+        return option(session, date === today ? t("ui.today") : date)
       })
 
-    return [...pinned.map((sessionID) => option(sessionMap.get(sessionID)!, t("Pinned"))), ...remaining]
+    return [...pinned.map((sessionID) => option(sessionMap.get(sessionID)!, t("ui.pinned"))), ...remaining]
   })
 
   onMount(() => dialog.setSize("large"))
 
   return (
     <DialogSelect
-      title={t("Sessions")}
+      title={t("home.sessions.search.sessions")}
       titleView={
         <box flexDirection="row">
           <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
-            {t("Sessions")}
+            {t("home.sessions.search.sessions")}
           </text>
           <Show when={!allProjects() && currentProjectName()}>
-            <text fg={theme.text.subdued}>{t(" for {{project}}", { project: currentProjectName() })}</text>
+            <text fg={theme.text.subdued}>{t("ui.for", { project: currentProjectName() })}</text>
           </Show>
         </box>
       }
@@ -214,7 +214,7 @@ export function DialogSessionList() {
       bindings={[
         {
           bind: "ctrl+a",
-          title: t(allProjects() ? "Show current directory sessions" : "Show all project sessions"),
+          title: t(allProjects() ? "ui.showCurrentDirectorySessions" : "ui.showAllProjectSessions"),
           group: "Dialog",
           run: () => {
             void updatePrefs((draft) => {
@@ -245,12 +245,12 @@ export function DialogSessionList() {
       actions={[
         {
           command: "session.pin.toggle",
-          title: t("pin/unpin"),
+          title: t("ui.pinUnpin"),
           onTrigger: (option) => local.session.togglePin(option.value),
         },
         {
           command: "session.delete",
-          title: t("delete"),
+          title: t("session.delete"),
           onTrigger: (option: { value: string }) => {
             if (toDelete() !== option.value) {
               setToDelete(option.value)
@@ -277,14 +277,14 @@ export function DialogSessionList() {
         },
         {
           command: "session.rename",
-          title: t("rename"),
+          title: t("ui.rename"),
           onTrigger: (option: { value: string; title: string }) =>
             DialogSessionRename.show(dialog, option.value, option.title),
         },
       ]}
       footerHints={[
         ...quickSwitchFooterHints(),
-        { title: t(allProjects() ? "current directory" : "all projects"), label: "ctrl+a", side: "right" },
+        { title: t(allProjects() ? "settings.currentDirectory" : "ui.allProjects"), label: "ctrl+a", side: "right" },
       ]}
     />
   )

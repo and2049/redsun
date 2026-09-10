@@ -3,48 +3,32 @@ import { Schema } from "effect"
 import ts from "typescript"
 import { fileURLToPath } from "node:url"
 import { Info, resolve } from "../src/config"
-import { locales } from "../src/i18n/locale"
-import { catalog } from "../src/i18n/catalog"
-import { ui } from "../src/i18n/ui"
-import { session } from "../src/i18n/session"
-import { settings } from "../src/i18n/settings"
-import { application } from "../src/i18n/application"
-import { remote } from "../src/i18n/remote"
-import { ai } from "../src/i18n/ai"
-import { activity } from "../src/i18n/activity"
-import { tools } from "../src/i18n/tools"
-import { upstreamAliases } from "../src/i18n/aliases"
-import { messages, translate } from "../src/i18n/translate"
+import { source, sourceIDs } from "../src/i18n/source"
+import { canonicalLocale } from "../src/i18n/locale"
+import { bundled, contributions, locales, translate } from "./fixture/languages"
 
-test("accepts supported interface languages without changing other preferences", () => {
+test("locale configuration accepts well-formed plugin locales independently of installation", () => {
   const decode = Schema.decodeUnknownSync(Info)
-  for (const language of locales) {
+  for (const language of [...locales, "de", "pl", "pt-BR", "zh-Hant"]) {
     const input = decode({ language, theme: { name: "dusk" }, mouse: false })
     expect(resolve(input, { terminalSuspend: true })).toMatchObject(input)
   }
-  expect(() => decode({ language: "unknown" })).toThrow()
-  expect(translate(resolve({}, { terminalSuspend: true }).language ?? "en", "Interface language")).toBe(
-    "Interface language",
-  )
+  for (const language of ["", "not_a_locale", "../de"]) expect(() => decode({ language })).toThrow()
+  expect(resolve(decode({ language: "pt-br" }), { terminalSuspend: true }).language).toBe("pt-BR")
+  expect(canonicalLocale("zh-cn")).toBe("zh-CN")
 })
 
-test("catalogs contain complete translations with the original interpolation parameters", () => {
-  const placeholders = (text: string) => [...new Set(text.match(/\{\{\w+\}\}/g) ?? [])].sort()
-  for (const entries of [catalog, ui, session, settings, application, remote, ai, activity, tools]) {
-    expect(Object.keys(entries).length).toBeGreaterThan(0)
-    for (const [source, translations] of Object.entries(entries)) {
-      expect(translations, source).toHaveLength(4)
-      translations.forEach((text, index) => {
-        expect(text.trim().length, `${source}: ${locales[index + 1]}`).toBeGreaterThan(0)
-        expect(placeholders(text), `${source}: ${locales[index + 1]}`).toEqual(placeholders(source))
-      })
-    }
-  }
+test("builtin language plugins are complete and preserve source parameters", () => {
+  expect(bundled.diagnostics).toEqual([])
+  const keys = Object.keys(source).sort()
+  for (const { value } of contributions) expect(Object.keys(value.catalogs.tui).sort()).toEqual(keys)
+  expect(contributions).toHaveLength(4)
+  expect(keys.length).toBeGreaterThan(500)
 })
 
-test("uses English fallback and safely interpolates values without translating their contents", () => {
-  expect(translate("es", "Interface language")).toBe("Idioma de la interfaz")
-  expect(translate("ko", "Interface language")).toBe("인터페이스 언어")
+test("fallback interpolates values once and never translates caller content", () => {
+  expect(translate("es", "settings.language.title")).toBe("Idioma de la interfaz")
+  expect(translate("ko", "settings.language.title")).toBe("인터페이스 언어")
   expect(translate("fr", "Unknown plugin label")).toBe("Unknown plugin label")
   expect(translate("zh-CN", "constructor")).toBe("constructor")
   expect(translate("fr", "{{value}} {{missing}}", { value: "Settings {{other}} $&" })).toBe(
@@ -52,47 +36,42 @@ test("uses English fallback and safely interpolates values without translating t
   )
   expect(translate("en", "{{count}}", { count: 0 })).toBe("0")
   expect(translate("es", "{{constructor}}", {})).toBe("{{constructor}}")
-  for (const message of Object.keys(messages)) expect(translate("en", message)).toBe(message)
-  expect(translate("zh-CN", "Select model")).toBe("选择模型")
-  expect(translate("fr", "Search")).toBe("Rechercher")
-  expect(translate("fr", "Settings")).not.toBe("Settings")
-  expect(translate("fr", "Settings user option")).toBe("Settings user option")
-})
-
-test("localized counts use whole messages instead of English plural suffixes", () => {
-  expect(translate("zh-CN", "{{count}} models", { count: 2 })).toBe("2 个模型")
-  expect(translate("ko", "{{count}} models", { count: 2 })).toBe("모델 2개")
-  expect(translate("es", "{{count}} MCP servers", { count: 2 })).toBe("2 servidores MCP")
-  expect(translate("fr", "{{count}} MCP servers", { count: 2 })).toBe("2 serveurs MCP")
-  expect(translate("en", "{{count}} model", { count: 1 })).toBe("1 model")
-})
-
-test("semantic upstream aliases retain English wording and source translations", () => {
-  for (const [message, source] of Object.entries(upstreamAliases)) {
-    expect(Object.hasOwn(catalog, source), message).toBeTrue()
-    expect(translate("en", message)).toBe(message)
-    for (const [index, locale] of locales.slice(1).entries()) {
-      expect(translate(locale, message)).toBe(catalog[source][index])
-    }
+  for (const [id, entry] of Object.entries(source)) {
+    if (typeof entry.message === "string") expect(translate("en", id)).toBe(entry.message)
+    expect(entry.legacy.every((text) => sourceIDs.get(text) === id)).toBeTrue()
   }
 })
 
-test("every explicitly localized string has a catalog entry", async () => {
+test("counts select plural forms using the translation's locale", () => {
+  expect(translate("zh-CN", "models.count", { count: 2 })).toBe("2 个模型")
+  expect(translate("ko", "models.count", { count: 2 })).toBe("모델 2개")
+  expect(translate("es", "mcp.count", { count: 2 })).toBe("2 servidores MCP")
+  expect(translate("fr", "models.count", { count: 0 })).toBe("0 modèle")
+  expect(translate("en", "models.count", { count: 1 })).toBe("1 model")
+})
+
+test("every explicitly localized literal uses a stable manifest ID", async () => {
   const missing: string[] = []
   const cwd = fileURLToPath(new URL("../src", import.meta.url))
   for await (const file of new Bun.Glob("**/*.{ts,tsx}").scan({ cwd, absolute: true })) {
-    const source = ts.createSourceFile(file, await Bun.file(file).text(), ts.ScriptTarget.Latest, true)
+    if (file.replaceAll("\\", "/").includes("/i18n/")) continue
+    const ast = ts.createSourceFile(file, await Bun.file(file).text(), ts.ScriptTarget.Latest, true)
+    function check(node: ts.Expression): void {
+      if (ts.isStringLiteralLike(node) && node.text && !Object.hasOwn(source, node.text))
+        missing.push(`${file}: ${node.text}`)
+      if (ts.isConditionalExpression(node)) {
+        check(node.whenTrue)
+        check(node.whenFalse)
+      }
+    }
     function visit(node: ts.Node): void {
       if (ts.isCallExpression(node)) {
         const name = ts.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression
-        const message = node.arguments[0]
-        if (ts.isIdentifier(name) && name.text === "t" && message && ts.isStringLiteralLike(message)) {
-          if (message.text && !Object.hasOwn(messages, message.text)) missing.push(`${file}: ${message.text}`)
-        }
+        if (ts.isIdentifier(name) && name.text === "t" && node.arguments[0]) check(node.arguments[0])
       }
       ts.forEachChild(node, visit)
     }
-    visit(source)
+    visit(ast)
   }
   expect(missing).toEqual([])
 })

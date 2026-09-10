@@ -33,10 +33,10 @@ export function DialogRemote() {
       const [saving, setSaving] = createSignal(false)
       return (
         <DialogPrompt
-          title={t("Companion origin")}
+          title={t("ui.companionOrigin")}
           value={remote.companion()?.origin ?? detected?.origin ?? ""}
           busy={saving()}
-          description={() => <text>{t("Must be the https MagicDNS origin phones will open.")}</text>}
+          description={() => <text>{t("ui.mustBeTheHttpsMagicdnsOriginPhonesWill")}</text>}
           onCancel={() => dialog.replace(() => <DialogRemote />)}
           onConfirm={async (origin) => {
             setSaving(true)
@@ -55,78 +55,75 @@ export function DialogRemote() {
   }
   const guidance = () => {
     const status = remote.status()
-    if (!status) return t("Refresh status to see the next step.")
-    if (!status.supported)
-      return t("Requires a managed service (`redsun serve --service`); this backend does not support remote control.")
-    if (!status.enrolled)
-      return t("Enroll a companion below, or run `redsun remote enroll --handoff <new-private-file>`.")
-    if (!status.enabled) return t("Enable remote control so the companion can attach.")
+    if (!status) return t("remote.refreshStatusToSeeTheNextStep")
+    if (!status.supported) return t("remote.requiresAManagedServiceRedsunServeServiceThis")
+    if (!status.enrolled) return t("remote.enrollACompanionBelowOrRunRedsunRemote")
+    if (!status.enabled) return t("remote.enableRemoteControlSoTheCompanionCanAttach")
     if (remote.companion()?.error) return remote.companion()?.error
     if (registering())
-      return t(
-        "Open {{origin}} on the phone within five minutes and choose Register this device; approve the fingerprint here.",
-        { origin: remote.companion()?.origin ?? "" },
-      )
+      return t("remote.openOnThePhoneWithinFiveMinutesAnd", { origin: remote.companion()?.origin ?? "" })
     if (status.state === "unavailable")
       return remote.companion()?.running
-        ? t("Companion starting")
-        : t("Configure a companion origin to start the companion.")
-    if (status.state === "ready") return t("Companion attached; register or connect a phone")
-    if (status.state === "connected") return t("Phone connected")
+        ? t("remote.companionStarting")
+        : t("remote.configureACompanionOriginToStartTheCompanion")
+    if (status.state === "ready") return t("remote.companionAttachedRegisterOrConnectAPhone")
+    if (status.state === "connected") return t("remote.phoneConnected")
   }
   const options = createMemo(() => {
     const status = remote.status()
     const rows: DialogSelectOption<string>[] = []
     if (status?.supported && !status.enabled)
       rows.push({
-        title: t("Enable remote control"),
+        title: t("remote.enableRemoteControl"),
         value: "enable",
-        description: t("The enrolled companion may attach. Persists in the service configuration."),
+        description: t("remote.theEnrolledCompanionMayAttachPersistsInThe"),
       })
     if (status?.enabled)
       rows.push({
-        title: t("Disable remote control"),
+        title: t("remote.disableRemoteControl"),
         value: "disable",
-        description: t("Companion access ends immediately; enrollment and running tasks are kept."),
+        description: t("remote.companionAccessEndsImmediatelyEnrollmentAndRunningTasks"),
       })
     if (status?.supported && status.backendID)
       rows.push({
-        title: confirm() === "enroll" ? t("Confirm: enroll a companion on this host") : t("Enroll a companion"),
+        title: confirm() === "enroll" ? t("remote.confirmEnrollACompanionOnThisHost") : t("remote.enrollACompanion"),
         value: "enroll",
-        description: t("Stores the credential for the companion on this host. Does not enable remote control."),
+        description: t("remote.storesTheCredentialForTheCompanionOnThis"),
       })
     if (status?.enrolled)
       rows.push({
         title:
-          confirm() === "revoke" ? t("Confirm: revoke all companion credentials") : t("Revoke companion credentials"),
+          confirm() === "revoke"
+            ? t("remote.confirmRevokeAllCompanionCredentials")
+            : t("remote.revokeCompanionCredentials"),
         value: "revoke",
-        description: t("All companion credentials are removed; companion must enroll again. Requires confirmation."),
+        description: t("remote.allCompanionCredentialsAreRemovedCompanionMustEnroll"),
       })
-    if (status?.enrolled) rows.push({ title: t("Change companion origin"), value: "origin" })
+    if (status?.enrolled) rows.push({ title: t("remote.changeCompanionOrigin"), value: "origin" })
     if (remote.companion()?.running) {
       if (!remote.phoneRegistered() && status?.state !== "connected")
-        rows.push({ title: t("Register a phone"), value: "register" })
-      if (registering()) rows.push({ title: t("Cancel phone registration"), value: "cancel" })
+        rows.push({ title: t("remote.registerAPhone"), value: "register" })
+      if (registering()) rows.push({ title: t("remote.cancelPhoneRegistration"), value: "cancel" })
       for (const pending of remote.companion()?.pending ?? [])
         rows.push({
           title:
             confirm() === `approve:${pending.requestID}:${pending.fingerprint}`
-              ? t("Confirm: approve {{fingerprint}}", { fingerprint: pending.fingerprint })
-              : t("Approve phone {{fingerprint}}", { fingerprint: pending.fingerprint }),
+              ? t("remote.confirmApprove", { fingerprint: pending.fingerprint })
+              : t("remote.approvePhone", { fingerprint: pending.fingerprint }),
           value: pending.requestID,
           truncateTitle: false,
-          description: t("The fingerprint must match the phone screen exactly."),
+          description: t("remote.theFingerprintMustMatchThePhoneScreenExactly"),
         })
       if (remote.tailscaleState()?.mapping === "missing")
         rows.push({
           title:
             confirm() === `map:${remote.companion()?.port ?? 43123}`
-              ? t("Confirm: {{command}}", { command: serveCommand(remote.companion()?.port ?? 43123) })
-              : t("Map Tailscale Serve to the companion"),
+              ? t("remote.confirm", { command: serveCommand(remote.companion()?.port ?? 43123) })
+              : t("remote.mapTailscaleServeToTheCompanion"),
           value: "map",
           truncateTitle: false,
         })
-      rows.push({ title: t("Inspect Tailscale Serve"), value: "tailscale" })
+      rows.push({ title: t("remote.inspectTailscaleServe"), value: "tailscale" })
     }
     return rows.map((row) => ({ ...row, disabled: busy() }))
   })
@@ -162,10 +159,10 @@ export function DialogRemote() {
   }
   return (
     <DialogSelect
-      title={t("Remote control: {{status}}", { status: t(remoteLabel(remote.status())) })}
+      title={t("ui.remoteControl", { status: t(remoteLabel(remote.status())) })}
       titleView={
         <text fg={theme.text.default}>
-          {t("Remote control —") + " "}
+          {t("remote.remoteControl2") + " "}
           <span style={{ fg: color() }}>{statusLabel()}</span>
         </text>
       }
@@ -175,7 +172,7 @@ export function DialogRemote() {
       footer={
         <box paddingLeft={2} paddingRight={2}>
           <Show when={remote.status()}>
-            <text>{remote.status()?.enrolled ? t("Enrolled") : t("Not enrolled")}</text>
+            <text>{remote.status()?.enrolled ? t("remote.enrolled") : t("remote.notEnrolled")}</text>
           </Show>
           <text fg={remote.companion()?.error ? theme.text.feedback.warning.default : theme.text.default}>
             {guidance()}
@@ -185,22 +182,18 @@ export function DialogRemote() {
           </Show>
           <Show when={remote.status()?.supported && !remote.status()?.backendID}>
             <text fg={theme.text.feedback.warning.default}>
-              {t(
-                "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it.",
-              )}
+              {t("remote.backendIdentityHasNotBeenPersistedFixService")}
             </text>
           </Show>
           <Show when={remote.tailscaleState()?.mapping === "conflict"}>
             <text fg={theme.text.feedback.warning.default}>
-              {t("Tailscale Serve mapping conflicts; inspect tailscale serve status.")}
+              {t("remote.tailscaleServeMappingConflictsInspectTailscaleServeStatus")}
             </text>
           </Show>
           <Show when={remote.tailscaleState() && !remote.tailscaleState()?.certificate}>
-            <text>
-              {t("Enable HTTPS certificates: {{url}}", { url: "https://tailscale.com/kb/1153/enabling-https" })}
-            </text>
+            <text>{t("remote.enableHttpsCertificates", { url: "https://tailscale.com/kb/1153/enabling-https" })}</text>
           </Show>
-          <text>{t("Companion-reported status; not a Tailscale connectivity test.")}</text>
+          <text>{t("remote.companionReportedStatusNotATailscaleConnectivityTest")}</text>
         </box>
       }
     />

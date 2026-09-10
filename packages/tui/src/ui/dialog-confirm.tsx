@@ -31,7 +31,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
     commands: [
       {
         bind: "return",
-        title: t("Confirm dialog selection"),
+        title: t("ui.confirmDialogSelection"),
         group: "Dialog",
         run: () => {
           if (store.active === "confirm") props.onConfirm?.()
@@ -41,7 +41,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
       },
       {
         bind: "left",
-        title: t("Previous dialog option"),
+        title: t("ui.previousDialogOption"),
         group: "Dialog",
         run: () => {
           setStore("active", store.active === "confirm" ? "cancel" : "confirm")
@@ -49,7 +49,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
       },
       {
         bind: "right",
-        title: t("Next dialog option"),
+        title: t("ui.nextDialogOption"),
         group: "Dialog",
         run: () => {
           setStore("active", store.active === "confirm" ? "cancel" : "confirm")

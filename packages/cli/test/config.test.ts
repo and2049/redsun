@@ -71,29 +71,32 @@ test("preserves the schema in an existing cli.json", async () => {
   expect(await Bun.file(file).json()).toEqual(config)
 })
 
-test("persists interface language across reloads while preserving JSONC and unrelated preferences", async () => {
-  await using directory = await tmpdir()
-  const file = path.join(directory.path, "cli.json")
-  await Bun.write(file, '{\n  // Personal theme\n  "theme": { "name": "dusk" },\n  "mouse": false\n}\n')
-  await run(
-    directory.path,
-    Effect.gen(function* () {
-      const service = yield* Config.Service
-      yield* service.update((draft) => {
-        draft.language = "ko"
-      })
-    }),
-  )
-  const reloaded = await run(
-    directory.path,
-    Effect.gen(function* () {
-      const service = yield* Config.Service
-      return yield* service.get()
-    }),
-  )
-  expect(reloaded).toMatchObject({ language: "ko", theme: { name: "dusk" }, mouse: false })
-  expect(await Bun.file(file).text()).toContain("// Personal theme")
-})
+test.each(["ko", "de", "pt-BR"])(
+  "persists interface language %s across reloads while preserving JSONC and unrelated preferences",
+  async (language) => {
+    await using directory = await tmpdir()
+    const file = path.join(directory.path, "cli.json")
+    await Bun.write(file, '{\n  // Personal theme\n  "theme": { "name": "dusk" },\n  "mouse": false\n}\n')
+    await run(
+      directory.path,
+      Effect.gen(function* () {
+        const service = yield* Config.Service
+        yield* service.update((draft) => {
+          draft.language = language
+        })
+      }),
+    )
+    const reloaded = await run(
+      directory.path,
+      Effect.gen(function* () {
+        const service = yield* Config.Service
+        return yield* service.get()
+      }),
+    )
+    expect(reloaded).toMatchObject({ language, theme: { name: "dusk" }, mouse: false })
+    expect(await Bun.file(file).text()).toContain("// Personal theme")
+  },
+)
 
 test("migrates tui and kv config into cli.json", async () => {
   await using directory = await tmpdir()

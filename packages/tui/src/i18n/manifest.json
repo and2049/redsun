@@ -1,0 +1,3363 @@
+{
+  "version": 1,
+  "namespace": "tui",
+  "messages": {
+    "settings.language.unavailable": {
+      "message": "Language plugin unavailable; using English fallback",
+      "context": "Language picker status when the selected plugin is disabled or missing",
+      "legacy": []
+    },
+    "models.count": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "{{count}} model",
+          "other": "{{count}} models"
+        }
+      },
+      "context": "ui",
+      "legacy": ["{{count}} model", "{{count}} models"]
+    },
+    "mcp.count": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "{{count}} MCP server",
+          "other": "{{count}} MCP servers"
+        }
+      },
+      "context": "ui",
+      "legacy": ["{{count}} MCP server", "{{count}} MCP servers"]
+    },
+    "session.subagents.count": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "{{count}} subagent",
+          "other": "{{count}} subagents"
+        }
+      },
+      "context": "session",
+      "legacy": ["{{count}} subagent", "{{count}} subagents"]
+    },
+    "session.shells.count": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "{{count}} shell",
+          "other": "{{count}} shells"
+        }
+      },
+      "context": "session",
+      "legacy": ["{{count}} shell", "{{count}} shells"]
+    },
+    "session.subagents.view": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "view {{count}} subagent",
+          "other": "view {{count}} subagents"
+        }
+      },
+      "context": "activity",
+      "legacy": ["view {{count}} subagent", "view {{count}} subagents"]
+    },
+    "session.usage.steps": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "{{count}} step",
+          "other": "{{count}} steps"
+        }
+      },
+      "context": "ai",
+      "legacy": ["{{count}} step", "{{count}} steps"]
+    },
+    "session.usage.cacheBusts": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "{{count}} likely cache bust",
+          "other": "{{count}} likely cache busts"
+        }
+      },
+      "context": "ai",
+      "legacy": ["{{count}} likely cache bust", "{{count}} likely cache busts"]
+    },
+    "tools.shell.expandLines": {
+      "message": {
+        "plural": "count",
+        "forms": {
+          "one": "… +{{count}} line (click to expand)",
+          "other": "… +{{count}} lines (click to expand)"
+        }
+      },
+      "context": "tools",
+      "legacy": ["… +{{count}} line (click to expand)", "… +{{count}} lines (click to expand)"]
+    },
+    "ui.project": {
+      "message": "Project",
+      "context": "ui",
+      "legacy": ["Project"]
+    },
+    "ui.projects": {
+      "message": "Projects",
+      "context": "ui",
+      "legacy": ["Projects"]
+    },
+    "ui.today": {
+      "message": "Today",
+      "context": "ui",
+      "legacy": ["Today"]
+    },
+    "ui.pinned": {
+      "message": "Pinned",
+      "context": "ui",
+      "legacy": ["Pinned"]
+    },
+    "ui.for": {
+      "message": " for {{project}}",
+      "context": "ui",
+      "legacy": [" for {{project}}"]
+    },
+    "ui.searchingSessions": {
+      "message": "Searching sessions…",
+      "context": "ui",
+      "legacy": ["Searching sessions…"]
+    },
+    "ui.loadingSessions": {
+      "message": "Loading sessions…",
+      "context": "ui",
+      "legacy": ["Loading sessions…"]
+    },
+    "ui.couldNotSearchSessionsChangeTheSearchTo": {
+      "message": "Could not search sessions. Change the search to try again.",
+      "context": "ui",
+      "legacy": ["Could not search sessions. Change the search to try again."]
+    },
+    "ui.couldNotLoadSessions": {
+      "message": "Could not load sessions.",
+      "context": "ui",
+      "legacy": ["Could not load sessions."]
+    },
+    "ui.noSessionsFound": {
+      "message": "No sessions found",
+      "context": "ui",
+      "legacy": ["No sessions found"]
+    },
+    "ui.noSessionsAvailable": {
+      "message": "No sessions available",
+      "context": "ui",
+      "legacy": ["No sessions available"]
+    },
+    "ui.showCurrentDirectorySessions": {
+      "message": "Show current directory sessions",
+      "context": "ui",
+      "legacy": ["Show current directory sessions"]
+    },
+    "ui.showAllProjectSessions": {
+      "message": "Show all project sessions",
+      "context": "ui",
+      "legacy": ["Show all project sessions"]
+    },
+    "ui.pinUnpin": {
+      "message": "pin/unpin",
+      "context": "ui",
+      "legacy": ["pin/unpin"]
+    },
+    "ui.allProjects": {
+      "message": "all projects",
+      "context": "ui",
+      "legacy": ["all projects"]
+    },
+    "ui.switch": {
+      "message": "switch",
+      "context": "ui",
+      "legacy": ["switch"]
+    },
+    "ui.move": {
+      "message": "move",
+      "context": "ui",
+      "legacy": ["move"]
+    },
+    "ui.new": {
+      "message": "new",
+      "context": "ui",
+      "legacy": ["new"]
+    },
+    "ui.refresh": {
+      "message": "refresh",
+      "context": "ui",
+      "legacy": ["refresh"]
+    },
+    "ui.couldNotLoadWorktrees": {
+      "message": "Could not load worktrees",
+      "context": "ui",
+      "legacy": ["Could not load worktrees"]
+    },
+    "ui.couldNotRefreshSessionsAndProjects": {
+      "message": "Could not refresh sessions and projects.",
+      "context": "ui",
+      "legacy": ["Could not refresh sessions and projects."]
+    },
+    "ui.couldNotRefreshSessions": {
+      "message": "Could not refresh sessions.",
+      "context": "ui",
+      "legacy": ["Could not refresh sessions."]
+    },
+    "ui.couldNotRefreshProjects": {
+      "message": "Could not refresh projects.",
+      "context": "ui",
+      "legacy": ["Could not refresh projects."]
+    },
+    "ui.showProjectWorktrees": {
+      "message": "Show project worktrees",
+      "context": "ui",
+      "legacy": ["Show project worktrees"]
+    },
+    "ui.returnToProjects": {
+      "message": "Return to projects",
+      "context": "ui",
+      "legacy": ["Return to projects"]
+    },
+    "ui.newWorktree": {
+      "message": "new worktree",
+      "context": "ui",
+      "legacy": ["new worktree"]
+    },
+    "ui.creatingWorktree": {
+      "message": "Creating worktree…",
+      "context": "ui",
+      "legacy": ["Creating worktree…"]
+    },
+    "ui.environmentOnly": {
+      "message": "Environment only",
+      "context": "ui",
+      "legacy": ["Environment only"]
+    },
+    "ui.services": {
+      "message": "Services",
+      "context": "ui",
+      "legacy": ["Services"]
+    },
+    "ui.popular": {
+      "message": "Popular",
+      "context": "ui",
+      "legacy": ["Popular"]
+    },
+    "ui.webSearch": {
+      "message": "Web search",
+      "context": "ui",
+      "legacy": ["Web search"]
+    },
+    "ui.openAuthorizationUrl": {
+      "message": "Open authorization URL",
+      "context": "ui",
+      "legacy": ["Open authorization URL"]
+    },
+    "ui.couldNotOpenTheBrowserCopyTheUrl": {
+      "message": "Could not open the browser. Copy the URL and continue manually.",
+      "context": "ui",
+      "legacy": ["Could not open the browser. Copy the URL and continue manually."]
+    },
+    "ui.copyAuthorizationDetails": {
+      "message": "Copy authorization details",
+      "context": "ui",
+      "legacy": ["Copy authorization details"]
+    },
+    "ui.authorizationExpired": {
+      "message": "Authorization expired",
+      "context": "ui",
+      "legacy": ["Authorization expired"]
+    },
+    "ui.waitingForAuthorization": {
+      "message": "Waiting for authorization…",
+      "context": "ui",
+      "legacy": ["Waiting for authorization…"]
+    },
+    "ui.open": {
+      "message": "open",
+      "context": "ui",
+      "legacy": ["open"]
+    },
+    "ui.closeHelp": {
+      "message": "Close help",
+      "context": "ui",
+      "legacy": ["Close help"]
+    },
+    "ui.pressToSeeAllAvailableActionsAndCommands": {
+      "message": "Press {{key}} to see all available actions and commands in any context.",
+      "context": "ui",
+      "legacy": ["Press {{key}} to see all available actions and commands in any context."]
+    },
+    "ui.ok": {
+      "message": "ok",
+      "context": "ui",
+      "legacy": ["ok"]
+    },
+    "ui.confirm": {
+      "message": "Confirm",
+      "context": "ui",
+      "legacy": ["Confirm"]
+    },
+    "ui.confirmDialogSelection": {
+      "message": "Confirm dialog selection",
+      "context": "ui",
+      "legacy": ["Confirm dialog selection"]
+    },
+    "ui.previousDialogOption": {
+      "message": "Previous dialog option",
+      "context": "ui",
+      "legacy": ["Previous dialog option"]
+    },
+    "ui.nextDialogOption": {
+      "message": "Next dialog option",
+      "context": "ui",
+      "legacy": ["Next dialog option"]
+    },
+    "ui.selectAgent": {
+      "message": "Select agent",
+      "context": "ui",
+      "legacy": ["Select agent"]
+    },
+    "ui.selectVariant": {
+      "message": "Select variant",
+      "context": "ui",
+      "legacy": ["Select variant"]
+    },
+    "ui.selectWorkerModel": {
+      "message": "Select worker model",
+      "context": "ui",
+      "legacy": ["Select worker model"]
+    },
+    "ui.selectWorkerModelVariant": {
+      "message": "Select worker model variant",
+      "context": "ui",
+      "legacy": ["Select worker model variant"]
+    },
+    "ui.favorite": {
+      "message": "Favorite",
+      "context": "ui",
+      "legacy": ["Favorite"]
+    },
+    "ui.favorites": {
+      "message": "Favorites",
+      "context": "ui",
+      "legacy": ["Favorites"]
+    },
+    "ui.recent": {
+      "message": "Recent",
+      "context": "ui",
+      "legacy": ["Recent"]
+    },
+    "ui.themes": {
+      "message": "Themes",
+      "context": "ui",
+      "legacy": ["Themes"]
+    },
+    "ui.skills": {
+      "message": "Skills",
+      "context": "ui",
+      "legacy": ["Skills"]
+    },
+    "ui.stash": {
+      "message": "Stash",
+      "context": "ui",
+      "legacy": ["Stash"]
+    },
+    "ui.worktrees": {
+      "message": "Worktrees",
+      "context": "ui",
+      "legacy": ["Worktrees"]
+    },
+    "ui.searchSessionsAndProjects": {
+      "message": "Search sessions and projects…",
+      "context": "ui",
+      "legacy": ["Search sessions and projects…"]
+    },
+    "ui.searchWorktrees": {
+      "message": "Search worktrees…",
+      "context": "ui",
+      "legacy": ["Search worktrees…"]
+    },
+    "ui.newWorktree2": {
+      "message": "New worktree",
+      "context": "ui",
+      "legacy": ["New worktree"]
+    },
+    "ui.worktreeNameOptional": {
+      "message": "Worktree name (optional)",
+      "context": "ui",
+      "legacy": ["Worktree name (optional)"]
+    },
+    "ui.leaveBlankForARandomName": {
+      "message": "Leave blank for a random name.",
+      "context": "ui",
+      "legacy": ["Leave blank for a random name."]
+    },
+    "ui.connectAnIntegration": {
+      "message": "Connect an integration",
+      "context": "ui",
+      "legacy": ["Connect an integration"]
+    },
+    "ui.viewAllIntegrations": {
+      "message": "View all integrations",
+      "context": "ui",
+      "legacy": ["View all integrations"]
+    },
+    "ui.renameAccount": {
+      "message": "Rename account",
+      "context": "ui",
+      "legacy": ["Rename account"]
+    },
+    "ui.accountName": {
+      "message": "Account name",
+      "context": "ui",
+      "legacy": ["Account name"]
+    },
+    "ui.startingAuthorization": {
+      "message": "Starting authorization…",
+      "context": "ui",
+      "legacy": ["Starting authorization…"]
+    },
+    "ui.waitingForCommandToFinish": {
+      "message": "Waiting for command to finish…",
+      "context": "ui",
+      "legacy": ["Waiting for command to finish…"]
+    },
+    "ui.startingCommand": {
+      "message": "Starting command…",
+      "context": "ui",
+      "legacy": ["Starting command…"]
+    },
+    "session.typeYourOwnAnswer": {
+      "message": "Type your own answer",
+      "context": "session",
+      "legacy": ["Type your own answer"]
+    },
+    "session.renameSession": {
+      "message": "Rename session",
+      "context": "session",
+      "legacy": ["Rename session"]
+    },
+    "ui.sessionTitle": {
+      "message": "Session title",
+      "context": "ui",
+      "legacy": ["Session title"]
+    },
+    "ui.mcpServers": {
+      "message": "MCP servers",
+      "context": "ui",
+      "legacy": ["MCP servers"]
+    },
+    "ui.mcpServer": {
+      "message": "MCP server: {{name}}",
+      "context": "ui",
+      "legacy": ["MCP server: {{name}}"]
+    },
+    "ui.remoteControl": {
+      "message": "Remote control: {{status}}",
+      "context": "ui",
+      "legacy": ["Remote control: {{status}}"]
+    },
+    "ui.companionOrigin": {
+      "message": "Companion origin",
+      "context": "ui",
+      "legacy": ["Companion origin"]
+    },
+    "ui.mustBeTheHttpsMagicdnsOriginPhonesWill": {
+      "message": "Must be the https MagicDNS origin phones will open.",
+      "context": "ui",
+      "legacy": ["Must be the https MagicDNS origin phones will open."]
+    },
+    "ui.modelCatalogRefreshed": {
+      "message": "Model catalog refreshed",
+      "context": "ui",
+      "legacy": ["Model catalog refreshed"]
+    },
+    "ui.failedToRefreshModelCatalog": {
+      "message": "Failed to refresh model catalog",
+      "context": "ui",
+      "legacy": ["Failed to refresh model catalog"]
+    },
+    "ui.mcpServerNeedsAuthentication": {
+      "message": "MCP server needs authentication",
+      "context": "ui",
+      "legacy": ["MCP server needs authentication"]
+    },
+    "ui.connectToUseItsTools": {
+      "message": "Connect \"{{name}}\" to use its tools.",
+      "context": "ui",
+      "legacy": ["Connect \"{{name}}\" to use its tools."]
+    },
+    "ui.openMcpServers": {
+      "message": "Open MCP servers",
+      "context": "ui",
+      "legacy": ["Open MCP servers"]
+    },
+    "ui.runMcpsToViewDetails": {
+      "message": "Run /mcps to view details.",
+      "context": "ui",
+      "legacy": ["Run /mcps to view details."]
+    },
+    "ui.copiedToClipboard": {
+      "message": "Copied to clipboard",
+      "context": "ui",
+      "legacy": ["Copied to clipboard"]
+    },
+    "ui.showCommandPalette": {
+      "message": "Show command palette",
+      "context": "ui",
+      "legacy": ["Show command palette"]
+    },
+    "ui.switchSession": {
+      "message": "Switch session",
+      "context": "ui",
+      "legacy": ["Switch session"]
+    },
+    "ui.openSessionOrProject": {
+      "message": "Open session or project",
+      "context": "ui",
+      "legacy": ["Open session or project"]
+    },
+    "ui.refreshModelCatalog": {
+      "message": "Refresh model catalog",
+      "context": "ui",
+      "legacy": ["Refresh model catalog"]
+    },
+    "ui.reFetchTheModelsDevCatalogAndRepopulate": {
+      "message": "Re-fetch the models.dev catalog and repopulate the model list",
+      "context": "ui",
+      "legacy": ["Re-fetch the models.dev catalog and repopulate the model list"]
+    },
+    "ui.remoteControl2": {
+      "message": "Remote control",
+      "context": "ui",
+      "legacy": ["Remote control"]
+    },
+    "ui.switchAgent": {
+      "message": "Switch agent",
+      "context": "ui",
+      "legacy": ["Switch agent"]
+    },
+    "ui.viewStatus": {
+      "message": "View status",
+      "context": "ui",
+      "legacy": ["View status"]
+    },
+    "ui.updateRedsun": {
+      "message": "Update redsun",
+      "context": "ui",
+      "legacy": ["Update redsun"]
+    },
+    "ui.pairDevice": {
+      "message": "Pair device",
+      "context": "ui",
+      "legacy": ["Pair device"]
+    },
+    "ui.restartService": {
+      "message": "Restart service",
+      "context": "ui",
+      "legacy": ["Restart service"]
+    },
+    "ui.viewDebugInfo": {
+      "message": "View debug info",
+      "context": "ui",
+      "legacy": ["View debug info"]
+    },
+    "ui.switchTheme": {
+      "message": "Switch theme",
+      "context": "ui",
+      "legacy": ["Switch theme"]
+    },
+    "ui.openDocs": {
+      "message": "Open docs",
+      "context": "ui",
+      "legacy": ["Open docs"]
+    },
+    "ui.exitTheApp": {
+      "message": "Exit the app",
+      "context": "ui",
+      "legacy": ["Exit the app"]
+    },
+    "ui.toggleDebugPanel": {
+      "message": "Toggle debug panel",
+      "context": "ui",
+      "legacy": ["Toggle debug panel"]
+    },
+    "ui.toggleConsole": {
+      "message": "Toggle console",
+      "context": "ui",
+      "legacy": ["Toggle console"]
+    },
+    "ui.suspendTerminal": {
+      "message": "Suspend terminal",
+      "context": "ui",
+      "legacy": ["Suspend terminal"]
+    },
+    "ui.noItemsAvailable": {
+      "message": "No items available",
+      "context": "ui",
+      "legacy": ["No items available"]
+    },
+    "ui.nextDialogAction": {
+      "message": "Next dialog action",
+      "context": "ui",
+      "legacy": ["Next dialog action"]
+    },
+    "ui.previousDialogAction": {
+      "message": "Previous dialog action",
+      "context": "ui",
+      "legacy": ["Previous dialog action"]
+    },
+    "ui.submitDialogPrompt": {
+      "message": "Submit dialog prompt",
+      "context": "ui",
+      "legacy": ["Submit dialog prompt"]
+    },
+    "ui.enterText": {
+      "message": "Enter text",
+      "context": "ui",
+      "legacy": ["Enter text"]
+    },
+    "ui.working": {
+      "message": "Working…",
+      "context": "ui",
+      "legacy": ["Working…"]
+    },
+    "ui.processing": {
+      "message": "processing…",
+      "context": "ui",
+      "legacy": ["processing…"]
+    },
+    "session.submit": {
+      "message": "submit",
+      "context": "session",
+      "legacy": ["submit"]
+    },
+    "ui.noMcpServers": {
+      "message": "No MCP servers",
+      "context": "ui",
+      "legacy": ["No MCP servers"]
+    },
+    "ui.connected": {
+      "message": "Connected",
+      "context": "ui",
+      "legacy": ["Connected"]
+    },
+    "ui.disabledInConfiguration": {
+      "message": "Disabled in configuration",
+      "context": "ui",
+      "legacy": ["Disabled in configuration"]
+    },
+    "ui.needsAuthentication": {
+      "message": "Needs authentication",
+      "context": "ui",
+      "legacy": ["Needs authentication"]
+    },
+    "ui.experiments": {
+      "message": "Experiments",
+      "context": "ui",
+      "legacy": ["Experiments"]
+    },
+    "ui.noExperimentsAvailable": {
+      "message": "No experiments available",
+      "context": "ui",
+      "legacy": ["No experiments available"]
+    },
+    "ui.noSkillsAvailable": {
+      "message": "No skills available",
+      "context": "ui",
+      "legacy": ["No skills available"]
+    },
+    "ui.closeAndReopenSkillsToTryAgain": {
+      "message": "Close and reopen Skills to try again.",
+      "context": "ui",
+      "legacy": ["Close and reopen Skills to try again."]
+    },
+    "ui.loadingSkills": {
+      "message": "Loading skills…",
+      "context": "ui",
+      "legacy": ["Loading skills…"]
+    },
+    "ui.noSkillsFound": {
+      "message": "No skills found",
+      "context": "ui",
+      "legacy": ["No skills found"]
+    },
+    "ui.closeAndReopenWorktreesToTryAgain": {
+      "message": "Close and reopen Worktrees to try again.",
+      "context": "ui",
+      "legacy": ["Close and reopen Worktrees to try again."]
+    },
+    "ui.loadingWorktrees": {
+      "message": "Loading worktrees…",
+      "context": "ui",
+      "legacy": ["Loading worktrees…"]
+    },
+    "ui.noWorktreesAvailable": {
+      "message": "No worktrees available",
+      "context": "ui",
+      "legacy": ["No worktrees available"]
+    },
+    "ui.noWorktreesFound": {
+      "message": "No worktrees found",
+      "context": "ui",
+      "legacy": ["No worktrees found"]
+    },
+    "ui.noRecentSessionsOrProjects": {
+      "message": "No recent sessions or projects",
+      "context": "ui",
+      "legacy": ["No recent sessions or projects"]
+    },
+    "ui.refreshingSessionsAndProjects": {
+      "message": "Refreshing sessions and projects…",
+      "context": "ui",
+      "legacy": ["Refreshing sessions and projects…"]
+    },
+    "ui.skip": {
+      "message": "Skip",
+      "context": "ui",
+      "legacy": ["Skip"]
+    },
+    "ui.confirmUpdateAction": {
+      "message": "Confirm update action",
+      "context": "ui",
+      "legacy": ["Confirm update action"]
+    },
+    "ui.previousUpdateAction": {
+      "message": "Previous update action",
+      "context": "ui",
+      "legacy": ["Previous update action"]
+    },
+    "ui.nextUpdateAction": {
+      "message": "Next update action",
+      "context": "ui",
+      "legacy": ["Next update action"]
+    },
+    "ui.checkingForUpdates": {
+      "message": "Checking for updates…",
+      "context": "ui",
+      "legacy": ["Checking for updates…"]
+    },
+    "ui.anUpdateIsAvailableAfterInstallingYouLl": {
+      "message": "An update is available. After installing, you'll be prompted to restart redsun.",
+      "context": "ui",
+      "legacy": ["An update is available. After installing, you'll be prompted to restart redsun."]
+    },
+    "ui.installingRedsun": {
+      "message": "Installing redsun {{version}}…",
+      "context": "ui",
+      "legacy": ["Installing redsun {{version}}…"]
+    },
+    "ui.updateSuccessfulARestartIsRequiredAnyActive": {
+      "message": "Update successful! A restart is required. Any active sessions will be resumed automatically.",
+      "context": "ui",
+      "legacy": ["Update successful! A restart is required. Any active sessions will be resumed automatically."]
+    },
+    "ui.redsunIsAlreadyUpToDate": {
+      "message": "redsun is already up to date.",
+      "context": "ui",
+      "legacy": ["redsun is already up to date."]
+    },
+    "ui.connecting": {
+      "message": "Connecting …",
+      "context": "ui",
+      "legacy": ["Connecting …"]
+    },
+    "ui.connected2": {
+      "message": "Connected ✓",
+      "context": "ui",
+      "legacy": ["Connected ✓"]
+    },
+    "ui.failed": {
+      "message": "Failed !",
+      "context": "ui",
+      "legacy": ["Failed !"]
+    },
+    "ui.signInRequired": {
+      "message": "Sign in required →",
+      "context": "ui",
+      "legacy": ["Sign in required →"]
+    },
+    "ui.disabled": {
+      "message": "Disabled ○",
+      "context": "ui",
+      "legacy": ["Disabled ○"]
+    },
+    "ui.enterToViewError": {
+      "message": "enter to view error",
+      "context": "ui",
+      "legacy": ["enter to view error"]
+    },
+    "ui.noIntegrationsAvailable": {
+      "message": "No integrations available",
+      "context": "ui",
+      "legacy": ["No integrations available"]
+    },
+    "ui.noIntegrationsFound": {
+      "message": "No integrations found",
+      "context": "ui",
+      "legacy": ["No integrations found"]
+    },
+    "ui.addAccount": {
+      "message": "Add account",
+      "context": "ui",
+      "legacy": ["Add account"]
+    },
+    "ui.pressAgainToConfirm": {
+      "message": "Press {{key}} again to confirm",
+      "context": "ui",
+      "legacy": ["Press {{key}} again to confirm"]
+    },
+    "ui.connectedAccounts": {
+      "message": "Connected accounts",
+      "context": "ui",
+      "legacy": ["Connected accounts"]
+    },
+    "ui.rename": {
+      "message": "rename",
+      "context": "ui",
+      "legacy": ["rename"]
+    },
+    "session.delete": {
+      "message": "delete",
+      "context": "session",
+      "legacy": ["delete"]
+    },
+    "ui.disconnected": {
+      "message": "Disconnected {{name}}",
+      "context": "ui",
+      "legacy": ["Disconnected {{name}}"]
+    },
+    "ui.authenticationExpired": {
+      "message": "Authentication expired",
+      "context": "ui",
+      "legacy": ["Authentication expired"]
+    },
+    "ui.escClose": {
+      "message": "esc close",
+      "context": "ui",
+      "legacy": ["esc close"]
+    },
+    "ui.darkThemes": {
+      "message": "dark themes",
+      "context": "ui",
+      "legacy": ["dark themes"]
+    },
+    "ui.lightThemes": {
+      "message": "light themes",
+      "context": "ui",
+      "legacy": ["light themes"]
+    },
+    "ui.connect": {
+      "message": "Connect {{name}}",
+      "context": "ui",
+      "legacy": ["Connect {{name}}"]
+    },
+    "session.messageActions": {
+      "message": "Message Actions",
+      "context": "session",
+      "legacy": ["Message Actions"]
+    },
+    "session.jumpTo": {
+      "message": "Jump to",
+      "context": "session",
+      "legacy": ["Jump to"]
+    },
+    "session.viewMessageInSession": {
+      "message": "view message in session",
+      "context": "session",
+      "legacy": ["view message in session"]
+    },
+    "session.revert": {
+      "message": "Revert",
+      "context": "session",
+      "legacy": ["Revert"]
+    },
+    "session.undoMessagesAndFileChanges": {
+      "message": "undo messages and file changes",
+      "context": "session",
+      "legacy": ["undo messages and file changes"]
+    },
+    "session.copy": {
+      "message": "Copy",
+      "context": "session",
+      "legacy": ["Copy"]
+    },
+    "session.messageTextToClipboard": {
+      "message": "message text to clipboard",
+      "context": "session",
+      "legacy": ["message text to clipboard"]
+    },
+    "session.fork": {
+      "message": "Fork",
+      "context": "session",
+      "legacy": ["Fork"]
+    },
+    "session.createANewSession": {
+      "message": "create a new session",
+      "context": "session",
+      "legacy": ["create a new session"]
+    },
+    "session.forkedSession": {
+      "message": "Forked session",
+      "context": "session",
+      "legacy": ["Forked session"]
+    },
+    "session.fullSession": {
+      "message": "Full session",
+      "context": "session",
+      "legacy": ["Full session"]
+    },
+    "session.forkingSession": {
+      "message": "Forking session…",
+      "context": "session",
+      "legacy": ["Forking session…"]
+    },
+    "session.timeline": {
+      "message": "Timeline",
+      "context": "session",
+      "legacy": ["Timeline"]
+    },
+    "session.pendingSteer": {
+      "message": "Pending steer",
+      "context": "session",
+      "legacy": ["Pending steer"]
+    },
+    "session.error": {
+      "message": "Error",
+      "context": "session",
+      "legacy": ["Error"]
+    },
+    "session.interrupted": {
+      "message": "Interrupted",
+      "context": "session",
+      "legacy": ["Interrupted"]
+    },
+    "session.for": {
+      "message": "{{verb}} for {{duration}}",
+      "context": "session",
+      "legacy": ["{{verb}} for {{duration}}"]
+    },
+    "session.done": {
+      "message": "done {{time}}",
+      "context": "session",
+      "legacy": ["done {{time}}"]
+    },
+    "session.cooked": {
+      "message": "Cooked",
+      "context": "session",
+      "legacy": ["Cooked"]
+    },
+    "session.cooking": {
+      "message": "Cooking",
+      "context": "session",
+      "legacy": ["Cooking"]
+    },
+    "session.baked": {
+      "message": "Baked",
+      "context": "session",
+      "legacy": ["Baked"]
+    },
+    "session.baking": {
+      "message": "Baking",
+      "context": "session",
+      "legacy": ["Baking"]
+    },
+    "session.brewed": {
+      "message": "Brewed",
+      "context": "session",
+      "legacy": ["Brewed"]
+    },
+    "session.brewing": {
+      "message": "Brewing",
+      "context": "session",
+      "legacy": ["Brewing"]
+    },
+    "session.simmered": {
+      "message": "Simmered",
+      "context": "session",
+      "legacy": ["Simmered"]
+    },
+    "session.simmering": {
+      "message": "Simmering",
+      "context": "session",
+      "legacy": ["Simmering"]
+    },
+    "session.whisked": {
+      "message": "Whisked",
+      "context": "session",
+      "legacy": ["Whisked"]
+    },
+    "session.whisking": {
+      "message": "Whisking",
+      "context": "session",
+      "legacy": ["Whisking"]
+    },
+    "session.stewed": {
+      "message": "Stewed",
+      "context": "session",
+      "legacy": ["Stewed"]
+    },
+    "session.stewing": {
+      "message": "Stewing",
+      "context": "session",
+      "legacy": ["Stewing"]
+    },
+    "session.toasted": {
+      "message": "Toasted",
+      "context": "session",
+      "legacy": ["Toasted"]
+    },
+    "session.toasting": {
+      "message": "Toasting",
+      "context": "session",
+      "legacy": ["Toasting"]
+    },
+    "session.percolated": {
+      "message": "Percolated",
+      "context": "session",
+      "legacy": ["Percolated"]
+    },
+    "session.percolating": {
+      "message": "Percolating",
+      "context": "session",
+      "legacy": ["Percolating"]
+    },
+    "session.togglePermissionFullscreen": {
+      "message": "Toggle permission fullscreen",
+      "context": "session",
+      "legacy": ["Toggle permission fullscreen"]
+    },
+    "session.previousOption": {
+      "message": "Previous option",
+      "context": "session",
+      "legacy": ["Previous option"]
+    },
+    "session.nextOption": {
+      "message": "Next option",
+      "context": "session",
+      "legacy": ["Next option"]
+    },
+    "session.selectOption": {
+      "message": "Select option",
+      "context": "session",
+      "legacy": ["Select option"]
+    },
+    "session.runACommand": {
+      "message": "Run a command… \"{{command}}\"",
+      "context": "session",
+      "legacy": ["Run a command… \"{{command}}\""]
+    },
+    "session.askAnything": {
+      "message": "Ask anything… \"{{prompt}}\"",
+      "context": "session",
+      "legacy": ["Ask anything… \"{{prompt}}\""]
+    },
+    "session.interrupt": {
+      "message": "interrupt",
+      "context": "session",
+      "legacy": ["interrupt"]
+    },
+    "session.againToInterrupt": {
+      "message": "again to interrupt",
+      "context": "session",
+      "legacy": ["again to interrupt"]
+    },
+    "session.remoteServerUpdateAvailable": {
+      "message": "Remote server update available",
+      "context": "session",
+      "legacy": ["Remote server update available"]
+    },
+    "session.restartToUse": {
+      "message": "restart to use {{version}}",
+      "context": "session",
+      "legacy": ["restart to use {{version}}"]
+    },
+    "session.toInstall": {
+      "message": "to install {{version}}",
+      "context": "session",
+      "legacy": ["to install {{version}}"]
+    },
+    "session.pageUp": {
+      "message": "Page up",
+      "context": "session",
+      "legacy": ["Page up"]
+    },
+    "session.pageDown": {
+      "message": "Page down",
+      "context": "session",
+      "legacy": ["Page down"]
+    },
+    "session.lineUp": {
+      "message": "Line up",
+      "context": "session",
+      "legacy": ["Line up"]
+    },
+    "session.lineDown": {
+      "message": "Line down",
+      "context": "session",
+      "legacy": ["Line down"]
+    },
+    "session.halfPageUp": {
+      "message": "Half page up",
+      "context": "session",
+      "legacy": ["Half page up"]
+    },
+    "session.halfPageDown": {
+      "message": "Half page down",
+      "context": "session",
+      "legacy": ["Half page down"]
+    },
+    "session.firstMessage": {
+      "message": "First message",
+      "context": "session",
+      "legacy": ["First message"]
+    },
+    "session.lastMessage": {
+      "message": "Last message",
+      "context": "session",
+      "legacy": ["Last message"]
+    },
+    "session.nextActiveSubagent": {
+      "message": "Next active subagent",
+      "context": "session",
+      "legacy": ["Next active subagent"]
+    },
+    "session.previousActiveSubagent": {
+      "message": "Previous active subagent",
+      "context": "session",
+      "legacy": ["Previous active subagent"]
+    },
+    "session.shareSession": {
+      "message": "Share session",
+      "context": "session",
+      "legacy": ["Share session"]
+    },
+    "session.jumpToMessage": {
+      "message": "Jump to message",
+      "context": "session",
+      "legacy": ["Jump to message"]
+    },
+    "session.forkSession": {
+      "message": "Fork session",
+      "context": "session",
+      "legacy": ["Fork session"]
+    },
+    "session.setOrClearASessionGoal": {
+      "message": "Set or clear a session goal",
+      "context": "session",
+      "legacy": ["Set or clear a session goal"]
+    },
+    "session.unshareSession": {
+      "message": "Unshare session",
+      "context": "session",
+      "legacy": ["Unshare session"]
+    },
+    "session.toggleSessionScrollbar": {
+      "message": "Toggle session scrollbar",
+      "context": "session",
+      "legacy": ["Toggle session scrollbar"]
+    },
+    "session.jumpToLastUserMessage": {
+      "message": "Jump to last user message",
+      "context": "session",
+      "legacy": ["Jump to last user message"]
+    },
+    "session.nextUserMessage": {
+      "message": "Next user message",
+      "context": "session",
+      "legacy": ["Next user message"]
+    },
+    "session.previousUserMessage": {
+      "message": "Previous user message",
+      "context": "session",
+      "legacy": ["Previous user message"]
+    },
+    "session.copyLastAssistantMessage": {
+      "message": "Copy last assistant message",
+      "context": "session",
+      "legacy": ["Copy last assistant message"]
+    },
+    "session.copySessionId": {
+      "message": "Copy session ID",
+      "context": "session",
+      "legacy": ["Copy session ID"]
+    },
+    "session.copySessionTranscript": {
+      "message": "Copy session transcript",
+      "context": "session",
+      "legacy": ["Copy session transcript"]
+    },
+    "session.goToFirstChildSession": {
+      "message": "Go to first child session",
+      "context": "session",
+      "legacy": ["Go to first child session"]
+    },
+    "session.viewQueuedPrompts": {
+      "message": "View queued prompts",
+      "context": "session",
+      "legacy": ["View queued prompts"]
+    },
+    "session.goToParentSession": {
+      "message": "Go to parent session",
+      "context": "session",
+      "legacy": ["Go to parent session"]
+    },
+    "session.goToNextChildSession": {
+      "message": "Go to next child session",
+      "context": "session",
+      "legacy": ["Go to next child session"]
+    },
+    "session.goToPreviousChildSession": {
+      "message": "Go to previous child session",
+      "context": "session",
+      "legacy": ["Go to previous child session"]
+    },
+    "session.pasteFromClipboard": {
+      "message": "Paste from clipboard",
+      "context": "session",
+      "legacy": ["Paste from clipboard"]
+    },
+    "session.clearAnswerEdit": {
+      "message": "Clear answer edit",
+      "context": "session",
+      "legacy": ["Clear answer edit"]
+    },
+    "session.nextField": {
+      "message": "Next field",
+      "context": "session",
+      "legacy": ["Next field"]
+    },
+    "session.previousField": {
+      "message": "Previous field",
+      "context": "session",
+      "legacy": ["Previous field"]
+    },
+    "session.leaveAnswerEdit": {
+      "message": "Leave answer edit",
+      "context": "session",
+      "legacy": ["Leave answer edit"]
+    },
+    "session.submitAnswerEdit": {
+      "message": "Submit answer edit",
+      "context": "session",
+      "legacy": ["Submit answer edit"]
+    },
+    "session.dismissForm": {
+      "message": "Dismiss form",
+      "context": "session",
+      "legacy": ["Dismiss form"]
+    },
+    "session.copyLink": {
+      "message": "Copy link",
+      "context": "session",
+      "legacy": ["Copy link"]
+    },
+    "session.submitForm": {
+      "message": "Submit form",
+      "context": "session",
+      "legacy": ["Submit form"]
+    },
+    "session.scrollReview": {
+      "message": "Scroll review",
+      "context": "session",
+      "legacy": ["Scroll review"]
+    },
+    "session.previousAnswer": {
+      "message": "Previous answer",
+      "context": "session",
+      "legacy": ["Previous answer"]
+    },
+    "session.nextAnswer": {
+      "message": "Next answer",
+      "context": "session",
+      "legacy": ["Next answer"]
+    },
+    "session.selectAnswer": {
+      "message": "Select answer",
+      "context": "session",
+      "legacy": ["Select answer"]
+    },
+    "session.toggleAnswer": {
+      "message": "Toggle answer",
+      "context": "session",
+      "legacy": ["Toggle answer"]
+    },
+    "session.loadingSessionHistory": {
+      "message": "Loading session history…",
+      "context": "session",
+      "legacy": ["Loading session history…"]
+    },
+    "session.instructionsUpdated": {
+      "message": "Instructions updated",
+      "context": "session",
+      "legacy": ["Instructions updated"]
+    },
+    "session.commands": {
+      "message": "commands",
+      "context": "session",
+      "legacy": ["commands"]
+    },
+    "session.shell": {
+      "message": "shell",
+      "context": "session",
+      "legacy": ["shell"]
+    },
+    "session.files": {
+      "message": "files",
+      "context": "session",
+      "legacy": ["files"]
+    },
+    "session.agents": {
+      "message": "agents",
+      "context": "session",
+      "legacy": ["agents"]
+    },
+    "session.exitShellMode": {
+      "message": "exit shell mode",
+      "context": "session",
+      "legacy": ["exit shell mode"]
+    },
+    "session.backgroundBlockingTools": {
+      "message": "Background blocking tools",
+      "context": "session",
+      "legacy": ["Background blocking tools"]
+    },
+    "session.moveToQueue": {
+      "message": "Move to queue",
+      "context": "session",
+      "legacy": ["Move to queue"]
+    },
+    "session.delete2": {
+      "message": "Delete",
+      "context": "session",
+      "legacy": ["Delete"]
+    },
+    "session.sessionRecovery": {
+      "message": "Session recovery",
+      "context": "session",
+      "legacy": ["Session recovery"]
+    },
+    "session.noDiffProvided": {
+      "message": "No diff provided",
+      "context": "session",
+      "legacy": ["No diff provided"]
+    },
+    "session.atLeast": {
+      "message": "at least",
+      "context": "session",
+      "legacy": ["at least"]
+    },
+    "session.atMost": {
+      "message": "at most",
+      "context": "session",
+      "legacy": ["at most"]
+    },
+    "session.close": {
+      "message": "close",
+      "context": "session",
+      "legacy": ["close"]
+    },
+    "session.subagent": {
+      "message": "Subagent",
+      "context": "session",
+      "legacy": ["Subagent"]
+    },
+    "session.finished": {
+      "message": "finished",
+      "context": "session",
+      "legacy": ["finished"]
+    },
+    "session.running": {
+      "message": "running",
+      "context": "session",
+      "legacy": ["running"]
+    },
+    "session.cancelled": {
+      "message": "cancelled",
+      "context": "session",
+      "legacy": ["cancelled"]
+    },
+    "session.goal": {
+      "message": "Goal",
+      "context": "session",
+      "legacy": ["Goal"]
+    },
+    "session.advisor": {
+      "message": "Advisor",
+      "context": "session",
+      "legacy": ["Advisor"]
+    },
+    "session.notice": {
+      "message": "Notice",
+      "context": "session",
+      "legacy": ["Notice"]
+    },
+    "session.parent": {
+      "message": "Parent",
+      "context": "session",
+      "legacy": ["Parent"]
+    },
+    "session.prev": {
+      "message": "Prev",
+      "context": "session",
+      "legacy": ["Prev"]
+    },
+    "session.next": {
+      "message": "Next",
+      "context": "session",
+      "legacy": ["Next"]
+    },
+    "permission.autoApprove.off": {
+      "message": "Auto-approve: off",
+      "context": "session",
+      "legacy": ["Auto-approve: off"]
+    },
+    "permission.autoApprove.on": {
+      "message": "Auto-approve: on",
+      "context": "session",
+      "legacy": ["Auto-approve: on"]
+    },
+    "permission.autoApprove.disabled": {
+      "message": "Auto-approve all disabled (Shift+Tab)",
+      "context": "session",
+      "legacy": ["Auto-approve all disabled (Shift+Tab)"]
+    },
+    "permission.autoApprove.enabled": {
+      "message": "Auto-approve all enabled ",
+      "context": "session",
+      "legacy": ["Auto-approve all enabled "]
+    },
+    "session.permissionChoices": {
+      "message": "Permission choices",
+      "context": "session",
+      "legacy": ["Permission choices"]
+    },
+    "session.allowOnce": {
+      "message": "Allow once",
+      "context": "session",
+      "legacy": ["Allow once"]
+    },
+    "session.alwaysAllow": {
+      "message": "Always allow",
+      "context": "session",
+      "legacy": ["Always allow"]
+    },
+    "session.reject": {
+      "message": "Reject",
+      "context": "session",
+      "legacy": ["Reject"]
+    },
+    "session.rejectPermission": {
+      "message": "Reject permission",
+      "context": "session",
+      "legacy": ["Reject permission"]
+    },
+    "session.tellRedsunWhatToDoDifferently": {
+      "message": "Tell redsun what to do differently",
+      "context": "session",
+      "legacy": ["Tell redsun what to do differently"]
+    },
+    "session.rejectionReason": {
+      "message": "Rejection reason",
+      "context": "session",
+      "legacy": ["Rejection reason"]
+    },
+    "session.confirmRejection": {
+      "message": "Confirm rejection",
+      "context": "session",
+      "legacy": ["Confirm rejection"]
+    },
+    "session.cancelRejection": {
+      "message": "Cancel rejection",
+      "context": "session",
+      "legacy": ["Cancel rejection"]
+    },
+    "session.confirm": {
+      "message": "confirm",
+      "context": "session",
+      "legacy": ["confirm"]
+    },
+    "session.cancel": {
+      "message": "cancel",
+      "context": "session",
+      "legacy": ["cancel"]
+    },
+    "settings.select": {
+      "message": "select",
+      "context": "settings",
+      "legacy": ["select"]
+    },
+    "session.fullscreen": {
+      "message": "fullscreen",
+      "context": "session",
+      "legacy": ["fullscreen"]
+    },
+    "session.minimize": {
+      "message": "minimize",
+      "context": "session",
+      "legacy": ["minimize"]
+    },
+    "session.sessionLocationUnavailable": {
+      "message": "Session location unavailable",
+      "context": "session",
+      "legacy": ["Session location unavailable"]
+    },
+    "session.chooseAnotherDirectoryToContinueThisSession": {
+      "message": "Choose another directory to continue this session.",
+      "context": "session",
+      "legacy": ["Choose another directory to continue this session."]
+    },
+    "session.chooseDirectory": {
+      "message": "Choose directory",
+      "context": "session",
+      "legacy": ["Choose directory"]
+    },
+    "session.recoveryActions": {
+      "message": "Recovery actions",
+      "context": "session",
+      "legacy": ["Recovery actions"]
+    },
+    "session.typeYourAnswer": {
+      "message": "Type your answer",
+      "context": "session",
+      "legacy": ["Type your answer"]
+    },
+    "session.acknowledged": {
+      "message": "Acknowledged",
+      "context": "session",
+      "legacy": ["Acknowledged"]
+    },
+    "session.acknowledgementRequired": {
+      "message": "(acknowledgement required)",
+      "context": "session",
+      "legacy": ["(acknowledgement required)"]
+    },
+    "session.none": {
+      "message": "(none)",
+      "context": "session",
+      "legacy": ["(none)"]
+    },
+    "session.required": {
+      "message": "(required)",
+      "context": "session",
+      "legacy": ["(required)"]
+    },
+    "session.notAnswered": {
+      "message": "(not answered)",
+      "context": "session",
+      "legacy": ["(not answered)"]
+    },
+    "session.tab": {
+      "message": "tab",
+      "context": "session",
+      "legacy": ["tab"]
+    },
+    "session.scroll": {
+      "message": "scroll",
+      "context": "session",
+      "legacy": ["scroll"]
+    },
+    "session.copy2": {
+      "message": "copy",
+      "context": "session",
+      "legacy": ["copy"]
+    },
+    "session.dismiss": {
+      "message": "dismiss",
+      "context": "session",
+      "legacy": ["dismiss"]
+    },
+    "session.openLink": {
+      "message": "open link",
+      "context": "session",
+      "legacy": ["open link"]
+    },
+    "session.iFinished": {
+      "message": "I finished",
+      "context": "session",
+      "legacy": ["I finished"]
+    },
+    "session.continue": {
+      "message": "continue",
+      "context": "session",
+      "legacy": ["continue"]
+    },
+    "session.done2": {
+      "message": "done",
+      "context": "session",
+      "legacy": ["done"]
+    },
+    "session.edit": {
+      "message": "edit",
+      "context": "session",
+      "legacy": ["edit"]
+    },
+    "session.toggle": {
+      "message": "toggle",
+      "context": "session",
+      "legacy": ["toggle"]
+    },
+    "settings.notifications": {
+      "message": "Notifications",
+      "context": "settings",
+      "legacy": ["Notifications"]
+    },
+    "settings.language.title": {
+      "message": "Interface language",
+      "context": "settings",
+      "legacy": ["Interface language"]
+    },
+    "settings.simplifiedChinese": {
+      "message": "Simplified Chinese",
+      "context": "settings",
+      "legacy": ["Simplified Chinese"]
+    },
+    "settings.spanish": {
+      "message": "Spanish",
+      "context": "settings",
+      "legacy": ["Spanish"]
+    },
+    "settings.korean": {
+      "message": "Korean",
+      "context": "settings",
+      "legacy": ["Korean"]
+    },
+    "settings.french": {
+      "message": "French",
+      "context": "settings",
+      "legacy": ["French"]
+    },
+    "settings.staleReadDeduplication": {
+      "message": "Stale-read deduplication",
+      "context": "settings",
+      "legacy": ["Stale-read deduplication"]
+    },
+    "settings.compactionMode": {
+      "message": "Compaction mode",
+      "context": "settings",
+      "legacy": ["Compaction mode"]
+    },
+    "settings.warningMayBreakPromptCachingAndIncreaseCosts": {
+      "message": "Warning: may break prompt caching and increase costs.",
+      "context": "settings",
+      "legacy": ["Warning: may break prompt caching and increase costs."]
+    },
+    "settings.llmModelSummaryHybridAddsAnInventoryAlgorithmic": {
+      "message": "LLM: model summary. Hybrid: adds an inventory. Algorithmic: inventory only, no model call.",
+      "context": "settings",
+      "legacy": ["LLM: model summary. Hybrid: adds an inventory. Algorithmic: inventory only, no model call."]
+    },
+    "settings.globalDefaultsOtherConfigSourcesCanOverride": {
+      "message": "Global defaults; other config sources can override.",
+      "context": "settings",
+      "legacy": ["Global defaults; other config sources can override."]
+    },
+    "settings.hybrid": {
+      "message": "Hybrid",
+      "context": "settings",
+      "legacy": ["Hybrid"]
+    },
+    "settings.algorithmic": {
+      "message": "Algorithmic",
+      "context": "settings",
+      "legacy": ["Algorithmic"]
+    },
+    "settings.animations": {
+      "message": "Animations",
+      "context": "settings",
+      "legacy": ["Animations"]
+    },
+    "settings.sidebar": {
+      "message": "Sidebar",
+      "context": "settings",
+      "legacy": ["Sidebar"]
+    },
+    "settings.scrollbar": {
+      "message": "Scrollbar",
+      "context": "settings",
+      "legacy": ["Scrollbar"]
+    },
+    "settings.toolGrouping": {
+      "message": "Tool grouping",
+      "context": "settings",
+      "legacy": ["Tool grouping"]
+    },
+    "settings.transcriptImages": {
+      "message": "Transcript images",
+      "context": "settings",
+      "legacy": ["Transcript images"]
+    },
+    "settings.newSessionLocation": {
+      "message": "New session location",
+      "context": "settings",
+      "legacy": ["New session location"]
+    },
+    "settings.sessionListScope": {
+      "message": "Session list scope",
+      "context": "settings",
+      "legacy": ["Session list scope"]
+    },
+    "settings.layout": {
+      "message": "Layout",
+      "context": "settings",
+      "legacy": ["Layout"]
+    },
+    "settings.diffs": {
+      "message": "Diffs",
+      "context": "settings",
+      "legacy": ["Diffs"]
+    },
+    "settings.wrapping": {
+      "message": "Wrapping",
+      "context": "settings",
+      "legacy": ["Wrapping"]
+    },
+    "settings.singlePatch": {
+      "message": "Single patch",
+      "context": "settings",
+      "legacy": ["Single patch"]
+    },
+    "settings.input": {
+      "message": "Input",
+      "context": "settings",
+      "legacy": ["Input"]
+    },
+    "settings.scrollSpeed": {
+      "message": "Scroll speed",
+      "context": "settings",
+      "legacy": ["Scroll speed"]
+    },
+    "settings.acceleration": {
+      "message": "Acceleration",
+      "context": "settings",
+      "legacy": ["Acceleration"]
+    },
+    "settings.mouse": {
+      "message": "Mouse",
+      "context": "settings",
+      "legacy": ["Mouse"]
+    },
+    "settings.editorContext": {
+      "message": "Editor context",
+      "context": "settings",
+      "legacy": ["Editor context"]
+    },
+    "settings.largePastes": {
+      "message": "Large pastes",
+      "context": "settings",
+      "legacy": ["Large pastes"]
+    },
+    "settings.imagePreviews": {
+      "message": "Image previews",
+      "context": "settings",
+      "legacy": ["Image previews"]
+    },
+    "settings.leaderTimeout": {
+      "message": "Leader timeout",
+      "context": "settings",
+      "legacy": ["Leader timeout"]
+    },
+    "settings.alerts": {
+      "message": "Alerts",
+      "context": "settings",
+      "legacy": ["Alerts"]
+    },
+    "settings.attention": {
+      "message": "Attention",
+      "context": "settings",
+      "legacy": ["Attention"]
+    },
+    "settings.sounds": {
+      "message": "Sounds",
+      "context": "settings",
+      "legacy": ["Sounds"]
+    },
+    "settings.volume": {
+      "message": "Volume",
+      "context": "settings",
+      "legacy": ["Volume"]
+    },
+    "settings.windowTitle": {
+      "message": "Window title",
+      "context": "settings",
+      "legacy": ["Window title"]
+    },
+    "settings.copyBehavior": {
+      "message": "Copy behavior",
+      "context": "settings",
+      "legacy": ["Copy behavior"]
+    },
+    "settings.developerTools": {
+      "message": "Developer tools",
+      "context": "settings",
+      "legacy": ["Developer tools"]
+    },
+    "settings.debug": {
+      "message": "Debug",
+      "context": "settings",
+      "legacy": ["Debug"]
+    },
+    "settings.off": {
+      "message": "off",
+      "context": "settings",
+      "legacy": ["off"]
+    },
+    "settings.on": {
+      "message": "on",
+      "context": "settings",
+      "legacy": ["on"]
+    },
+    "settings.hide": {
+      "message": "hide",
+      "context": "settings",
+      "legacy": ["hide"]
+    },
+    "settings.show": {
+      "message": "show",
+      "context": "settings",
+      "legacy": ["show"]
+    },
+    "settings.auto": {
+      "message": "auto",
+      "context": "settings",
+      "legacy": ["auto"]
+    },
+    "settings.source": {
+      "message": "source",
+      "context": "settings",
+      "legacy": ["source"]
+    },
+    "settings.rendered": {
+      "message": "rendered",
+      "context": "settings",
+      "legacy": ["rendered"]
+    },
+    "settings.none": {
+      "message": "none",
+      "context": "settings",
+      "legacy": ["none"]
+    },
+    "settings.launchDirectory": {
+      "message": "launch directory",
+      "context": "settings",
+      "legacy": ["launch directory"]
+    },
+    "settings.activeSession": {
+      "message": "active session",
+      "context": "settings",
+      "legacy": ["active session"]
+    },
+    "settings.currentDirectory": {
+      "message": "current directory",
+      "context": "settings",
+      "legacy": ["current directory"]
+    },
+    "settings.global": {
+      "message": "global",
+      "context": "settings",
+      "legacy": ["global"]
+    },
+    "settings.split": {
+      "message": "split",
+      "context": "settings",
+      "legacy": ["split"]
+    },
+    "settings.unified": {
+      "message": "unified",
+      "context": "settings",
+      "legacy": ["unified"]
+    },
+    "settings.word": {
+      "message": "word",
+      "context": "settings",
+      "legacy": ["word"]
+    },
+    "settings.compact": {
+      "message": "compact",
+      "context": "settings",
+      "legacy": ["compact"]
+    },
+    "settings.full": {
+      "message": "full",
+      "context": "settings",
+      "legacy": ["full"]
+    },
+    "settings.manual": {
+      "message": "manual",
+      "context": "settings",
+      "legacy": ["manual"]
+    },
+    "settings.loading": {
+      "message": "loading",
+      "context": "settings",
+      "legacy": ["loading"]
+    },
+    "remote.unavailable": {
+      "message": "unavailable",
+      "context": "remote",
+      "legacy": ["unavailable"]
+    },
+    "settings.change": {
+      "message": "change",
+      "context": "settings",
+      "legacy": ["change"]
+    },
+    "application.mcpServerFailed": {
+      "message": "MCP server failed: {{name}}",
+      "context": "application",
+      "legacy": ["MCP server failed: {{name}}"]
+    },
+    "application.switchToSessionInQuickSlot": {
+      "message": "Switch to session in quick slot {{slot}}",
+      "context": "application",
+      "legacy": ["Switch to session in quick slot {{slot}}"]
+    },
+    "application.switchWorkerModel": {
+      "message": "Switch worker model",
+      "context": "application",
+      "legacy": ["Switch worker model"]
+    },
+    "application.switchWorkerModelVariant": {
+      "message": "Switch worker model variant",
+      "context": "application",
+      "legacy": ["Switch worker model variant"]
+    },
+    "application.thisWorkerModelHasNoVariants": {
+      "message": "This worker model has no variants",
+      "context": "application",
+      "legacy": ["This worker model has no variants"]
+    },
+    "application.selectAWorkerModelFirst": {
+      "message": "Select a worker model first",
+      "context": "application",
+      "legacy": ["Select a worker model first"]
+    },
+    "application.modelCycle": {
+      "message": "Model cycle",
+      "context": "application",
+      "legacy": ["Model cycle"]
+    },
+    "application.modelCycleReverse": {
+      "message": "Model cycle reverse",
+      "context": "application",
+      "legacy": ["Model cycle reverse"]
+    },
+    "application.favoriteCycle": {
+      "message": "Favorite cycle",
+      "context": "application",
+      "legacy": ["Favorite cycle"]
+    },
+    "application.favoriteCycleReverse": {
+      "message": "Favorite cycle reverse",
+      "context": "application",
+      "legacy": ["Favorite cycle reverse"]
+    },
+    "application.variantCycle": {
+      "message": "Variant cycle",
+      "context": "application",
+      "legacy": ["Variant cycle"]
+    },
+    "application.switchModelVariant": {
+      "message": "Switch model variant",
+      "context": "application",
+      "legacy": ["Switch model variant"]
+    },
+    "application.noVariantsAvailable": {
+      "message": "No variants available",
+      "context": "application",
+      "legacy": ["No variants available"]
+    },
+    "application.theCurrentModelDoesNotSupportAnyVariants": {
+      "message": "The current model does not support any variants.",
+      "context": "application",
+      "legacy": ["The current model does not support any variants."]
+    },
+    "application.disableTerminalTitle": {
+      "message": "Disable terminal title",
+      "context": "application",
+      "legacy": ["Disable terminal title"]
+    },
+    "application.enableTerminalTitle": {
+      "message": "Enable terminal title",
+      "context": "application",
+      "legacy": ["Enable terminal title"]
+    },
+    "application.disableAnimations": {
+      "message": "Disable animations",
+      "context": "application",
+      "legacy": ["Disable animations"]
+    },
+    "application.enableAnimations": {
+      "message": "Enable animations",
+      "context": "application",
+      "legacy": ["Enable animations"]
+    },
+    "application.disableFileContext": {
+      "message": "Disable file context",
+      "context": "application",
+      "legacy": ["Disable file context"]
+    },
+    "application.enableFileContext": {
+      "message": "Enable file context",
+      "context": "application",
+      "legacy": ["Enable file context"]
+    },
+    "application.disableDiffWrapping": {
+      "message": "Disable diff wrapping",
+      "context": "application",
+      "legacy": ["Disable diff wrapping"]
+    },
+    "application.enableDiffWrapping": {
+      "message": "Enable diff wrapping",
+      "context": "application",
+      "legacy": ["Enable diff wrapping"]
+    },
+    "application.disablePasteSummary": {
+      "message": "Disable paste summary",
+      "context": "application",
+      "legacy": ["Disable paste summary"]
+    },
+    "application.enablePasteSummary": {
+      "message": "Enable paste summary",
+      "context": "application",
+      "legacy": ["Enable paste summary"]
+    },
+    "application.disableAutoApprovePermissions": {
+      "message": "Disable auto-approve permissions",
+      "context": "application",
+      "legacy": ["Disable auto-approve permissions"]
+    },
+    "application.enableAutoApprovePermissions": {
+      "message": "Enable auto-approve permissions",
+      "context": "application",
+      "legacy": ["Enable auto-approve permissions"]
+    },
+    "remote.disabled": {
+      "message": "disabled",
+      "context": "remote",
+      "legacy": ["disabled"]
+    },
+    "remote.ready": {
+      "message": "ready",
+      "context": "remote",
+      "legacy": ["ready"]
+    },
+    "remote.connected": {
+      "message": "connected",
+      "context": "remote",
+      "legacy": ["connected"]
+    },
+    "remote.statusUnknown": {
+      "message": "status unknown",
+      "context": "remote",
+      "legacy": ["status unknown"]
+    },
+    "remote.rcStatusUnknown": {
+      "message": "RC status unknown",
+      "context": "remote",
+      "legacy": ["RC status unknown"]
+    },
+    "remote.rcDisabled": {
+      "message": "RC disabled",
+      "context": "remote",
+      "legacy": ["RC disabled"]
+    },
+    "remote.rcEnabledUnavailable": {
+      "message": "RC enabled, unavailable",
+      "context": "remote",
+      "legacy": ["RC enabled, unavailable"]
+    },
+    "remote.rcReady": {
+      "message": "RC ready",
+      "context": "remote",
+      "legacy": ["RC ready"]
+    },
+    "remote.rcConnected": {
+      "message": "RC connected",
+      "context": "remote",
+      "legacy": ["RC connected"]
+    },
+    "remote.refreshStatusToSeeTheNextStep": {
+      "message": "Refresh status to see the next step.",
+      "context": "remote",
+      "legacy": ["Refresh status to see the next step."]
+    },
+    "remote.requiresAManagedServiceRedsunServeServiceThis": {
+      "message": "Requires a managed service (`redsun serve --service`); this backend does not support remote control.",
+      "context": "remote",
+      "legacy": ["Requires a managed service (`redsun serve --service`); this backend does not support remote control."]
+    },
+    "remote.enrollACompanionBelowOrRunRedsunRemote": {
+      "message": "Enroll a companion below, or run `redsun remote enroll --handoff <new-private-file>`.",
+      "context": "remote",
+      "legacy": ["Enroll a companion below, or run `redsun remote enroll --handoff <new-private-file>`."]
+    },
+    "remote.enableRemoteControlSoTheCompanionCanAttach": {
+      "message": "Enable remote control so the companion can attach.",
+      "context": "remote",
+      "legacy": ["Enable remote control so the companion can attach."]
+    },
+    "remote.openOnThePhoneWithinFiveMinutesAnd": {
+      "message": "Open {{origin}} on the phone within five minutes and choose Register this device; approve the fingerprint here.",
+      "context": "remote",
+      "legacy": [
+        "Open {{origin}} on the phone within five minutes and choose Register this device; approve the fingerprint here."
+      ]
+    },
+    "remote.companionStarting": {
+      "message": "Companion starting",
+      "context": "remote",
+      "legacy": ["Companion starting"]
+    },
+    "remote.configureACompanionOriginToStartTheCompanion": {
+      "message": "Configure a companion origin to start the companion.",
+      "context": "remote",
+      "legacy": ["Configure a companion origin to start the companion."]
+    },
+    "remote.companionAttachedRegisterOrConnectAPhone": {
+      "message": "Companion attached; register or connect a phone",
+      "context": "remote",
+      "legacy": ["Companion attached; register or connect a phone"]
+    },
+    "remote.phoneConnected": {
+      "message": "Phone connected",
+      "context": "remote",
+      "legacy": ["Phone connected"]
+    },
+    "remote.enableRemoteControl": {
+      "message": "Enable remote control",
+      "context": "remote",
+      "legacy": ["Enable remote control"]
+    },
+    "remote.disableRemoteControl": {
+      "message": "Disable remote control",
+      "context": "remote",
+      "legacy": ["Disable remote control"]
+    },
+    "remote.theEnrolledCompanionMayAttachPersistsInThe": {
+      "message": "The enrolled companion may attach. Persists in the service configuration.",
+      "context": "remote",
+      "legacy": ["The enrolled companion may attach. Persists in the service configuration."]
+    },
+    "remote.companionAccessEndsImmediatelyEnrollmentAndRunningTasks": {
+      "message": "Companion access ends immediately; enrollment and running tasks are kept.",
+      "context": "remote",
+      "legacy": ["Companion access ends immediately; enrollment and running tasks are kept."]
+    },
+    "remote.confirmEnrollACompanionOnThisHost": {
+      "message": "Confirm: enroll a companion on this host",
+      "context": "remote",
+      "legacy": ["Confirm: enroll a companion on this host"]
+    },
+    "remote.enrollACompanion": {
+      "message": "Enroll a companion",
+      "context": "remote",
+      "legacy": ["Enroll a companion"]
+    },
+    "remote.storesTheCredentialForTheCompanionOnThis": {
+      "message": "Stores the credential for the companion on this host. Does not enable remote control.",
+      "context": "remote",
+      "legacy": ["Stores the credential for the companion on this host. Does not enable remote control."]
+    },
+    "remote.confirmRevokeAllCompanionCredentials": {
+      "message": "Confirm: revoke all companion credentials",
+      "context": "remote",
+      "legacy": ["Confirm: revoke all companion credentials"]
+    },
+    "remote.revokeCompanionCredentials": {
+      "message": "Revoke companion credentials",
+      "context": "remote",
+      "legacy": ["Revoke companion credentials"]
+    },
+    "remote.allCompanionCredentialsAreRemovedCompanionMustEnroll": {
+      "message": "All companion credentials are removed; companion must enroll again. Requires confirmation.",
+      "context": "remote",
+      "legacy": ["All companion credentials are removed; companion must enroll again. Requires confirmation."]
+    },
+    "remote.changeCompanionOrigin": {
+      "message": "Change companion origin",
+      "context": "remote",
+      "legacy": ["Change companion origin"]
+    },
+    "remote.registerAPhone": {
+      "message": "Register a phone",
+      "context": "remote",
+      "legacy": ["Register a phone"]
+    },
+    "remote.cancelPhoneRegistration": {
+      "message": "Cancel phone registration",
+      "context": "remote",
+      "legacy": ["Cancel phone registration"]
+    },
+    "remote.confirmApprove": {
+      "message": "Confirm: approve {{fingerprint}}",
+      "context": "remote",
+      "legacy": ["Confirm: approve {{fingerprint}}"]
+    },
+    "remote.approvePhone": {
+      "message": "Approve phone {{fingerprint}}",
+      "context": "remote",
+      "legacy": ["Approve phone {{fingerprint}}"]
+    },
+    "remote.theFingerprintMustMatchThePhoneScreenExactly": {
+      "message": "The fingerprint must match the phone screen exactly.",
+      "context": "remote",
+      "legacy": ["The fingerprint must match the phone screen exactly."]
+    },
+    "remote.confirm": {
+      "message": "Confirm: {{command}}",
+      "context": "remote",
+      "legacy": ["Confirm: {{command}}"]
+    },
+    "remote.mapTailscaleServeToTheCompanion": {
+      "message": "Map Tailscale Serve to the companion",
+      "context": "remote",
+      "legacy": ["Map Tailscale Serve to the companion"]
+    },
+    "remote.inspectTailscaleServe": {
+      "message": "Inspect Tailscale Serve",
+      "context": "remote",
+      "legacy": ["Inspect Tailscale Serve"]
+    },
+    "remote.enrolled": {
+      "message": "Enrolled",
+      "context": "remote",
+      "legacy": ["Enrolled"]
+    },
+    "remote.notEnrolled": {
+      "message": "Not enrolled",
+      "context": "remote",
+      "legacy": ["Not enrolled"]
+    },
+    "remote.remoteControl": {
+      "message": "Remote control — {{status}}",
+      "context": "remote",
+      "legacy": ["Remote control — {{status}}"]
+    },
+    "remote.remoteControl2": {
+      "message": "Remote control —",
+      "context": "remote",
+      "legacy": ["Remote control —"]
+    },
+    "remote.backendIdentityHasNotBeenPersistedFixService": {
+      "message": "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it.",
+      "context": "remote",
+      "legacy": [
+        "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it."
+      ]
+    },
+    "remote.tailscaleServeMappingConflictsInspectTailscaleServeStatus": {
+      "message": "Tailscale Serve mapping conflicts; inspect tailscale serve status.",
+      "context": "remote",
+      "legacy": ["Tailscale Serve mapping conflicts; inspect tailscale serve status."]
+    },
+    "remote.enableHttpsCertificates": {
+      "message": "Enable HTTPS certificates: {{url}}",
+      "context": "remote",
+      "legacy": ["Enable HTTPS certificates: {{url}}"]
+    },
+    "remote.companionReportedStatusNotATailscaleConnectivityTest": {
+      "message": "Companion-reported status; not a Tailscale connectivity test.",
+      "context": "remote",
+      "legacy": ["Companion-reported status; not a Tailscale connectivity test."]
+    },
+    "remote.pair": {
+      "message": "Pair",
+      "context": "remote",
+      "legacy": ["Pair"]
+    },
+    "remote.thisDevice": {
+      "message": "This device",
+      "context": "remote",
+      "legacy": ["This device"]
+    },
+    "remote.urls": {
+      "message": "URLs",
+      "context": "remote",
+      "legacy": ["URLs"]
+    },
+    "remote.username": {
+      "message": "Username",
+      "context": "remote",
+      "legacy": ["Username"]
+    },
+    "remote.password": {
+      "message": "Password",
+      "context": "remote",
+      "legacy": ["Password"]
+    },
+    "remote.runRedsunServiceSetHostname000": {
+      "message": "Run `redsun service set hostname 0.0.0.0` to access the service remotely.",
+      "context": "remote",
+      "legacy": ["Run `redsun service set hostname 0.0.0.0` to access the service remotely."]
+    },
+    "remote.loadingServerInformation": {
+      "message": "Loading server information…",
+      "context": "remote",
+      "legacy": ["Loading server information…"]
+    },
+    "remote.couldNotLoadServerInformation": {
+      "message": "Could not load server information",
+      "context": "remote",
+      "legacy": ["Could not load server information"]
+    },
+    "remote.closeAndReopenPairToTryAgain": {
+      "message": "Close and reopen Pair to try again.",
+      "context": "remote",
+      "legacy": ["Close and reopen Pair to try again."]
+    },
+    "ai.newCachedTotal": {
+      "message": "{{new}} new · {{cached}} cached · {{total}} total",
+      "context": "ai",
+      "legacy": ["{{new}} new · {{cached}} cached · {{total}} total"]
+    },
+    "ai.likelyCacheBustFewerCachedTokensThanThe": {
+      "message": "Likely cache bust: {{count}} fewer cached tokens than the previous step",
+      "context": "ai",
+      "legacy": ["Likely cache bust: {{count}} fewer cached tokens than the previous step"]
+    },
+    "ai.step": {
+      "message": "Step",
+      "context": "ai",
+      "legacy": ["Step"]
+    },
+    "ai.newTokens": {
+      "message": "New tokens",
+      "context": "ai",
+      "legacy": ["New tokens"]
+    },
+    "ai.cachedTokens": {
+      "message": "Cached tokens",
+      "context": "ai",
+      "legacy": ["Cached tokens"]
+    },
+    "ai.tokS": {
+      "message": "{{rate}} tok/s",
+      "context": "ai",
+      "legacy": ["{{rate}} tok/s"]
+    },
+    "session.usage.cache": {
+      "message": "cache {{percent}}%",
+      "context": "ai",
+      "legacy": ["cache {{percent}}%"]
+    },
+    "ai.compaction": {
+      "message": "Compaction",
+      "context": "ai",
+      "legacy": ["Compaction"]
+    },
+    "ai.providerCompaction": {
+      "message": "Provider compaction",
+      "context": "ai",
+      "legacy": ["Provider compaction"]
+    },
+    "ai.inOut": {
+      "message": "{{name}} · {{input}} in · {{output}} out",
+      "context": "ai",
+      "legacy": ["{{name}} · {{input}} in · {{output}} out"]
+    },
+    "ai.compactionQueued": {
+      "message": "Compaction queued",
+      "context": "ai",
+      "legacy": ["Compaction queued"]
+    },
+    "ai.retryingInS": {
+      "message": "Retrying in {{seconds}}s",
+      "context": "ai",
+      "legacy": ["Retrying in {{seconds}}s"]
+    },
+    "ai.retryDue": {
+      "message": "Retry due",
+      "context": "ai",
+      "legacy": ["Retry due"]
+    },
+    "ai.attempt": {
+      "message": "attempt {{count}}",
+      "context": "ai",
+      "legacy": ["attempt {{count}}"]
+    },
+    "activity.tokens": {
+      "message": "{{elapsed}} · ↓ {{tokens}} tokens",
+      "context": "activity",
+      "legacy": ["{{elapsed}} · ↓ {{tokens}} tokens"]
+    },
+    "activity.main": {
+      "message": "main",
+      "context": "activity",
+      "legacy": ["main"]
+    },
+    "activity.more": {
+      "message": "{{count}} more",
+      "context": "activity",
+      "legacy": ["{{count}} more"]
+    },
+    "activity.label": {
+      "message": "◎ {{goal}}: {{condition}}",
+      "context": "activity",
+      "legacy": ["◎ {{goal}}: {{condition}}"]
+    },
+    "activity.tokens2": {
+      "message": "{{tokens}} tokens",
+      "context": "activity",
+      "legacy": ["{{tokens}} tokens"]
+    },
+    "activity.used": {
+      "message": "{{percent}}% used",
+      "context": "activity",
+      "legacy": ["{{percent}}% used"]
+    },
+    "activity.spent": {
+      "message": "{{cost}} spent",
+      "context": "activity",
+      "legacy": ["{{cost}} spent"]
+    },
+    "tools.preparingWrite": {
+      "message": "Preparing write...",
+      "context": "tools",
+      "legacy": ["Preparing write..."]
+    },
+    "tools.updatingTasks": {
+      "message": "Updating tasks...",
+      "context": "tools",
+      "legacy": ["Updating tasks..."]
+    },
+    "tools.findingFiles": {
+      "message": "Finding files...",
+      "context": "tools",
+      "legacy": ["Finding files..."]
+    },
+    "tools.readingFile": {
+      "message": "Reading file...",
+      "context": "tools",
+      "legacy": ["Reading file..."]
+    },
+    "tools.searchingContent": {
+      "message": "Searching content...",
+      "context": "tools",
+      "legacy": ["Searching content..."]
+    },
+    "tools.fetchingFromTheWeb": {
+      "message": "Fetching from the web...",
+      "context": "tools",
+      "legacy": ["Fetching from the web..."]
+    },
+    "tools.searchingWeb": {
+      "message": "Searching web...",
+      "context": "tools",
+      "legacy": ["Searching web..."]
+    },
+    "tools.delegating": {
+      "message": "Delegating…",
+      "context": "tools",
+      "legacy": ["Delegating…"]
+    },
+    "tools.askingQuestions": {
+      "message": "Asking questions…",
+      "context": "tools",
+      "legacy": ["Asking questions…"]
+    },
+    "tools.loadingSkill": {
+      "message": "Loading skill...",
+      "context": "tools",
+      "legacy": ["Loading skill..."]
+    },
+    "tools.wrote": {
+      "message": "# Wrote",
+      "context": "tools",
+      "legacy": ["# Wrote"]
+    },
+    "tools.edit": {
+      "message": "← Edit",
+      "context": "tools",
+      "legacy": ["← Edit"]
+    },
+    "tools.preparingEdit": {
+      "message": "# Preparing edit…",
+      "context": "tools",
+      "legacy": ["# Preparing edit…"]
+    },
+    "tools.created": {
+      "message": "# Created",
+      "context": "tools",
+      "legacy": ["# Created"]
+    },
+    "tools.deleted": {
+      "message": "# Deleted",
+      "context": "tools",
+      "legacy": ["# Deleted"]
+    },
+    "tools.patched": {
+      "message": "← Patched",
+      "context": "tools",
+      "legacy": ["← Patched"]
+    },
+    "tools.patching": {
+      "message": "Patching",
+      "context": "tools",
+      "legacy": ["Patching"]
+    },
+    "tools.patchFailed": {
+      "message": "# Patch failed",
+      "context": "tools",
+      "legacy": ["# Patch failed"]
+    },
+    "tools.clickToCollapse": {
+      "message": "click to collapse",
+      "context": "tools",
+      "legacy": ["click to collapse"]
+    },
+    "tools.clickToExpand": {
+      "message": "… (click to expand)",
+      "context": "tools",
+      "legacy": ["… (click to expand)"]
+    },
+    "tools.writingCommand": {
+      "message": "Writing command...",
+      "context": "tools",
+      "legacy": ["Writing command..."]
+    },
+    "command.agent.cycle": {
+      "message": "Cycle agent",
+      "context": "catalog",
+      "legacy": ["Cycle agent"],
+      "upstream": {
+        "key": "command.agent.cycle",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.agent.cycle.reverse": {
+      "message": "Cycle agent backwards",
+      "context": "catalog",
+      "legacy": ["Cycle agent backwards"],
+      "upstream": {
+        "key": "command.agent.cycle.reverse",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.undo.description": {
+      "message": "Undo the last message",
+      "context": "catalog",
+      "legacy": ["Undo the last message"],
+      "upstream": {
+        "key": "command.session.undo.description",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.export": {
+      "message": "Export session",
+      "context": "catalog",
+      "legacy": ["Export session"],
+      "upstream": {
+        "key": "command.session.export",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "common.goBack": {
+      "message": "Navigate back",
+      "context": "catalog",
+      "legacy": ["Navigate back"],
+      "upstream": {
+        "key": "common.goBack",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "common.default": {
+      "message": "Default",
+      "context": "catalog",
+      "legacy": ["Default"],
+      "upstream": {
+        "key": "common.default",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "context.usage.tokens": {
+      "message": "Tokens",
+      "context": "catalog",
+      "legacy": ["Tokens"],
+      "upstream": {
+        "key": "context.usage.tokens",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "context.stats.totalTokens": {
+      "message": "Total Tokens",
+      "context": "catalog",
+      "legacy": ["Total Tokens"],
+      "upstream": {
+        "key": "context.stats.totalTokens",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "context.stats.inputTokens": {
+      "message": "Input Tokens",
+      "context": "catalog",
+      "legacy": ["Input Tokens"],
+      "upstream": {
+        "key": "context.stats.inputTokens",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "context.stats.outputTokens": {
+      "message": "Output Tokens",
+      "context": "catalog",
+      "legacy": ["Output Tokens"],
+      "upstream": {
+        "key": "context.stats.outputTokens",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "context.stats.reasoningTokens": {
+      "message": "Reasoning Tokens",
+      "context": "catalog",
+      "legacy": ["Reasoning Tokens"],
+      "upstream": {
+        "key": "context.stats.reasoningTokens",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "context.stats.cacheTokens": {
+      "message": "Cache Tokens (read/write)",
+      "context": "catalog",
+      "legacy": ["Cache Tokens (read/write)"],
+      "upstream": {
+        "key": "context.stats.cacheTokens",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "model.tooltip.reasoning": {
+      "message": "Reasoning",
+      "context": "catalog",
+      "legacy": ["Reasoning"],
+      "upstream": {
+        "key": "model.tooltip.reasoning",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.server": {
+      "message": "Server",
+      "context": "catalog",
+      "legacy": ["Server"],
+      "upstream": {
+        "key": "command.category.server",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.session": {
+      "message": "Session",
+      "context": "catalog",
+      "legacy": ["Session"],
+      "upstream": {
+        "key": "command.category.session",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.theme": {
+      "message": "Theme",
+      "context": "catalog",
+      "legacy": ["Theme"],
+      "upstream": {
+        "key": "command.category.theme",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.context": {
+      "message": "Context",
+      "context": "catalog",
+      "legacy": ["Context"],
+      "upstream": {
+        "key": "command.category.context",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.terminal": {
+      "message": "Terminal",
+      "context": "catalog",
+      "legacy": ["Terminal"],
+      "upstream": {
+        "key": "command.category.terminal",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.model": {
+      "message": "Model",
+      "context": "catalog",
+      "legacy": ["Model"],
+      "upstream": {
+        "key": "command.category.model",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.mcp": {
+      "message": "MCP",
+      "context": "catalog",
+      "legacy": ["MCP"],
+      "upstream": {
+        "key": "command.category.mcp",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.agent": {
+      "message": "Agent",
+      "context": "catalog",
+      "legacy": ["Agent"],
+      "upstream": {
+        "key": "command.category.agent",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.permissions": {
+      "message": "Permissions",
+      "context": "catalog",
+      "legacy": ["Permissions"],
+      "upstream": {
+        "key": "command.category.permissions",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.settings": {
+      "message": "Settings",
+      "context": "catalog",
+      "legacy": ["Settings"],
+      "upstream": {
+        "key": "command.category.settings",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.settings.open": {
+      "message": "Open settings",
+      "context": "catalog",
+      "legacy": ["Open settings"],
+      "upstream": {
+        "key": "command.settings.open",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.previous": {
+      "message": "Previous session",
+      "context": "catalog",
+      "legacy": ["Previous session"],
+      "upstream": {
+        "key": "command.session.previous",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.next": {
+      "message": "Next session",
+      "context": "catalog",
+      "legacy": ["Next session"],
+      "upstream": {
+        "key": "command.session.next",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.palette": {
+      "message": "Command palette",
+      "context": "catalog",
+      "legacy": ["Command palette"],
+      "upstream": {
+        "key": "command.palette",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.theme.cycle": {
+      "message": "Cycle theme",
+      "context": "catalog",
+      "legacy": ["Cycle theme"],
+      "upstream": {
+        "key": "command.theme.cycle",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.theme.set": {
+      "message": "Use theme: {{theme}}",
+      "context": "catalog",
+      "legacy": ["Use theme: {{theme}}"],
+      "upstream": {
+        "key": "command.theme.set",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.new": {
+      "message": "New session",
+      "context": "catalog",
+      "legacy": ["New session"],
+      "upstream": {
+        "key": "command.session.new",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.file.open": {
+      "message": "Open file",
+      "context": "catalog",
+      "legacy": ["Open file"],
+      "upstream": {
+        "key": "command.file.open",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.input.focus": {
+      "message": "Focus input",
+      "context": "catalog",
+      "legacy": ["Focus input"],
+      "upstream": {
+        "key": "command.input.focus",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.steps.toggle": {
+      "message": "Toggle steps",
+      "context": "catalog",
+      "legacy": ["Toggle steps"],
+      "upstream": {
+        "key": "command.steps.toggle",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.message.previous": {
+      "message": "Previous message",
+      "context": "catalog",
+      "legacy": ["Previous message"],
+      "upstream": {
+        "key": "command.message.previous",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.message.next": {
+      "message": "Next message",
+      "context": "catalog",
+      "legacy": ["Next message"],
+      "upstream": {
+        "key": "command.message.next",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.model.choose": {
+      "message": "Choose model",
+      "context": "catalog",
+      "legacy": ["Choose model"],
+      "upstream": {
+        "key": "command.model.choose",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "dialog.model.select.title": {
+      "message": "Select model",
+      "context": "catalog",
+      "legacy": ["Select model"],
+      "upstream": {
+        "key": "dialog.model.select.title",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.prompt.mode.shell": {
+      "message": "Shell",
+      "context": "catalog",
+      "legacy": ["Shell"],
+      "upstream": {
+        "key": "command.prompt.mode.shell",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "session.new.workspace.triggerLocal": {
+      "message": "Local",
+      "context": "catalog",
+      "legacy": ["Local"],
+      "upstream": {
+        "key": "session.new.workspace.triggerLocal",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "session.header.open.copyPath": {
+      "message": "Copy path",
+      "context": "catalog",
+      "legacy": ["Copy path"],
+      "upstream": {
+        "key": "session.header.open.copyPath",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "session.header.open.app.zed": {
+      "message": "Zed",
+      "context": "catalog",
+      "legacy": ["Zed"],
+      "upstream": {
+        "key": "session.header.open.app.zed",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "common.search.placeholder": {
+      "message": "Search",
+      "context": "catalog",
+      "legacy": ["Search"],
+      "upstream": {
+        "key": "common.search.placeholder",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "palette.empty": {
+      "message": "No results found",
+      "context": "catalog",
+      "legacy": ["No results found"],
+      "upstream": {
+        "key": "palette.empty",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "dialog.provider.search.placeholder": {
+      "message": "Search providers",
+      "context": "catalog",
+      "legacy": ["Search providers"],
+      "upstream": {
+        "key": "dialog.provider.search.placeholder",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "dialog.model.search.placeholder": {
+      "message": "Search models",
+      "context": "catalog",
+      "legacy": ["Search models"],
+      "upstream": {
+        "key": "dialog.model.search.placeholder",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "dialog.directory.search.placeholder": {
+      "message": "Search folders",
+      "context": "catalog",
+      "legacy": ["Search folders"],
+      "upstream": {
+        "key": "dialog.directory.search.placeholder",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "home.sessions.search.placeholder": {
+      "message": "Search sessions",
+      "context": "catalog",
+      "legacy": ["Search sessions"],
+      "upstream": {
+        "key": "home.sessions.search.placeholder",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "session.header.searchFiles": {
+      "message": "Search files",
+      "context": "catalog",
+      "legacy": ["Search files"],
+      "upstream": {
+        "key": "session.header.searchFiles",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "sidebar.help": {
+      "message": "Help",
+      "context": "catalog",
+      "legacy": ["Help"],
+      "upstream": {
+        "key": "sidebar.help",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "common.cancel": {
+      "message": "Cancel",
+      "context": "catalog",
+      "legacy": ["Cancel"],
+      "upstream": {
+        "key": "common.cancel",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "settings.providers.title": {
+      "message": "Providers",
+      "context": "catalog",
+      "legacy": ["Providers"],
+      "upstream": {
+        "key": "settings.providers.title",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "model.tag.free": {
+      "message": "Free",
+      "context": "catalog",
+      "legacy": ["Free"],
+      "upstream": {
+        "key": "model.tag.free",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "theme.scheme.dark": {
+      "message": "Dark",
+      "context": "catalog",
+      "legacy": ["Dark"],
+      "upstream": {
+        "key": "theme.scheme.dark",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "theme.scheme.light": {
+      "message": "Light",
+      "context": "catalog",
+      "legacy": ["Light"],
+      "upstream": {
+        "key": "theme.scheme.light",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "home.sessions.search.sessions": {
+      "message": "Sessions",
+      "context": "catalog",
+      "legacy": ["Sessions"],
+      "upstream": {
+        "key": "home.sessions.search.sessions",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "common.open": {
+      "message": "Open",
+      "context": "catalog",
+      "legacy": ["Open"],
+      "upstream": {
+        "key": "common.open",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "provider.connect.method.apiKey": {
+      "message": "API key",
+      "context": "catalog",
+      "legacy": ["API key"],
+      "upstream": {
+        "key": "provider.connect.method.apiKey",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "provider.connect.oauth.code.placeholder": {
+      "message": "Authorization code",
+      "context": "catalog",
+      "legacy": ["Authorization code"],
+      "upstream": {
+        "key": "provider.connect.oauth.code.placeholder",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "status.popover.trigger": {
+      "message": "Status",
+      "context": "catalog",
+      "legacy": ["Status"],
+      "upstream": {
+        "key": "status.popover.trigger",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "titlebar.update": {
+      "message": "Update",
+      "context": "catalog",
+      "legacy": ["Update"],
+      "upstream": {
+        "key": "titlebar.update",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "error.page.action.restart": {
+      "message": "Restart",
+      "context": "catalog",
+      "legacy": ["Restart"],
+      "upstream": {
+        "key": "error.page.action.restart",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "toast.update.title": {
+      "message": "Update available",
+      "context": "catalog",
+      "legacy": ["Update available"],
+      "upstream": {
+        "key": "toast.update.title",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "prompt.example.1": {
+      "message": "Fix a TODO in the codebase",
+      "context": "catalog",
+      "legacy": ["Fix a TODO in the codebase"],
+      "upstream": {
+        "key": "prompt.example.1",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "prompt.example.2": {
+      "message": "What is the tech stack of this project?",
+      "context": "catalog",
+      "legacy": ["What is the tech stack of this project?"],
+      "upstream": {
+        "key": "prompt.example.2",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "prompt.example.3": {
+      "message": "Fix broken tests",
+      "context": "catalog",
+      "legacy": ["Fix broken tests"],
+      "upstream": {
+        "key": "prompt.example.3",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.compact": {
+      "message": "Compact session",
+      "context": "catalog",
+      "legacy": ["Compact session"],
+      "upstream": {
+        "key": "command.session.compact",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.session.redo": {
+      "message": "Redo",
+      "context": "catalog",
+      "legacy": ["Redo"],
+      "upstream": {
+        "key": "command.session.redo",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "mcp.status.failed": {
+      "message": "failed",
+      "context": "catalog",
+      "legacy": ["failed"],
+      "upstream": {
+        "key": "mcp.status.failed",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "notification.permission.title": {
+      "message": "Permission required",
+      "context": "catalog",
+      "legacy": ["Permission required"],
+      "upstream": {
+        "key": "notification.permission.title",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "session.tab.review": {
+      "message": "Review",
+      "context": "catalog",
+      "legacy": ["Review"],
+      "upstream": {
+        "key": "session.tab.review",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "common.submit": {
+      "message": "Submit",
+      "context": "catalog",
+      "legacy": ["Submit"],
+      "upstream": {
+        "key": "common.submit",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "language.en": {
+      "message": "English",
+      "context": "catalog",
+      "legacy": ["English"],
+      "upstream": {
+        "key": "language.en",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "settings.general.section.appearance": {
+      "message": "Appearance",
+      "context": "catalog",
+      "legacy": ["Appearance"],
+      "upstream": {
+        "key": "settings.general.section.appearance",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "settings.general.row.showFileTree.title": {
+      "message": "File tree",
+      "context": "catalog",
+      "legacy": ["File tree"],
+      "upstream": {
+        "key": "settings.general.row.showFileTree.title",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "theme.scheme.system": {
+      "message": "System",
+      "context": "catalog",
+      "legacy": ["System"],
+      "upstream": {
+        "key": "theme.scheme.system",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "palette.group.commands": {
+      "message": "Commands",
+      "context": "catalog",
+      "legacy": ["Commands"],
+      "upstream": {
+        "key": "palette.group.commands",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "command.category.suggested": {
+      "message": "Suggested",
+      "context": "catalog",
+      "legacy": ["Suggested"],
+      "upstream": {
+        "key": "command.category.suggested",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "exact"
+      }
+    },
+    "application.thinking": {
+      "message": "Thinking",
+      "context": "application",
+      "legacy": ["Thinking"],
+      "upstream": {
+        "key": "model.tooltip.reasoning",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    },
+    "application.switchModel": {
+      "message": "Switch model",
+      "context": "application",
+      "legacy": ["Switch model"],
+      "upstream": {
+        "key": "command.model.choose",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    },
+    "application.agentCycle": {
+      "message": "Agent cycle",
+      "context": "application",
+      "legacy": ["Agent cycle"],
+      "upstream": {
+        "key": "command.agent.cycle",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    },
+    "application.agentCycleReverse": {
+      "message": "Agent cycle reverse",
+      "context": "application",
+      "legacy": ["Agent cycle reverse"],
+      "upstream": {
+        "key": "command.agent.cycle.reverse",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    },
+    "application.undoPreviousMessage": {
+      "message": "Undo previous message",
+      "context": "application",
+      "legacy": ["Undo previous message"],
+      "upstream": {
+        "key": "command.session.undo.description",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    },
+    "application.exportSessionTranscript": {
+      "message": "Export session transcript",
+      "context": "application",
+      "legacy": ["Export session transcript"],
+      "upstream": {
+        "key": "command.session.export",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    },
+    "application.back": {
+      "message": "Back",
+      "context": "application",
+      "legacy": ["Back"],
+      "upstream": {
+        "key": "common.goBack",
+        "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
+        "match": "semantic"
+      }
+    }
+  }
+}
