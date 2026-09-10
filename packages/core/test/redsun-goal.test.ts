@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
-import { KV } from "@opencode-ai/core/kv"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Session } from "@opencode-ai/core/session"
+import { KV } from "@opencode/core/kv"
+import { SessionStore } from "@opencode/core/session/store"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Session } from "@opencode/core/session"
 import {
   RedsunGoal,
   BUDGET_KEY,
@@ -14,13 +14,13 @@ import {
   sync,
   type Services,
   type SessionApi,
-} from "@opencode-ai/core/plugin/redsun/goal"
+} from "@opencode/core/plugin/redsun/goal"
 import {
   GOAL_FEATURE_PROMPT,
   JUDGE_INSTRUCTIONS,
   REACT_CAP,
   continuationText,
-} from "@opencode-ai/core/plugin/redsun/goal-shared"
+} from "@opencode/core/plugin/redsun/goal-shared"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { testEffect } from "./lib/effect"
 import { host } from "./plugin/host"

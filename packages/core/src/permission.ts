@@ -1,8 +1,8 @@
 export * as Permission from "./permission.js"
 
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
-import { Permission } from "@opencode-ai/schema/permission"
+import { Permission } from "@opencode/schema/permission"
 import { Bus } from "./bus.js"
 import { KV } from "./kv.js"
 import { Location } from "./location.js"
@@ -16,7 +16,7 @@ import { PluginHooks } from "./plugin/hooks.js"
 
 const PermissionEffect = Permission.Effect
 export { PermissionEffect as Effect }
-export { Rule, Ruleset } from "@opencode-ai/schema/permission"
+export { Rule, Ruleset } from "@opencode/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
 
 export const ID = Permission.ID
@@ -60,7 +60,7 @@ export const AskResult = Schema.Struct({
 }).annotate({ identifier: "Permission.AskResult" })
 export type AskResult = typeof AskResult.Type
 
-export { Event } from "@opencode-ai/schema/permission"
+export { Event } from "@opencode/schema/permission"
 
 export class DeclinedError extends Schema.TaggedError<DeclinedError>()("Permission.DeclinedError", {}) {}
 

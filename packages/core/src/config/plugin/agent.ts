@@ -1,17 +1,17 @@
 export * as ConfigAgentPlugin from "./agent.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import { Document, Info, type Entry } from "@opencode-ai/schema/config"
-import { ConfigAgent } from "@opencode-ai/schema/config/agent"
+import { define } from "@opencode/plugin/effect/plugin"
+import { Document, Info, type Entry } from "@opencode/schema/config"
+import { ConfigAgent } from "@opencode/schema/config/agent"
 import path from "path"
 import { Effect, Option, PubSub, Schema, Stream } from "effect"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { ConfigMarkdown } from "../markdown.js"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigAgentV1 } from "../../v1/config/agent.js"
 import { ConfigMigrateV1 } from "../../v1/config/migrate.js"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { Permission } from "../../permission.js"
 import type { FileAccess } from "../../file-access.js"
 import type { ReadTool } from "../../tool/plugin/read.js"
@@ -184,6 +184,15 @@ function decode(file: { directory: string; filepath: string; primary: boolean },
     .replace(/\.md$/, "")
   const body = markdown.content.trim()
   const legacy = Object.keys(markdown.data).some((key) => !agentKeys.has(key))
+  // Join legacy model + variant without sending native request/permissions through migration.
+  // Embedded and structured native selections, and a variant without a model, stay unchanged.
+  const data =
+    typeof markdown.data.model === "string" &&
+    !markdown.data.model.includes("#") &&
+    typeof markdown.data.variant === "string" &&
+    /^[^#]+$/.test(markdown.data.variant)
+      ? { ...markdown.data, model: `${markdown.data.model}#${markdown.data.variant}` }
+      : markdown.data
   const agent = legacy
     ? Option.getOrUndefined(
         Option.map(
@@ -191,9 +200,7 @@ function decode(file: { directory: string; filepath: string; primary: boolean },
           ConfigMigrateV1.migrateAgent,
         ),
       )
-    : Option.getOrUndefined(
-        decodeAgent({ ...markdown.data, system: body }, { errors: "all", propertyOrder: "original" }),
-      )
+    : Option.getOrUndefined(decodeAgent({ ...data, system: body }, { errors: "all", propertyOrder: "original" }))
   if (!agent) return
   const info = Option.getOrUndefined(
     decodeConfig({

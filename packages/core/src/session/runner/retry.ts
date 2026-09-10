@@ -1,9 +1,9 @@
 export * as SessionRunnerRetry from "./retry.js"
 
-import { AIError, isContextOverflowFailure } from "@opencode-ai/ai"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Model } from "@opencode-ai/schema/model"
-import { SessionError } from "@opencode-ai/schema/session-error"
+import { AIError, isContextOverflowFailure } from "@opencode/ai"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { SessionError } from "@opencode/schema/session-error"
 import { Clock, Duration, Effect, Pull, Schedule } from "effect"
 import { Bus } from "../../bus.js"
 import type { PluginHooks } from "../../plugin/hooks.js"
@@ -35,8 +35,10 @@ export function isRetryable(error: AIError) {
     case "RateLimit":
     case "ProviderInternal":
       return true
+    // HTTP transport errors carry no delivery and always retry. WebSocket marks accepted and rejected
+    // requests as final; not-sent and ambiguous (no frame observed) are still pre-output.
     case "Transport":
-      return error.reason.delivery === undefined || error.reason.delivery === "not-sent"
+      return error.reason.delivery !== "accepted" && error.reason.delivery !== "rejected"
     case "InvalidProviderOutput":
       return error.reason.classification === "incomplete-stream"
     // Unrecognized failures retry: classification records affirmative

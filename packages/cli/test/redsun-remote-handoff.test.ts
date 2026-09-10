@@ -4,14 +4,14 @@ import { fileURLToPath } from "node:url"
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
-import { createPrivateFile } from "@opencode-ai/util/private-file"
+import { createPrivateFile } from "@opencode/util/private-file"
 import { isolatedEnv } from "./fixture/environment"
 import { Effect, Schema } from "effect"
 import { NodeFileSystem } from "@effect/platform-node"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { ServiceConfig } from "../src/services/service-config"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
-import { Service } from "@opencode-ai/client/effect/service"
+import { RemoteControl } from "@opencode/schema/remote-control"
+import { Service } from "@opencode/client/effect/service"
 
 test("service get exposes companion settings but never enrollment credentials", async () => {
   await using temporary = await tmpdir()

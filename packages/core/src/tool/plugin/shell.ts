@@ -1,9 +1,9 @@
 export * as ShellTool from "./shell.js"
 
-import { ToolFailure } from "@opencode-ai/ai"
-import type { Context } from "@opencode-ai/plugin/effect/plugin"
-import type { ShellCreateBefore } from "@opencode-ai/plugin/effect/shell"
-import type { Tool } from "@opencode-ai/schema/tool"
+import { ToolFailure } from "@opencode/ai"
+import type { Context } from "@opencode/plugin/effect/plugin"
+import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
+import type { Tool } from "@opencode/schema/tool"
 import { Deferred, Effect, Schema, Scope } from "effect"
 import { Config } from "../../config.js"
 import { Environment } from "../../environment/index.js"
@@ -22,7 +22,7 @@ export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
 
 const BACKGROUND_INSTRUCTION =
-  "You will be notified automatically when the command finishes. The notification will include the command's output. DO NOT run sleep commands or poll the output file to check for completion. You can read from the file when its current output would be useful, such as when inspecting logs from a background server. Otherwise, continue with other work or end your response."
+  "You will be notified automatically when the command finishes. The notification will include the command's output. Unless the user explicitly asks otherwise, DO NOT poll for completion, even if you need the final result to continue. Repeatedly sleeping and reading or searching the output file is polling, not useful work. You may read the current output if it lets you do useful work now, but do not repeatedly check it while waiting for the command to finish. Keep working on anything that does not depend on the result. If you have nothing else to do, end your response; you will be resumed automatically when the command finishes."
 const OS =
   process.platform === "darwin"
     ? "macOS"
@@ -54,7 +54,7 @@ export const Input = Schema.Struct({
   }),
   background: Schema.optionalKey(Schema.Boolean).annotate({
     description:
-      "Run the command in the background and return immediately. You will be notified when it completes. DO NOT poll its progress.",
+      "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
   }),
 })
 

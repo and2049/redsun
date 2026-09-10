@@ -1,8 +1,8 @@
 export * as ClaudeCodeProviderPlugin from "./provider.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
-import { Model } from "@opencode-ai/schema/model"
+import { Model } from "@opencode/schema/model"
 import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
 import { Config } from "../../../config.js"

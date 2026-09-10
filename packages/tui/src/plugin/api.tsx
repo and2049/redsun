@@ -1,6 +1,6 @@
-import { PluginContextProvider } from "@opencode-ai/plugin/tui"
+import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { JSX } from "solid-js"
-import type { Context, Dialog, Page, SlotClaim, SlotMap, SlotPath, Toast } from "@opencode-ai/plugin/tui/context"
+import type { Context, Dialog, Page, SlotClaim, SlotMap, SlotPath, Toast } from "@opencode/plugin/tui/context"
 import type { Placement, PlacementKind } from "./structure"
 import { infoStringToFiletype, type MarkdownCodeBlockRenderer } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
@@ -177,6 +177,7 @@ export function createPluginContext(input: {
         list: () => [],
         open: () => false,
         focus: () => false,
+        move: () => false,
         close: () => false,
       },
       slot(value: SlotClaim) {

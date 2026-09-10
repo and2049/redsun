@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodePermissions } from "@opencode-ai/core/plugin/redsun/claude-code/permissions"
-import { ClaudeCodeTurnBrief } from "@opencode-ai/core/plugin/redsun/claude-code/turn-brief"
+import { ClaudeCodePermissions } from "@opencode/core/plugin/redsun/claude-code/permissions"
+import { ClaudeCodeTurnBrief } from "@opencode/core/plugin/redsun/claude-code/turn-brief"
 
 const brief = (input: Partial<ClaudeCodeTurnBrief.Input> = {}) =>
   ClaudeCodeTurnBrief.make({

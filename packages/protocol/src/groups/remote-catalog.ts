@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
-import { Location } from "@opencode-ai/schema/location"
+import { RemoteControl } from "@opencode/schema/remote-control"
+import { Location } from "@opencode/schema/location"
 import { LocationQuery } from "./location.js"
 import { ServiceUnavailableError } from "../errors.js"
 

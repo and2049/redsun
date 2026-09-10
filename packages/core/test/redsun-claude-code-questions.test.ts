@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodePermissions } from "@opencode-ai/core/plugin/redsun/claude-code/permissions"
-import { ClaudeCodeQuestions } from "@opencode-ai/core/plugin/redsun/claude-code/questions"
+import { ClaudeCodePermissions } from "@opencode/core/plugin/redsun/claude-code/permissions"
+import { ClaudeCodeQuestions } from "@opencode/core/plugin/redsun/claude-code/questions"
 
 const input = {
   questions: [

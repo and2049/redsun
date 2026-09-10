@@ -1,7 +1,7 @@
 export * as RedsunWorkerModel from "./worker-model.js"
 
 import { Effect } from "effect"
-import { Model } from "@opencode-ai/schema/model"
+import { Model } from "@opencode/schema/model"
 import type { Catalog } from "../../catalog.js"
 import type { KV } from "../../kv.js"
 import type { SessionStore } from "../../session/store.js"

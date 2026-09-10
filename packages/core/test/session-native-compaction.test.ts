@@ -1,29 +1,29 @@
 import { expect, test } from "bun:test"
-import { LLMClient, LanguageModel, Message, ToolDefinition } from "@opencode-ai/ai"
-import { OpenAI } from "@opencode-ai/ai/providers"
-import { Agent } from "@opencode-ai/core/agent"
-import { Bus } from "@opencode-ai/core/bus"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
-import { Instructions } from "@opencode-ai/core/instructions/index"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { SessionCompaction } from "@opencode-ai/core/session/compaction"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionHistory } from "@opencode-ai/core/session/history"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { InstructionState } from "@opencode-ai/core/session/instruction-state"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionModelRequest } from "@opencode-ai/core/session/model-request"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionProviderContext } from "@opencode-ai/core/session/provider-context"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
-import { SessionSchema } from "@opencode-ai/core/session/schema"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { LLMClient, LanguageModel, Message, ToolDefinition } from "@opencode/ai"
+import { OpenAI } from "@opencode/ai/providers"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { llmClient } from "@opencode/core/effect/app-node-platform"
+import { Instructions } from "@opencode/core/instructions/index"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { SessionCompaction } from "@opencode/core/session/compaction"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionHistory } from "@opencode/core/session/history"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { InstructionState } from "@opencode/core/session/instruction-state"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionModelRequest } from "@opencode/core/session/model-request"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionProviderContext } from "@opencode/core/session/provider-context"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import { SessionSchema } from "@opencode/core/session/schema"
+import { SessionStore } from "@opencode/core/session/store"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 import { DateTime, Deferred, Effect, Fiber, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 
@@ -230,7 +230,7 @@ const setup = Effect.fnUntraced(function* (endpoint = false) {
       messages: yield* store.context(sessionID),
       inputID: SessionMessage.ID.create(),
       resolveContext: () => load,
-      prepare: requests.prepare,
+      prepare: requests.compaction,
     })
   })
   const checkpoint = Effect.gen(function* () {
@@ -240,12 +240,14 @@ const setup = Effect.fnUntraced(function* (endpoint = false) {
       return yield* Effect.die("Missing native checkpoint")
     expect(last.summary).toBe("")
     expect(last.recent).toBe("")
+    // Provider compaction has no summary, so the request usage is the only visible cost of the operation.
+    expect(last.tokens).toMatchObject({ input: 20, output: 4 })
     return last.providerContext
   })
   return {
     compact,
     automatic: Effect.gen(function* () {
-      return yield* compaction.compact({ context: yield* load, prepare: requests.prepare })
+      return yield* compaction.compact({ context: yield* load, prepare: requests.compaction })
     }),
     checkpoint,
     prompt,
@@ -282,10 +284,12 @@ it.live(
       expect(fixture.headers[0]?.get("x-http-hook")).toBe("compaction")
       yield* fixture.prompt("Second real user request")
       const context = yield* fixture.load
-      const prepared = yield* fixture.requests.prepare({
-        kind: "primary",
-        scope: { session: context.session, model: context.model, agentID: context.agent.id, tools: context.tools },
-        transcript: SessionModelRequest.baseTranscript({ ...context, agent: context.agent.info }),
+      const prepared = yield* fixture.requests.primary({
+        session: context.session,
+        agent: context.agent.id,
+        model: context.model,
+        tools: context.tools,
+        ...SessionModelRequest.baseTranscript({ ...context, agent: context.agent.info }),
       })
       const client = yield* LLMClient.Service
       yield* client.generate(prepared.request, prepared.options)
@@ -329,7 +333,7 @@ it.live(
       expect(fixture.state.calls).toBe(7)
       expect(retries).toMatchObject([
         {
-          agent: "compaction",
+          agent: "build",
           attempt: 2,
           error: { type: "provider.rate-limit" },
           decision: { retry: true, delay: 0 },

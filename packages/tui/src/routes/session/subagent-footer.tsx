@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import type { SessionMessageAssistant } from "@opencode-ai/client/promise"
+import type { SessionMessageAssistant } from "@opencode/client/promise"
 import { useData } from "../../context/data"
 import { Keymap } from "../../context/keymap"
 import { useRouteData } from "../../context/route"

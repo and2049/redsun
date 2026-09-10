@@ -1,8 +1,8 @@
 export * as RedsunContextOptimizer from "./context-optimizer.js"
 
-import { Message, type ContentPart, type SystemPart } from "@opencode-ai/ai"
-import { Document, type Entry } from "@opencode-ai/schema/config"
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { Message, type ContentPart, type SystemPart } from "@opencode/ai"
+import { Document, type Entry } from "@opencode/schema/config"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Config } from "../../config.js"
 import { ReadLocator } from "../../util/read-locator.js"

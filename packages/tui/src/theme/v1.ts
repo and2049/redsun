@@ -1,6 +1,6 @@
 import { RGBA, SyntaxStyle } from "@opentui/core"
-import { selectedForeground } from "@opencode-ai/theme/tui/v1"
-import type { SyntaxTheme, Theme, ThemeV1Json } from "@opencode-ai/theme/tui/v1"
+import { selectedForeground } from "@opencode/theme/tui/v1"
+import type { SyntaxTheme, Theme, ThemeV1Json } from "@opencode/theme/tui/v1"
 
 export type {
   ColorValue,
@@ -11,9 +11,9 @@ export type {
   ThemeColor,
   ThemeV1Json,
   Variant,
-} from "@opencode-ai/theme/tui/v1"
+} from "@opencode/theme/tui/v1"
 
-export { selectedForeground } from "@opencode-ai/theme/tui/v1"
+export { selectedForeground } from "@opencode/theme/tui/v1"
 
 export function generateSyntax(theme: SyntaxTheme) {
   return SyntaxStyle.fromTheme(getSyntaxRules(theme))

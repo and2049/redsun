@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Schema } from "effect"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { SessionMessage } from "@opencode/schema/session-message"
+import { RemoteControl } from "@opencode/schema/remote-control"
 import { RemoteProjection } from "../src/remote-projection"
 import { RemoteAccess } from "../src/remote-access"
 

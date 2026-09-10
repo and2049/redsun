@@ -1,4 +1,4 @@
-export { ansiToRgba } from "@opencode-ai/theme/tui/v1"
+export { ansiToRgba } from "@opencode/theme/tui/v1"
 import { RGBA } from "@opentui/core"
 
 

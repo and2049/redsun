@@ -1,7 +1,7 @@
 import { expect } from "bun:test"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Session } from "@opencode-ai/core/session"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionStore } from "@opencode/core/session/store"
+import { Session } from "@opencode/core/session"
 import {
   ADVISOR_INSTRUCTIONS,
   METADATA_KEY,
@@ -12,7 +12,7 @@ import {
   type Services,
   type SessionApi,
   type State,
-} from "@opencode-ai/core/plugin/redsun/advisor"
+} from "@opencode/core/plugin/redsun/advisor"
 import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 

@@ -5,9 +5,9 @@
     "": {
       "name": "opencode",
       "dependencies": {
-        "@opencode-ai/plugin": "workspace:*",
-        "@opencode-ai/script": "workspace:*",
         "@opencode-ai/sdk": "1.18.5",
+        "@opencode/plugin": "workspace:*",
+        "@opencode/script": "workspace:*",
         "typescript": "catalog:",
       },
       "devDependencies": {
@@ -27,11 +27,11 @@
       },
     },
     "packages/ai": {
-      "name": "@opencode-ai/ai",
+      "name": "@opencode/ai",
       "version": "1.17.20",
       "dependencies": {
         "@aws-sdk/credential-providers": "3.1057.0",
-        "@opencode-ai/schema": "workspace:*",
+        "@opencode/schema": "workspace:*",
         "@smithy/eventstream-codec": "4.2.14",
         "@smithy/util-utf8": "4.2.2",
         "aws4fetch": "1.0.20",
@@ -41,7 +41,7 @@
       "devDependencies": {
         "@clack/prompts": "1.0.0-alpha.1",
         "@effect/platform-node": "catalog:",
-        "@opencode-ai/http-recorder": "workspace:*",
+        "@opencode/http-recorder": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
@@ -49,7 +49,7 @@
       },
     },
     "packages/cli": {
-      "name": "@opencode-ai/cli",
+      "name": "@opencode/cli",
       "version": "1.18.4",
       "bin": {
         "redsun": "./bin/redsun.cjs",
@@ -58,13 +58,13 @@
         "@agentclientprotocol/sdk": "1.2.1",
         "@clack/prompts": "1.0.0-alpha.1",
         "@effect/platform-node": "catalog:",
-        "@opencode-ai/client": "workspace:*",
-        "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/pty": "0.1.13",
-        "@opencode-ai/schema": "workspace:*",
-        "@opencode-ai/server": "workspace:*",
-        "@opencode-ai/tui": "workspace:*",
-        "@opencode-ai/util": "workspace:*",
+        "@opencode/client": "workspace:*",
+        "@opencode/plugin": "workspace:*",
+        "@opencode/schema": "workspace:*",
+        "@opencode/server": "workspace:*",
+        "@opencode/tui": "workspace:*",
+        "@opencode/util": "workspace:*",
         "@opentui/core": "catalog:",
         "@opentui/solid": "catalog:",
         "@parcel/watcher": "2.5.1",
@@ -93,8 +93,8 @@
         "@lydell/node-pty-linux-x64": "1.2.0-beta.12",
         "@lydell/node-pty-win32-arm64": "1.2.0-beta.12",
         "@lydell/node-pty-win32-x64": "1.2.0-beta.12",
-        "@opencode-ai/protocol": "workspace:*",
-        "@opencode-ai/script": "workspace:*",
+        "@opencode/protocol": "workspace:*",
+        "@opencode/script": "workspace:*",
         "@parcel/watcher-darwin-arm64": "2.5.1",
         "@parcel/watcher-linux-arm64-glibc": "2.5.1",
         "@parcel/watcher-linux-x64-glibc": "2.5.1",
@@ -108,20 +108,21 @@
         "@yuuang/ffi-rs-linux-x64-gnu": "1.3.2",
         "@yuuang/ffi-rs-win32-arm64-msvc": "1.3.2",
         "@yuuang/ffi-rs-win32-x64-msvc": "1.3.2",
+        "solid-refresh": "0.6.3",
         "vite": "catalog:",
         "vite-plugin-solid": "catalog:",
       },
     },
     "packages/client": {
-      "name": "@opencode-ai/client",
+      "name": "@opencode/client",
       "version": "1.17.13",
       "dependencies": {
-        "@opencode-ai/protocol": "workspace:*",
-        "@opencode-ai/schema": "workspace:*",
+        "@opencode/protocol": "workspace:*",
+        "@opencode/schema": "workspace:*",
       },
       "devDependencies": {
         "@effect/platform-node": "catalog:",
-        "@opencode-ai/httpapi-codegen": "workspace:*",
+        "@opencode/httpapi-codegen": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
@@ -139,7 +140,7 @@
       ],
     },
     "packages/codemode": {
-      "name": "@opencode-ai/codemode",
+      "name": "@opencode/codemode",
       "version": "1.18.4",
       "dependencies": {
         "acorn": "8.15.0",
@@ -153,7 +154,7 @@
       },
     },
     "packages/core": {
-      "name": "@opencode-ai/core",
+      "name": "@opencode/core",
       "version": "1.18.4",
       "dependencies": {
         "@ai-sdk/alibaba": "1.0.17",
@@ -173,12 +174,12 @@
         "@ff-labs/fff-node": "0.10.5",
         "@lydell/node-pty": "catalog:",
         "@modelcontextprotocol/sdk": "1.29.0",
-        "@opencode-ai/ai": "workspace:*",
-        "@opencode-ai/codemode": "workspace:*",
-        "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/pty": "0.1.13",
-        "@opencode-ai/schema": "workspace:*",
-        "@opencode-ai/util": "workspace:*",
+        "@opencode/ai": "workspace:*",
+        "@opencode/codemode": "workspace:*",
+        "@opencode/plugin": "workspace:*",
+        "@opencode/schema": "workspace:*",
+        "@opencode/util": "workspace:*",
         "@parcel/watcher": "2.5.1",
         "@silvia-odwyer/photon-node": "0.3.4",
         "@standard-schema/spec": "catalog:",
@@ -208,7 +209,7 @@
       "devDependencies": {
         "@effect/platform-node": "catalog:",
         "@effect/sql-sqlite-bun": "catalog:",
-        "@opencode-ai/http-recorder": "workspace:*",
+        "@opencode/http-recorder": "workspace:*",
         "@parcel/watcher-darwin-arm64": "2.5.1",
         "@parcel/watcher-darwin-x64": "2.5.1",
         "@parcel/watcher-linux-arm64-glibc": "2.5.1",
@@ -225,7 +226,7 @@
       },
     },
     "packages/http-recorder": {
-      "name": "@opencode-ai/http-recorder",
+      "name": "@opencode/http-recorder",
       "version": "1.18.15",
       "dependencies": {
         "@effect/platform-node-shared": "4.0.0-rc.112",
@@ -244,7 +245,7 @@
       },
     },
     "packages/httpapi-codegen": {
-      "name": "@opencode-ai/httpapi-codegen",
+      "name": "@opencode/httpapi-codegen",
       "version": "0.0.0",
       "dependencies": {
         "effect": "catalog:",
@@ -257,10 +258,10 @@
       },
     },
     "packages/latex": {
-      "name": "@opencode-ai/latex",
+      "name": "@opencode/latex",
       "version": "0.0.0",
       "dependencies": {
-        "@opencode-ai/plugin": "workspace:*",
+        "@opencode/plugin": "workspace:*",
         "@opentui/core": "catalog:",
         "string-width": "catalog:",
       },
@@ -271,10 +272,10 @@
       },
     },
     "packages/merman": {
-      "name": "@opencode-ai/merman",
+      "name": "@opencode/merman",
       "version": "0.0.0",
       "dependencies": {
-        "@opencode-ai/plugin": "workspace:*",
+        "@opencode/plugin": "workspace:*",
         "@opentui/core": "catalog:",
         "entities": "7.0.1",
         "string-width": "catalog:",
@@ -286,21 +287,21 @@
       },
     },
     "packages/plugin": {
-      "name": "@opencode-ai/plugin",
+      "name": "@opencode/plugin",
       "version": "1.18.15",
       "dependencies": {
         "@ai-sdk/provider": "3.0.8",
-        "@opencode-ai/ai": "workspace:*",
-        "@opencode-ai/client": "workspace:*",
-        "@opencode-ai/protocol": "workspace:*",
-        "@opencode-ai/schema": "workspace:*",
-        "@opencode-ai/util": "workspace:*",
+        "@opencode/ai": "workspace:*",
+        "@opencode/client": "workspace:*",
+        "@opencode/protocol": "workspace:*",
+        "@opencode/schema": "workspace:*",
+        "@opencode/util": "workspace:*",
         "@standard-schema/spec": "catalog:",
         "effect": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
-        "@opencode-ai/theme": "workspace:*",
+        "@opencode/theme": "workspace:*",
         "@opentui/core": "catalog:",
         "@opentui/solid": "catalog:",
         "@tsconfig/bun": "catalog:",
@@ -312,23 +313,23 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@opencode-ai/theme": "workspace:*",
+        "@opencode/theme": "workspace:*",
         "@opentui/core": ">=0.5.10",
         "@opentui/solid": ">=0.5.10",
         "solid-js": ">=1.9.0",
       },
       "optionalPeers": [
-        "@opencode-ai/theme",
+        "@opencode/theme",
         "@opentui/core",
         "@opentui/solid",
         "solid-js",
       ],
     },
     "packages/protocol": {
-      "name": "@opencode-ai/protocol",
+      "name": "@opencode/protocol",
       "version": "1.17.11",
       "dependencies": {
-        "@opencode-ai/schema": "workspace:*",
+        "@opencode/schema": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -340,7 +341,7 @@
       },
     },
     "packages/schema": {
-      "name": "@opencode-ai/schema",
+      "name": "@opencode/schema",
       "version": "1.17.11",
       "dependencies": {
         "@standard-schema/spec": "catalog:",
@@ -354,7 +355,7 @@
       },
     },
     "packages/script": {
-      "name": "@opencode-ai/script",
+      "name": "@opencode/script",
       "dependencies": {
         "semver": "^7.6.3",
       },
@@ -364,39 +365,39 @@
       },
     },
     "packages/server": {
-      "name": "@opencode-ai/server",
+      "name": "@opencode/server",
       "version": "1.18.4",
       "dependencies": {
         "@effect/platform-node": "catalog:",
         "@effect/platform-node-shared": "catalog:",
-        "@opencode-ai/core": "workspace:*",
-        "@opencode-ai/protocol": "workspace:*",
-        "@opencode-ai/schema": "workspace:*",
-        "@opencode-ai/simulation": "workspace:*",
-        "@opencode-ai/theme": "workspace:*",
-        "@opencode-ai/util": "workspace:*",
+        "@opencode/core": "workspace:*",
+        "@opencode/protocol": "workspace:*",
+        "@opencode/schema": "workspace:*",
+        "@opencode/simulation": "workspace:*",
+        "@opencode/theme": "workspace:*",
+        "@opencode/util": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "jsonc-parser": "3.3.1",
         "redsun-remote-control": "0.3.0",
       },
       "devDependencies": {
-        "@opencode-ai/client": "workspace:*",
-        "@opencode-ai/plugin": "workspace:*",
+        "@opencode/client": "workspace:*",
+        "@opencode/plugin": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
       },
     },
     "packages/simulation": {
-      "name": "@opencode-ai/simulation",
+      "name": "@opencode/simulation",
       "version": "1.17.13",
       "dependencies": {
-        "@opencode-ai/ai": "workspace:*",
-        "@opencode-ai/core": "workspace:*",
-        "@opencode-ai/plugin": "workspace:*",
-        "@opencode-ai/protocol": "workspace:*",
-        "@opencode-ai/util": "workspace:*",
+        "@opencode/ai": "workspace:*",
+        "@opencode/core": "workspace:*",
+        "@opencode/plugin": "workspace:*",
+        "@opencode/protocol": "workspace:*",
+        "@opencode/util": "workspace:*",
         "@opentui/core": "catalog:",
         "effect": "catalog:",
         "ws": "8.21.0",
@@ -409,7 +410,7 @@
       },
     },
     "packages/theme": {
-      "name": "@opencode-ai/theme",
+      "name": "@opencode/theme",
       "version": "0.0.0",
       "dependencies": {
         "@opentui/core": "catalog:",
@@ -423,19 +424,19 @@
       },
     },
     "packages/tui": {
-      "name": "@opencode-ai/tui",
+      "name": "@opencode/tui",
       "version": "1.18.4",
       "dependencies": {
-        "@opencode-ai/client": "workspace:*",
-        "@opencode-ai/core": "workspace:*",
-        "@opencode-ai/latex": "workspace:*",
-        "@opencode-ai/merman": "workspace:*",
-        "@opencode-ai/plugin": "workspace:*",
-        "@opencode-ai/schema": "workspace:*",
-        "@opencode-ai/simulation": "workspace:*",
-        "@opencode-ai/theme": "workspace:*",
-        "@opencode-ai/ui": "workspace:*",
-        "@opencode-ai/util": "workspace:*",
+        "@opencode/client": "workspace:*",
+        "@opencode/core": "workspace:*",
+        "@opencode/latex": "workspace:*",
+        "@opencode/merman": "workspace:*",
+        "@opencode/plugin": "workspace:*",
+        "@opencode/schema": "workspace:*",
+        "@opencode/simulation": "workspace:*",
+        "@opencode/theme": "workspace:*",
+        "@opencode/ui": "workspace:*",
+        "@opencode/util": "workspace:*",
         "@opentui/core": "catalog:",
         "@opentui/keymap": "catalog:",
         "@opentui/solid": "catalog:",
@@ -459,7 +460,7 @@
       },
     },
     "packages/ui": {
-      "name": "@opencode-ai/ui",
+      "name": "@opencode/ui",
       "version": "1.18.15",
       "dependencies": {
         "@kobalte/core": "catalog:",
@@ -494,7 +495,7 @@
       },
     },
     "packages/util": {
-      "name": "@opencode-ai/util",
+      "name": "@opencode/util",
       "version": "1.18.3",
       "dependencies": {
         "@effect/opentelemetry": "catalog:",
@@ -1010,28 +1011,6 @@
 
     "@npmcli/run-script": ["@npmcli/run-script@10.0.4", "", { "dependencies": { "@npmcli/node-gyp": "^5.0.0", "@npmcli/package-json": "^7.0.0", "@npmcli/promise-spawn": "^9.0.0", "node-gyp": "^12.1.0", "proc-log": "^6.0.0" } }, "sha512-mGUWr1uMnf0le2TwfOZY4SFxZGXGfm4Jtay/nwAa2FLNAKXUoUwaGwBMNH36UHPtinWfTSJ3nqFQr0091CxVGg=="],
 
-    "@opencode-ai/ai": ["@opencode-ai/ai@workspace:packages/ai"],
-
-    "@opencode-ai/cli": ["@opencode-ai/cli@workspace:packages/cli"],
-
-    "@opencode-ai/client": ["@opencode-ai/client@workspace:packages/client"],
-
-    "@opencode-ai/codemode": ["@opencode-ai/codemode@workspace:packages/codemode"],
-
-    "@opencode-ai/core": ["@opencode-ai/core@workspace:packages/core"],
-
-    "@opencode-ai/http-recorder": ["@opencode-ai/http-recorder@workspace:packages/http-recorder"],
-
-    "@opencode-ai/httpapi-codegen": ["@opencode-ai/httpapi-codegen@workspace:packages/httpapi-codegen"],
-
-    "@opencode-ai/latex": ["@opencode-ai/latex@workspace:packages/latex"],
-
-    "@opencode-ai/merman": ["@opencode-ai/merman@workspace:packages/merman"],
-
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@workspace:packages/plugin"],
-
-    "@opencode-ai/protocol": ["@opencode-ai/protocol@workspace:packages/protocol"],
-
     "@opencode-ai/pty": ["@opencode-ai/pty@0.1.13", "", { "optionalDependencies": { "@opencode-ai/pty-darwin-arm64": "0.1.13", "@opencode-ai/pty-darwin-x64": "0.1.13", "@opencode-ai/pty-linux-arm64-gnu": "0.1.13", "@opencode-ai/pty-linux-arm64-musl": "0.1.13", "@opencode-ai/pty-linux-x64-gnu": "0.1.13", "@opencode-ai/pty-linux-x64-musl": "0.1.13" }, "bin": { "opencode-pty": "bin/opencode-pty.js" } }, "sha512-WPCN8h8HaZhhUcrMG0zu+4D9vco0EZiEg/gCF1K3JPRN6UsHMiXq1HVIy5IlyfcoyjfViRmQmXYE4AuU3laBjA=="],
 
     "@opencode-ai/pty-darwin-arm64": ["@opencode-ai/pty-darwin-arm64@0.1.13", "", { "os": "darwin", "cpu": "arm64" }, "sha512-fVtQZqVLBuJx/aB+5ojfmQifS1KMc9gxlxpFQ6bxEFU8tn8xHQTiFPaNroZgOtaw7I4ceGyx/eXieK1wp68yAA=="],
@@ -1046,23 +1025,45 @@
 
     "@opencode-ai/pty-linux-x64-musl": ["@opencode-ai/pty-linux-x64-musl@0.1.13", "", { "os": "linux", "cpu": "x64" }, "sha512-rXDpidW66gz2b2M/NbUN8ZKmAxaJcASnuHATeXevlrFdiPUv8uJwvkRd6Pla1fp01Q65MkBmgRa7Q9c+H1PlzA=="],
 
-    "@opencode-ai/schema": ["@opencode-ai/schema@workspace:packages/schema"],
-
-    "@opencode-ai/script": ["@opencode-ai/script@workspace:packages/script"],
-
     "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.5", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-7KgMvP5/1oxbhHj6kYBtPSTEdFKYpUeEYOzBTKdzSaRpapUpFFdn6Hkus3rr0rljO0kukWZIgRd3DrVBwTULGA=="],
 
-    "@opencode-ai/server": ["@opencode-ai/server@workspace:packages/server"],
+    "@opencode/ai": ["@opencode/ai@workspace:packages/ai"],
 
-    "@opencode-ai/simulation": ["@opencode-ai/simulation@workspace:packages/simulation"],
+    "@opencode/cli": ["@opencode/cli@workspace:packages/cli"],
 
-    "@opencode-ai/theme": ["@opencode-ai/theme@workspace:packages/theme"],
+    "@opencode/client": ["@opencode/client@workspace:packages/client"],
 
-    "@opencode-ai/tui": ["@opencode-ai/tui@workspace:packages/tui"],
+    "@opencode/codemode": ["@opencode/codemode@workspace:packages/codemode"],
 
-    "@opencode-ai/ui": ["@opencode-ai/ui@workspace:packages/ui"],
+    "@opencode/core": ["@opencode/core@workspace:packages/core"],
 
-    "@opencode-ai/util": ["@opencode-ai/util@workspace:packages/util"],
+    "@opencode/http-recorder": ["@opencode/http-recorder@workspace:packages/http-recorder"],
+
+    "@opencode/httpapi-codegen": ["@opencode/httpapi-codegen@workspace:packages/httpapi-codegen"],
+
+    "@opencode/latex": ["@opencode/latex@workspace:packages/latex"],
+
+    "@opencode/merman": ["@opencode/merman@workspace:packages/merman"],
+
+    "@opencode/plugin": ["@opencode/plugin@workspace:packages/plugin"],
+
+    "@opencode/protocol": ["@opencode/protocol@workspace:packages/protocol"],
+
+    "@opencode/schema": ["@opencode/schema@workspace:packages/schema"],
+
+    "@opencode/script": ["@opencode/script@workspace:packages/script"],
+
+    "@opencode/server": ["@opencode/server@workspace:packages/server"],
+
+    "@opencode/simulation": ["@opencode/simulation@workspace:packages/simulation"],
+
+    "@opencode/theme": ["@opencode/theme@workspace:packages/theme"],
+
+    "@opencode/tui": ["@opencode/tui@workspace:packages/tui"],
+
+    "@opencode/ui": ["@opencode/ui@workspace:packages/ui"],
+
+    "@opencode/util": ["@opencode/util@workspace:packages/util"],
 
     "@openrouter/ai-sdk-provider": ["@openrouter/ai-sdk-provider@2.10.0", "", { "peerDependencies": { "ai": "^6.0.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-FMsAEjLUt5pWuRE2LDC/LCvVrFjLlrEzUITH5+5SZtfq7KZ2wrOHjQVxzz92sju8S9ltpzW87CLW8/b0oBXVCw=="],
 

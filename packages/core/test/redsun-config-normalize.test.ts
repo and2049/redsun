@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { ConfigNormalize } from "@opencode-ai/core/config/normalize"
-import { Info } from "@opencode-ai/schema/config"
+import { ConfigNormalize } from "@opencode/core/config/normalize"
+import { Info } from "@opencode/schema/config"
 
 // REDSUN: `claude_code` is carried by normalize's `nativeAtomic` passthrough.
 // Adding the field to the schema alone is not enough - normalize rebuilds the

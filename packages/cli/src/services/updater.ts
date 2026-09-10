@@ -1,5 +1,5 @@
-import { Global } from "@opencode-ai/util/global"
-import { AppProcess } from "@opencode-ai/util/process"
+import { Global } from "@opencode/util/global"
+import { AppProcess } from "@opencode/util/process"
 import { OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Ref, Schedule } from "effect"
 import { ChildProcess } from "effect/unstable/process"
@@ -126,7 +126,10 @@ const make = Effect.gen(function* () {
     const result = yield* Effect.scoped(
       Effect.gen(function* () {
         yield* fs.makeDirectory(global.cache, { recursive: true })
-        const directory = yield* fs.makeTempDirectoryScoped({ directory: global.cache, prefix: "update-" })
+        const directory = yield* Effect.acquireRelease(
+          fs.makeTempDirectory({ directory: global.cache, prefix: "update-" }),
+          (directory) => fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore),
+        )
         if (method === "powershell") {
           const installer = path.join(directory, "install.ps1")
           const download = yield* exec(["curl", "-fsSL", "-o", installer, INSTALLER_WINDOWS], "5 minutes")

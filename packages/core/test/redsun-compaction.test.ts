@@ -1,28 +1,28 @@
 import { expect, test } from "bun:test"
-import { LLMClient, LLMEvent, LanguageModel, type LLMRequest } from "@opencode-ai/ai"
-import { OpenAIChat } from "@opencode-ai/ai/protocols"
-import { Agent } from "@opencode-ai/core/agent"
-import { Config } from "@opencode-ai/core/config"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { CompactionExtractor } from "@opencode-ai/core/session/compaction-extractor"
-import { SessionCompaction } from "@opencode-ai/core/session/compaction"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionModelRequest } from "@opencode-ai/core/session/model-request"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
-import type { SessionSchema } from "@opencode-ai/core/session/schema"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Session } from "@opencode-ai/core/session"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Document, Info as ConfigInfo } from "@opencode-ai/schema/config"
-import { Money } from "@opencode-ai/schema/money"
+import { LLMClient, LLMEvent, LanguageModel, type LLMRequest } from "@opencode/ai"
+import { OpenAIChat } from "@opencode/ai/protocols"
+import { Agent } from "@opencode/core/agent"
+import { Config } from "@opencode/core/config"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { llmClient } from "@opencode/core/effect/app-node-platform"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { CompactionExtractor } from "@opencode/core/session/compaction-extractor"
+import { SessionCompaction } from "@opencode/core/session/compaction"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionModelRequest } from "@opencode/core/session/model-request"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import type { SessionSchema } from "@opencode/core/session/schema"
+import { SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { Session } from "@opencode/core/session"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Document, Info as ConfigInfo } from "@opencode/schema/config"
+import { Money } from "@opencode/schema/money"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { testEffect } from "./lib/effect"
 
@@ -236,7 +236,7 @@ test("extractor caps every category", () => {
 })
 
 test("buildPrompt folds the inventory in ahead of the template rules", () => {
-  const prompt = SessionCompaction.buildPrompt(false, "## Task\n\nShip it")
+  const prompt = SessionCompaction.buildPrompt(false, false, "## Task\n\nShip it")
   expect(prompt).toContain("## Structured Inventory")
   expect(prompt).toContain("Ship it")
   expect(prompt.indexOf("## Objective")).toBeLessThan(prompt.indexOf("## Structured Inventory"))
@@ -253,7 +253,7 @@ hybrid.effect("hybrid compaction sends the head as transcript plus the inventory
       yield* compaction.compactManual({
         session,
         resolveContext: () => Effect.succeed(loaded(session, messages)),
-        prepare: (yield* SessionModelRequest.Service).prepare,
+        prepare: (yield* SessionModelRequest.Service).compaction,
         messages,
         inputID: SessionMessage.ID.make("msg_compact_hybrid"),
       }),
@@ -278,7 +278,7 @@ hybrid.effect("llm strategy sends no inventory", () =>
       yield* compaction.compactManual({
         session,
         resolveContext: () => Effect.succeed(loaded(session, messages)),
-        prepare: (yield* SessionModelRequest.Service).prepare,
+        prepare: (yield* SessionModelRequest.Service).compaction,
         messages,
         inputID: SessionMessage.ID.make("msg_compact_llm"),
       }),
@@ -297,7 +297,7 @@ algorithmic.effect("algorithmic compaction completes without an LLM call or mode
       yield* compaction.compactManual({
         session,
         resolveContext: () => Effect.die("algorithmic compaction must not resolve a model"),
-        prepare: (yield* SessionModelRequest.Service).prepare,
+        prepare: (yield* SessionModelRequest.Service).compaction,
         messages: conversation(),
         inputID: SessionMessage.ID.make("msg_compact_algorithmic"),
       }),
@@ -329,7 +329,7 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
       yield* compaction.compactManual({
         session,
         resolveContext: () => Effect.die("algorithmic compaction must not resolve a model"),
-        prepare: (yield* SessionModelRequest.Service).prepare,
+        prepare: (yield* SessionModelRequest.Service).compaction,
         messages: [previous, ...conversation()],
         inputID: SessionMessage.ID.make("msg_compact_carry"),
       }),
@@ -374,7 +374,7 @@ hybrid.effect("the retained tail serializes only the latest read of a file", () 
       yield* compaction.compactManual({
         session,
         resolveContext: () => Effect.succeed(loaded(session, messages)),
-        prepare: (yield* SessionModelRequest.Service).prepare,
+        prepare: (yield* SessionModelRequest.Service).compaction,
         messages,
         inputID: SessionMessage.ID.make("msg_compact_stale"),
       }),

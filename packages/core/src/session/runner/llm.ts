@@ -1,6 +1,6 @@
 export * as SessionRunnerLLM from "./llm.js"
 
-import { Message } from "@opencode-ai/ai"
+import { Message } from "@opencode/ai"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { Cause, Effect, Exit, FiberMap, Layer } from "effect"
 import { Database } from "../../database/database.js"
@@ -22,7 +22,7 @@ import { SessionMessageTable } from "../sql.js"
 import { SessionTitle } from "../title.js"
 import { DrainResult, Service, type Interface } from "./index.js"
 import { Snapshot } from "../../snapshot.js"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { llmClient } from "../../effect/app-node-platform.js"
 import { StepFailedError } from "../error.js"
 import { SessionRunnerRetry } from "./retry.js"
@@ -153,7 +153,7 @@ const layer = Layer.effect(
                             instructionUpdate: history.instructionUpdate,
                           }
                         }),
-                      prepare: context.prepare,
+                      prepare: context.request.compaction,
                       messages: yield* store.context(sessionID),
                       inputID: pending.id,
                       started: true,
@@ -232,7 +232,7 @@ const layer = Layer.effect(
         initial = undefined
         const compactionInput = {
           context: loaded,
-          prepare: context.prepare,
+          prepare: context.request.compaction,
         }
         // REDSUN: a delegated Claude Code session never reaches redsun compaction — the CLI
         // manages its own context window.
@@ -254,15 +254,15 @@ const layer = Layer.effect(
           initial: loaded.initial,
           messages: loaded.messages,
         })
-        const prepared = yield* context.prepare({
-          kind: "primary",
-          scope: { session: loaded.session, agentID: loaded.agent.id, model: loaded.model, tools: loaded.tools },
-          transcript: {
-            system: transcript.system,
-            messages: stepLimitReached
-              ? [...transcript.messages, Message.assistant(MAX_STEPS_PROMPT)]
-              : transcript.messages,
-          },
+        const prepared = yield* context.request.primary({
+          session: loaded.session,
+          agent: loaded.agent.id,
+          model: loaded.model,
+          tools: loaded.tools,
+          system: transcript.system,
+          messages: stepLimitReached
+            ? [...transcript.messages, Message.assistant(MAX_STEPS_PROMPT)]
+            : transcript.messages,
           // Keep tool definitions on the final Step to preserve the provider's cached prefix.
           toolChoice: stepLimitReached ? "none" : undefined,
           webSocket: "session",

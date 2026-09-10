@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 import { ConflictError, InvalidRequestError, ServiceUnavailableError } from "../errors.js"
 
 export const RemoteControlGroup = HttpApiGroup.make("server.remote")

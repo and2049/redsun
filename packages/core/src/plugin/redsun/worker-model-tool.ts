@@ -1,9 +1,9 @@
 export * as RedsunWorkerModelTool from "./worker-model-tool.js"
 
-import { ToolFailure } from "@opencode-ai/ai"
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { ToolFailure } from "@opencode/ai"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
-import { Model } from "@opencode-ai/schema/model"
+import { Model } from "@opencode/schema/model"
 import { Catalog } from "../../catalog.js"
 import { Form } from "../../form.js"
 import { KV } from "../../kv.js"

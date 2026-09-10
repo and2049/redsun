@@ -1,5 +1,5 @@
-import type { FormField, FormValue } from "@opencode-ai/client"
-import type { FormWithLocation } from "@opencode-ai/client/solid"
+import type { FormField, FormValue } from "@opencode/client"
+import type { FormWithLocation } from "@opencode/client/solid"
 
 export function formRequestOptions(form: FormWithLocation) {
   if (form.sessionID !== "global" || !form.location) return undefined

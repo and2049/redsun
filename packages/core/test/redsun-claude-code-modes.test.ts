@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { Options, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { ClaudeCodeModes } from "@opencode-ai/core/plugin/redsun/claude-code/modes"
-import { ClaudeCodeSessions } from "@opencode-ai/core/plugin/redsun/claude-code/sessions"
+import { ClaudeCodeModes } from "@opencode/core/plugin/redsun/claude-code/modes"
+import { ClaudeCodeSessions } from "@opencode/core/plugin/redsun/claude-code/sessions"
 
 describe("ClaudeCodeModes.permissionMode", () => {
   it("forces plan mode for the plan agent", () => {

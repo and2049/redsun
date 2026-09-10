@@ -15,7 +15,7 @@ import { discoverThemes } from "../src/theme/discovery"
 import { configDirectories } from "../src/util/config-directories"
 import { terminalMode } from "../src/theme/system"
 import { tmpdir, v1Theme } from "./fixture/fixture"
-import { resolveThemeDocument } from "@opencode-ai/theme/tui"
+import { resolveThemeDocument } from "@opencode/theme/tui"
 import { DEFAULT_THEMES } from "../src/theme"
 
 test("addTheme writes into module theme store", () => {

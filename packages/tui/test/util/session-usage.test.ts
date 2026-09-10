@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo } from "@opencode/client/promise"
 import { fitSessionUsage, sessionUsage } from "../../src/util/session-usage"
 
 const model = { providerID: "anthropic", id: "claude" }

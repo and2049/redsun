@@ -1,7 +1,7 @@
 export * as RedsunGoal from "./goal.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import type { Session } from "@opencode-ai/schema/session"
+import { define } from "@opencode/plugin/effect/plugin"
+import type { Session } from "@opencode/schema/session"
 import { DateTime, Effect, Exit, Stream } from "effect"
 import { KV } from "../../kv.js"
 import { SessionStore } from "../../session/store.js"

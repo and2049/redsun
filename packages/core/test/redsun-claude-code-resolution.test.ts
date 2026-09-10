@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { Effect, Exit } from "effect"
-import { ClaudeCodeModels } from "@opencode-ai/core/plugin/redsun/claude-code/models"
-import { ModelResolver } from "@opencode-ai/core/model-resolver"
+import { ClaudeCodeModels } from "@opencode/core/plugin/redsun/claude-code/models"
+import { ModelResolver } from "@opencode/core/model-resolver"
 
 /**
  * REDSUN: the delegated provider only works if model resolution reaches the

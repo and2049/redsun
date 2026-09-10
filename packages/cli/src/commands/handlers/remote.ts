@@ -1,13 +1,13 @@
 import { Effect, Option, Schema } from "effect"
-import { Service } from "@opencode-ai/client/effect/service"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { Service } from "@opencode/client/effect/service"
+import { RemoteControl } from "@opencode/schema/remote-control"
 import { createHash, randomBytes } from "node:crypto"
 import path from "node:path"
 import { readFile } from "node:fs/promises"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { ServiceConfig } from "../../services/service-config"
-import { createPrivateFile } from "@opencode-ai/util/private-file"
+import { createPrivateFile } from "@opencode/util/private-file"
 
 export default Runtime.handler(
   Commands.commands.remote,

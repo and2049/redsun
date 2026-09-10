@@ -6,7 +6,7 @@ import {
   resolveThemeDocument,
   selectThemeMode,
   themeModes,
-} from "@opencode-ai/theme/tui"
+} from "@opencode/theme/tui"
 import { resolveTheme as resolveV1 } from "../../../src/theme"
 import { v1Theme } from "../../fixture/fixture"
 import { RGBA } from "@opentui/core"

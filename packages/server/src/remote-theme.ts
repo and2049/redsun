@@ -1,4 +1,4 @@
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 import {
   DEFAULT_THEMES,
   colorToHex,
@@ -7,7 +7,7 @@ import {
   resolveThemeDocument,
   themeMode,
   type ThemeDocumentSource,
-} from "@opencode-ai/theme/tui"
+} from "@opencode/theme/tui"
 import { Effect, FileSystem, Schema } from "effect"
 import { parse, type ParseError } from "jsonc-parser"
 import path from "node:path"

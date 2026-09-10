@@ -1,6 +1,6 @@
 export * as RedsunComposePlugin from "./compose.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Agent } from "../../agent.js"
 

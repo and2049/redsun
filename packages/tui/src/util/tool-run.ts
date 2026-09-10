@@ -1,5 +1,5 @@
 import os from "os"
-import type { SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { SessionMessageAssistantTool } from "@opencode/client/promise"
 import { Locale } from "./locale"
 import {
   canonicalToolName,
