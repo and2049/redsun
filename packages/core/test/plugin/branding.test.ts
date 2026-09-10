@@ -27,6 +27,14 @@ const read = (directory: string, extension: string) =>
 const prompts = [...read(SYSTEM_PROMPTS, ".txt"), ...read(RUNNER_PROMPTS, ".txt")]
 const skills = read(SKILLS, ".md")
 
+// Vendored upstream docs are rewritten by script/docs/convert.ts. A page that
+// arrives with an upstream path means a rewrite rule is missing there, not here.
+const DOCS = path.join(SKILLS, "docs")
+const docs = fs
+  .readdirSync(DOCS, { recursive: true, encoding: "utf8" })
+  .filter((name) => name.endsWith(".md"))
+  .map((name) => ({ name, text: fs.readFileSync(path.join(DOCS, name), "utf8") }))
+
 const IDENTITY = /\b(?:You are|powered by)\s+(?:opencode|OpenCode)\b/
 const UPSTREAM_PATH = /opencode\.jsonc?|\.opencode\/|~\/\.config\/opencode|\.local\/share\/opencode/
 const UPSTREAM_REPO = /github\.com\/anomalyco\/opencode/
@@ -88,6 +96,32 @@ describe("model-facing branding", () => {
     const skill = skills.find((item) => item.name === "opencode.md")!
     expect(offending(skill.text, UPSTREAM_REPO)).toEqual([])
   })
+
+  test("vendored docs exist and record their upstream source", () => {
+    expect(docs.length).toBeGreaterThanOrEqual(30)
+    expect(fs.readFileSync(path.join(DOCS, "SOURCE"), "utf8")).toMatch(/^[0-9a-f]{40}\n$/)
+  })
+
+  test.each(docs.map((item) => [item.name, item.text] as const))(
+    "docs/%s does not introduce the agent as opencode",
+    (_name, text) => {
+      expect(offending(text, IDENTITY)).toEqual([])
+    },
+  )
+
+  test.each(docs.map((item) => [item.name, item.text] as const))(
+    "docs/%s does not name upstream config paths",
+    (_name, text) => {
+      expect(offending(text, UPSTREAM_PATH)).toEqual([])
+    },
+  )
+
+  test.each(docs.map((item) => [item.name, item.text] as const))(
+    "docs/%s routes feedback to redsun, not upstream",
+    (_name, text) => {
+      expect(offending(text, UPSTREAM_REPO)).toEqual([])
+    },
+  )
 
   test("the redsun issue tracker is the default in the report skill", () => {
     const report = skills.find((item) => item.name === "report.md")!

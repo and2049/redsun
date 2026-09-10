@@ -1,0 +1,119 @@
+# Plugins
+
+Load published packages, versioned packages, scoped packages, local plugin directories, or configured plugins from
+`redsun.json(c)`.
+
+```jsonc title="redsun.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "opencode-acme-plugin",
+    "opencode-acme-plugin@1.2.0",
+    "@acme/opencode-plugin",
+    "./plugins/local",
+    "../shared/plugin.ts",
+    "/absolute/path/plugin.ts",
+    "file:///home/me/plugins/local",
+    {
+      "package": "@acme/opencode-plugin",
+      "options": {
+        "agent": "reviewer",
+        "strict": true,
+      },
+    },
+  ],
+}
+```
+
+Relative paths resolve from the config file containing the entry. Plugin arrays from applicable config files are applied
+from lowest to highest precedence instead of replacing one another.
+
+```text
+~/.config/redsun/redsun.jsonc
+./redsun.jsonc
+./.redsun/redsun.jsonc
+```
+
+redsun also loads direct `.ts` and `.js` files and immediate plugin package directories from every discovered
+`.redsun/plugins/` directory.
+
+```text
+.redsun/
+└── plugins/
+    ├── concise.ts
+    ├── reviewer.js
+    └── acme-package/
+```
+
+Global plugins use the same discovery layout under the redsun config directory.
+
+```text
+~/.config/redsun/plugins/
+```
+
+A `plugins/` directory beside a project-root `redsun.json(c)` is not discovered automatically; configure its files
+explicitly or move it under `.redsun/`.
+
+```jsonc title="redsun.jsonc"
+{
+  "plugins": ["./plugins/local"],
+}
+```
+
+Plugin entries are processed in order. Prefix an ID or wildcard with `-` to disable it, use `*` for every plugin, and
+use `.*` to match an ID prefix. A later ID re-enables a plugin.
+
+```jsonc title="redsun.jsonc"
+{
+  "plugins": ["*", "-opencode.provider.*", "opencode.provider.openai", "-acme.reviewer"],
+}
+```
+
+Install, inspect, list, or remove global package plugins with the CLI.
+
+```sh
+redsun plugin add opencode-acme-plugin@1.2.0
+redsun plugin list
+redsun plugin list --builtin
+redsun plugin check
+redsun plugin update
+redsun plugin update opencode-acme-plugin
+redsun plugin remove opencode-acme-plugin@1.2.0
+```
+
+`plugin check` checks server and TUI-only package plugins for updates. `plugin update` updates every outdated package;
+pass a configured package target to check or update only that package. Local plugins and exact package revisions are skipped.
+
+Package installation accepts npm names with versions, tags, or ranges, plus npm-compatible Git package specifications.
+Git repositories can use hosted shortcuts, HTTPS, or SSH, including private repositories available through your existing
+Git credentials.
+
+```sh
+redsun plugin add @acme/opencode-plugin@beta
+redsun plugin add github:acme/opencode-plugin
+redsun plugin add git+ssh://git@github.com/acme/opencode-plugin.git#main
+redsun plugin add 'github:acme/plugins#main::path:packages/opencode-plugin'
+```
+
+Branches, tags, complete commit hashes, and npm's `::path:` repository-subdirectory selectors are supported. Configure
+local paths directly; tarball and npm alias targets are not accepted by `plugin add`.
+
+Changes under watched config directories reload automatically. Server startup loads cached package plugins immediately,
+installs missing packages in the background, and checks unpinned npm and Git plugins for updates without changing the
+installed package. Exact npm versions and full Git commit hashes stay pinned. Changes to unwatched local dependencies may
+still require restarting OpenCode.
+
+```sh
+touch .redsun/plugins/concise/index.ts
+redsun service restart
+```
+
+CLI-only plugins are configured separately and remain active when connected to a remote server.
+
+```json title="cli.json"
+{
+  "plugins": ["opencode-acme-cli"]
+}
+```
+
+- [Build a plugin](build/plugins/index.md): Create plugins that add tools, hooks, integrations, commands, agents, and other behavior.
