@@ -1,6 +1,34 @@
 import { expect, test } from "bun:test"
+import { InputRenderable } from "@opentui/core"
 import { createAppFixture } from "./fixture/app"
 import { tmpdir } from "./fixture/fixture"
+
+test("language appears once in palette search and remains available through settings and slash commands", async () => {
+  await using state = await tmpdir()
+  await using setup = await createAppFixture({ state: state.path, config: { animations: false } })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("commands"))
+  setup.mockInput.pressKey("p", { ctrl: true })
+  await setup.waitForFrame((frame) => frame.includes("Commands"))
+  const input = setup.renderer.currentFocusedEditor
+  if (!(input instanceof InputRenderable)) throw new Error("Missing palette search field")
+  input.value = "lang"
+  const results = await setup.waitForFrame((frame) => frame.includes("Interface language"))
+  expect(results.match(/Interface language/g)).toHaveLength(1)
+  expect(results).toContain("Settings · Appearance")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Settings") && !frame.includes("Commands"))
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Interface language / Language"))
+  setup.mockInput.pressEscape()
+  await setup.waitForFrame((frame) => frame.includes("Settings") && !frame.includes("/ Language"))
+  setup.mockInput.pressEscape()
+  await setup.waitForFrame((frame) => !frame.includes("Settings"))
+  await setup.mockInput.typeText("/lang")
+  await setup.waitForFrame((frame) => frame.includes("Interface language"))
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Interface language / Language"))
+})
 
 for (const width of [44, 100]) {
   test.each([

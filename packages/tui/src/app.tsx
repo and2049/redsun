@@ -895,6 +895,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         name: "language.switch",
         title: "Interface language",
         category: "Settings",
+        palette: undefined,
         slash: { name: "language", aliases: ["languages", "lang"] },
         run: () => dialog.replace(() => <DialogLanguage />),
       },
