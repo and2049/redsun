@@ -2,7 +2,7 @@ import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createHash, randomBytes } from "node:crypto"
 import { Effect } from "effect"
 import { importHandoff } from "redsun-remote-control"
-import type { RemoteControl } from "@opencode-ai/schema/remote-control"
+import type { RemoteControl } from "@opencode/schema/remote-control"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
 

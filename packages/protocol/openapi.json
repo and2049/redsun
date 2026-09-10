@@ -48,6 +48,577 @@
         "summary": "Check server health"
       }
     },
+    "/api/remote/companion": {
+      "get": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.companion.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Companion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Companion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.companion.configure",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Companion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Companion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.CompanionConfig"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/remote/companion/registration": {
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.companion.register",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.companion.cancel",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote/companion/approval": {
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.companion.approve",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.Approval"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/remote/tailscale": {
+      "get": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.tailscale.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Tailscale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Tailscale"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.tailscale.apply",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Tailscale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Tailscale"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote": {
+      "get": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.status",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Status"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote/policy": {
+      "put": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.policy",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.PolicyResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.PolicyResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.Preference"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/remote/enrollment": {
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.enroll",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.Enrollment"
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "delete": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.revoke",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.PolicyResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.PolicyResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote/heartbeat": {
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.heartbeat",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Status"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.Heartbeat"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/server": {
       "get": {
         "tags": ["server"],
@@ -388,6 +959,240 @@
         },
         "description": "Retrieve a single currently registered agent.",
         "summary": "Get agent"
+      }
+    },
+    "/api/remote/theme": {
+      "get": {
+        "tags": ["server.remoteCatalog"],
+        "operationId": "v2.remoteCatalog.theme",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Theme",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Theme"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote/agent": {
+      "get": {
+        "tags": ["server.remoteCatalog"],
+        "operationId": "v2.remoteCatalog.agents",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workspace": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/Location.InfoEncoded"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RemoteControl.AgentChoice"
+                      }
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote/model": {
+      "get": {
+        "tags": ["server.remoteCatalog"],
+        "operationId": "v2.remoteCatalog.models",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workspace": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/Location.InfoEncoded"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RemoteControl.ModelChoice"
+                      }
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/plugin": {
@@ -1621,14 +2426,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
                 }
               }
             }
@@ -3870,6 +4668,44 @@
                 "properties": {
                   "prompt": {
                     "type": "string"
+                  },
+                  "temperature": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Model.Ref"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tools": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["prompt"],
@@ -4285,143 +5121,6 @@
         },
         "description": "Retrieve one projected message owned by the Session.",
         "summary": "Get session message"
-      },
-      "patch": {
-        "tags": ["session"],
-        "operationId": "v2.session.messageUpdate",
-        "parameters": [
-          {
-            "name": "sessionID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^ses"
-            },
-            "required": true
-          },
-          {
-            "name": "messageID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^msg_"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/Session.Message.Assistant"
-                    }
-                  },
-                  "required": ["data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SessionNotFoundError | MessageNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/MessageNotFoundErrorEncoded"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "SessionBusyError | ConflictError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SessionBusyErrorEncoded"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ConflictErrorEncoded"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "description": "Replace the content of a completed assistant message in an idle session.",
-        "summary": "Update assistant message content",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "content": {
-                    "type": "array",
-                    "items": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/Session.Message.Assistant.Text"
-                        },
-                        {
-                          "$ref": "#/components/schemas/Session.Message.Assistant.Reasoning"
-                        },
-                        {
-                          "$ref": "#/components/schemas/Session.Message.Assistant.Tool"
-                        }
-                      ]
-                    }
-                  }
-                },
-                "required": ["content"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        }
       }
     },
     "/api/session/{sessionID}/environment": {
@@ -4634,6 +5333,34 @@
               ]
             },
             "required": false
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "agent-switched",
+                    "model-switched",
+                    "location-switched",
+                    "user",
+                    "synthetic",
+                    "system",
+                    "skill",
+                    "shell",
+                    "assistant",
+                    "compaction"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by message type before pagination. When omitted, all message types are returned. Pass the same type when following cursors."
+            },
+            "required": false
           }
         ],
         "security": [],
@@ -4696,7 +5423,7 @@
             }
           }
         },
-        "description": "Retrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.",
+        "description": "Retrieve projected messages for a session, optionally filtered by type. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline, passing the same type filter on each page.",
         "summary": "Get session messages"
       }
     },
@@ -4804,6 +5531,92 @@
         },
         "description": "Retrieve the current snapshot of available models ordered by release date. The snapshot may precede initial plugin settlement.",
         "summary": "List models"
+      }
+    },
+    "/api/model/refresh": {
+      "post": {
+        "tags": ["model"],
+        "operationId": "v2.model.refresh",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workspace": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Force a re-fetch of the models.dev catalog and republish the model list regardless of cache age.",
+        "summary": "Refresh models"
       }
     },
     "/api/model/default": {
@@ -8237,6 +9050,112 @@
         },
         "description": "Retrieve pending permission requests for a location.",
         "summary": "List pending permission requests"
+      }
+    },
+    "/api/permission/mode": {
+      "get": {
+        "tags": ["permission"],
+        "operationId": "v2.permission.mode.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "$ref": "#/components/schemas/Permission.Mode"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve whether permissions that would prompt are approved automatically.",
+        "summary": "Get auto-approve mode"
+      },
+      "put": {
+        "tags": ["permission"],
+        "operationId": "v2.permission.mode.set",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Approve every permission that would prompt. Rules that deny still deny, so read-only agents stay read-only.",
+        "summary": "Set auto-approve mode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "$ref": "#/components/schemas/Permission.Mode"
+                  }
+                },
+                "required": ["mode"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/api/permission/saved": {
@@ -14193,6 +15112,37 @@
               "buffer": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "strategy": {
+                "type": "string",
+                "enum": ["hybrid", "algorithmic", "llm"]
+              },
+              "max_tool_results": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "advisor": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "model": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["auto", "aside-only"]
+              },
+              "cooldown_turns": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "guidance": {
+                "type": "string"
               }
             },
             "additionalProperties": false
@@ -14214,6 +15164,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "instruction_max_chars": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           },
           "references": {
             "type": "object",
@@ -14307,6 +15261,56 @@
               }
             },
             "additionalProperties": false
+          },
+          "claude_code": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "binary_path": {
+                "type": "string"
+              },
+              "config_dir": {
+                "type": "string"
+              },
+              "permission_mode": {
+                "type": "string"
+              },
+              "worker_permission_mode": {
+                "type": "string"
+              },
+              "extra_args": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -14386,6 +15390,9 @@
         "properties": {
           "compaction": {
             "$ref": "#/components/schemas/Provider.Compaction"
+          },
+          "websocket": {
+            "type": "boolean"
           },
           "modelID": {
             "type": "string"
@@ -14494,6 +15501,9 @@
         "properties": {
           "compaction": {
             "$ref": "#/components/schemas/Provider.Compaction"
+          },
+          "websocket": {
+            "type": "boolean"
           },
           "canonical": {
             "type": "string"
@@ -16441,6 +17451,9 @@
           "compaction": {
             "$ref": "#/components/schemas/Provider.Compaction"
           },
+          "websocket": {
+            "type": "boolean"
+          },
           "settings": {
             "type": "object"
           },
@@ -16579,6 +17592,10 @@
       "Permission.Effect": {
         "type": "string",
         "enum": ["allow", "deny", "ask"]
+      },
+      "Permission.Mode": {
+        "type": "string",
+        "enum": ["normal", "auto"]
       },
       "Permission.Reply": {
         "type": "string",
@@ -17429,6 +18446,9 @@
           "compaction": {
             "$ref": "#/components/schemas/Provider.Compaction"
           },
+          "websocket": {
+            "type": "boolean"
+          },
           "settings": {
             "type": "object"
           },
@@ -17627,6 +18647,478 @@
             "$ref": "#/components/schemas/Reference.GitSource"
           }
         ]
+      },
+      "RemoteControl.AgentChoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["subagent", "primary", "all"]
+          }
+        },
+        "required": ["id", "name", "mode"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Approval": {
+        "type": "object",
+        "properties": {
+          "requestID": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": ["requestID", "fingerprint"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Companion": {
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteControl.Approval"
+            }
+          }
+        },
+        "required": ["running", "port", "pending"],
+        "additionalProperties": false
+      },
+      "RemoteControl.CompanionConfig": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "required": ["origin"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Enrollment": {
+        "type": "object",
+        "properties": {
+          "backendID": {
+            "type": "string"
+          },
+          "credentialID": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": ["backendID", "credentialID", "digest"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Heartbeat": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          }
+        },
+        "required": ["connected"],
+        "additionalProperties": false
+      },
+      "RemoteControl.ModelChoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "providerID": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["id", "providerID", "name", "variants"],
+        "additionalProperties": false
+      },
+      "RemoteControl.PolicyResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/RemoteControl.Status"
+          },
+          "persisted": {
+            "type": "boolean"
+          }
+        },
+        "required": ["status", "persisted"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Preference": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Status": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["disabled", "unavailable", "ready", "connected"]
+          },
+          "enrolled": {
+            "type": "boolean"
+          },
+          "backendID": {
+            "type": "string"
+          },
+          "processID": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number",
+            "enum": [1]
+          },
+          "leaseSeconds": {
+            "type": "number",
+            "enum": [30]
+          }
+        },
+        "required": ["supported", "enabled", "state", "enrolled", "processID", "version", "leaseSeconds"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Tailscale": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "certificate": {
+            "type": "boolean"
+          },
+          "mapping": {
+            "type": "string",
+            "enum": ["missing", "ready", "conflict"]
+          }
+        },
+        "required": ["host", "origin", "certificate", "mapping"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Theme": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["light", "dark"]
+          },
+          "colors": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "object",
+                "properties": {
+                  "default": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "subdued": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "action": {
+                    "type": "object",
+                    "properties": {
+                      "primary": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "secondary": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "destructive": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      }
+                    },
+                    "required": ["primary", "secondary", "destructive"],
+                    "additionalProperties": false
+                  },
+                  "status": {
+                    "type": "object",
+                    "properties": {
+                      "running": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "question": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "permission": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "unread": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      }
+                    },
+                    "required": ["running", "question", "permission", "unread"],
+                    "additionalProperties": false
+                  },
+                  "feedback": {
+                    "type": "object",
+                    "properties": {
+                      "error": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "warning": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "success": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "info": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      }
+                    },
+                    "required": ["error", "warning", "success", "info"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["default", "subdued", "action", "status", "feedback"],
+                "additionalProperties": false
+              },
+              "background": {
+                "type": "object",
+                "properties": {
+                  "default": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "offset": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "overlay": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "action": {
+                    "type": "object",
+                    "properties": {
+                      "primary": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "secondary": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "destructive": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      }
+                    },
+                    "required": ["primary", "secondary", "destructive"],
+                    "additionalProperties": false
+                  },
+                  "feedback": {
+                    "type": "object",
+                    "properties": {
+                      "error": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "warning": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "success": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      },
+                      "info": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                      }
+                    },
+                    "required": ["error", "warning", "success", "info"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["default", "offset", "overlay", "action", "feedback"],
+                "additionalProperties": false
+              },
+              "border": {
+                "type": "object",
+                "properties": {
+                  "default": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  }
+                },
+                "required": ["default"],
+                "additionalProperties": false
+              },
+              "diff": {
+                "type": "object",
+                "properties": {
+                  "added": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "removed": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  }
+                },
+                "required": ["added", "removed"],
+                "additionalProperties": false
+              },
+              "markdown": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "heading": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "link": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "linkText": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "blockQuote": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "emphasis": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "strong": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "horizontalRule": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "listItem": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "listEnumeration": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "image": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "imageText": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  },
+                  "codeBlock": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+                  }
+                },
+                "required": [
+                  "text",
+                  "heading",
+                  "link",
+                  "linkText",
+                  "code",
+                  "blockQuote",
+                  "emphasis",
+                  "strong",
+                  "horizontalRule",
+                  "listItem",
+                  "listEnumeration",
+                  "image",
+                  "imageText",
+                  "codeBlock"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": ["text", "background", "border", "diff", "markdown"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "mode", "colors"],
+        "additionalProperties": false
       },
       "Rpc.Input": {
         "type": "object",
@@ -18400,6 +19892,12 @@
           },
           "providerContext": {
             "$ref": "#/components/schemas/Session.ProviderContext"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/Money.USD"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsage.Info"
           }
         },
         "required": ["type", "id", "time", "status", "reason", "summary", "recent"],
@@ -18439,6 +19937,12 @@
           },
           "error": {
             "$ref": "#/components/schemas/Session.StructuredError"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/Money.USD"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsage.Info"
           }
         },
         "required": ["type", "id", "time", "status", "reason", "error"],
@@ -19887,6 +21391,9 @@
       "name": "health"
     },
     {
+      "name": "server.remote"
+    },
+    {
       "name": "server"
     },
     {
@@ -19894,6 +21401,9 @@
     },
     {
       "name": "agent"
+    },
+    {
+      "name": "server.remoteCatalog"
     },
     {
       "name": "plugin",

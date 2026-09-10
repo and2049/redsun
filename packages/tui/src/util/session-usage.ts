@@ -1,4 +1,4 @@
-import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode/client/promise"
 import { Locale } from "./locale"
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })

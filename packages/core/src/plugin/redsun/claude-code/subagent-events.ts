@@ -1,9 +1,9 @@
 export * as ClaudeCodeSubagentEvents from "./subagent-events.js"
 
 import { Effect } from "effect"
-import { Agent } from "@opencode-ai/schema/agent"
-import type { Model } from "@opencode-ai/schema/model"
-import { Money } from "@opencode-ai/schema/money"
+import { Agent } from "@opencode/schema/agent"
+import type { Model } from "@opencode/schema/model"
+import { Money } from "@opencode/schema/money"
 import type { Bus } from "../../../bus.js"
 import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"

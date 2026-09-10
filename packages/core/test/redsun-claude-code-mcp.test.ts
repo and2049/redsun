@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeMcp } from "@opencode-ai/core/plugin/redsun/claude-code/mcp"
+import { ClaudeCodeMcp } from "@opencode/core/plugin/redsun/claude-code/mcp"
 
 /**
  * The SDK stores each tool's handler on the server instance. Reaching for it

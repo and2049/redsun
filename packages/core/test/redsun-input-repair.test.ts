@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { ToolInputRepair } from "@opencode-ai/core/tool/input-repair"
-import { execute as executeToolRuntime } from "@opencode-ai/core/tool/runtime"
+import { ToolInputRepair } from "@opencode/core/tool/input-repair"
+import { execute as executeToolRuntime } from "@opencode/core/tool/runtime"
 import { Effect, Schema } from "effect"
 
 const schema = {

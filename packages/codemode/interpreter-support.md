@@ -47,7 +47,7 @@ ultimate source of truth.
 - [x] `const`, `let`, and accepted `var` declarations.
 - [x] Object and array destructuring in declarations, parameters, assignment expressions, and `for...of` bindings.
 - [x] Nested patterns, defaults, elisions, and rest elements.
-- [x] Assignment to identifiers, unblocked plain-object fields, non-negative integer array indexes, and writable URL
+- [x] Assignment to identifiers, plain-object fields, non-negative integer array indexes, and writable URL
       fields.
 - [x] Direct function declarations are hoisted in program and block statement lists.
 - [x] Parameter defaults observe a temporal dead zone for later parameters.
@@ -138,7 +138,10 @@ ultimate source of truth.
 - [x] Sequence expressions (the comma operator).
 - [x] `await` for CodeMode promises and callable thenables; a plain value passes through unchanged, though every
       `await` still defers its continuation one reaction turn.
-- [x] `new` for Array, Object, Error types, Date, RegExp, Map, Set, URL, URLSearchParams, and Promise.
+- [x] `new` for Array, Object, Error types, Date, RegExp, Map, Set, URL, URLSearchParams, and Promise. `new` on any
+      other value throws a catchable `TypeError` naming the callee: other built-in functions such as `Number` say
+      `new` is unsupported and point at the plain call, user-defined functions report the constructor gap below, and
+      non-callable values are not constructors.
 - [x] Arithmetic operators: `+`, `-`, `*`, `/`, `%`, and `**`.
 - [x] Equality and ordering: `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=`.
 - [x] Bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`, and `>>>`.
@@ -200,6 +203,9 @@ ultimate source of truth.
 ## Objects and properties
 
 - [x] Own-field reads and writes on plain data objects.
+- [x] `new` dispatches on the evaluated constructor value, so aliases (`const D = Date; new D()`), constructors held in
+      objects, and constructors passed as arguments work, while a shadowed name (`const Date = 5; new Date()`) does
+      not construct.
 - [x] `Object()` and `new Object()` return `{}` for nullish arguments and pass objects through unchanged;
       primitive wrapper objects (`Object(1)`) are rejected explicitly.
 - [x] Computed property names and object spread.
@@ -207,9 +213,11 @@ ultimate source of truth.
       synchronous iterator support for `fromEntries`.
 - [x] `Object.keys` over arrays and tool references.
 - [x] Object identity is preserved by in-CodeMode Object helpers.
-- [x] Prototype traversal and mutation through `__proto__`, `constructor`, and `prototype` are blocked.
-- [ ] Legal own data fields named `__proto__`, `constructor`, or `prototype` are rejected at JSON/tool boundaries and
-      cannot be created, read, or written in CodeMode; tool path segments with those names remain supported.
+- [x] `__proto__`, `constructor`, and `prototype` are ordinary own data keys. `x.constructor` without an own key resolves
+      to the owning built-in (`[].constructor === Array`, `new TypeError().constructor === TypeError`); prototype objects
+      are not observable, so `[].__proto__` and `Object.prototype` read as `undefined` and `o.__proto__ = x` sets an own
+      field.
+- [x] Circular references are rejected when created (`o.self = o`, `array.push(array)`), not at serialization as in JS.
 - [x] `Object.is` for supported data values.
 - [x] `Object.groupBy` over finite collections and custom synchronous iterators/generators, with string-key coercion
       and null-prototype results.
@@ -273,23 +281,20 @@ ultimate source of truth.
       use their epoch time) and reject opaque runtime references as data errors.
 - [x] Unknown static members on global namespaces and on `Number`/`String`/the coercion functions read as `undefined`
       for feature detection. Calling any undefined value reports a native-style `TypeError` naming the callee, for
-      example `Math.sum is not a function.` Blocked members (`constructor`, `__proto__`, ...) still throw,
-      and unknown `Promise` statics keep their descriptive error.
+      example `Math.sum is not a function.` Unknown `Promise` statics keep their descriptive error.
 - [x] `Math.sumPrecise` over finite collections and custom synchronous iterators/generators, rejecting non-number
       elements without coercion.
 - [x] Global coercing `isFinite` and `isNaN`; opaque runtime references reject as data errors, like `Number(...)`.
 
 ## JSON and console
 
-- [x] `JSON.parse` and `JSON.stringify` for supported data objects; the blocked data-key gap listed above still applies.
+- [x] `JSON.parse` and `JSON.stringify` for supported data objects.
 - [x] Numeric/string indentation for `JSON.stringify`.
 - [x] `JSON.parse` reviver callbacks, including postorder traversal, deletion through `undefined`, and root replacement.
       Revivers receive `(key, value)` but no `this` holder because CodeMode functions intentionally have no `this`.
 - [x] `JSON.stringify` function and array replacers. Function replacers receive `(key, value)` in preorder, including
       the root, but no `this` holder. Array replacers preserve requested property order, deduplicate names, coerce
       number primitives, and ignore non-string/non-number entries. Primitive wrapper entries remain unsupported.
-- [x] JSON callbacks retain the blocked-key boundary: parsed or stringified data containing `__proto__`, `constructor`,
-      or `prototype` is rejected before callback traversal.
 - [x] Captured `console.log`, `console.info`, `console.debug`, `console.warn`, and `console.error`.
 - [x] Captured `console.dir` and `console.table`.
 
@@ -320,7 +325,7 @@ ultimate source of truth.
 - [x] `test`, `exec`, and `toString`.
 - [x] Readable `source`, `flags`, `lastIndex`, `hasIndices`, `global`, `ignoreCase`, `multiline`, `sticky`, `unicode`,
       `unicodeSets`, and `dotAll`.
-- [x] Captures, safe named groups (blocked member names are omitted), match `.index`, and stateful global matching.
+- [x] Captures, named groups, match `.index`, and stateful global matching.
 - [x] Integration with supported String methods, including function replacers.
 - [x] Writable `lastIndex`.
 - [x] Match `indices` metadata for the `d` flag, including named groups on `exec`, `match`, and `matchAll` results.
@@ -358,13 +363,15 @@ ultimate source of truth.
       or without `new`.
 - [x] `AggregateError` with the `(errors, message?)` signature and an own `errors` array, constructed directly or by
       an all-rejected `Promise.any`; direct construction accepts custom synchronous iterators and generators.
-- [x] Error `name`/`message`, error inheritance through `instanceof`, and plain-data serialization.
+- [x] Error `name`/`message`, error inheritance through `instanceof`, and plain-data serialization. Errors have no
+      `stack`; the diagnostic carries the source location instead.
 - [x] `instanceof` for Date, RegExp, Map, Set, URL, URLSearchParams, Array, Object, Promise, and Error types.
 - [x] Catchable user throws, runtime failures raised during interpreted evaluation, awaited tool failures, and awaited
       tool-call-limit failures; parse/compile failures, cooperative timeout, and output bounding remain outside program
       `catch`.
 - [x] Source locations on unsupported-syntax diagnostics for JavaScript-shaped input; TypeScript transpilation may
-      shift them.
+      shift them. The diagnostic names the rejected node type and attaches a short orientation to the supported
+      subset; this matrix is the full reference.
 - [x] Model-visible host failure messages and underlying causes, including output-validation errors.
 - [ ] Distinguish user-thrown failures from interpreter defects and explicit tool refusals from internal tool
       failures; preserve those categories in caught errors, promise rejection handlers, and `Promise.allSettled`

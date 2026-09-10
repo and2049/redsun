@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Effect, Schema, Logger, References } from "effect"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
-import { Session } from "@opencode-ai/schema/session"
+import { RemoteControl } from "@opencode/schema/remote-control"
+import { Session } from "@opencode/schema/session"
 import { HttpServer } from "effect/unstable/http"
 import { createHash, randomBytes } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -12,7 +12,7 @@ import type { BackendSnapshot } from "redsun-remote-control"
 import { RemoteService } from "../src/remote-control"
 import { RemoteAccess } from "../src/remote-access"
 import { ServerProcess } from "../src/process"
-import { DEFAULT_THEMES } from "@opencode-ai/theme/tui"
+import { DEFAULT_THEMES } from "@opencode/theme/tui"
 import { StorageError } from "redsun-remote-control"
 
 const token = randomBytes(32).toString("base64url")

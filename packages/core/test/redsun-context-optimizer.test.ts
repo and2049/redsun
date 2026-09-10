@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test"
-import { Message, ToolCallPart, ToolResultPart } from "@opencode-ai/ai"
-import { Document, Info as ConfigInfo } from "@opencode-ai/schema/config"
-import { Config } from "@opencode-ai/core/config"
+import { Message, ToolCallPart, ToolResultPart } from "@opencode/ai"
+import { Document, Info as ConfigInfo } from "@opencode/schema/config"
+import { Config } from "@opencode/core/config"
 import {
   RedsunContextOptimizer,
   boundInstruction,
   boundInstructionText,
   dedupeStaleReads,
-} from "@opencode-ai/core/plugin/redsun/context-optimizer"
+} from "@opencode/core/plugin/redsun/context-optimizer"
 import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 import { host } from "./plugin/host"

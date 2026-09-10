@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import type { SessionInfo } from "@opencode-ai/client/promise"
+import type { SessionInfo } from "@opencode/client/promise"
 import { useData } from "../../context/data"
 import { Keymap } from "../../context/keymap"
 import { useTheme } from "../../context/theme"

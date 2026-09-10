@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
-import { ConflictError, InvalidRequestError, ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { ConflictError, InvalidRequestError, ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Api } from "../api"
 import { RemoteService } from "../remote-control"
 

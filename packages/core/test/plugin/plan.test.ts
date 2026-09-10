@@ -1,22 +1,22 @@
 import { describe, expect } from "bun:test"
-import { Message, ToolFailure } from "@opencode-ai/ai"
+import { Message, ToolFailure } from "@opencode/ai"
 import { DateTime, Effect, Option, Stream, Types } from "effect"
-import type { SessionContext } from "@opencode-ai/plugin/effect/session"
-import type { ToolHooks } from "@opencode-ai/plugin/effect/tool"
-import { Agent } from "@opencode-ai/core/agent"
-import { Event } from "@opencode-ai/schema/event"
-import { Location } from "@opencode-ai/core/location"
-import { Model } from "@opencode-ai/core/model"
-import { PlanPlugin } from "@opencode-ai/core/plugin/plan"
-import { Permission } from "@opencode-ai/core/permission"
-import { Provider } from "@opencode-ai/core/provider"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Tool } from "@opencode-ai/schema/tool"
-import { Global } from "@opencode-ai/util/global"
+import type { SessionContext } from "@opencode/plugin/effect/session"
+import type { ToolHooks } from "@opencode/plugin/effect/tool"
+import { Agent } from "@opencode/core/agent"
+import { Event } from "@opencode/schema/event"
+import { Location } from "@opencode/core/location"
+import { Model } from "@opencode/core/model"
+import { PlanPlugin } from "@opencode/core/plugin/plan"
+import { Permission } from "@opencode/core/permission"
+import { Provider } from "@opencode/core/provider"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionMessage } from "@opencode/core/session/message"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Tool } from "@opencode/schema/tool"
+import { Global } from "@opencode/util/global"
 import path from "node:path"
 import { it } from "../lib/effect"
 import { location } from "../fixture/location"
@@ -141,8 +141,7 @@ const request = (agent: Agent.ID, messages: Array<Message>): SessionContext => (
   system: [],
   messages,
   tools: {},
-  generation: {},
-  providerOptions: {},
+  options: {},
 })
 
 type ToolErrorEvent = Extract<ToolHooks["execute.after"], { readonly status: "error" }>

@@ -7,7 +7,7 @@ import { createAppFixture } from "./fixture/app"
 import { tmpdir } from "./fixture/fixture"
 import { directory, json } from "./fixture/tui-client"
 import { remoteLabel } from "../src/context/remote-control"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 
 test("remote labels distinguish disabled, unavailable, ready and connected", () => {
   expect(

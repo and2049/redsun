@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Schema } from "effect"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 
 export async function exportRemoteClient(target: string): Promise<void> {
   await mkdir(target)

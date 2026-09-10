@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { ClaudeCodeSessions } from "@opencode-ai/core/plugin/redsun/claude-code/sessions"
+import { ClaudeCodeSessions } from "@opencode/core/plugin/redsun/claude-code/sessions"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

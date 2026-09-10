@@ -2,7 +2,7 @@ export * as ClaudeCodeAuth from "./auth.js"
 
 import type { Options } from "@anthropic-ai/claude-agent-sdk"
 import { Effect } from "effect"
-import { Credential } from "@opencode-ai/schema/credential"
+import { Credential } from "@opencode/schema/credential"
 import { Integration } from "../../../integration.js"
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"

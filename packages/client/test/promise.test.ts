@@ -6,9 +6,11 @@ test("exposes every standard HTTP API group", () => {
 
   expect(Object.keys(client)).toEqual([
     "health",
+    "remote",
     "server",
     "location",
     "agent",
+    "remoteCatalog",
     "plugin",
     "session",
     "message",

@@ -1,4 +1,4 @@
-import type { KeymapCommand } from "@opencode-ai/plugin/tui/context"
+import type { KeymapCommand } from "@opencode/plugin/tui/context"
 
 export function parseFileLineRange(input: string) {
   const hash = input.lastIndexOf("#")

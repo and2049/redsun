@@ -1,12 +1,12 @@
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { OPENCODE_CHANNEL, OPENCODE_VERSION } from "../version"
-import { Hash } from "@opencode-ai/util/hash"
-import { Service } from "@opencode-ai/client/effect/service"
+import { Hash } from "@opencode/util/hash"
+import { Service } from "@opencode/client/effect/service"
 import { Effect, FileSystem, Option, Schema } from "effect"
 import { randomBytes } from "crypto"
 import path from "path"
 import { selfCommand } from "../util/process"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 
 // The CLI's service configuration file, plus the Service.EnsureOptions binding that
 // points the client package's service operations at this CLI: which

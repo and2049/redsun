@@ -1,10 +1,10 @@
-import { Session } from "@opencode-ai/schema/session"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { Session } from "@opencode/schema/session"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { Array as Arr, Effect, Option } from "effect"
 import { RemoteService } from "./remote-control"
-import { SessionInbox } from "@opencode-ai/schema/session-inbox"
-import { Permission } from "@opencode-ai/schema/permission"
-import { Form } from "@opencode-ai/schema/form"
+import { SessionInbox } from "@opencode/schema/session-inbox"
+import { Permission } from "@opencode/schema/permission"
+import { Form } from "@opencode/schema/form"
 
 export const isRemote = Effect.serviceOption(RemoteService.Principal).pipe(Effect.map(Option.isSome))
 export const project = <A>(value: A, transform: (value: A) => A) =>

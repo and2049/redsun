@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test"
-import { Model } from "@opencode-ai/schema/model"
-import { Provider } from "@opencode-ai/schema/provider"
-import { RedsunWorkerModelTool } from "@opencode-ai/core/plugin/redsun/worker-model-tool"
-import { definition } from "@opencode-ai/core/tool/runtime"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { RedsunWorkerModelTool } from "@opencode/core/plugin/redsun/worker-model-tool"
+import { definition } from "@opencode/core/tool/runtime"
 
 const model = (providerID: string, id: string, name: string) =>
   ({

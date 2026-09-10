@@ -4,7 +4,7 @@ import {
   parseTheme as parseThemeSource,
   type ThemeDocument,
   type ThemeDocumentSource,
-} from "@opencode-ai/theme/tui"
+} from "@opencode/theme/tui"
 
 export { generateSyntax, selectedForeground, type Theme, type ThemeV1Json } from "./v1"
 export {
@@ -14,7 +14,7 @@ export {
   resolveThemeDocument,
   type ThemeDocument,
   type ThemeDocumentSource,
-} from "@opencode-ai/theme/tui"
+} from "@opencode/theme/tui"
 
 const pluginThemes: Record<string, ThemeDocumentSource> = {}
 let customThemes: Record<string, ThemeDocumentSource> = {}
@@ -77,4 +77,4 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
-export { resolveV1 as resolveTheme } from "@opencode-ai/theme/tui/v1"
+export { resolveV1 as resolveTheme } from "@opencode/theme/tui/v1"

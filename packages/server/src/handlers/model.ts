@@ -1,5 +1,5 @@
-import { Catalog } from "@opencode-ai/core/catalog"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
+import { Catalog } from "@opencode/core/catalog"
+import { ModelsDev } from "@opencode/core/models-dev"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"

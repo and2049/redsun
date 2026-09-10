@@ -6,11 +6,11 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageInfo,
   ToolContent,
-} from "@opencode-ai/client/promise"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
+} from "@opencode/client/promise"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { EOL } from "node:os"
 import { readFile } from "node:fs/promises"
-import { nonEmptyToolContent, toolOutputText, type ToolPart } from "@opencode-ai/tui/util/tool-run"
+import { nonEmptyToolContent, toolOutputText, type ToolPart } from "@opencode/tui/util/tool-run"
 import { UI } from "./ui"
 
 type Model = {

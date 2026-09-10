@@ -22,8 +22,8 @@ import type {
   ShellInfo,
   SkillInfo,
   VcsInfo,
-} from "@opencode-ai/client"
-import type { ResolvedTheme } from "@opencode-ai/theme/tui"
+} from "@opencode/client"
+import type { ResolvedTheme } from "@opencode/theme/tui"
 import type { CliRenderer, KeyEvent, MarkdownCodeBlockRenderer, Renderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type { Store } from "solid-js/store"
@@ -463,10 +463,12 @@ export interface UI {
       readonly attention: boolean
       readonly unread?: "activity" | "error"
     }[]
-    /** Opens (or focuses) a tab for a session, adding it when not already open. Returns false when tabs are disabled. */
+    /** Opens a tab for a session without focusing it. Returns false when tabs are disabled. */
     open(sessionID: string): boolean
-    /** Focuses an already-open tab and returns false when it is not open. */
+    /** Opens a tab when needed, then focuses it. Returns false when tabs are disabled. */
     focus(sessionID: string): boolean
+    /** Moves an open tab to an index and returns false when it is not open. */
+    move(sessionID: string, index: number): boolean
     /** Closes an open tab, or the active tab when omitted, and returns false when no tab matched. */
     close(sessionID?: string): boolean
   }

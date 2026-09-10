@@ -1,9 +1,9 @@
 export * as RedsunProjectMemory from "./project-memory.js"
 
 import path from "node:path"
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, PubSub, Stream } from "effect"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Watcher } from "../../filesystem/watcher.js"
 import { InstructionDiscovery } from "../../instruction-discovery.js"
 import { Location } from "../../location.js"

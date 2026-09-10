@@ -8,11 +8,11 @@ import {
   type BackendSnapshot,
   type Local,
 } from "redsun-remote-control"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
 import { readFile, rename, mkdir, rm } from "node:fs/promises"
 import path from "node:path"
-import { Bus } from "@opencode-ai/core/bus"
+import { Bus } from "@opencode/core/bus"
 
 const Stored = Schema.Struct({
   enabled: Schema.Boolean,
@@ -81,7 +81,7 @@ export const make = Effect.fnUntraced(function* (
         const temporary = `${target}.${randomUUID()}.tmp`
         await mkdir(path.dirname(target), { recursive: true })
         try {
-          const { createPrivateFile } = await import("@opencode-ai/util/private-file")
+          const { createPrivateFile } = await import("@opencode/util/private-file")
           await createPrivateFile(temporary, JSON.stringify({ ...document, remote_control: next }, null, 2) + "\n")
           await rename(temporary, target)
         } finally {

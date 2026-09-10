@@ -5,7 +5,7 @@
 import path from "node:path"
 import { watch, type FSWatcher } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
-import { Path } from "@opencode-ai/util/global"
+import { Path } from "@opencode/util/global"
 import { configDirectories } from "../../src/util/config-directories"
 import { themeMode } from "../../src/theme"
 import { renderScreen, type Frame, type Screen } from "./render"

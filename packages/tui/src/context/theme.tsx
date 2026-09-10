@@ -1,6 +1,6 @@
 import { SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type ContextName } from "@opencode-ai/theme/tui"
+import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type ContextName } from "@opencode/theme/tui"
 import {
   DEFAULT_THEMES,
   addTheme,

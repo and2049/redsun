@@ -1,10 +1,10 @@
 export * as ReadTool from "./read.js"
 
-import type { Context } from "@opencode-ai/plugin/effect/plugin"
+import type { Context } from "@opencode/plugin/effect/plugin"
 import { basename, dirname, join } from "path"
-import { ToolFailure } from "@opencode-ai/ai"
+import { ToolFailure } from "@opencode/ai"
 import { Effect, Schema } from "effect"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { SessionInstructions } from "../../session/instructions.js"
@@ -192,7 +192,9 @@ export const toModelContent = (path: string, offset: number | undefined, output:
   }
 
   const start = output.type === "text-page" ? output.offset : 1
-  const lines = output.content === "" ? [] : output.content.replace(/\n$/, "").split("\n")
+  // Pages already join selected lines; a trailing newline represents a selected blank line.
+  const text = output.type === "file" ? output.content.replace(/\n$/, "") : output.content
+  const lines = output.content === "" ? [] : text.split("\n")
   const content = [
     lines.length === 0 ? `Read file ${path}, 0 lines` : `Read file ${path}, lines ${start}-${start + lines.length - 1}`,
   ]

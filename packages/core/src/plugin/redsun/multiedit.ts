@@ -1,9 +1,9 @@
 export * as RedsunMultiedit from "./multiedit.js"
 
-import { ToolFailure } from "@opencode-ai/ai"
-import { FileDiff } from "@opencode-ai/schema/file-diff"
-import { Bom } from "@opencode-ai/util/bom"
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { ToolFailure } from "@opencode/ai"
+import { FileDiff } from "@opencode/schema/file-diff"
+import { Bom } from "@opencode/util/bom"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
 import path from "path"
 import { Environment } from "../../environment/index.js"

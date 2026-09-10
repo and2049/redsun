@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { ConfigProvider, Effect, Layer, Ref, Stream } from "effect"
+import { ConfigProvider, Effect, Layer, Ref, Schema, Stream } from "effect"
 import { Headers, HttpClientRequest } from "effect/unstable/http"
 import {
   LLM,
@@ -30,6 +30,7 @@ import * as Azure from "../../src/providers/azure.js"
 import * as OpenAI from "../../src/providers/openai.js"
 import * as XAI from "../../src/providers/xai.js"
 import * as OpenAIResponses from "../../src/protocols/openai-responses.js"
+import { OpenResponses } from "../../src/protocols/open-responses.js"
 import { OpenResponsesContinuation } from "../../src/protocols/open-responses-continuation.js"
 import * as ProviderShared from "../../src/protocols/shared.js"
 import { continuationRequest, nativeOpenAIResponsesContinuation } from "../continuation-scenarios.js"
@@ -69,14 +70,34 @@ const baseChannelDriver = (message: string): WebSocketChannelDriver => ({
   },
 })
 
-const continuationDriver = (request: Readonly<Record<string, unknown>>) => {
+/** Classifies error frames the way the production channel does, so recovery can read the canonical reason. */
+const classifyingChannelDriver = (message: string): WebSocketChannelDriver => {
+  const base = baseChannelDriver(message)
+  const decodeEvent = Schema.decodeUnknownSync(OpenResponses.protocol.stream.event)
+  return {
+    ...base,
+    observe: (create, frame) =>
+      base.observe(create, frame).pipe(
+        Effect.map((observation) =>
+          observation.type === "provider-failure"
+            ? {
+                ...observation,
+                error: OpenResponses.providerFailure(decodeEvent(frame), "stream error", frame),
+              }
+            : observation,
+        ),
+      ),
+  }
+}
+
+const continuationDriver = (request: Readonly<Record<string, unknown>>, base = baseChannelDriver) => {
   const message = ProviderShared.encodeJson(request)
   return OpenResponsesContinuation.driver({
     id: "openai-responses",
     name: "OpenAI Responses",
     request,
     message,
-    base: baseChannelDriver(message),
+    base: base(message),
   })
 }
 
@@ -385,7 +406,7 @@ describe("OpenAI Responses route", () => {
       expect(prepared.body.input).toEqual([
         { role: "user", content: [{ type: "input_text", text: "Before." }] },
         { role: "developer", content: "Operator update." },
-        { type: "message", role: "assistant", content: [{ type: "output_text", text: "After." }] },
+        { type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "After." }] },
       ])
     }),
   )
@@ -560,52 +581,54 @@ describe("OpenAI Responses route", () => {
   )
 
   it.effect("continues a streamed tool call with only the new tool output", () =>
-    Effect.gen(function* () {
-      const firstRequest = {
-        type: "response.create",
-        model: "gpt-5.2",
-        store: false,
-        input: [{ role: "user", content: [{ type: "input_text", text: "Weather?" }] }],
-      }
-      const first = continuationDriver(firstRequest)
-      const firstCreate = yield* first.create(undefined)
-      yield* first.observe(
-        firstCreate,
-        ProviderShared.encodeJson({
-          type: "response.output_item.done",
-          item: {
-            type: "function_call",
-            id: "fc_1",
-            status: "completed",
-            call_id: "call_1",
-            name: "weather",
-            arguments: '{ "city": "Paris" }',
-          },
-        }),
-      )
-      const saved = checkpoint(
+    Effect.forEach([undefined, []], (output) =>
+      Effect.gen(function* () {
+        const firstRequest = {
+          type: "response.create",
+          model: "gpt-5.2",
+          store: false,
+          input: [{ role: "user", content: [{ type: "input_text", text: "Weather?" }] }],
+        }
+        const first = continuationDriver(firstRequest)
+        const firstCreate = yield* first.create(undefined)
         yield* first.observe(
           firstCreate,
-          ProviderShared.encodeJson({ type: "response.completed", response: { id: "resp_1" } }),
-        ),
-      )
-      const second = continuationDriver({
-        ...firstRequest,
-        input: [
-          ...firstRequest.input,
-          { type: "function_call", call_id: "call_1", name: "weather", arguments: '{"city":"Paris"}' },
-          { type: "function_call_output", call_id: "call_1", output: '{"temperature":22}' },
-        ],
-      })
+          ProviderShared.encodeJson({
+            type: "response.output_item.done",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              status: "completed",
+              call_id: "call_1",
+              name: "weather",
+              arguments: '{ "city": "Paris" }',
+            },
+          }),
+        )
+        const saved = checkpoint(
+          yield* first.observe(
+            firstCreate,
+            ProviderShared.encodeJson({ type: "response.completed", response: { id: "resp_1", output } }),
+          ),
+        )
+        const second = continuationDriver({
+          ...firstRequest,
+          input: [
+            ...firstRequest.input,
+            { type: "function_call", call_id: "call_1", name: "weather", arguments: '{"city":"Paris"}' },
+            { type: "function_call_output", call_id: "call_1", output: '{"temperature":22}' },
+          ],
+        })
 
-      const create = yield* second.create(saved)
+        const create = yield* second.create(saved)
 
-      expect(create.mode).toBe("incremental")
-      expect(ProviderShared.decodeJson(create.message)).toMatchObject({
-        previous_response_id: "resp_1",
-        input: [{ type: "function_call_output", call_id: "call_1", output: '{"temperature":22}' }],
-      })
-    }),
+        expect(create.mode).toBe("incremental")
+        expect(ProviderShared.decodeJson(create.message)).toMatchObject({
+          previous_response_id: "resp_1",
+          input: [{ type: "function_call_output", call_id: "call_1", output: '{"temperature":22}' }],
+        })
+      }),
+    ),
   )
 
   it.effect("continues a tool call from authoritative completed response output", () =>
@@ -659,45 +682,47 @@ describe("OpenAI Responses route", () => {
   )
 
   it.effect("continues a promoted steer after assistant output with response-only text metadata", () =>
-    Effect.gen(function* () {
-      const firstInput = [{ role: "user", content: [{ type: "input_text", text: "First" }] }]
-      const first = continuationDriver({ type: "response.create", model: "gpt-5.2", store: false, input: firstInput })
-      const create = yield* first.create(undefined)
-      yield* first.observe(
-        create,
-        ProviderShared.encodeJson({
-          type: "response.output_item.done",
-          item: {
-            type: "message",
-            id: "msg_1",
-            status: "completed",
-            role: "assistant",
-            content: [{ type: "output_text", text: "Hello", annotations: [], logprobs: [] }],
-          },
-        }),
-      )
-      const saved = checkpoint(
+    Effect.forEach([undefined, []], (output) =>
+      Effect.gen(function* () {
+        const firstInput = [{ role: "user", content: [{ type: "input_text", text: "First" }] }]
+        const first = continuationDriver({ type: "response.create", model: "gpt-5.2", store: false, input: firstInput })
+        const create = yield* first.create(undefined)
         yield* first.observe(
           create,
-          ProviderShared.encodeJson({ type: "response.completed", response: { id: "resp_1" } }),
-        ),
-      )
-      const steer = { role: "user", content: [{ type: "input_text", text: "Actually, be brief" }] }
-      const next = continuationDriver({
-        type: "response.create",
-        model: "gpt-5.2",
-        store: false,
-        input: [...firstInput, { role: "assistant", content: [{ type: "output_text", text: "Hello" }] }, steer],
-      })
+          ProviderShared.encodeJson({
+            type: "response.output_item.done",
+            item: {
+              type: "message",
+              id: "msg_1",
+              status: "completed",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Hello", annotations: [], logprobs: [] }],
+            },
+          }),
+        )
+        const saved = checkpoint(
+          yield* first.observe(
+            create,
+            ProviderShared.encodeJson({ type: "response.completed", response: { id: "resp_1", output } }),
+          ),
+        )
+        const steer = { role: "user", content: [{ type: "input_text", text: "Actually, be brief" }] }
+        const next = continuationDriver({
+          type: "response.create",
+          model: "gpt-5.2",
+          store: false,
+          input: [...firstInput, { role: "assistant", content: [{ type: "output_text", text: "Hello" }] }, steer],
+        })
 
-      const continued = yield* next.create(saved)
+        const continued = yield* next.create(saved)
 
-      expect(continued.mode).toBe("incremental")
-      expect(ProviderShared.decodeJson(continued.message)).toMatchObject({
-        previous_response_id: "resp_1",
-        input: [steer],
-      })
-    }),
+        expect(continued.mode).toBe("incremental")
+        expect(ProviderShared.decodeJson(continued.message)).toMatchObject({
+          previous_response_id: "resp_1",
+          input: [steer],
+        })
+      }),
+    ),
   )
 
   it.effect("continues streamed reasoning when completion re-encrypts the same item", () =>
@@ -849,6 +874,53 @@ describe("OpenAI Responses route", () => {
           error: { code: expect.any(String) },
         })
       }
+    }),
+  )
+
+  it.effect("retries an incremental send in full when the provider rejects it without a code", () =>
+    Effect.gen(function* () {
+      const firstRequest = {
+        type: "response.create",
+        model: "gpt-5.2",
+        store: false,
+        input: [{ role: "user", content: [{ type: "input_text", text: "First" }] }],
+      }
+      const first = continuationDriver(firstRequest, classifyingChannelDriver)
+      const saved = checkpoint(
+        yield* first.observe(
+          yield* first.create(undefined),
+          ProviderShared.encodeJson({ type: "response.completed", response: { id: "resp_1" } }),
+        ),
+      )
+      const second = continuationDriver(
+        {
+          ...firstRequest,
+          input: [...firstRequest.input, { role: "user", content: [{ type: "input_text", text: "Second" }] }],
+        },
+        classifyingChannelDriver,
+      )
+      // Codex reports a stale previous_response_id as a plain invalid_request_error.
+      const stale = ProviderShared.encodeJson({
+        type: "error",
+        error: { type: "invalid_request_error", message: "Invalid `previous_response_id`." },
+      })
+      const incremental = yield* second.create(saved)
+      expect(incremental.mode).toBe("incremental")
+      expect(yield* second.observe(incremental, stale)).toMatchObject({ type: "rejected", recovery: "retry-full" })
+
+      // A full send has no continuation to blame, so the same error stays a provider failure.
+      const full = yield* second.create(undefined)
+      expect(yield* second.observe(full, stale)).toMatchObject({ type: "provider-failure" })
+
+      // A classified failure keeps its runner-owned recovery instead of resending the whole context.
+      const overflow = ProviderShared.encodeJson({
+        type: "error",
+        error: { type: "invalid_request_error", code: "context_length_exceeded", message: "Too long" },
+      })
+      expect(yield* second.observe(yield* second.create(saved), overflow)).toMatchObject({
+        type: "provider-failure",
+        error: { reason: { _tag: "InvalidRequest", classification: "context-overflow" } },
+      })
     }),
   )
 
@@ -2050,6 +2122,7 @@ describe("OpenAI Responses route", () => {
           type: "message",
           id: "msg_refusal",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "I can't help with that." }],
           phase: "final_answer",
         },
@@ -2132,6 +2205,7 @@ describe("OpenAI Responses route", () => {
           type: "message",
           id: "msg_commentary",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Checking." }],
           phase: "commentary",
         },
@@ -2139,6 +2213,7 @@ describe("OpenAI Responses route", () => {
           type: "message",
           id: "msg_final",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Finished." }],
           phase: "final_answer",
         },
@@ -2146,6 +2221,7 @@ describe("OpenAI Responses route", () => {
           type: "message",
           id: "msg_null",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Unclassified." }],
           phase: null,
         },
@@ -3276,14 +3352,19 @@ describe("OpenAI Responses route", () => {
       )
 
       expect(prepared.body.input).toEqual([
-        { type: "message", role: "assistant", content: [{ type: "output_text", text: "Before." }] },
+        {
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: "Before." }],
+        },
         {
           type: "reasoning",
           id: "rs_1",
           encrypted_content: "encrypted-state",
           summary: [{ type: "summary_text", text: "Checked order." }],
         },
-        { type: "message", role: "assistant", content: [{ type: "output_text", text: "After." }] },
+        { type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "After." }] },
       ])
     }),
   )
@@ -3547,12 +3628,14 @@ describe("OpenAI Responses route", () => {
           type: "message",
           id: "history_1",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Hello" }],
         },
         {
           type: "message",
           id: `message_${"a".repeat(64)}`,
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "World" }],
         },
         {

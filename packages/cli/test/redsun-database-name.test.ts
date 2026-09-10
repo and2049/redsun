@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test"
 import { INSTALLED_DATABASE, LOCAL_DATABASE, databaseFilename } from "../src/server-process"
+import { databasePath } from "../src/database-path"
+import { OPENCODE_CHANNEL } from "../src/version"
+import path from "node:path"
 
 describe("database filename", () => {
   const env = {}
@@ -29,5 +32,21 @@ describe("database filename", () => {
       "/tmp/dryrun.db",
     )
     expect(databaseFilename("local", { OPENCODE_DB: ":memory:" })).toBe(":memory:")
+  })
+
+  it("resolves debug and server paths with the same database policy", () => {
+    const previous = process.env.OPENCODE_DB
+    try {
+      delete process.env.OPENCODE_DB
+      const data = path.resolve("fixture-data")
+      expect(databasePath(data)).toBe(path.join(data, databaseFilename(OPENCODE_CHANNEL)))
+      process.env.OPENCODE_DB = "custom.db"
+      expect(databasePath(data)).toBe(path.join(data, "custom.db"))
+      process.env.OPENCODE_DB = ":memory:"
+      expect(databasePath(data)).toBe(":memory:")
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_DB
+      else process.env.OPENCODE_DB = previous
+    }
   })
 })

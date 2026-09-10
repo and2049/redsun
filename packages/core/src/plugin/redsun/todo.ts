@@ -1,6 +1,6 @@
 export * as RedsunTodo from "./todo.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
 import { KV } from "../../kv.js"
 

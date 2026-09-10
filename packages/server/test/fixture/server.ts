@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { HttpServer } from "effect/unstable/http"
 import { ServerProcess } from "../../src/process"
-import type { ModelsDev } from "@opencode-ai/core/models-dev"
+import type { ModelsDev } from "@opencode/core/models-dev"
 
 export const startServer = Effect.fnUntraced(function* (
   directory: string,

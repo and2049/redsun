@@ -1,6 +1,6 @@
 import { Effect, Schema, FileSystem } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
-import { RemoteControl } from "@opencode-ai/schema/remote-control"
+import { RemoteControl } from "@opencode/schema/remote-control"
 
 const id = "ses_[A-Za-z0-9_-]+"
 const reads = [
@@ -101,7 +101,6 @@ export const events = new Set([
   "session.renamed",
   "session.agent.selected",
   "session.model.selected",
-  "session.message.content.updated",
   "session.inbox.enqueued",
   "session.inbox.delivered",
   "session.inbox.cancelled",

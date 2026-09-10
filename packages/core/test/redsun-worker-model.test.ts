@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { Effect } from "effect"
-import { Model } from "@opencode-ai/schema/model"
-import { RedsunWorkerModel } from "@opencode-ai/core/plugin/redsun/worker-model"
+import { Model } from "@opencode/schema/model"
+import { RedsunWorkerModel } from "@opencode/core/plugin/redsun/worker-model"
 
 const ref = (input: string) => Model.Ref.parse(input)
 

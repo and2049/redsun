@@ -11,65 +11,51 @@
   "globalPassThroughEnv": ["CI", "OPENCODE_DISABLE_SHARE"],
   "tasks": {
     "typecheck": {},
-    "@opencode-ai/enterprise#typecheck": {
-      "dependsOn": ["@opencode-ai/core#typecheck"]
+    "@opencode/server#typecheck": {
+      "dependsOn": ["@opencode/core#typecheck"]
     },
-    "@opencode-ai/sdk#typecheck": {
-      "dependsOn": ["@opencode-ai/core#typecheck"]
+    "@opencode/simulation#typecheck": {
+      "dependsOn": ["@opencode/core#typecheck"]
     },
-    "@opencode-ai/server#typecheck": {
-      "dependsOn": ["@opencode-ai/core#typecheck"]
-    },
-    "@opencode-ai/simulation#typecheck": {
-      "dependsOn": ["@opencode-ai/core#typecheck"]
-    },
-    "@opencode-ai/tui#typecheck": {
-      "dependsOn": ["@opencode-ai/core#typecheck"]
+    "@opencode/tui#typecheck": {
+      "dependsOn": ["@opencode/core#typecheck"]
     },
     "build": {
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
-    "@opencode-ai/ai#test": {
+    "@opencode/ai#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/codemode#test": {
+    "@opencode/codemode#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/core#test": {
+    "@opencode/core#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/httpapi-codegen#test": {
+    "@opencode/httpapi-codegen#test": {
       "outputs": []
     },
-    "@opencode-ai/server#test": {
+    "@opencode/server#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/cli#test": {
+    "@opencode/cli#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/tui#test": {
+    "@opencode/tui#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/latex#test": {
+    "@opencode/latex#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/app#test": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@opencode-ai/ui#test": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@opencode-ai/session-ui#test": {
+    "@opencode/ui#test": {
       "dependsOn": ["^build"],
       "outputs": []
     }

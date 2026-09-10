@@ -1,7 +1,7 @@
 export * as SessionGenerate from "./generate.js"
 
-import { LLMClient, Message, type AIError } from "@opencode-ai/ai"
-import type { Model } from "@opencode-ai/schema/model"
+import { LLMClient, Message, type AIError } from "@opencode/ai"
+import type { Model } from "@opencode/schema/model"
 import { Effect } from "effect"
 import { Database } from "../database/database.js"
 import { Instance } from "../instance/service.js"
@@ -51,17 +51,17 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
       initial: history.initial,
       messages: history.messages,
     })
-    const prepared = yield* context.prepare({
-      kind: "generate",
-      scope: { session: selection.session, agentID: selection.agent.id, model, tools: selection.tools },
-      transcript: {
-        system: transcript.system,
-        messages: [
-          ...transcript.messages,
-          ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
-          Message.user(input.prompt),
-        ],
-      },
+    const prepared = yield* context.request.generate({
+      session: selection.session,
+      agent: selection.agent.id,
+      model,
+      tools: selection.tools,
+      system: transcript.system,
+      messages: [
+        ...transcript.messages,
+        ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
+        Message.user(input.prompt),
+      ],
       ...(input.tools === false ? { toolChoice: "none" as const } : {}),
     })
     yield* Effect.logInfo("sending session generation request", {

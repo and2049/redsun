@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test"
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Exit } from "effect"
-import { ClaudeCodeAuth } from "@opencode-ai/core/plugin/redsun/claude-code/auth"
-import type { ClaudeCodeSessions } from "@opencode-ai/core/plugin/redsun/claude-code/sessions"
+import { ClaudeCodeAuth } from "@opencode/core/plugin/redsun/claude-code/auth"
+import type { ClaudeCodeSessions } from "@opencode/core/plugin/redsun/claude-code/sessions"
 
 const account = {
   email: "someone@example.com",
