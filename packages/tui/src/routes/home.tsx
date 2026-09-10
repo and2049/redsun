@@ -41,6 +41,7 @@ export function Home() {
   }))
   const promptMaxWidth = createMemo(() => Math.max(75, Math.floor(dimensions().width * 0.7)))
   const [logoWidth, setLogoWidth] = createSignal(0)
+  const [backdrop, setBackdrop] = createSignal({ width: 0, height: 0 })
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
   const currentLocation = () => route.location ?? data.location.default()
   const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
@@ -87,6 +88,19 @@ export function Home() {
 
   return (
     <>
+      <box
+        position="absolute"
+        zIndex={-1}
+        left={0}
+        top={0}
+        right={0}
+        bottom={0}
+        onSizeChange={function () {
+          setBackdrop({ width: this.width, height: this.height })
+        }}
+      >
+        <Slot path="home.backdrop" input={backdrop()} />
+      </box>
       <box width="100%" flexShrink={0}>
         <Slot path="home.footer" />
       </box>
@@ -98,7 +112,9 @@ export function Home() {
             setLogoWidth(this.width)
           }}
         >
-          <Logo />
+          <Slot path="home.logo">
+            <Logo />
+          </Slot>
         </box>
         <box height={1} flexShrink={0} />
         <UpdateNotification width={logoWidth()} />

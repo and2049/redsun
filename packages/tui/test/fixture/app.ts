@@ -15,6 +15,7 @@ export async function createAppFixture(
     configDirectory?: string
     configService?: Config.Interface
     args?: TuiInput["args"]
+    plugins?: TuiInput["plugins"]
     fetch?: FetchHandler
     service?: TuiInput["server"]["service"]
   } = {},
@@ -40,6 +41,7 @@ export async function createAppFixture(
         update: async () => ({}),
       },
       packages: { prepare: async () => ({ directory: "" }) },
+      plugins: input.plugins,
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
       args: input.args ?? {},
       log: () => {},

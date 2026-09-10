@@ -224,7 +224,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
   const setTitle = setup.renderer.setTerminalTitle.bind(setup.renderer)
   setup.renderer.setTerminalTitle = (title) => {
     titles.push(title)
-    if (title === "redsun") started()
+    if (title === "test") started()
     setTitle(title)
   }
   const listeners = new Set(process.listeners("SIGHUP"))
@@ -245,6 +245,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
       }).pipe(Effect.provide(AppNodeBuilder.build(Global.node)), Effect.provide(FileSystem.layerNoop({}))),
     )
     await ready
+    expect(titles[0]).toBe("test")
     process.emit("SIGHUP")
     await task
 
@@ -420,7 +421,7 @@ test("session title generated while an untitled session is loading remains visib
 
     const generated = titles.lastIndexOf("> Generated title")
     expect(generated).toBeGreaterThan(-1)
-    expect(titles.slice(generated + 1)).not.toContain("redsun")
+    expect(titles.slice(generated + 1)).not.toContain("test")
     setup.renderer.destroy()
     await task
   } finally {

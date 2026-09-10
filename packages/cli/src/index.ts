@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import { Env } from "./env"
 import { Effect } from "effect"
 import { Commands } from "./commands/commands"
 import { Runtime } from "./framework/runtime"
@@ -128,7 +129,7 @@ Effect.gen(function* () {
     Observability.layer({
       endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
       headers: process.env.OTEL_EXPORTER_OTLP_HEADERS,
-      client: process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
+      client: Env.client(process.argv) ?? process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
       version: OPENCODE_VERSION,
       channel: OPENCODE_CHANNEL,
     }),

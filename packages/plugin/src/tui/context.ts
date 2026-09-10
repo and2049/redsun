@@ -177,6 +177,8 @@ type PromptFooterInput = {
 export interface SlotMap {
   readonly app: Readonly<Record<string, never>>
   readonly "home.footer": Readonly<Record<string, never>>
+  readonly "home.logo": Readonly<Record<string, never>>
+  readonly "home.backdrop": { readonly width: number; readonly height: number }
   readonly "prompt.footer": PromptFooterInput
   readonly "prompt.footer.status": PromptFooterInput
   readonly "prompt.footer.file": PromptFooterInput
@@ -245,7 +247,28 @@ export type SlotClaim<Path extends SlotPath = SlotPath> = Path extends SlotPath
     )
   : never
 
+export type VimMode = "insert" | "normal" | "command"
+
+export interface Vim {
+  /** The prompt's vim mode. Reactive when read in a Solid computation. */
+  readonly mode: VimMode
+}
+
+export interface Themes {
+  /** Registers a theme document under a name; the returned disposer removes it. */
+  register(name: string, document: unknown): () => void
+  /** Activates a registered theme for this process without saving it to config. */
+  select(name: string): boolean
+  /** Holds the active theme: the switcher, the settings row and config changes are ignored until released. */
+  lock(): () => void
+  /** The active theme name. Reactive when read in a Solid computation. */
+  current(): string
+  /** Whether a lock is held. Reactive when read in a Solid computation. */
+  locked(): boolean
+}
+
 export interface App {
+  readonly name: string
   readonly version: string
   readonly channel: string
 }
@@ -475,6 +498,8 @@ export interface UI {
   }
   /** Claims a place in the slot tree; see SlotClaim. */
   readonly slot: (claim: SlotClaim) => () => void
+  /** Terminal size in cells. Reactive when read in a Solid computation. */
+  readonly dimensions: () => { readonly width: number; readonly height: number }
 }
 
 export interface Context {
@@ -488,6 +513,8 @@ export interface Context {
   readonly attention: Attention
   readonly theme: ResolvedTheme
   readonly themeMode: "dark" | "light"
+  readonly themes: Themes
+  readonly vim: Vim
   readonly markdown: {
     registerCodeBlockRenderer(language: string, render: MarkdownCodeBlockRenderer): () => void
   }

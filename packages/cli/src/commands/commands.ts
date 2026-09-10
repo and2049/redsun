@@ -55,6 +55,14 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       Flag.optional,
     ),
     prompt: Flag.string("prompt").pipe(Flag.withDescription("Prompt to use"), Flag.optional),
+    plugin: Flag.string("plugin").pipe(
+      Flag.withDescription("TUI plugin directory or package to load for this launch only"),
+      Flag.atMost(100),
+    ),
+    client: Flag.string("client").pipe(
+      Flag.withDescription("Client name shown as the terminal title and reported by telemetry"),
+      Flag.optional,
+    ),
   },
   commands: [
     Spec.make("remote", {
@@ -150,7 +158,9 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
               "log",
               "repos",
             ]).pipe(
-              Argument.withDescription("Print only one path: db, home, data, config, cache, state, tmp, bin, log, repos"),
+              Argument.withDescription(
+                "Print only one path: db, home, data, config, cache, state, tmp, bin, log, repos",
+              ),
               Argument.optional,
             ),
           },

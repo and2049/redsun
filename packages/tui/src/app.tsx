@@ -171,6 +171,7 @@ export type TuiInput = {
   }
   args: Args
   config: Config.Interface
+  plugins?: ReadonlyArray<Config.Plugin>
   updater?: UpdateSource
   packages: PackageSource
   environment?: Readonly<Record<string, string>>
@@ -386,6 +387,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                                                               <PluginProvider
                                                                                 packages={input.packages}
                                                                                 directories={pluginDirectories}
+                                                                                plugins={input.plugins}
                                                                               >
                                                                                 <App
                                                                                   pair={
@@ -474,7 +476,8 @@ function App(props: { pair?: DialogPairCredentials }) {
   const tabsTheme = useTheme("elevated")
   const openWorkerModel = useWorkerModelDialog()
   const openWorkerVariant = useWorkerVariantDialog()
-  const { mode } = useThemes()
+  const themes = useThemes()
+  const { mode } = themes
   const data = useData()
   const location = useLocation()
   const exit = useExit()
@@ -565,14 +568,14 @@ function App(props: { pair?: DialogPairCredentials }) {
     if (!terminalTitleEnabled()) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("redsun")
+      renderer.setTerminalTitle(app.name)
       return
     }
 
     if (route.data.type === "session") {
       const title = session?.title
       if (!title || isFallbackTitle(title)) {
-        renderer.setTerminalTitle("redsun")
+        renderer.setTerminalTitle(app.name)
         return
       }
 
@@ -581,7 +584,7 @@ function App(props: { pair?: DialogPairCredentials }) {
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`redsun | ${route.data.name}`)
+      renderer.setTerminalTitle(`${app.name} | ${route.data.name}`)
     }
   })
 
@@ -962,6 +965,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         name: "theme.switch",
         title: "Switch theme",
         slash: { name: "themes" },
+        enabled: () => !themes.locked(),
         run: () => {
           dialog.replace(() => <DialogThemeList />)
         },

@@ -180,6 +180,7 @@ export const Info = Schema.Struct({
   cursor: Schema.optional(Cursor),
 })
 export type Info = Schema.Schema.Type<typeof Info>
+export type Plugin = Schema.Schema.Type<typeof Plugin>
 
 export type Resolved = Omit<Info, "attention" | "cursor" | "keybinds" | "leader" | "mouse" | "session" | "tabs"> & {
   attention: {
