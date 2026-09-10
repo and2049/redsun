@@ -1305,6 +1305,7 @@ test.each([100, 44])(
     })
     await setup.ready
     await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     setup.mockInput.pressKey("u", { ctrl: true })
     await setup.mockInput.typeText("Keep this draft")
     await setup.waitForFrame((frame) => frame.includes("Keep this draft"))
