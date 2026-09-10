@@ -29,7 +29,10 @@ export function DialogLanguage(props: { onSelect?: () => void; onCancel?: () => 
 
   async function select(language: Locale) {
     if (saving()) return
-    if (!languages().some((item) => item.locale === language && item.available)) return
+    if (!languages().some((item) => item.locale === language && item.available)) {
+      toast.show({ variant: "info", message: t("settings.language.unavailable") })
+      return
+    }
     if (language === locale()) {
       done()
       return

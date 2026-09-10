@@ -51,6 +51,95 @@ test("fallbacks are explicit, script aware, and cycle safe", () => {
   expect(catalog.t("de", `tui:${title}`)).toBe("Interface language")
 })
 
+test("unchanged inventories preserve snapshot identity while reorders and replacements publish", () => {
+  const registry = createLanguageRegistry()
+  const base = pack("base", "de", { [title]: "Sprache" })
+  const overlay = pack("overlay", "de", { [title]: "Oberflächensprache" })
+  registry.publish([base, overlay])
+  const initial = registry.snapshot()
+  registry.publish([{ ...base }, { ...overlay }])
+  expect(registry.snapshot()).toBe(initial)
+  registry.publish([overlay, base])
+  expect(registry.snapshot()).not.toBe(initial)
+  expect(registry.snapshot().t("de", `tui:${title}`)).toBe("Sprache")
+  registry.publish([overlay, pack("base", "de", { [title]: "Neue Sprache" })])
+  expect(registry.snapshot().t("de", `tui:${title}`)).toBe("Neue Sprache")
+})
+
+test("translations can pluralize string sources or use strings for plural sources", () => {
+  const source = {
+    plugin: "widget",
+    value: normalizeContribution({
+      locale: "en",
+      catalogs: {
+        widget: {
+          attempts: "{{name}}: {{count}} more",
+          files: { plural: "count", forms: { one: "{{name}}: one file", other: "{{name}}: many files" } },
+        },
+      },
+    }),
+  }
+  const catalog = resolveCatalogs([
+    source,
+    {
+      plugin: "pl",
+      value: normalizeContribution({
+        locale: "pl",
+        name: "Polish",
+        nativeName: "Polski",
+        catalogs: {
+          widget: {
+            attempts: {
+              plural: "count",
+              forms: {
+                one: "{{name}}: jeszcze jedna",
+                few: "{{name}}: jeszcze {{count}} próby",
+                other: "{{name}}: jeszcze {{count}} prób",
+              },
+            },
+          },
+        },
+      }),
+    },
+    pack("zh", "zh-CN", { "models.count": "{{count}} 个模型" }),
+    {
+      plugin: "ja",
+      value: normalizeContribution({
+        locale: "ja",
+        name: "Japanese",
+        nativeName: "日本語",
+        catalogs: { widget: { files: "{{name}}: {{count}} 件" } },
+      }),
+    },
+  ])
+  expect(catalog.diagnostics).toEqual([])
+  expect(catalog.t("pl", "widget:attempts", { count: 1, name: "Settings" })).toBe("Settings: jeszcze jedna")
+  expect(catalog.t("pl", "widget:attempts", { count: 2, name: "Settings" })).toBe("Settings: jeszcze 2 próby")
+  expect(catalog.t("pl", "widget:attempts", { count: 5, name: "Settings" })).toBe("Settings: jeszcze 5 prób")
+  expect(catalog.t("pl", "widget:attempts", { count: "2", name: "Settings" })).toBe("Settings: 2 more")
+  expect(catalog.t("zh-CN", "tui:models.count", { count: 2 })).toBe("2 个模型")
+  expect(catalog.t("ja", "widget:files", { count: 2, name: "Settings" })).toBe("Settings: 2 件")
+  const bad = resolveCatalogs([
+    source,
+    {
+      plugin: "bad",
+      value: normalizeContribution({
+        locale: "pl",
+        name: "Polish",
+        nativeName: "Polski",
+        catalogs: {
+          widget: {
+            attempts: { plural: "unknown", forms: { other: "{{name}} {{count}}" } },
+            files: { plural: "name", forms: { other: "{{count}}" } },
+          },
+        },
+      }),
+    },
+  ])
+  expect(bad.diagnostics).toHaveLength(2)
+  expect(auditCatalog("zh-CN", { "models.count": "{{count}} 个模型" }).invalid).toEqual([])
+})
+
 test("bad translations do not hide valid lower layers and forward keys are diagnosed", () => {
   const catalog = resolveCatalogs([
     pack("base", "de", { [cache]: "Cache {{percent}} %" }),
@@ -145,7 +234,10 @@ test("host English survives plugin overrides and separate roots keep independent
 test("catalog-only contributions become available when a descriptor is added", () => {
   const value: LanguageContribution = { locale: "de", catalogs: { tui: { [title]: "Sprache" } } }
   const contribution = { plugin: "messages", value: normalizeContribution(value) }
-  expect(resolveCatalogs([contribution]).languages("de").at(-1)?.available).toBeFalse()
+  expect(resolveCatalogs([contribution]).languages("de").at(-1)).toMatchObject({
+    available: false,
+    providers: ["messages"],
+  })
   const descriptor = pack("metadata", "de", {})
   expect(resolveCatalogs([contribution, descriptor]).t("de", `tui:${title}`)).toBe("Sprache")
 })

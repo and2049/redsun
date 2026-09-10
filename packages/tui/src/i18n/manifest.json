@@ -525,7 +525,7 @@
       "context": "ui",
       "legacy": ["Refresh model catalog"]
     },
-    "ui.reFetchTheModelsDevCatalogAndRepopulate": {
+    "models.refresh.description": {
       "message": "Re-fetch the models.dev catalog and repopulate the model list",
       "context": "ui",
       "legacy": ["Re-fetch the models.dev catalog and repopulate the model list"]
@@ -2399,7 +2399,7 @@
       "context": "activity",
       "legacy": ["◎ {{goal}}: {{condition}}"]
     },
-    "activity.tokens2": {
+    "session.usage.tokenCount": {
       "message": "{{tokens}} tokens",
       "context": "activity",
       "legacy": ["{{tokens}} tokens"]

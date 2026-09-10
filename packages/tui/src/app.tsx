@@ -734,7 +734,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         name: "model.refresh",
         title: "Refresh model catalog",
         category: "Agent",
-        description: t("ui.reFetchTheModelsDevCatalogAndRepopulate"),
+        description: t("models.refresh.description"),
         run: refreshModels,
       },
       {

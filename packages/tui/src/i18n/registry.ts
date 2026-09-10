@@ -1,5 +1,4 @@
 import type {
-  Catalog,
   LanguageContribution,
   LanguageInfo,
   Message,
@@ -58,10 +57,13 @@ export function normalizeContribution(input: LanguageContribution): LanguageCont
 }
 
 function compatible(message: Message, original: Message): boolean {
-  if (typeof message !== typeof original) return false
-  if (typeof message !== "string" && typeof original !== "string" && message.plural !== original.plural) return false
   const expected = new Set(texts(original).flatMap(parameters))
-  const optional = typeof original === "string" ? undefined : original.plural
+  if (typeof original !== "string") expected.add(original.plural)
+  if (typeof message !== "string") {
+    if (!expected.has(message.plural)) return false
+    if (typeof original !== "string" && message.plural !== original.plural) return false
+  }
+  const optional = typeof message === "string" ? undefined : message.plural
   return texts(message).every((text) => {
     const actual = new Set(parameters(text))
     return (
@@ -153,7 +155,13 @@ export function resolveCatalogs(contributions: readonly Contribution[]) {
       providers: [...(providers.get(locale) ?? [])],
     }))
     if (requested && !metadata.has(requested))
-      result.push({ locale: requested, name: requested, nativeName: requested, available: false, providers: [] })
+      result.push({
+        locale: requested,
+        name: requested,
+        nativeName: requested,
+        available: false,
+        providers: [...(providers.get(requested) ?? [])],
+      })
     return result
   }
   return { t, languages, diagnostics }

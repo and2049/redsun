@@ -32,7 +32,7 @@ test("language picker saves, switches live, supports English search, and recover
     onMount(() => dialog.replace(() => <DialogConfig current="language" />))
     return (
       <>
-        <text>{t("Interface language")}</text>
+        <text>{t("tui:settings.language.title")}</text>
         <Toast />
       </>
     )

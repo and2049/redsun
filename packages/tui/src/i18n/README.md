@@ -83,6 +83,8 @@ Setup stages contributions; they publish after the serialized lifecycle operatio
 settles. Failed reloads use the existing last-good restoration path. The published
 language snapshot stays available during the swap. Old activation callbacks and
 disposers cannot register into a replacement generation.
+Unchanged contribution inventories retain the same snapshot, so unrelated plugin
+events do not invalidate translations throughout the UI.
 
 `cli.json` accepts well-formed locale tags, independent of installation. Missing or
 disabled selected packs render English and retain the requested preference.
@@ -112,10 +114,19 @@ the count placeholder for natural wording such as "No items". Other required
 parameters must be preserved. Full ICU syntax and terminal bidirectional layout
 are not implied by accepting a locale tag.
 
+Translations may use a different message shape than English: a string source with
+a count parameter can be translated with plural forms, provided the selector names
+a source parameter. A plural source can be translated as one string in languages
+without grammatical plurals, preserving its parameters. If both messages use plural
+forms, they must use the same selector.
+
 External UI components call `context.i18n.t()` in JSX/accessors so switching stays
 live. Internal TUI components use `useLanguage().t()` with IDs scoped to `tui`.
-The source manifest retains legacy English lookup aliases only for internal
-authored command/settings metadata; external catalogs key by stable ID. Formatting
+The source manifest retains the previous English lookup aliases as an internal
+compatibility layer for authored labels, including command/settings metadata and
+language names. These aliases span the migrated catalog; they are not a filter that
+can distinguish authored labels from user content. Only authored text may be passed
+to the internal translator; external catalogs key by stable ID. Formatting
 helpers receive a translator; their standalone default is English. Generic dialog
 props, model messages, user content, credentials and tool output stay verbatim.
 
