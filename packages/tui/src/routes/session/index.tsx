@@ -1689,12 +1689,13 @@ function SessionRowView(props: SessionRowViewProps) {
   )
 }
 
-function TurnTokenUsage(props: {
+export function TurnTokenUsage(props: {
   messageIDs: string[]
   previousCache?: CacheUsage
   message: (messageID: string) => SessionMessageInfo | undefined
 }) {
   const config = useConfig()
+  const { t, locale } = useLanguage()
   const theme = useTheme()
   const renderer = useRenderer()
   // Collapsed by default: one summary line for the whole turn. Click to
@@ -1736,6 +1737,21 @@ function TurnTokenUsage(props: {
     cached: Math.max("Cached".length, ...steps().map((item) => item.cached.toLocaleString().length)),
     total: Math.max("Total".length, ...steps().map((item) => item.total.toLocaleString().length)),
   }))
+  const headings = () => [
+    t("Step"),
+    locale() === "en" ? "New" : t("New tokens"),
+    locale() === "en" ? "Cached" : t("Cached tokens"),
+    locale() === "en" ? "Total" : t("Total Tokens"),
+  ]
+  const widths = () =>
+    [columns().step, columns().newTokens, columns().cached, columns().total].map((width, index) =>
+      Math.max(width, stringWidth(headings()[index])),
+    )
+  const heading = (index: number) => {
+    const text = headings()[index]
+    const width = widths()[index] + text.length - stringWidth(text)
+    return index === 0 ? text.padEnd(width + 2) : text.padStart(width)
+  }
   const summary = createMemo(() => {
     const items = steps()
     return {
@@ -1760,15 +1776,22 @@ function TurnTokenUsage(props: {
         >
           <text fg={hover() ? theme.text.default : theme.text.subdued} wrapMode="none">
             <span>{expanded() ? "- " : "+ "}</span>
-            <span style={{ attributes: TextAttributes.BOLD }}>Tokens</span>
+            <span style={{ attributes: TextAttributes.BOLD }}>{t("Tokens")}</span>
             <span>
-              : {summary().count} {summary().count === 1 ? "step" : "steps"} · {summary().newTokens.toLocaleString()}{" "}
-              new · {summary().cached.toLocaleString()} cached · {summary().total.toLocaleString()} total
+              : {t(summary().count === 1 ? "{{count}} step" : "{{count}} steps", { count: summary().count })} ·{" "}
+              {t("{{new}} new · {{cached}} cached · {{total}} total", {
+                new: summary().newTokens.toLocaleString(),
+                cached: summary().cached.toLocaleString(),
+                total: summary().total.toLocaleString(),
+              })}
             </span>
             <Show when={summary().reuseDrops > 0}>
               <span style={{ fg: theme.text.feedback.warning.default }}>
                 {" "}
-                · ! {summary().reuseDrops} likely cache {summary().reuseDrops === 1 ? "bust" : "busts"}
+                · !{" "}
+                {t(summary().reuseDrops === 1 ? "{{count}} likely cache bust" : "{{count}} likely cache busts", {
+                  count: summary().reuseDrops,
+                })}
               </span>
             </Show>
           </text>
@@ -1776,31 +1799,34 @@ function TurnTokenUsage(props: {
         <Show when={expanded()}>
           <box paddingLeft={INLINE_TOOL_ICON_WIDTH}>
             <text fg={theme.text.subdued} attributes={TextAttributes.ITALIC}>
-              {"Step".padEnd(columns().step + 2)}
-              {"New".padStart(columns().newTokens)}
+              {heading(0)}
+              {heading(1)}
               {"  "}
-              {"Cached".padStart(columns().cached)}
+              {heading(2)}
               {"  "}
-              {"Total".padStart(columns().total)}
+              {heading(3)}
             </text>
           </box>
           <For each={steps()}>
             {(item) => (
               <box paddingLeft={INLINE_TOOL_ICON_WIDTH} flexDirection="column">
                 <text fg={verbose() && item.finish === "tool-call" ? undefined : theme.text.subdued}>
-                  {item.finish.padEnd(columns().step + 2)}
+                  {item.finish.padEnd(widths()[0] + 2)}
                   <span style={{ attributes: TextAttributes.BOLD }}>
-                    {item.newTokens.toLocaleString().padStart(columns().newTokens)}
+                    {item.newTokens.toLocaleString().padStart(widths()[1])}
                   </span>
                   {"  "}
-                  {item.cached.toLocaleString().padStart(columns().cached)}
+                  {item.cached.toLocaleString().padStart(widths()[2])}
                   {"  "}
-                  {item.total.toLocaleString().padStart(columns().total)}
+                  {item.total.toLocaleString().padStart(widths()[3])}
                 </text>
                 <TurnTokenToolCalls tools={item.tools} />
                 <Show when={item.reuseDrop !== undefined}>
                   <text fg={theme.text.feedback.warning.default}>
-                    ! Likely cache bust: {item.reuseDrop?.toLocaleString()} fewer cached tokens than the previous step
+                    !{" "}
+                    {t("Likely cache bust: {{count}} fewer cached tokens than the previous step", {
+                      count: item.reuseDrop?.toLocaleString() ?? "",
+                    })}
                   </text>
                 </Show>
               </box>
@@ -2223,7 +2249,12 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
                     {t("{{verb}} for {{duration}}", { verb: verb(), duration: completionDuration(duration()) })}
                   </span>
                   <Show when={config.data.session.tps && tokensPerSecond()}>
-                    {(value) => <span style={{ fg: theme.text.subdued }}> · {value().toFixed(1)} tok/s</span>}
+                    {(value) => (
+                      <span style={{ fg: theme.text.subdued }}>
+                        {" "}
+                        · {t("{{rate}} tok/s", { rate: value().toFixed(1) })}
+                      </span>
+                    )}
                   </Show>
                   <Show when={props.message.time.completed}>
                     {(completed) => (
@@ -2238,7 +2269,10 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
             >
               <span style={{ fg: theme.text.subdued }}>
                 {verb()}… ({completionDuration(duration())}
-                {config.data.session.tps && tokensPerSecond() ? ` · ${tokensPerSecond()?.toFixed(1)} tok/s` : ""})
+                {config.data.session.tps && tokensPerSecond()
+                  ? ` · ${t("{{rate}} tok/s", { rate: tokensPerSecond()?.toFixed(1) ?? "" })}`
+                  : ""}
+                )
               </span>
             </Show>
           </text>
@@ -2368,6 +2402,7 @@ function SessionSkillMessage(props: { message: Extract<SessionMessageInfo, { typ
 // expandable into the full summary. A failure stays pinned open in the error
 // colour so the message is never hidden behind the toggle.
 function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type: "compaction" }> }) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const [expanded, setExpanded] = createSignal(false)
   const status = () => props.message.status
@@ -2379,13 +2414,20 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
   }
   const content = createMemo(() => text().trim())
   const label = () => {
-    const name =
-      props.message.status === "completed" && props.message.providerContext ? "Provider compaction" : "Compaction"
+    const name = t(
+      props.message.status === "completed" && props.message.providerContext ? "Provider compaction" : "Compaction",
+    )
     if (props.message.status === "running" || !props.message.tokens) return name
     const tokens = props.message.tokens
     const input = tokens.input + tokens.cache.read + tokens.cache.write
     const output = tokens.output + tokens.reasoning
-    return input + output > 0 ? `${name} · ${Locale.number(input)} in · ${Locale.number(output)} out` : name
+    return input + output > 0
+      ? t("{{name}} · {{input}} in · {{output}} out", {
+          name,
+          input: Locale.number(input),
+          output: Locale.number(output),
+        })
+      : name
   }
   const color = () => (failed() ? theme.text.feedback.error.default : theme.text.subdued)
   return (
@@ -2393,7 +2435,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
       when={status() === "running" || content()}
       fallback={
         <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
-          <text fg={color()}>{cancelled() ? `${label()} · cancelled` : label()}</text>
+          <text fg={color()}>{cancelled() ? `${label()} · ${t("cancelled")}` : label()}</text>
         </box>
       }
     >
@@ -2412,10 +2454,11 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
 }
 
 function CompactionQueued() {
+  const { t } = useLanguage()
   const theme = useTheme()
   return (
     <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER}>
-      <text fg={theme.text.subdued}>◇ Compaction queued</text>
+      <text fg={theme.text.subdued}>◇ {t("Compaction queued")}</text>
     </box>
   )
 }
@@ -2685,6 +2728,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
 }
 
 function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const [seconds, setSeconds] = createSignal(0)
   createEffect(() => {
@@ -2702,8 +2746,8 @@ function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
       {(retry) => (
         <box paddingLeft={TRANSCRIPT_GUTTER}>
           <text fg={theme.text.feedback.warning.default}>
-            ⚠ {seconds() > 0 ? `Retrying in ${seconds()}s` : "Retry due"} · attempt {retry().attempt} ·{" "}
-            {retry().error.message}
+            ⚠ {seconds() > 0 ? t("Retrying in {{seconds}}s", { seconds: seconds() }) : t("Retry due")} ·{" "}
+            {t("attempt {{count}}", { count: retry().attempt })} · {retry().error.message}
           </text>
         </box>
       )}
@@ -3367,6 +3411,7 @@ function ShellDisplay(props: {
   output?: string
   error?: string
 }) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const ctx = use()
   const client = useClient()
@@ -3484,9 +3529,9 @@ function ShellDisplay(props: {
             when={props.command}
             fallback={
               isRunning() || props.status === "streaming" ? (
-                <Spinner color={color()}>Writing command...</Spinner>
+                <Spinner color={color()}>{t("Writing command...")}</Spinner>
               ) : (
-                <text fg={theme.text.subdued}>Writing command...</text>
+                <text fg={theme.text.subdued}>{t("Writing command...")}</text>
               )
             }
           >
@@ -3499,10 +3544,17 @@ function ShellDisplay(props: {
             <Show when={collapsed().overflow}>
               <text fg={theme.text.subdued}>
                 {expanded()
-                  ? "click to collapse"
+                  ? t("click to collapse")
                   : remaining() > 0
-                    ? `… +${remaining()} ${remaining() === 1 ? "line" : "lines"} (click to expand)`
-                    : "… (click to expand)"}
+                    ? t(
+                        remaining() === 1
+                          ? "… +{{count}} line (click to expand)"
+                          : "… +{{count}} lines (click to expand)",
+                        {
+                          count: remaining(),
+                        },
+                      )
+                    : t("… (click to expand)")}
               </text>
             </Show>
           </Show>
@@ -3516,6 +3568,7 @@ function ShellDisplay(props: {
 }
 
 function Write(props: ToolProps) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
   const pathFormatter = usePathFormatter()
@@ -3527,7 +3580,7 @@ function Write(props: ToolProps) {
     <Switch>
       <Match when={props.part.state.status === "completed"}>
         <BlockTool
-          path={{ label: "# Wrote", value: pathFormatter.format(stringValue(props.input.path)) }}
+          path={{ label: t("# Wrote"), value: pathFormatter.format(stringValue(props.input.path)) }}
           part={props.part}
         >
           <line_number fg={theme.text.subdued} minWidth={3} paddingRight={1}>
@@ -3546,7 +3599,7 @@ function Write(props: ToolProps) {
         <InlineTool
           icon="←"
           name="Write"
-          pending="Preparing write..."
+          pending={t("Preparing write...")}
           complete={stringValue(props.input.path)}
           part={props.part}
         >
@@ -3583,6 +3636,7 @@ function TodoLine(props: { todo: TodoItem; depth: number }) {
 }
 
 function TodoWrite(props: ToolProps) {
+  const { t } = useLanguage()
   // Both writers land here: redsun's todowrite metadata and Claude Code's mirrored
   // TodoWrite input. Fall back to the call input while the result is streaming.
   const todos = createMemo(() => {
@@ -3599,7 +3653,7 @@ function TodoWrite(props: ToolProps) {
       <InlineTool
         icon="☰"
         name="Tasks"
-        pending="Updating tasks..."
+        pending={t("Updating tasks...")}
         complete={all().length > 0}
         part={props.part}
         onClick={() => setExpanded((value) => !value)}
@@ -3616,12 +3670,13 @@ function TodoWrite(props: ToolProps) {
 }
 
 function Glob(props: ToolProps) {
+  const { t } = useLanguage()
   const pathFormatter = usePathFormatter()
   return (
     <InlineTool
       icon="✱"
       name="Glob"
-      pending="Finding files..."
+      pending={t("Finding files...")}
       complete={stringValue(props.input.pattern)}
       part={props.part}
     >
@@ -3635,6 +3690,7 @@ function Glob(props: ToolProps) {
 }
 
 function Read(props: ToolProps) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const pathFormatter = usePathFormatter()
   const isRunning = createMemo(() => props.part.state.status === "running")
@@ -3649,7 +3705,7 @@ function Read(props: ToolProps) {
       <InlineTool
         icon="→"
         name="Read"
-        pending="Reading file..."
+        pending={t("Reading file...")}
         complete={stringValue(props.input.path)}
         spinner={isRunning()}
         part={props.part}
@@ -3670,12 +3726,13 @@ function Read(props: ToolProps) {
 }
 
 function Grep(props: ToolProps) {
+  const { t } = useLanguage()
   const pathFormatter = usePathFormatter()
   return (
     <InlineTool
       icon="✱"
       name="Grep"
-      pending="Searching content..."
+      pending={t("Searching content...")}
       complete={stringValue(props.input.pattern)}
       part={props.part}
     >
@@ -3689,11 +3746,12 @@ function Grep(props: ToolProps) {
 }
 
 function WebFetch(props: ToolProps) {
+  const { t } = useLanguage()
   return (
     <InlineTool
       icon="%"
       name="WebFetch"
-      pending="Fetching from the web..."
+      pending={t("Fetching from the web...")}
       complete={stringValue(props.input.url)}
       part={props.part}
     >
@@ -3703,13 +3761,14 @@ function WebFetch(props: ToolProps) {
 }
 
 function WebSearch(props: ToolProps) {
+  const { t } = useLanguage()
   const ctx = use()
   const provider = createMemo(() => stringValue(props.metadata.provider))
   return (
     <InlineTool
       icon="◈"
       name="Web Search"
-      pending="Searching web..."
+      pending={t("Searching web...")}
       complete={stringValue(props.input.query)}
       part={props.part}
     >
@@ -3734,6 +3793,7 @@ function WebSearch(props: ToolProps) {
 }
 
 function Subagent(props: ToolProps) {
+  const { t } = useLanguage()
   const { navigate } = useRoute()
   const data = useData()
   const sessionID = createMemo(() => stringValue(props.metadata.sessionID) ?? stringValue(props.metadata.sessionId))
@@ -3750,7 +3810,7 @@ function Subagent(props: ToolProps) {
       spinner={!continuation() && isRunning()}
       running={isRunning()}
       complete={description()}
-      pending="Delegating…"
+      pending={t("Delegating…")}
       part={props.part}
       onClick={() => {
         const id = sessionID()
@@ -3888,6 +3948,7 @@ function Execute(props: ToolProps) {
 }
 
 function Edit(props: ToolProps) {
+  const { t } = useLanguage()
   const ctx = use()
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
@@ -3908,7 +3969,7 @@ function Edit(props: ToolProps) {
     <Switch>
       <Match when={file()}>
         {(item) => (
-          <BlockTool path={{ label: "← Edit", value: pathFormatter.format(path()) }} part={props.part}>
+          <BlockTool path={{ label: t("← Edit"), value: pathFormatter.format(path()) }} part={props.part}>
             <box paddingLeft={1}>
               <PatchDiff
                 diff={item().patch}
@@ -3939,10 +4000,10 @@ function Edit(props: ToolProps) {
         <BlockTool
           path={
             stringValue(props.input.path)
-              ? { label: "← Edit", value: pathFormatter.format(stringValue(props.input.path)) }
+              ? { label: t("← Edit"), value: pathFormatter.format(stringValue(props.input.path)) }
               : undefined
           }
-          title={stringValue(props.input.path) ? undefined : "# Preparing edit…"}
+          title={stringValue(props.input.path) ? undefined : t("# Preparing edit…")}
           part={props.part}
           spinner={props.part.state.status === "streaming"}
         />
@@ -3952,6 +4013,7 @@ function Edit(props: ToolProps) {
 }
 
 function ApplyPatch(props: ToolProps) {
+  const { t } = useLanguage()
   const ctx = use()
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
@@ -3986,7 +4048,8 @@ function ApplyPatch(props: ToolProps) {
             {(file) => (
               <BlockTool
                 path={{
-                  label: file.type === "add" ? "# Created" : file.type === "delete" ? "# Deleted" : "← Patched",
+                  label:
+                    file.type === "add" ? t("# Created") : file.type === "delete" ? t("# Deleted") : t("← Patched"),
                   value: pathFormatter.format(file.relativePath),
                 }}
                 part={props.part}
@@ -4033,7 +4096,8 @@ function ApplyPatch(props: ToolProps) {
             {(file) => (
               <BlockTool
                 path={{
-                  label: file.type === "add" ? "# Created" : file.type === "delete" ? "# Deleted" : "← Patched",
+                  label:
+                    file.type === "add" ? t("# Created") : file.type === "delete" ? t("# Deleted") : t("← Patched"),
                   value: pathFormatter.format(file.resource),
                 }}
                 part={props.part}
@@ -4053,13 +4117,17 @@ function ApplyPatch(props: ToolProps) {
           path={
             targets().length === 1
               ? {
-                  label: props.part.state.status === "error" ? "# Patch failed" : "Patching",
+                  label: props.part.state.status === "error" ? t("# Patch failed") : t("Patching"),
                   value: pathFormatter.format(targets()[0]),
                 }
               : undefined
           }
           title={
-            targets().length === 1 ? undefined : props.part.state.status === "error" ? "# Patch failed" : "Patching"
+            targets().length === 1
+              ? undefined
+              : props.part.state.status === "error"
+                ? t("# Patch failed")
+                : t("Patching")
           }
           part={props.part}
           spinner={props.part.state.status === "streaming" || props.part.state.status === "running"}
@@ -4072,6 +4140,7 @@ function ApplyPatch(props: ToolProps) {
 }
 
 function Question(props: ToolProps) {
+  const { t } = useLanguage()
   const theme = useTheme()
   const questions = createMemo(() => parseQuestions(props.input.questions))
   const answers = createMemo(() => parseQuestionAnswers(props.metadata.answers))
@@ -4099,7 +4168,7 @@ function Question(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="→" pending="Asking questions…" complete={count()} part={props.part}>
+        <InlineTool icon="→" pending={t("Asking questions…")} complete={count()} part={props.part}>
           Asked {count()} question{count() !== 1 ? "s" : ""}
         </InlineTool>
       </Match>
@@ -4108,9 +4177,10 @@ function Question(props: ToolProps) {
 }
 
 function Skill(props: ToolProps) {
+  const { t } = useLanguage()
   const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
   return (
-    <InlineTool icon="→" name="Skill" pending="Loading skill..." complete={name()} part={props.part}>
+    <InlineTool icon="→" name="Skill" pending={t("Loading skill...")} complete={name()} part={props.part}>
       "{name()}"
     </InlineTool>
   )

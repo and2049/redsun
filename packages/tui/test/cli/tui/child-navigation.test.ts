@@ -7,12 +7,31 @@ import {
   nextInActiveList,
 } from "../../../src/routes/session/child-navigation"
 import { alignDetails, subagentLabel } from "../../../src/routes/session/subagent-list"
+import { translate } from "../../../src/i18n/translate"
+import { stringWidth } from "../../../src/util/string-width"
 
 const parent = { id: "ses_a", parentID: undefined }
 const first = { id: "ses_b", parentID: "ses_a" }
 const second = { id: "ses_c", parentID: "ses_a" }
 const third = { id: "ses_d", parentID: "ses_a" }
 const family = [third, parent, first, second]
+
+test("localized subagent fallback preserves explicit agent ids and aligns CJK details", () => {
+  expect(subagentLabel("用户任务", "子智能体")).toEqual({ agent: "子智能体", description: "用户任务" })
+  expect(subagentLabel("用户任务 (@subagent subagent)", "子智能体")).toEqual({
+    agent: "subagent",
+    description: "用户任务",
+  })
+  const rows = alignDetails(
+    [
+      { elapsed: "1秒", tokens: "1K" },
+      { elapsed: "12秒", tokens: "200" },
+    ],
+    (elapsed, tokens) => translate("zh-CN", "{{elapsed}} · ↓ {{tokens}} tokens", { elapsed, tokens }),
+  )
+  expect(rows[0]).toContain("1K 词元")
+  expect(stringWidth(rows[0])).toBe(stringWidth(rows[1]))
+})
 
 test("lists the children of the family in spawn order, without the parent", () => {
   // `data.session.family` resolves from the family root and returns an

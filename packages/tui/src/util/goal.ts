@@ -9,6 +9,9 @@
  * Both accept `--flag=value`. Repeated or unknown flags and malformed values are errors.
  */
 
+import { translate } from "../i18n/translate"
+import type { Locale } from "../i18n/locale"
+
 export interface GoalBudget {
   tokens?: number
   wallClockMs?: number
@@ -89,8 +92,10 @@ const formatTime = (ms: number) => {
 }
 
 /** Short human form for toasts and the goal chip: "200k tokens · 30m". */
-export const formatGoalBudget = (budget: GoalBudget): string =>
+export const formatGoalBudget = (budget: GoalBudget, language: Locale = "en"): string =>
   [
-    ...(budget.tokens !== undefined ? [`${formatTokens(budget.tokens)} tokens`] : []),
+    ...(budget.tokens !== undefined
+      ? [translate(language, "{{tokens}} tokens", { tokens: formatTokens(budget.tokens) })]
+      : []),
     ...(budget.wallClockMs !== undefined ? [formatTime(budget.wallClockMs)] : []),
   ].join(" · ")

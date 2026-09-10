@@ -3,7 +3,9 @@ import type { SessionInfo } from "@opencode/client/promise"
 import { useData } from "../../context/data"
 import { Keymap } from "../../context/keymap"
 import { useTheme } from "../../context/theme"
+import { useLanguage } from "../../i18n"
 import { Locale } from "../../util/locale"
+import { stringWidth } from "../../util/string-width"
 import { listWindow } from "./child-navigation"
 
 const AGENT_PATTERN = /^(.*?)\s*\(@([\w-]+) subagent\)$/
@@ -16,11 +18,18 @@ function elapsed(ms: number) {
   return `${total}s`
 }
 
-export function alignDetails(rows: readonly { elapsed: string; tokens: string }[]) {
-  const width = (key: "elapsed" | "tokens") => Math.max(0, ...rows.map((row) => row[key].length))
+function padStartWidth(value: string, width: number) {
+  return " ".repeat(Math.max(0, width - stringWidth(value))) + value
+}
+
+export function alignDetails(
+  rows: readonly { elapsed: string; tokens: string }[],
+  format: (elapsed: string, tokens: string) => string = (elapsed, tokens) => `${elapsed} · ↓ ${tokens} tokens`,
+) {
+  const width = (key: "elapsed" | "tokens") => Math.max(0, ...rows.map((row) => stringWidth(row[key])))
   const elapsedWidth = width("elapsed")
   const tokensWidth = width("tokens")
-  return rows.map((row) => `${row.elapsed.padStart(elapsedWidth)} · ↓ ${row.tokens.padStart(tokensWidth)} tokens`)
+  return rows.map((row) => format(padStartWidth(row.elapsed, elapsedWidth), padStartWidth(row.tokens, tokensWidth)))
 }
 
 export const [listHidden, setListHidden] = createSignal(true)
@@ -28,19 +37,22 @@ export const [listHidden, setListHidden] = createSignal(true)
 export function SubagentHint(props: { count: number }) {
   const theme = useTheme()
   const shortcuts = Keymap.useShortcuts()
+  const language = useLanguage()
   return (
     <box flexShrink={0} paddingTop={1} paddingLeft={1}>
       <text fg={theme.text.subdued} wrapMode="none">
-        <span style={{ fg: theme.text.default }}>{shortcuts.get("session.child.list.next") ?? "down"}</span> view{" "}
-        {props.count} subagent{props.count === 1 ? "" : "s"}
+        <span style={{ fg: theme.text.default }}>{shortcuts.get("session.child.list.next") ?? "down"}</span>{" "}
+        {language.t(props.count === 1 ? "view {{count}} subagent" : "view {{count}} subagents", {
+          count: props.count,
+        })}
       </text>
     </box>
   )
 }
 
-export function subagentLabel(title: string | undefined) {
+export function subagentLabel(title: string | undefined, fallback = "subagent") {
   const match = AGENT_PATTERN.exec(title ?? "")
-  return match ? { agent: match[2]!, description: match[1]! } : { agent: "subagent", description: title ?? "" }
+  return match ? { agent: match[2]!, description: match[1]! } : { agent: fallback, description: title ?? "" }
 }
 
 export function SubagentList(props: {
@@ -51,6 +63,7 @@ export function SubagentList(props: {
 }) {
   const data = useData()
   const theme = useTheme()
+  const language = useLanguage()
   const [now, setNow] = createSignal(Date.now())
   const [hover, setHover] = createSignal<string | undefined>()
   createEffect(() => {
@@ -74,6 +87,7 @@ export function SubagentList(props: {
         elapsed: elapsed(now() - info.time.created),
         tokens: Locale.number(tokens(info.id)),
       })),
+      (elapsed, tokens) => language.t("{{elapsed}} · ↓ {{tokens}} tokens", { elapsed, tokens }),
     ),
   )
 
@@ -116,16 +130,20 @@ export function SubagentList(props: {
 
   return (
     <box flexShrink={0} paddingTop={1}>
-      <Row id={props.root.id} description="main" />
+      <Row id={props.root.id} description={language.t("main")} />
       <For each={visible()}>
         {(info, index) => {
-          const label = subagentLabel(info.title)
-          return <Row id={info.id} agent={label.agent} description={label.description} detail={details()[index()]} />
+          const label = createMemo(() =>
+            subagentLabel(info.title, language.locale() === "en" ? "subagent" : language.t("Subagent")),
+          )
+          return (
+            <Row id={info.id} agent={label().agent} description={label().description} detail={details()[index()]} />
+          )
         }}
       </For>
       <Show when={hidden() > 0}>
         <text fg={theme.text.subdued} paddingLeft={3}>
-          {hidden()} more
+          {language.t("{{count}} more", { count: hidden() })}
         </text>
       </Show>
     </box>

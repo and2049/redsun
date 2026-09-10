@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { createMemo, Show } from "solid-js"
+import { useLanguage } from "../../i18n"
 import { formatGoalBudget, type GoalBudget } from "../../util/goal"
 
 // Message-metadata contract with the redsun goal plugin (core/src/plugin/redsun/goal.ts).
@@ -15,6 +16,7 @@ const GOAL_CLEAR = "__clear__"
  */
 export function GoalStatus(props: { context: Plugin.Context; sessionID: string }) {
   const theme = props.context.theme
+  const language = useLanguage()
   const goal = createMemo(() => {
     const messages = props.context.data.session.message.list(props.sessionID)
     for (let index = messages.length - 1; index >= 0; index--) {
@@ -34,8 +36,8 @@ export function GoalStatus(props: { context: Plugin.Context; sessionID: string }
       {(value) => (
         <box paddingBottom={1} flexShrink={0}>
           <text fg={theme.text.feedback.warning.default} wrapMode="word">
-            ◎ Goal: {value().condition}
-            {value().budget ? ` · ${formatGoalBudget(value().budget!)}` : ""}
+            {language.t("◎ {{goal}}: {{condition}}", { goal: language.t("Goal"), condition: value().condition })}
+            {value().budget ? ` · ${formatGoalBudget(value().budget!, language.locale())}` : ""}
           </text>
         </box>
       )}

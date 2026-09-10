@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { formatGoalBudget, parseGoalArgs } from "../../src/util/goal"
 
+test("goal budget uses model-token terminology without changing numeric limits", () => {
+  const budget = { tokens: 200_000, wallClockMs: 1_800_000 }
+  expect(formatGoalBudget(budget, "zh-CN")).toBe("200k 词元 · 30m")
+  expect(formatGoalBudget(budget, "ko")).toBe("200k 토큰 · 30m")
+  expect(formatGoalBudget(budget, "fr")).toBe("200k jetons · 30m")
+  expect(formatGoalBudget(budget, "es")).toBe("200k tokens · 30m")
+  expect(budget).toEqual({ tokens: 200_000, wallClockMs: 1_800_000 })
+})
+
 describe("parseGoalArgs", () => {
   test("a bare condition has no budget", () => {
     expect(parseGoalArgs("all tests pass")).toEqual({ condition: "all tests pass" })
