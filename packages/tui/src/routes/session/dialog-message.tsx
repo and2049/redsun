@@ -1,4 +1,4 @@
-import { createMemo } from "solid-js"
+import { createMemo, createSignal, onCleanup } from "solid-js"
 import { useData } from "../../context/data"
 import { DialogSelect } from "../../ui/dialog-select"
 import { useClipboard } from "../../context/clipboard"
@@ -14,6 +14,7 @@ export function DialogMessage(props: {
   messageID: string
   sessionID: string
   setPrompt?: (prompt: PromptInfo) => void
+  onJump?: (messageID: string) => void
 }) {
   const data = useData()
   const clipboard = useClipboard()
@@ -21,20 +22,51 @@ export function DialogMessage(props: {
   const client = useClient()
   const message = createMemo(() => data.session.message.get(props.sessionID, props.messageID))
   const { t } = useLanguage()
+  const [busy, setBusy] = createSignal(false)
+  let alive = true
+  onCleanup(() => {
+    alive = false
+  })
+  const pinned = () => data.session.pins.list(props.sessionID).some((pin) => pin.messageID === props.messageID)
 
   return (
     <DialogSelect
       title={t("session.messageActions")}
+      locked={busy()}
       options={[
         {
           title: t("session.jumpTo"),
           value: "message.jump",
           description: t("session.viewMessageInSession"),
-          onSelect: (dialog) => dialog.clear(),
+          onSelect: (dialog) => {
+            dialog.clear()
+            props.onJump?.(props.messageID)
+          },
+        },
+        {
+          title: t(pinned() ? "pins.unpin" : "pins.pin"),
+          value: "message.pin",
+          disabled: message()?.type !== "user" && message()?.type !== "assistant",
+          onSelect: (dialog) => {
+            if (busy()) return
+            setBusy(true)
+            void data.session.pins
+              .toggle(props.sessionID, props.messageID)
+              .then(() => {
+                if (alive) dialog.clear()
+              })
+              .catch((error) => {
+                if (alive) toast.error(error)
+              })
+              .finally(() => {
+                if (alive) setBusy(false)
+              })
+          },
         },
         {
           title: t("session.revert"),
           value: "session.revert",
+          disabled: message()?.type !== "user",
           description: t("session.undoMessagesAndFileChanges"),
           onSelect: (dialog) => {
             const value = message()
@@ -79,6 +111,7 @@ export function DialogMessage(props: {
         {
           title: t("session.fork"),
           value: "session.fork",
+          disabled: message()?.type !== "user",
           description: t("session.createANewSession"),
           onSelect: (dialog) => {
             const value = message()

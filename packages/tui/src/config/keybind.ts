@@ -43,6 +43,10 @@ export const LeaderDefault = "ctrl+x"
 const keybind = (value: Definition["default"], description: string): Definition => ({ default: value, description })
 
 export const Definitions = {
+  "session.pins": keybind("none", "List pinned messages"),
+  "session.pin": keybind("none", "Pin or unpin a message"),
+  "pins.rename": keybind("ctrl+r", "Rename pin"),
+  "pins.remove": keybind("ctrl+d", "Unpin message"),
   "app.exit": keybind("ctrl+c,ctrl+d,ctrl+q", "Exit the application"),
   "app.debug": keybind("none", "Toggle debug panel"),
   "app.console": keybind("none", "Toggle console"),

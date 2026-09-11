@@ -36,6 +36,7 @@ import { WorkspaceEvent } from "./workspace-event.js"
 import { WorktreeEvent } from "./worktree-event.js"
 import { WebSearch } from "./websearch.js"
 import { RemoteControl } from "./remote-control.js"
+import { SessionMessagePin } from "./session-message-pin.js"
 
 const coreDefinitions = Event.inventory(...SessionEvent.Definitions)
 
@@ -49,6 +50,7 @@ const foundationDefinitions = Event.inventory(
 )
 
 const featureDefinitions = Event.inventory(
+  SessionMessagePin.Updated,
   RemoteControl.Changed,
   RemoteControl.Sync,
   ...FileSystem.Event.Definitions,
