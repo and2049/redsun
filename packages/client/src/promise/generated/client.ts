@@ -112,6 +112,14 @@ import type {
   SessionEnvironmentOutput,
   SessionViewInput,
   SessionViewOutput,
+  MessagePinsInput,
+  MessagePinsOutput,
+  MessagePinInput,
+  MessagePinOutput,
+  MessageRenamePinInput,
+  MessageRenamePinOutput,
+  MessageUnpinInput,
+  MessageUnpinOutput,
   MessageListInput,
   MessageListOutput,
   ModelListInput,
@@ -1214,6 +1222,52 @@ export function make(options: ClientOptions) {
         ),
     },
     message: {
+      pins: (input: MessagePinsInput, requestOptions?: RequestOptions) =>
+        request<MessagePinsOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin`,
+            query: { cursor: input["cursor"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      pin: (input: MessagePinInput, requestOptions?: RequestOptions) =>
+        request<MessagePinOutput>(
+          {
+            method: "PUT",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin/${encodeURIComponent(input.messageID)}`,
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      renamePin: (input: MessageRenamePinInput, requestOptions?: RequestOptions) =>
+        request<MessageRenamePinOutput>(
+          {
+            method: "PATCH",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin/${encodeURIComponent(input.messageID)}`,
+            body: { label: input["label"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      unpin: (input: MessageUnpinInput, requestOptions?: RequestOptions) =>
+        request<MessageUnpinOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin/${encodeURIComponent(input.messageID)}`,
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: true,
+          },
+          requestOptions,
+        ),
       list: (input: MessageListInput, requestOptions?: RequestOptions) =>
         request<MessageListOutput>(
           {

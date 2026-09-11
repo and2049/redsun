@@ -1262,6 +1262,40 @@ export interface SessionApi<E = never> {
   readonly view: SessionViewOperation<E>
 }
 
+export type MessagePinsInput = { readonly sessionID: Session.ID; readonly cursor?: string | undefined }
+export type MessagePinsOutput = {
+  readonly data: ReadonlyArray<{
+    readonly sessionID: Session.ID
+    readonly messageID: SessionMessage.ID
+    readonly label: string | null
+    readonly preview: string
+    readonly role: "user" | "assistant"
+    readonly created: number
+    readonly updated: number
+    readonly messageCreated: number
+  }>
+  readonly next?: string | undefined
+}
+export type MessagePinsOperation<E = never> = (input: MessagePinsInput) => Effect.Effect<MessagePinsOutput, E>
+
+export type MessagePinInput = { readonly sessionID: Session.ID; readonly messageID: SessionMessage.ID }
+export type MessagePinOutput = void
+export type MessagePinOperation<E = never> = (input: MessagePinInput) => Effect.Effect<MessagePinOutput, E>
+
+export type MessageRenamePinInput = {
+  readonly sessionID: Session.ID
+  readonly messageID: SessionMessage.ID
+  readonly label: string | null
+}
+export type MessageRenamePinOutput = void
+export type MessageRenamePinOperation<E = never> = (
+  input: MessageRenamePinInput,
+) => Effect.Effect<MessageRenamePinOutput, E>
+
+export type MessageUnpinInput = { readonly sessionID: Session.ID; readonly messageID: SessionMessage.ID }
+export type MessageUnpinOutput = void
+export type MessageUnpinOperation<E = never> = (input: MessageUnpinInput) => Effect.Effect<MessageUnpinOutput, E>
+
 export type MessageListInput = {
   readonly sessionID: Session.ID
   readonly limit?: number | undefined
@@ -1287,6 +1321,10 @@ export type MessageListOutput = {
 export type MessageListOperation<E = never> = (input: MessageListInput) => Effect.Effect<MessageListOutput, E>
 
 export interface MessageApi<E = never> {
+  readonly pins: MessagePinsOperation<E>
+  readonly pin: MessagePinOperation<E>
+  readonly renamePin: MessageRenamePinOperation<E>
+  readonly unpin: MessageUnpinOperation<E>
   readonly list: MessageListOperation<E>
 }
 

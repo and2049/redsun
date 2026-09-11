@@ -2,6 +2,45 @@
   "version": 1,
   "namespace": "tui",
   "messages": {
+    "pins.copyHint": { "message": "c copy", "context": "Pin reader action hint", "legacy": [] },
+    "pins.title": { "message": "Pinned messages", "context": "Session pin picker title", "legacy": [] },
+    "pins.pin": { "message": "Pin message", "context": "Message action", "legacy": [] },
+    "pins.unpin": { "message": "Unpin message", "context": "Message action", "legacy": [] },
+    "pins.pinned": { "message": "Pinned", "context": "Transcript bookmark indicator", "legacy": [] },
+    "pins.rename": { "message": "Rename pin", "context": "Pin label editor", "legacy": [] },
+    "pins.labelHint": {
+      "message": "Custom label (leave empty to use message text)",
+      "context": "Pin label input placeholder",
+      "legacy": []
+    },
+    "pins.labelTooLong": {
+      "message": "Pin labels must be at most 200 characters",
+      "context": "Pin validation error",
+      "legacy": []
+    },
+    "pins.message": { "message": "Message", "context": "Empty pin preview fallback", "legacy": [] },
+    "pins.user": { "message": "User message", "context": "Pin role label", "legacy": [] },
+    "pins.assistant": { "message": "Assistant message", "context": "Pin role label", "legacy": [] },
+    "pins.loading": { "message": "Loading messages…", "context": "Pin fetch progress", "legacy": [] },
+    "pins.empty": {
+      "message": "No pinned messages. Use /pin or a message's actions to add one.",
+      "context": "Empty pin picker",
+      "legacy": []
+    },
+    "pins.unavailable": {
+      "message": "Message unavailable. It may have been deleted; reopen the list to retry.",
+      "context": "Pin reader fetch error",
+      "legacy": []
+    },
+    "pins.outsideTranscript": {
+      "message": "Message is unavailable in the active transcript. It may be reverted or deleted.",
+      "context": "Historical jump error",
+      "legacy": []
+    },
+    "pins.backHint": { "message": "esc back", "context": "Pin reader action hint", "legacy": [] },
+    "pins.renameHint": { "message": "r rename", "context": "Pin reader action hint", "legacy": [] },
+    "pins.unpinHint": { "message": "d unpin", "context": "Pin reader action hint", "legacy": [] },
+    "pins.jumpHint": { "message": "enter jump", "context": "Pin reader action hint", "legacy": [] },
     "settings.language.unavailable": {
       "message": "Language plugin unavailable; using English fallback",
       "context": "Language picker status when the selected plugin is disabled or missing",

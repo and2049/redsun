@@ -24,6 +24,7 @@ import type {
   ProviderInfo,
   ReferenceInfo,
   SessionMessageInfo,
+  SessionMessagePinInfo,
   SessionMessageAssistant,
   SessionMessageAssistantReasoning,
   SessionMessageAssistantText,
@@ -111,6 +112,7 @@ type Store = {
     family: Record<string, string[]>
     active: Record<string, DataSessionStatus>
     message: Record<string, SessionMessageInfo[]>
+    pins: Record<string, SessionMessagePinInfo[]>
     messageCursor: Record<string, string | undefined>
     messageLoading: Record<string, boolean>
     pending: Record<string, SessionInboxInfo[]>
@@ -200,6 +202,7 @@ function createSync() {
 
 export function createData(config: CreateDataInput) {
   const api = config.api
+  const pinReads = new Map<string, object>()
   let disposed = false
   onCleanup(() => (disposed = true))
 
@@ -232,6 +235,7 @@ export function createData(config: CreateDataInput) {
       family: {},
       active: {},
       message: {},
+      pins: {},
       messageCursor: {},
       messageLoading: {},
       pending: {},
@@ -536,8 +540,10 @@ export function createData(config: CreateDataInput) {
 
   function evictSession(sessionID: string) {
     if (sessionOutbox.has(sessionID)) return
+    pinReads.delete(sessionID)
     sync.invalidate(`session.pending:${sessionID}`)
     sync.invalidate(`session.message:${sessionID}`)
+    sync.invalidate(`session.pins:${sessionID}`)
     messageLoads.delete(sessionID)
     // Keep unacknowledged submissions until their echo or rollback settles them.
     const pending = store.session.pending[sessionID]?.filter((item) => outbox.has(item.id)) ?? []
@@ -548,6 +554,7 @@ export function createData(config: CreateDataInput) {
       "session",
       produce((draft) => {
         delete draft.message[sessionID]
+        delete draft.pins[sessionID]
         delete draft.messageCursor[sessionID]
         delete draft.messageLoading[sessionID]
         delete draft.pending[sessionID]
@@ -558,6 +565,7 @@ export function createData(config: CreateDataInput) {
   }
 
   function removeSession(sessionID: string) {
+    pinReads.delete(sessionID)
     activeUpdates?.set(sessionID, undefined)
     store.session.pending[sessionID]?.forEach((item) => outbox.delete(item.id))
     messageIndex.delete(sessionID)
@@ -567,10 +575,12 @@ export function createData(config: CreateDataInput) {
     sync.invalidate(`session.message:${sessionID}`)
     sync.invalidate(`session.permission:${sessionID}`)
     sync.invalidate(`session.form:${sessionID}:`)
+    sync.invalidate(`session.pins:${sessionID}`)
     setStore(
       "session",
       produce((draft) => {
         delete draft.info[sessionID]
+        delete draft.pins[sessionID]
         delete draft.active[sessionID]
         delete draft.message[sessionID]
         delete draft.messageCursor[sessionID]
@@ -587,9 +597,17 @@ export function createData(config: CreateDataInput) {
     )
   }
 
+  function refreshPins(sessionID: string) {
+    sync.invalidate(`session.pins:${sessionID}`)
+    if (store.session.pins[sessionID] || pinReads.has(sessionID)) refresh(() => result.session.pins.sync(sessionID))
+  }
+
   function handleEvent(event: OpenCodeEvent) {
     switch (event.type) {
       case "server.connected": {
+        for (const id of Object.keys(store.session.pins)) {
+          refreshPins(id)
+        }
         const updates = new Map<string, DataSessionStatus | undefined>()
         activeUpdates = updates
         refresh(() =>
@@ -624,6 +642,9 @@ export function createData(config: CreateDataInput) {
       }
       case "project.updated":
         setStore("project", "info", event.data.id, reconcile(event.data))
+        return
+      case "session.pins.updated":
+        refreshPins(event.data.sessionID)
         return
       case "session.created":
         sessionOutbox.delete(event.data.sessionID)
@@ -877,6 +898,8 @@ export function createData(config: CreateDataInput) {
           assistant.tokens = event.data.tokens
           if (event.data.snapshot) assistant.snapshot = { ...assistant.snapshot, end: event.data.snapshot }
         })
+        if (store.session.pins[event.data.sessionID]?.some((pin) => pin.messageID === event.data.assistantMessageID))
+          refreshPins(event.data.sessionID)
         return
       }
       case "session.step.failed":
@@ -1042,6 +1065,7 @@ export function createData(config: CreateDataInput) {
           setStore("session", "info", event.data.sessionID, "revert", undefined)
         return
       case "session.revert.committed":
+        refreshPins(event.data.sessionID)
         if (store.session.info[event.data.sessionID]) {
           setStore("session", "info", event.data.sessionID, "revert", undefined)
         }
@@ -1559,6 +1583,41 @@ export function createData(config: CreateDataInput) {
       invalidate(sessionID: string) {
         sync.invalidate(`session:${sessionID}`)
       },
+      pins: {
+        list(sessionID: string) {
+          return store.session.pins[sessionID] ?? []
+        },
+        sync(sessionID: string, options?: { force?: boolean }): Promise<void> {
+          if (options?.force) sync.invalidate(`session.pins:${sessionID}`)
+          return sync.run(`session.pins:${sessionID}`, async () => {
+            const current = {}
+            pinReads.set(sessionID, current)
+            const pins: SessionMessagePinInfo[] = []
+            let cursor: string | undefined
+            do {
+              const page = await api().message.pins({ sessionID, cursor })
+              pins.push(...page.data)
+              cursor = page.next
+            } while (cursor)
+            if (!disposed && pinReads.get(sessionID) === current)
+              setStore("session", "pins", sessionID, reconcile(pins, { key: "messageID" }))
+          })
+        },
+        async toggle(sessionID: string, messageID: string) {
+          const pinned = store.session.pins[sessionID]?.some((pin) => pin.messageID === messageID)
+          if (pinned) await api().message.unpin({ sessionID, messageID })
+          else await api().message.pin({ sessionID, messageID })
+          return result.session.pins.sync(sessionID, { force: true })
+        },
+        async rename(sessionID: string, messageID: string, label: string | null) {
+          await api().message.renamePin({ sessionID, messageID, label })
+          return result.session.pins.sync(sessionID, { force: true })
+        },
+        async remove(sessionID: string, messageID: string) {
+          await api().message.unpin({ sessionID, messageID })
+          return result.session.pins.sync(sessionID, { force: true })
+        },
+      },
       message: {
         list(sessionID: string) {
           return store.session.message[sessionID] ?? []
@@ -1569,7 +1628,8 @@ export function createData(config: CreateDataInput) {
           return position === undefined ? undefined : messages?.[position]
         },
         sync(sessionID: string) {
-          return sync.run(`session.message:${sessionID}`, async () => {
+          const key = `session.message:${sessionID}`
+          const request = sync.run(key, async () => {
             const response = await api().message.list({
               sessionID,
               limit: config.initialMessageLimit?.() ?? messagePageLimit,
@@ -1594,6 +1654,8 @@ export function createData(config: CreateDataInput) {
               setStore("session", "messageCursor", sessionID, response.cursor.next ?? undefined)
             })
           })
+          if (sync.pending(key)) track(messageLoads, sessionID, request)
+          return request
         },
         more(sessionID: string) {
           return store.session.messageCursor[sessionID] !== undefined
@@ -1605,6 +1667,7 @@ export function createData(config: CreateDataInput) {
           sessionID: string,
           options?: {
             all?: boolean
+            untilMessageID?: string
             signal?: AbortSignal
             /** Runs synchronously inside the store-publication batch. */
             beforePublish?: () => void
@@ -1625,9 +1688,10 @@ export function createData(config: CreateDataInput) {
                 })
                 .finally(() => signal.removeEventListener("abort", cancel))
             })()
-            if ((!options?.all && published) || signal?.aborted) return
+            if ((!options?.all && !options?.untilMessageID && published) || signal?.aborted) return
           }
           const cursor = store.session.messageCursor[sessionID]
+          if (options?.untilMessageID && messageIndex.get(sessionID)?.has(options.untilMessageID)) return
           if (!cursor || signal?.aborted) return
           setStore("session", "messageLoading", sessionID, true)
           const request = (async () => {
@@ -1637,7 +1701,7 @@ export function createData(config: CreateDataInput) {
               const response = await api().message.list(
                 {
                   sessionID,
-                  limit: options?.all ? 200 : messagePageLimit,
+                  limit: options?.all || options?.untilMessageID ? 200 : messagePageLimit,
                   cursor: next,
                 },
                 { signal },
@@ -1645,7 +1709,9 @@ export function createData(config: CreateDataInput) {
               if (signal?.aborted) return
               fetched.push(...response.data)
               next = response.cursor.next ?? undefined
-              if (!options?.all) break
+              if (options?.untilMessageID && response.data.some((message) => message.id === options.untilMessageID))
+                break
+              if (!options?.all && !options?.untilMessageID) break
             } while (next)
             // A jump through history publishes once, not once per page of offscreen messages.
             const existing = store.session.message[sessionID] ?? []

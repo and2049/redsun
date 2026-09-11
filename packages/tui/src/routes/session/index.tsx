@@ -62,6 +62,7 @@ import { DialogSelect } from "../../ui/dialog-select"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { DialogImagePreview } from "../../component/dialog-image-preview"
 import { DialogMessage } from "./dialog-message"
+import { DialogPins } from "./dialog-pins"
 import { DialogFork } from "./dialog-fork"
 import { DialogTimeline } from "./dialog-timeline"
 import { Sidebar } from "./sidebar"
@@ -166,6 +167,7 @@ const context = createContext<{
   config: ReturnType<typeof useConfig>["data"]
   mutatePending: (action: PendingAction, inboxID: string) => Promise<boolean>
   pendingDelivery: (inboxID: string) => SessionInbox.Delivery | undefined
+  jumpToMessage: (messageID: string) => void
 }>()
 
 function use() {
@@ -290,6 +292,9 @@ export function Session() {
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
   const toast = useToast()
   const client = useClient()
+  createEffect(() => {
+    void data.session.pins.sync(route.sessionID).catch(() => undefined)
+  })
   const editor = useEditorContext()
   const [rowsSynced, setRowsSynced] = createSignal(false)
   const rows = createSessionRows(
@@ -670,14 +675,93 @@ export function Session() {
       dialog.clear()
     })
 
+  const alignChild = (messageID: string, child: { y: number }) => {
+    const y = scroll.scrollTop + child.y - scroll.viewport.y
+    const message = data.session.message.get(route.sessionID, messageID)
+    alignMessage(messageID, Math.max(0, y - (message?.type === "assistant" ? 1 : 0)))
+  }
+
   const jumpToMessage = (messageID: string) =>
     ensureAllRows(() => {
       const child = scroll.getRenderable(messageID)
-      if (!child) return
-      const y = scroll.scrollTop + child.y - scroll.viewport.y
-      const message = data.session.message.get(route.sessionID, messageID)
-      alignMessage(messageID, Math.max(0, y - (message?.type === "assistant" ? 1 : 0)))
+      if (child) alignChild(messageID, child)
     })
+
+  const jumpToPin = (messageID: string) => {
+    clearMessageNavigation()
+    const request = new AbortController()
+    const snapshot = () => {
+      const index = boundaries().findIndex((id) => id !== undefined)
+      return { start: hiddenRows(), end: visibleRowsEnd(), anchor: boundaries()[index], index }
+    }
+    let previous = snapshot()
+    const cancel = () => {
+      request.abort()
+      const current = previous.anchor ? boundaries().indexOf(previous.anchor) : -1
+      const added = Math.max(0, current - previous.index)
+      batch(() => {
+        setHiddenRows(previous.start === undefined ? undefined : previous.start + added)
+        setVisibleRowsEnd(previous.end === undefined ? undefined : previous.end + added)
+      })
+    }
+    setFirstJump(() => cancel)
+    const start = () => {
+      if (request.signal.aborted || scroll.isDestroyed) return
+      if (revealingOlderRows || revealingNewerRows || ensureAllRowsPending) return afterLayout(start)
+      previous = snapshot()
+      batch(() => {
+        setHiddenRows(hidden())
+        setVisibleRowsEnd(visibleEnd())
+      })
+      void data.session.message
+        .loadMore(route.sessionID, {
+          untilMessageID: messageID,
+          signal: request.signal,
+          beforePublish: () => {
+            setHiddenRows(0)
+            setVisibleRowsEnd(TRANSCRIPT_BACKFILL_CHUNK)
+          },
+        })
+        .then(() => {
+          if (request.signal.aborted || scroll.isDestroyed) return
+          const boundary = boundaries().indexOf(messageID)
+          const index =
+            boundary >= 0
+              ? boundary
+              : rows.findIndex((row) =>
+                  row.type === "message" || row.type === "assistant-footer"
+                    ? row.messageID === messageID
+                    : row.type === "part"
+                      ? row.ref.messageID === messageID
+                      : row.type === "group"
+                        ? row.refs.some((ref) => ref.messageID === messageID)
+                        : false,
+                )
+          if (index < 0) {
+            clearMessageNavigation()
+            toast.show({ message: language.t("pins.outsideTranscript"), variant: "error" })
+            return
+          }
+          scroll.stickyScroll = false
+          batch(() => {
+            setHiddenRows(Math.max(0, index - 5))
+            setVisibleRowsEnd(Math.min(rows.length, index + TRANSCRIPT_BACKFILL_CHUNK))
+          })
+          afterLayout(() => {
+            if (request.signal.aborted) return
+            setFirstJump(undefined)
+            const child = scroll.getRenderable(messageID) ?? scroll.getChildren()[index - hidden()]
+            if (child) alignChild(messageID, child)
+          })
+        })
+        .catch((error) => {
+          if (request.signal.aborted) return
+          clearMessageNavigation()
+          toast.error(error)
+        })
+    }
+    prependHistory.after(start)
+  }
 
   function toBottom() {
     clearMessageNavigation()
@@ -921,6 +1005,29 @@ export function Session() {
             setPrompt={(value) => promptRef.current?.set(value)}
           />
         ))
+      },
+    },
+    {
+      title: language.t("pins.title"),
+      id: "session.pins",
+      group: "Session",
+      slash: { name: "pins" },
+      run: () => dialog.replace(() => <DialogPins sessionID={route.sessionID} onJump={jumpToPin} />),
+    },
+    {
+      title: language.t("pins.pin"),
+      id: "session.pin",
+      group: "Session",
+      slash: { name: "pin" },
+      run: () => {
+        const id = navigationMessage()
+        const message = id ? data.session.message.get(route.sessionID, id) : undefined
+        if (message && (message.type === "user" || message.type === "assistant")) {
+          void data.session.pins.toggle(route.sessionID, message.id).catch((error) => toast.error(error))
+          dialog.clear()
+          return
+        }
+        dialog.replace(() => <DialogTimeline sessionID={route.sessionID} includeAssistant onMove={jumpToMessage} />)
       },
     },
     {
@@ -1477,6 +1584,7 @@ export function Session() {
         config,
         mutatePending,
         pendingDelivery: (inboxID) => pendingDeliveries().get(inboxID),
+        jumpToMessage: jumpToPin,
       }}
     >
       <box flexDirection="row" flexGrow={1} minHeight={0}>
@@ -1641,8 +1749,37 @@ type SessionRowViewProps = {
 }
 
 function SessionRowView(props: SessionRowViewProps) {
+  const ctx = use()
+  const dialog = useDialog()
+  const data = useData()
+  const { t } = useLanguage()
+  const theme = useTheme()
+  const renderer = useRenderer()
+  const assistant = () =>
+    props.boundaryID && props.message(props.boundaryID)?.type === "assistant" ? props.boundaryID : undefined
   return (
     <box id={sessionRowID(props.row, props.boundaryID)} marginTop={1} flexShrink={0}>
+      <Show when={assistant()}>
+        {(id) => (
+          <box
+            paddingLeft={TRANSCRIPT_GUTTER}
+            flexShrink={0}
+            onMouseUp={() => {
+              if (renderer.getSelection()?.getSelectedText()) return
+              dialog.replace(() => (
+                <DialogMessage sessionID={ctx.sessionID} messageID={id()} onJump={ctx.jumpToMessage} />
+              ))
+            }}
+          >
+            <text fg={theme.text.subdued}>
+              {t("session.messageActions")}
+              {data.session.pins.list(ctx.sessionID).some((pin) => pin.messageID === id())
+                ? ` · ${t("pins.pinned")}`
+                : ""}
+            </text>
+          </box>
+        )}
+      </Show>
       <Switch>
         <Match when={props.row.type === "message" ? props.row : undefined}>
           {(row) => (
@@ -2626,6 +2763,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
                 messageID={props.message.id}
                 sessionID={ctx.sessionID}
                 setPrompt={(value) => promptRef.current?.set(value)}
+                onJump={ctx.jumpToMessage}
               />
             ))
           }}
@@ -2637,6 +2775,9 @@ function UserMessage(props: { message: SessionMessageUser }) {
           <text fg={theme.text.default}>
             <span style={{ fg: delivery() ? theme.text.subdued : color() }}>❯ </span>
             {props.message.text}
+            <Show when={data.session.pins.list(ctx.sessionID).some((pin) => pin.messageID === props.message.id)}>
+              <span style={{ fg: theme.text.subdued }}>{` [${language.t("pins.pinned")}]`}</span>
+            </Show>
           </text>
           <Show when={skills().length}>
             <box flexDirection="row" paddingTop={1} gap={1} flexWrap="wrap">

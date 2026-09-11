@@ -1,8 +1,15 @@
 import { Session } from "@opencode/schema/session"
 import { SessionMessage } from "@opencode/schema/session-message"
+import { SessionMessagePin } from "@opencode/schema/session-message-pin"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { InvalidCursorError, SessionNotFoundError, UnknownError } from "../errors.js"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import {
+  InvalidCursorError,
+  InvalidRequestError,
+  MessageNotFoundError,
+  SessionNotFoundError,
+  UnknownError,
+} from "../errors.js"
 
 export const SessionMessagesQuery = Schema.Struct({
   limit: Schema.optional(
@@ -39,6 +46,36 @@ export const SessionMessagesQuery = Schema.Struct({
 }).annotate({ identifier: "SessionMessagesQuery" })
 
 export const MessageGroup = HttpApiGroup.make("server.message")
+  .add(
+    HttpApiEndpoint.get("session.pins", "/api/session/:sessionID/pin", {
+      params: { sessionID: Session.ID },
+      query: Schema.Struct({ cursor: Schema.optional(Schema.String) }),
+      success: SessionMessagePin.Page,
+      error: [SessionNotFoundError, MessageNotFoundError, InvalidRequestError, UnknownError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.message.pins", summary: "List pinned messages" })),
+  )
+  .add(
+    HttpApiEndpoint.put("session.pin", "/api/session/:sessionID/pin/:messageID", {
+      params: { sessionID: Session.ID, messageID: SessionMessage.ID },
+      success: HttpApiSchema.NoContent,
+      error: [SessionNotFoundError, MessageNotFoundError, InvalidRequestError, UnknownError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.message.pin", summary: "Pin a message" })),
+  )
+  .add(
+    HttpApiEndpoint.patch("session.pin.rename", "/api/session/:sessionID/pin/:messageID", {
+      params: { sessionID: Session.ID, messageID: SessionMessage.ID },
+      payload: SessionMessagePin.Rename,
+      success: HttpApiSchema.NoContent,
+      error: [SessionNotFoundError, MessageNotFoundError, InvalidRequestError, UnknownError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.message.renamePin", summary: "Rename a pinned message" })),
+  )
+  .add(
+    HttpApiEndpoint.delete("session.unpin", "/api/session/:sessionID/pin/:messageID", {
+      params: { sessionID: Session.ID, messageID: SessionMessage.ID },
+      success: HttpApiSchema.NoContent,
+      error: [SessionNotFoundError, MessageNotFoundError, InvalidRequestError, UnknownError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.message.unpin", summary: "Unpin a message" })),
+  )
   .add(
     HttpApiEndpoint.get("session.messages", "/api/session/:sessionID/message", {
       params: { sessionID: Session.ID },

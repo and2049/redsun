@@ -52,6 +52,189 @@ test("uses the configured initial window and retains normal cursor page sizes", 
   }
 })
 
+test("loads only through a pinned target and leaves the remaining history cursor intact", async () => {
+  const cursors: (string | null)[] = []
+  const api = OpenCode.make({
+    baseUrl: "http://opencode.local",
+    fetch: async (input, init) => {
+      const url = new URL((input instanceof Request ? input : new Request(input, init)).url)
+      const cursor = url.searchParams.get("cursor")
+      cursors.push(cursor)
+      const id = cursor === "older" ? "msg_pin" : cursor === "oldest" ? "msg_start" : "msg_latest"
+      return Response.json({
+        data: [{ id, type: "user", text: id, time: { created: 1 } }],
+        cursor: { next: cursor === "older" ? "oldest" : cursor === "oldest" ? undefined : "older" },
+      })
+    },
+  })
+  const setup = createRoot((dispose) => ({
+    dispose,
+    data: createData({ api: () => api, directory: "/project", event: { on: () => () => {}, listen: () => () => {} } }),
+  }))
+  try {
+    await setup.data.session.message.sync("ses_refresh")
+    await setup.data.session.message.loadMore("ses_refresh", { untilMessageID: "msg_pin" })
+    expect(cursors).toEqual([null, "older"])
+    expect(setup.data.session.message.get("ses_refresh", "msg_pin")?.id).toBe("msg_pin")
+    expect(setup.data.session.message.more("ses_refresh")).toBe(true)
+    await setup.data.session.message.loadMore("ses_refresh", { untilMessageID: "msg_pin" })
+    expect(cursors).toEqual([null, "older"])
+    await setup.data.session.message.loadMore("ses_refresh", { untilMessageID: "msg_missing" })
+    expect(cursors).toEqual([null, "older", "oldest"])
+    expect(setup.data.session.message.more("ses_refresh")).toBe(false)
+  } finally {
+    setup.dispose()
+  }
+})
+
+test("a pinned target waits for the initial message sync before it is judged missing", async () => {
+  const gate = Promise.withResolvers<void>()
+  const cursors: (string | null)[] = []
+  const api = OpenCode.make({
+    baseUrl: "http://opencode.local",
+    fetch: async (input, init) => {
+      const url = new URL((input instanceof Request ? input : new Request(input, init)).url)
+      const cursor = url.searchParams.get("cursor")
+      cursors.push(cursor)
+      if (!cursor) await gate.promise
+      const id = cursor ? "msg_pin" : "msg_latest"
+      return Response.json({
+        data: [{ id, type: "user", text: id, time: { created: 1 } }],
+        cursor: { next: cursor ? undefined : "older" },
+      })
+    },
+  })
+  const setup = createRoot((dispose) => ({
+    dispose,
+    data: createData({ api: () => api, directory: "/project", event: { on: () => () => {}, listen: () => () => {} } }),
+  }))
+  try {
+    const initial = setup.data.session.message.sync("ses_refresh")
+    const jump = setup.data.session.message.loadMore("ses_refresh", { untilMessageID: "msg_pin" })
+    expect(cursors).toEqual([null])
+    gate.resolve()
+    await Promise.all([initial, jump])
+    expect(cursors).toEqual([null, "older"])
+    expect(setup.data.session.message.get("ses_refresh", "msg_pin")?.id).toBe("msg_pin")
+  } finally {
+    gate.resolve()
+    setup.dispose()
+  }
+})
+
+test("toggling a pin reads the loaded store and refreshes once", async () => {
+  const requests: string[] = []
+  let pinned = false
+  const api = OpenCode.make({
+    baseUrl: "http://opencode.local",
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      requests.push(`${request.method} ${new URL(request.url).pathname}`)
+      if (request.method === "PUT") pinned = true
+      if (request.method === "DELETE") pinned = false
+      if (request.method !== "GET") return new Response(null, { status: 204 })
+      return Response.json({
+        data: pinned
+          ? [
+              {
+                sessionID: "ses_refresh",
+                messageID: "msg_pin",
+                label: null,
+                preview: "Old message",
+                role: "user",
+                created: 1,
+                updated: 1,
+                messageCreated: 1,
+              },
+            ]
+          : [],
+      })
+    },
+  })
+  const setup = createRoot((dispose) => ({
+    dispose,
+    data: createData({ api: () => api, directory: "/project", event: { on: () => () => {}, listen: () => () => {} } }),
+  }))
+  try {
+    await setup.data.session.pins.sync("ses_refresh")
+    await setup.data.session.pins.toggle("ses_refresh", "msg_pin")
+    expect(setup.data.session.pins.list("ses_refresh").map((pin) => pin.messageID)).toEqual(["msg_pin"])
+    await setup.data.session.pins.toggle("ses_refresh", "msg_pin")
+    expect(setup.data.session.pins.list("ses_refresh")).toEqual([])
+    expect(requests).toEqual([
+      "GET /api/session/ses_refresh/pin",
+      "PUT /api/session/ses_refresh/pin/msg_pin",
+      "GET /api/session/ses_refresh/pin",
+      "DELETE /api/session/ses_refresh/pin/msg_pin",
+      "GET /api/session/ses_refresh/pin",
+    ])
+  } finally {
+    setup.dispose()
+  }
+})
+
+test("revalidates pins when an update overtakes their initial read without loading messages", async () => {
+  const gate = Promise.withResolvers<void>()
+  const listeners = new Set<Parameters<CreateDataInput["event"]["listen"]>[0]>()
+  let reads = 0
+  const api = OpenCode.make({
+    baseUrl: "http://opencode.local",
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      expect(new URL(request.url).pathname).toBe("/api/session/ses_refresh/pin")
+      const count = ++reads
+      if (count === 1) await gate.promise
+      return Response.json({
+        data: [
+          {
+            sessionID: "ses_refresh",
+            messageID: "msg_pin",
+            label: count === 1 ? null : "Renamed",
+            preview: "Old message",
+            role: "user",
+            created: 1,
+            updated: count,
+            messageCreated: 1,
+          },
+        ],
+      })
+    },
+  })
+  const setup = createRoot((dispose) => ({
+    dispose,
+    data: createData({
+      api: () => api,
+      directory: "/project",
+      event: {
+        on: () => () => {},
+        listen: (handler) => {
+          listeners.add(handler)
+          return () => listeners.delete(handler)
+        },
+      },
+    }),
+  }))
+  try {
+    const initial = setup.data.session.pins.sync("ses_refresh")
+    await wait(() => reads === 1)
+    const event: OpenCodeEvent = {
+      id: "evt_pins",
+      created: 2,
+      type: "session.pins.updated",
+      data: { sessionID: "ses_refresh" },
+    }
+    listeners.forEach((listener) => listener({ name: event.type, details: event }))
+    gate.resolve()
+    await initial
+    await wait(() => setup.data.session.pins.list("ses_refresh")[0]?.label === "Renamed")
+    expect(reads).toBe(2)
+    expect(setup.data.session.message.list("ses_refresh")).toEqual([])
+  } finally {
+    gate.resolve()
+    setup.dispose()
+  }
+})
+
 test("revalidates after an event overtakes an active session read", async () => {
   let release!: () => void
   const gate = new Promise<void>((resolve) => (release = resolve))
@@ -668,119 +851,124 @@ test("loads bounded message pages", async () => {
   }
 })
 
-test.each(["success", "failure", "cancel", "cancel-retry", "cancel-page", "join-cancel", "join-failure"])(
-  "bulk history (%s)",
-  async (mode) => {
-    const messages = [1, 2, 3].map((index) => ({
-      id: `msg_${index}`,
-      type: "user",
-      text: `Message ${index}`,
-      time: { created: index },
-    }))
-    const release = Promise.withResolvers<void>()
-    const controller = new AbortController()
-    const requests: URL[] = []
-    const publications: string[][] = []
-    const api = OpenCode.make({
-      baseUrl: "http://opencode.local",
-      fetch: async (input, init) => {
-        const url = new URL(input instanceof Request ? input.url : String(input))
-        requests.push(url)
-        const cursor = url.searchParams.get("cursor")
-        if (!cursor) return Response.json({ data: [messages[2]], cursor: { next: "recent" } })
-        if (cursor === "recent") {
-          if (mode.startsWith("join")) await release.promise
-          if (mode === "join-failure") return Response.json({ message: "offline" }, { status: 503 })
-          return Response.json({ data: [messages[2], messages[1]], cursor: { next: "oldest" } })
-        }
-        if (cursor === "oldest") return Response.json({ data: [messages[0]], cursor: { next: "empty" } })
-        expect(init?.signal).toBe(requests.length === 4 ? controller.signal : undefined)
-        await release.promise
-        if (mode === "failure") return Response.json({ message: "offline" }, { status: 503 })
-        return Response.json({ data: [], cursor: {} })
-      },
-    })
-    const setup = createRoot((dispose) => {
-      const data = createData({
-        api: () => api,
-        directory: "/project",
-        event: { on: () => () => {}, listen: () => () => {} },
-      })
-      return { data, dispose }
-    })
-
-    try {
-      await setup.data.session.message.sync("ses_refresh")
-      const newest = setup.data.session.message.get("ses_refresh", "msg_3")
-      const load = setup.data.session.message.loadMore(
-        "ses_refresh",
-        mode.startsWith("join")
-          ? undefined
-          : {
-              all: true,
-              signal: controller.signal,
-              beforePublish: () => {
-                publications.push(setup.data.session.message.list("ses_refresh").map((message) => message.id))
-                expect(setup.data.session.message.get("ses_refresh", "msg_3")).toBe(newest)
-              },
-            },
-      )
-      const joined = setup.data.session.message.loadMore("ses_refresh", { all: true, signal: controller.signal })
-      const settled = Promise.allSettled([load, joined])
-      if (mode.startsWith("join")) {
-        await wait(() => requests.length === 2)
-        expect(getEventListeners(controller.signal, "abort")).toHaveLength(1)
-        controller.abort()
-        let cancelled = false
-        void joined.then(() => {
-          cancelled = true
-        })
-        await wait(() => cancelled)
-        expect(setup.data.session.message.loading("ses_refresh")).toBe(true)
-        expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
-        release.resolve()
-        expect((await settled).map((result) => result.status)).toEqual(
-          mode === "join-failure" ? ["rejected", "fulfilled"] : ["fulfilled", "fulfilled"],
-        )
-        expect(requests.at(-1)?.searchParams.get("limit")).toBe("20")
-        expect(requests).toHaveLength(2)
-        expect(setup.data.session.message.more("ses_refresh")).toBe(true)
-        expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(
-          mode === "join-failure" ? ["msg_3"] : ["msg_2", "msg_3"],
-        )
-        return
+test.each(
+  ["all", "pin"].flatMap((strategy) =>
+    ["success", "failure", "cancel", "cancel-retry", "cancel-page", "join-cancel", "join-failure"].map((mode) => ({
+      strategy,
+      mode,
+    })),
+  ),
+)("bulk history (%j)", async ({ strategy, mode }) => {
+  const goal = strategy === "pin" ? { untilMessageID: "msg_missing" } : { all: true }
+  const messages = [1, 2, 3].map((index) => ({
+    id: `msg_${index}`,
+    type: "user",
+    text: `Message ${index}`,
+    time: { created: index },
+  }))
+  const release = Promise.withResolvers<void>()
+  const controller = new AbortController()
+  const requests: URL[] = []
+  const publications: string[][] = []
+  const api = OpenCode.make({
+    baseUrl: "http://opencode.local",
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      requests.push(url)
+      const cursor = url.searchParams.get("cursor")
+      if (!cursor) return Response.json({ data: [messages[2]], cursor: { next: "recent" } })
+      if (cursor === "recent") {
+        if (mode.startsWith("join")) await release.promise
+        if (mode === "join-failure") return Response.json({ message: "offline" }, { status: 503 })
+        return Response.json({ data: [messages[2], messages[1]], cursor: { next: "oldest" } })
       }
-      await wait(() => requests.length === 4)
+      if (cursor === "oldest") return Response.json({ data: [messages[0]], cursor: { next: "empty" } })
+      expect(init?.signal).toBe(requests.length === 4 ? controller.signal : undefined)
+      await release.promise
+      if (mode === "failure") return Response.json({ message: "offline" }, { status: 503 })
+      return Response.json({ data: [], cursor: {} })
+    },
+  })
+  const setup = createRoot((dispose) => {
+    const data = createData({
+      api: () => api,
+      directory: "/project",
+      event: { on: () => () => {}, listen: () => () => {} },
+    })
+    return { data, dispose }
+  })
+
+  try {
+    await setup.data.session.message.sync("ses_refresh")
+    const newest = setup.data.session.message.get("ses_refresh", "msg_3")
+    const load = setup.data.session.message.loadMore(
+      "ses_refresh",
+      mode.startsWith("join")
+        ? undefined
+        : {
+            ...goal,
+            signal: controller.signal,
+            beforePublish: () => {
+              publications.push(setup.data.session.message.list("ses_refresh").map((message) => message.id))
+              expect(setup.data.session.message.get("ses_refresh", "msg_3")).toBe(newest)
+            },
+          },
+    )
+    const joined = setup.data.session.message.loadMore("ses_refresh", { ...goal, signal: controller.signal })
+    const settled = Promise.allSettled([load, joined])
+    if (mode.startsWith("join")) {
+      await wait(() => requests.length === 2)
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(1)
+      controller.abort()
+      let cancelled = false
+      void joined.then(() => {
+        cancelled = true
+      })
+      await wait(() => cancelled)
       expect(setup.data.session.message.loading("ses_refresh")).toBe(true)
-      expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(["msg_3"])
-      expect(requests.slice(1).map((url) => url.searchParams.get("limit"))).toEqual(["200", "200", "200"])
-      if (mode.startsWith("cancel")) controller.abort()
-      const retry =
-        mode === "cancel-retry" || mode === "cancel-page"
-          ? setup.data.session.message.loadMore("ses_refresh", mode === "cancel-retry" ? { all: true } : undefined)
-          : undefined
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
       release.resolve()
       expect((await settled).map((result) => result.status)).toEqual(
-        mode === "failure" ? ["rejected", "rejected"] : ["fulfilled", "fulfilled"],
+        mode === "join-failure" ? ["rejected", "fulfilled"] : ["fulfilled", "fulfilled"],
       )
-      await retry
-      const success = mode === "success" || mode === "cancel-retry"
-      expect(setup.data.session.message.loading("ses_refresh")).toBe(false)
-      expect(setup.data.session.message.more("ses_refresh")).toBe(!success)
+      expect(requests.at(-1)?.searchParams.get("limit")).toBe("20")
+      expect(requests).toHaveLength(2)
+      expect(setup.data.session.message.more("ses_refresh")).toBe(true)
       expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(
-        success ? ["msg_1", "msg_2", "msg_3"] : mode === "cancel-page" ? ["msg_2", "msg_3"] : ["msg_3"],
+        mode === "join-failure" ? ["msg_3"] : ["msg_2", "msg_3"],
       )
-      expect(setup.data.session.message.get("ses_refresh", "msg_3")).toBe(newest)
-      expect(requests).toHaveLength(mode === "cancel-retry" ? 7 : mode === "cancel-page" ? 5 : 4)
-      if (mode === "cancel-page") expect(requests.at(-1)?.searchParams.get("limit")).toBe("20")
-      expect(publications).toEqual(mode === "success" ? [["msg_3"]] : [])
-      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
-    } finally {
-      release.resolve()
-      setup.dispose()
+      return
     }
-  },
-)
+    await wait(() => requests.length === 4)
+    expect(setup.data.session.message.loading("ses_refresh")).toBe(true)
+    expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(["msg_3"])
+    expect(requests.slice(1).map((url) => url.searchParams.get("limit"))).toEqual(["200", "200", "200"])
+    if (mode.startsWith("cancel")) controller.abort()
+    const retry =
+      mode === "cancel-retry" || mode === "cancel-page"
+        ? setup.data.session.message.loadMore("ses_refresh", mode === "cancel-retry" ? goal : undefined)
+        : undefined
+    release.resolve()
+    expect((await settled).map((result) => result.status)).toEqual(
+      mode === "failure" ? ["rejected", "rejected"] : ["fulfilled", "fulfilled"],
+    )
+    await retry
+    const success = mode === "success" || mode === "cancel-retry"
+    expect(setup.data.session.message.loading("ses_refresh")).toBe(false)
+    expect(setup.data.session.message.more("ses_refresh")).toBe(!success)
+    expect(setup.data.session.message.list("ses_refresh").map((message) => message.id)).toEqual(
+      success ? ["msg_1", "msg_2", "msg_3"] : mode === "cancel-page" ? ["msg_2", "msg_3"] : ["msg_3"],
+    )
+    expect(setup.data.session.message.get("ses_refresh", "msg_3")).toBe(newest)
+    expect(requests).toHaveLength(mode === "cancel-retry" ? 7 : mode === "cancel-page" ? 5 : 4)
+    if (mode === "cancel-page") expect(requests.at(-1)?.searchParams.get("limit")).toBe("20")
+    expect(publications).toEqual(mode === "success" ? [["msg_3"]] : [])
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
+  } finally {
+    release.resolve()
+    setup.dispose()
+  }
+})
 
 test.each([
   "session.execution.succeeded",

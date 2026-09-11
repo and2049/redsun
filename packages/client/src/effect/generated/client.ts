@@ -118,6 +118,14 @@ import type {
   SessionEnvironmentOutput,
   SessionViewInput,
   SessionViewOutput,
+  MessagePinsInput,
+  MessagePinsOutput,
+  MessagePinInput,
+  MessagePinOutput,
+  MessageRenamePinInput,
+  MessageRenamePinOutput,
+  MessageUnpinInput,
+  MessageUnpinOutput,
   MessageListInput,
   MessageListOutput,
   ModelListInput,
@@ -883,6 +891,35 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
   view: EndpointSessionView(raw),
 })
 
+const EndpointMessagePins = (raw: RawClient["server.message"]) => (input: MessagePinsInput) =>
+  preserveEffect<MessagePinsOutput>()(
+    raw["session.pins"]({ params: { sessionID: input["sessionID"] }, query: { cursor: input["cursor"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointMessagePin = (raw: RawClient["server.message"]) => (input: MessagePinInput) =>
+  preserveEffect<MessagePinOutput>()(
+    raw["session.pin"]({ params: { sessionID: input["sessionID"], messageID: input["messageID"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointMessageRenamePin = (raw: RawClient["server.message"]) => (input: MessageRenamePinInput) =>
+  preserveEffect<MessageRenamePinOutput>()(
+    raw["session.pin.rename"]({
+      params: { sessionID: input["sessionID"], messageID: input["messageID"] },
+      payload: { label: input["label"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointMessageUnpin = (raw: RawClient["server.message"]) => (input: MessageUnpinInput) =>
+  preserveEffect<MessageUnpinOutput>()(
+    raw["session.unpin"]({ params: { sessionID: input["sessionID"], messageID: input["messageID"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
 const EndpointMessageList = (raw: RawClient["server.message"]) => (input: MessageListInput) =>
   preserveEffect<MessageListOutput>()(
     raw["session.messages"]({
@@ -891,7 +928,13 @@ const EndpointMessageList = (raw: RawClient["server.message"]) => (input: Messag
     }).pipe(Effect.mapError(mapClientError)),
   )
 
-const adaptGroupMessage = (raw: RawClient["server.message"]) => ({ list: EndpointMessageList(raw) })
+const adaptGroupMessage = (raw: RawClient["server.message"]) => ({
+  pins: EndpointMessagePins(raw),
+  pin: EndpointMessagePin(raw),
+  renamePin: EndpointMessageRenamePin(raw),
+  unpin: EndpointMessageUnpin(raw),
+  list: EndpointMessageList(raw),
+})
 
 const EndpointModelList = (raw: RawClient["server.model"]) => (input?: ModelListInput) =>
   preserveEffect<ModelListOutput>()(

@@ -251,6 +251,17 @@ export type EventLogSynced = { type: "log.synced"; aggregateID: string; seq?: nu
 
 export type SessionInterruptResponse = { interrupted: boolean }
 
+export type SessionMessagePinInfo = {
+  sessionID: string
+  messageID: string
+  label: string | null
+  preview: string
+  role: "user" | "assistant"
+  created: number
+  updated: number
+  messageCreated: number
+}
+
 export type ModelReasoningField = "reasoning" | "reasoning_content" | "reasoning_text" | (string & {})
 
 export type ModelMaxTokensField = "max_completion_tokens" | "max_tokens"
@@ -1033,6 +1044,15 @@ export type SessionCompactionDelta = {
   data: { sessionID: string; text: string }
 }
 
+export type SessionPinsUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.pins.updated"
+  location?: LocationRef
+  data: { sessionID: string }
+}
+
 export type RemoteStatus = {
   id: string
   created: number
@@ -1454,6 +1474,8 @@ export type SessionMessageAssistantReasoning1 = {
 }
 
 export type ToolContent1 = ToolTextContent | ToolFileContent1
+
+export type SessionMessagePinPage = { data: Array<SessionMessagePinInfo>; next?: string }
 
 export type ModelCompatibility = {
   reasoningField?: ModelReasoningField
@@ -2460,6 +2482,7 @@ export type V2Event =
   | SessionRevertStaged
   | SessionRevertCleared
   | SessionRevertCommitted
+  | SessionPinsUpdated
   | RemoteStatus
   | RemoteSync
   | FilesystemChanged
@@ -4568,6 +4591,35 @@ export type SessionViewInput = {
 }
 
 export type SessionViewOutput = void
+
+export type MessagePinsInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly cursor?: { readonly cursor?: string | undefined }["cursor"]
+}
+
+export type MessagePinsOutput = SessionMessagePinPage
+
+export type MessagePinInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+}
+
+export type MessagePinOutput = void
+
+export type MessageRenamePinInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+  readonly label: { readonly label: string | null }["label"]
+}
+
+export type MessageRenamePinOutput = void
+
+export type MessageUnpinInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+}
+
+export type MessageUnpinOutput = void
 
 export type MessageListInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
