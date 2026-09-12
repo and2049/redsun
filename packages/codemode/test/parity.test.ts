@@ -81,27 +81,26 @@ describe("H3: array property access reads as undefined (not a throw)", () => {
     ).toEqual(["b", "b", null, null, "a", null])
   })
 
-  test("noncanonical keys cannot mutate or delete an aliased element", async () => {
+  test("noncanonical keys are ordinary properties that never alias an element", async () => {
     expect(
       await value(`
         const values = ["a", "b"]
-        let writes = 0
-        try { values["01"] = ++writes } catch {}
+        values["01"] = "c"
+        const before = [values["01"], values[1], values.length]
         const removed = delete values["01"]
-        return [writes, removed, values]
+        return [before, removed, values["01"], values]
       `),
-    ).toEqual([0, true, ["a", "b"]])
+    ).toEqual([["c", "b", 2], true, null, ["a", "b"]])
   })
 
-  test("the maximum array length is not accepted as an array index", async () => {
+  test("the maximum array length is a property, not an index", async () => {
     expect(
       await value(`
         const values = []
-        let writes = 0
-        try { values["4294967295"] = ++writes } catch {}
-        return [writes, values.length]
+        values["4294967295"] = 1
+        return [values["4294967295"], values.length]
       `),
-    ).toEqual([0, 0])
+    ).toEqual([1, 0])
   })
 })
 
@@ -118,9 +117,12 @@ describe("H6: object spread of null/undefined is a no-op", () => {
     expect(await value(`const o = { a: 1 }; return { ...o, b: 2 }`)).toEqual({ a: 1, b: 2 })
   })
 
-  test("spreading an array into an object still errors", async () => {
-    const err = await error(`return { ...[1,2], a: 1 }`)
-    expect(err.kind).toBe("InvalidDataValue")
+  test("spreading an array or string into an object copies index keys, like JS", async () => {
+    expect(await value(`return { ...[1,2], a: 1 }`)).toEqual({ 0: 1, 1: 2, a: 1 })
+    expect(await value(`return { ..."ab", ...5, ...true, ...(() => 1), ...new Map([[1, 2]]) }`)).toEqual({
+      0: "a",
+      1: "b",
+    })
   })
 })
 
@@ -243,16 +245,14 @@ describe("property deletion", () => {
     expect(await value(`const values = [1, 2]; return [delete values.length, values.length]`)).toEqual([false, 2])
   })
 
-  test("does not broaden unsupported array property assignment", async () => {
+  test("arrays accept named properties like JS, and they stay out of the JSON form", async () => {
     expect(
       await value(`
-        const values = []
-        let rightHandSideRuns = 0
-        function next() { rightHandSideRuns++; return 1 }
-        try { values.field = next() } catch {}
-        return rightHandSideRuns
+        const values = [1]
+        values.field = 2
+        return [values.field, Object.keys(values), values]
       `),
-    ).toBe(0)
+    ).toEqual([2, ["0", "field"], [1]])
   })
 
   test("optional deletion short-circuits without evaluating the key", async () => {
@@ -488,12 +488,8 @@ describe("CodeMode-specific string behavior", () => {
     expect(await value(`try { "x".normalize("nope"); return "no" } catch (e) { return e.message }`)).toContain('"NFC"')
   })
 
-  test("does not expose obsolete string aliases", async () => {
-    expect(await value(`return [typeof "x".trimLeft, typeof "x".trimRight, typeof "x".substr]`)).toEqual([
-      "undefined",
-      "undefined",
-      "undefined",
-    ])
+  test("exposes the Annex B string aliases every engine ships", async () => {
+    expect(await value(`return [" x ".trimLeft(), " x ".trimRight(), "abc".substr(1, 1)]`)).toEqual(["x ", " x", "b"])
   })
 })
 
@@ -915,5 +911,50 @@ describe("coercion parity: unknown static members read as undefined", () => {
       null,
       null,
     ])
+  })
+})
+
+describe("functions are objects", () => {
+  test("name follows NamedEvaluation and length counts required parameters", async () => {
+    expect(
+      await value(`
+        function decl(a, b = 1, ...rest) {}
+        const arrow = () => {}
+        const named = function inner() {}
+        let assigned
+        assigned = (a, b) => {}
+        const { fromDefault = () => {} } = {}
+        const [fromArray = function () {}] = []
+        const obj = { method() {}, key: () => {}, [Symbol.iterator]: () => {} }
+        const passthrough = (0, () => {})
+        return [
+          [decl.name, decl.length],
+          [arrow.name, named.name, assigned.name, assigned.length],
+          [fromDefault.name, fromArray.name],
+          [obj.method.name, obj.key.name, obj[Symbol.iterator].name],
+          passthrough.name,
+        ]
+      `),
+    ).toEqual([
+      ["decl", 1],
+      ["arrow", "inner", "assigned", 2],
+      ["fromDefault", "fromArray"],
+      ["method", "key", "[Symbol.iterator]"],
+      "",
+    ])
+  })
+
+  test("functions hold own properties; name and length are read-only", async () => {
+    expect(
+      await value(`
+        const fn = () => 1
+        fn.count = 2
+        fn.count += 1
+        let renamed = false
+        try { fn.name = "other" } catch (error) { renamed = error instanceof TypeError }
+        const { name, count } = fn
+        return [fn.count, Object.keys(fn), "count" in fn, "name" in fn, name, count, renamed, delete fn.count, fn.count]
+      `),
+    ).toEqual([3, ["count"], true, true, "fn", 3, true, true, null])
   })
 })

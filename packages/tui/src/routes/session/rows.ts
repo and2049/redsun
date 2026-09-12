@@ -4,36 +4,20 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { useConfig } from "../../config"
 import { useData } from "../../context/data"
 import { useClient } from "../../context/client"
-
-export type PartRef = {
-  messageID: string
-  partID: string
-}
-
-export type CacheUsage = {
-  read: number
-  model: SessionMessageAssistant["model"]
-}
-
-export type SessionRow =
-  | { type: "message"; messageID: string }
-  | { type: "compaction-queued"; inboxID: string }
-  | { type: "part"; ref: PartRef }
-  | {
-      type: "group"
-      kind: "reasoning"
-      refs: PartRef[]
-      completed: boolean
-    }
-  | {
-      type: "group"
-      kind: "exploration"
-      refs: PartRef[]
-      pending: PartRef[]
-      completed: boolean
-    }
-  | { type: "assistant-footer"; messageID: string }
-  | { type: "turn-usage"; messageIDs: string[]; previousCache?: CacheUsage }
+import {
+  append,
+  completePrevious,
+  groupRefs,
+  hasPart,
+  partitionPending,
+  projectEntries,
+  type AppendPart,
+  type CacheUsage,
+  type PartRef,
+  type ProjectionEntry,
+  type SessionRow,
+} from "./grouping/session"
+export type { CacheUsage, PartRef, SessionRow } from "./grouping/session"
 
 export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessionID: string) => void) {
   const data = useData()
@@ -182,7 +166,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
           (row) =>
             row.type === "group" &&
             row.kind === "reasoning" &&
-            row.refs.some((item) => item.messageID === ref.messageID && item.partID === ref.partID),
+            groupRefs(row).some((item) => item.messageID === ref.messageID && item.partID === ref.partID),
         )
         if (row?.type === "group" && row.kind === "reasoning") row.completed = true
       }),
@@ -314,16 +298,15 @@ export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new S
   const usage = turnTokens
     ? { steps: [] as SessionMessageAssistant[], previousTurnCache: undefined as CacheUsage | undefined }
     : undefined
-  const rows = [
+  const entries = [
     ...messages.filter((message) => !pending.has(message.id)),
     ...pendingCompactions,
     ...messages.filter(isInput),
-  ].reduce<SessionRow[]>((rows, message) => {
+  ].reduce<ProjectionEntry[]>((rows, message) => {
     if (message.type !== "assistant") {
       if (message.type === "synthetic" && !message.description?.trim()) return rows
       if (message.type === "compaction" && message.status === "completed" && usage) usage.previousTurnCache = undefined
-      if (!pending.has(message.id)) completePrevious(rows)
-      rows.push({ type: "message", messageID: message.id })
+      rows.push({ entry: { type: "message", messageID: message.id }, closesPrevious: !pending.has(message.id) })
       return rows
     }
     usage?.steps.push(message)
@@ -331,21 +314,22 @@ export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new S
     message.content.forEach((part) => {
       const partID = part.type === "tool" ? part.id : `${part.type}:${ordinals[part.type]++}`
       if ((part.type === "text" || part.type === "reasoning") && !part.text.trim()) return
-      append(rows, { messageID: message.id, partID }, part)
+      rows.push({ entry: { type: "part", ref: { messageID: message.id, partID } }, part })
     })
     const terminal = (message.finish && !["tool-calls", "unknown"].includes(message.finish)) || message.error
     if (terminal || message.retry) {
-      completePrevious(rows)
-      rows.push({ type: "assistant-footer", messageID: message.id })
+      rows.push({ entry: { type: "assistant-footer", messageID: message.id } })
     }
     if (terminal && usage) {
       const stepsWithUsage = usage.steps.filter(hasTokenUsage)
       const last = stepsWithUsage.at(-1)
       if (last) {
         rows.push({
-          type: "turn-usage",
-          messageIDs: stepsWithUsage.map((step) => step.id),
-          ...(usage.previousTurnCache === undefined ? {} : { previousCache: usage.previousTurnCache }),
+          entry: {
+            type: "turn-usage",
+            messageIDs: stepsWithUsage.map((step) => step.id),
+            ...(usage.previousTurnCache === undefined ? {} : { previousCache: usage.previousTurnCache }),
+          },
         })
         usage.previousTurnCache = { read: last.tokens.cache.read, model: last.model }
       }
@@ -353,6 +337,7 @@ export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new S
     }
     return rows
   }, [])
+  const rows = projectEntries(entries)
   // A turn still generating keeps a live footer under its newest step so the timer and
   // tok/s stay visible while the model works; terminal and retry footers land above.
   const running = messages.findLast(
@@ -500,7 +485,7 @@ function rowBoundaryMessageID(row: SessionRow, messages: Map<string, SessionMess
     row.type === "part"
       ? row.ref.messageID
       : row.type === "group"
-        ? row.refs[0]?.messageID
+        ? groupRefs(row)[0]?.messageID
         : row.type === "assistant-footer"
           ? row.messageID
           : row.type === "turn-usage"
@@ -518,56 +503,6 @@ export function resolvePart(message: SessionMessageAssistant, partID: string) {
   if (!match) return
   const ordinal = Number(match[2])
   return message.content.filter((part) => part.type === match[1])[ordinal]
-}
-
-type AppendPart =
-  | { type: "text" }
-  | { type: "reasoning"; time?: { completed?: number } }
-  | { type: "tool"; name: string }
-
-function append(rows: SessionRow[], ref: PartRef, part: AppendPart, index = rows.length) {
-  if (part.type === "reasoning") {
-    const previous = rows[index - 1]
-    if (previous?.type === "group" && previous.kind === "reasoning") {
-      previous.refs.push(ref)
-      previous.completed &&= part.time?.completed !== undefined
-      return
-    }
-    completePrevious(rows, index)
-    rows.splice(index, 0, {
-      type: "group",
-      kind: "reasoning",
-      refs: [ref],
-      completed: part.time?.completed !== undefined,
-    })
-    return
-  }
-  if (part.type === "tool" && exploration(part.name)) {
-    const previous = rows[index - 1]
-    if (previous?.type === "group" && previous.kind === "exploration") {
-      previous.refs.push(ref)
-      return
-    }
-    completePrevious(rows, index)
-    rows.splice(index, 0, { type: "group", kind: "exploration", refs: [ref], pending: [], completed: false })
-    return
-  }
-  completePrevious(rows, index)
-  rows.splice(index, 0, { type: "part", ref })
-}
-
-function completePrevious(rows: SessionRow[], index = rows.length) {
-  const previous = rows[index - 1]
-  if (previous?.type === "group") previous.completed = true
-}
-
-function partitionPending(rows: SessionRow[], pending: Set<string>) {
-  rows.forEach((row) => {
-    if (row.type !== "group" || row.kind !== "exploration") return
-    const refs = [...row.refs, ...row.pending]
-    row.refs = refs.filter((ref) => !pending.has(ref.partID))
-    row.pending = refs.filter((ref) => pending.has(ref.partID))
-  })
 }
 
 export function explorationSummary(names: readonly string[]) {
@@ -607,19 +542,4 @@ const RUN_NOUNS: Record<string, [string, string]> = {
   list: ["directory", "directories"],
   fetch: ["page", "pages"],
   web: ["web search", "web searches"],
-}
-
-const EXPLORATION_TOOLS = new Set(["read", "glob", "grep", "list", "webfetch", "websearch"])
-
-function exploration(name: string) {
-  return EXPLORATION_TOOLS.has(name.toLowerCase())
-}
-
-function hasPart(rows: SessionRow[], ref: PartRef) {
-  return rows.some((row) => {
-    if (row.type === "part") return row.ref.messageID === ref.messageID && row.ref.partID === ref.partID
-    if (row.type !== "group") return false
-    const refs = row.kind === "exploration" ? [...row.refs, ...row.pending] : row.refs
-    return refs.some((item) => item.messageID === ref.messageID && item.partID === ref.partID)
-  })
 }

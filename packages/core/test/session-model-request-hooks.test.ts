@@ -45,6 +45,13 @@ describe("SessionModelRequest HTTP hooks", () => {
     Effect.gen(function* () {
       const hooks = yield* PluginHooks.Service
       const seen: Array<{ hook: string; kind: SessionRequestKind; agent: Agent.ID }> = []
+      const requestHooks: string[] = []
+      for (const name of ["context", "compaction", "generate", "title"] as const)
+        yield* hooks.register("session", name, () =>
+          Effect.sync(() => {
+            requestHooks.push(name)
+          }),
+        )
       yield* hooks.register("session", "http.request", (event) =>
         Effect.sync(() => {
           seen.push({ hook: "request", kind: event.kind, agent: event.agent })
@@ -79,6 +86,7 @@ describe("SessionModelRequest HTTP hooks", () => {
           { hook: "response", kind, agent: Agent.ID.make("build") },
         ]),
       )
+      expect(requestHooks).toEqual(["context", "compaction", "title", "generate"])
     }).pipe(Effect.provideService(SessionModelTransport.Service, transport)),
   )
 })

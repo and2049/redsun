@@ -1,6 +1,7 @@
 import type {
   ArrayExpression,
   ArrayPattern,
+  AssignmentPattern,
   ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentProperty,
@@ -41,13 +42,12 @@ import type {
   YieldExpression,
 } from "acorn"
 import { Cause, Deferred, Effect, Exit } from "effect"
-import { ToolRuntimeError, type SafeObject, toProgram } from "../data.js"
+import { ToolRuntimeError, toProgram } from "../data.js"
 import { ToolReference } from "../tool-runtime.js"
 import {
   type AstNode,
   AsyncIteratorSymbol,
   type Binding,
-  CodeModeFunction,
   CodeModeGenerator,
   ComputedValue,
   GeneratorMethodReference,
@@ -55,9 +55,7 @@ import {
   type GeneratorRequestKind,
   IntrinsicReference,
   InterpreterRuntimeError,
-  isRecord,
   IteratorSymbol,
-  IteratorSymbols,
   type MemberReference,
   OptionalShortCircuit,
   PromiseInstanceMethodReference,
@@ -66,9 +64,22 @@ import {
   unsupportedSyntax,
 } from "./model.js"
 import { caughtErrorValue } from "./errors.js"
-import { globals } from "./globals.js"
+import { globals, type Host } from "./globals.js"
 import { HostFunction, HostNamespace } from "./host.js"
 import { invokeIntrinsic } from "./methods.js"
+import {
+  assign,
+  get,
+  has,
+  ownKeys,
+  parseArrayIndex,
+  ProgramArray,
+  ProgramFunction,
+  ProgramObject,
+  record,
+  remove,
+  set,
+} from "./objects.js"
 import { preserveConsumerError, type Runner } from "./runner.js"
 import { invokePromiseInstanceMethod, PromiseRuntime, resolvePromise, resolvePromiseValue } from "./promises.js"
 import {
@@ -85,16 +96,20 @@ import { numberMethods } from "../stdlib/number.js"
 import { constructRegExp, regexpMethods, regexpProperties } from "../stdlib/regexp.js"
 import { stringMethods } from "../stdlib/string.js"
 import { uriArgument, urlMethods, urlProperties, urlSearchParamsMethods, urlWritableProperties } from "../stdlib/url.js"
+import { enumerableSource } from "../stdlib/object.js"
 import { coerceToNumber, coerceToString, compoundOperators, errorBrandName } from "../stdlib/value.js"
 import { Values } from "../values.js"
 
-const MAX_ARRAY_LENGTH = 4_294_967_295
-
-const parseArrayIndex = (key: string | number): number | undefined => {
-  const property = String(key)
-  if (!/^(0|[1-9]\d*)$/.test(property)) return undefined
-  const index = Number(property)
-  return index < MAX_ARRAY_LENGTH ? index : undefined
+// What a loop does with its body's result: exit with a StatementResult, or undefined to keep iterating.
+// Unlabelled break ends this loop; a label the loop does not carry propagates outward.
+const loopExit = (result: StatementResult, labels: ReadonlySet<string> | undefined): StatementResult | undefined => {
+  if (result.kind === "return") return result
+  if (result.kind === "break") {
+    if (result.label !== undefined && !labels?.has(result.label)) return result
+    return { kind: "none" }
+  }
+  if (result.kind === "continue" && result.label !== undefined && !labels?.has(result.label)) return result
+  return undefined
 }
 
 const calleeDescription = (callee: Expression | Super | undefined): string => {
@@ -113,14 +128,11 @@ const calleeDescription = (callee: Expression | Super | undefined): string => {
   return "The called value"
 }
 
-const hasOwn = (value: unknown, key: PropertyKey): boolean =>
-  value !== null && typeof value === "object" && Object.hasOwn(value, key)
-
 const constructorName = (value: unknown): string | undefined => {
   if (typeof value === "string") return "String"
   if (typeof value === "number") return "Number"
   if (typeof value === "boolean") return "Boolean"
-  if (Array.isArray(value)) return "Array"
+  if (value instanceof ProgramArray) return "Array"
   if (value instanceof Values.Date) return "Date"
   if (value instanceof Values.RegExp) return "RegExp"
   if (value instanceof Values.Map) return "Map"
@@ -128,7 +140,7 @@ const constructorName = (value: unknown): string | undefined => {
   if (value instanceof Values.URL) return "URL"
   if (value instanceof Values.URLSearchParams) return "URLSearchParams"
   if (value instanceof Values.Promise) return "Promise"
-  if (value === null || typeof value !== "object" || isRuntimeReference(value)) return undefined
+  if (!(value instanceof ProgramObject) || value instanceof ProgramFunction) return undefined
   return errorBrandName(value) ?? "Object"
 }
 
@@ -165,6 +177,51 @@ const collectPatternNames = (pattern: Pattern, out: Array<string> = []): Array<s
   return out
 }
 
+// `var` names declared anywhere in a function body except inside nested functions, which own theirs.
+// Memoized per body: a function's var names never change, and hoisting runs on every call.
+const varNames = new WeakMap<ReadonlyArray<Statement | ModuleDeclaration>, ReadonlyArray<string>>()
+const collectVarNames = (
+  node: Statement | ModuleDeclaration | null | undefined,
+  out: Array<string> = [],
+): Array<string> => {
+  if (!node) return out
+  switch (node.type) {
+    case "VariableDeclaration":
+      if (node.kind === "var") for (const declaration of node.declarations) collectPatternNames(declaration.id, out)
+      break
+    case "BlockStatement":
+      for (const statement of node.body) collectVarNames(statement, out)
+      break
+    case "IfStatement":
+      collectVarNames(node.consequent, out)
+      collectVarNames(node.alternate, out)
+      break
+    case "ForStatement":
+      if (node.init?.type === "VariableDeclaration") collectVarNames(node.init, out)
+      collectVarNames(node.body, out)
+      break
+    case "ForInStatement":
+    case "ForOfStatement":
+      if (node.left.type === "VariableDeclaration") collectVarNames(node.left, out)
+      collectVarNames(node.body, out)
+      break
+    case "WhileStatement":
+    case "DoWhileStatement":
+    case "LabeledStatement":
+      collectVarNames(node.body, out)
+      break
+    case "SwitchStatement":
+      for (const item of node.cases) for (const statement of item.consequent) collectVarNames(statement, out)
+      break
+    case "TryStatement":
+      collectVarNames(node.block, out)
+      collectVarNames(node.handler?.body, out)
+      collectVarNames(node.finalizer, out)
+      break
+  }
+  return out
+}
+
 const loopDeclaration = (left: VariableDeclaration | Pattern, statement: "for...of" | "for...in") => {
   if (left.type !== "VariableDeclaration") return undefined
   const declaration = left.declarations.length === 1 ? left.declarations[0] : undefined
@@ -180,7 +237,7 @@ const loopDeclaration = (left: VariableDeclaration | Pattern, statement: "for...
 }
 
 type CustomIterator = {
-  iterator: SafeObject | CodeModeGenerator
+  iterator: ProgramObject | CodeModeGenerator
   next: unknown
   asynchronous: boolean
 }
@@ -196,13 +253,6 @@ const isOpaqueMemberReference = (value: unknown): value is OpaqueMemberReference
   value instanceof PromiseInstanceMethodReference ||
   value instanceof IntrinsicReference ||
   value instanceof GeneratorMethodReference
-
-const copyIteratorSymbols = (source: object, target: object, consumed?: ReadonlySet<PropertyKey>): void => {
-  for (const symbol of IteratorSymbols) {
-    if (!consumed?.has(symbol) && Object.hasOwn(source, symbol))
-      Reflect.set(target, symbol, Reflect.get(source, symbol))
-  }
-}
 
 type GeneratorRequest = {
   kind: GeneratorRequestKind
@@ -235,6 +285,7 @@ export class Runtime<R> {
     readonly toolKeys: (path: ReadonlyArray<string>) => ReadonlyArray<string>,
     readonly promises: PromiseRuntime<R>,
     readonly logs: Array<string> = [],
+    extraGlobals: (host: Host<R>) => ReadonlyArray<readonly [string, unknown]> = () => [],
   ) {
     const globalScope = new Map<string, Binding>()
     // Calling back into the program never reads frame state, so any frame serves; the root is always alive.
@@ -245,7 +296,7 @@ export class Runtime<R> {
       settlePromise: (promise) => this.root.settlePromise(promise),
       syncIterator: (value, node) => this.root.syncIterator(value, node),
     }
-    this.builtins = new Map(globals(this))
+    this.builtins = new Map([...globals(this), ...extraGlobals(this)])
     for (const [name, value] of this.builtins) globalScope.set(name, { mutable: false, value })
   }
 
@@ -271,6 +322,7 @@ class Frame<R> {
     return Effect.gen(function* () {
       self.predeclareLexical(program.body)
       self.hoistFunctions(program.body)
+      self.hoistVars(program.body)
       let value: unknown = undefined
       for (const [index, statement] of program.body.entries()) {
         if (index === program.body.length - 1 && statement.type === "ExpressionStatement") {
@@ -383,14 +435,39 @@ class Frame<R> {
     }).pipe(Effect.ensuring(Effect.sync(() => self.scopes.pop())))
   }
 
-  private createFunction(node: FunctionDeclaration | FunctionExpression | ArrowFunctionExpression): CodeModeFunction {
-    return new CodeModeFunction(node.params, node.body, this.scopes.capture(), node.async, node.generator)
+  private createFunction(
+    node: FunctionDeclaration | FunctionExpression | ArrowFunctionExpression,
+    name = node.type === "ArrowFunctionExpression" ? "" : (node.id?.name ?? ""),
+  ): ProgramFunction {
+    return new ProgramFunction(name, node.params, node.body, this.scopes.capture(), node.async, node.generator)
+  }
+
+  // NamedEvaluation: an anonymous function definition takes the name of what it is assigned to.
+  private evaluateNamed(node: Expression, name: string): Effect.Effect<unknown, unknown, R> {
+    if (node.type === "ArrowFunctionExpression" || (node.type === "FunctionExpression" && !node.id)) {
+      return Effect.sync(() => this.createFunction(node, name))
+    }
+    return this.evaluateExpression(node)
   }
 
   private hoistFunctions(statements: ReadonlyArray<Statement | ModuleDeclaration>): void {
     for (const node of statements) {
       if (node.type !== "FunctionDeclaration") continue
       this.scopes.declare(node.id.name, this.createFunction(node), true, node)
+    }
+  }
+
+  // Hoisted `var` bindings start undefined, or copy a same-named parameter. Function bodies hoist
+  // into their own scope above the parameters so closures in parameter defaults keep seeing outer names.
+  private hoistVars(statements: ReadonlyArray<Statement | ModuleDeclaration>, parameters?: Map<string, Binding>): void {
+    const names =
+      varNames.get(statements) ??
+      statements.reduce<Array<string>>((out, statement) => collectVarNames(statement, out), [])
+    varNames.set(statements, names)
+    const scope = this.scopes.current()
+    for (const name of names) {
+      if (scope.has(name)) continue
+      scope.set(name, { mutable: true, value: parameters?.get(name)?.value, initialized: true })
     }
   }
 
@@ -431,7 +508,9 @@ class Frame<R> {
       self.scopes.push()
       return yield* Effect.gen(function* () {
         const cases = node.cases
-        self.predeclareLexical(cases.flatMap((branch) => branch.consequent))
+        const statements = cases.flatMap((branch) => branch.consequent)
+        self.predeclareLexical(statements)
+        self.hoistFunctions(statements)
         let defaultIndex: number | undefined
         let selected: number | undefined
         for (const [index, branch] of cases.entries()) {
@@ -473,21 +552,8 @@ class Frame<R> {
     const self = this
     return Effect.gen(function* () {
       while (yield* self.evaluateExpression(node.test)) {
-        const result = yield* self.evaluateStatement(node.body)
-
-        if (result.kind === "continue") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          continue
-        }
-
-        if (result.kind === "break") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          return { kind: "none" } satisfies StatementResult
-        }
-
-        if (result.kind === "return") {
-          return result
-        }
+        const exit = loopExit(yield* self.evaluateStatement(node.body), labels)
+        if (exit !== undefined) return exit
       }
 
       return { kind: "none" } satisfies StatementResult
@@ -501,21 +567,8 @@ class Frame<R> {
     const self = this
     return Effect.gen(function* () {
       do {
-        const result = yield* self.evaluateStatement(node.body)
-
-        if (result.kind === "continue") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          continue
-        }
-
-        if (result.kind === "break") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          return { kind: "none" } satisfies StatementResult
-        }
-
-        if (result.kind === "return") {
-          return result
-        }
+        const exit = loopExit(yield* self.evaluateStatement(node.body), labels)
+        if (exit !== undefined) return exit
       } while (yield* self.evaluateExpression(node.test))
 
       return { kind: "none" } satisfies StatementResult
@@ -561,26 +614,12 @@ class Frame<R> {
       nextIteration()
 
       while (testNode ? yield* self.evaluateExpression(testNode) : true) {
-        const result = yield* self.evaluateStatement(node.body)
-
-        if (result.kind === "return") {
-          return result
-        }
-
-        if (result.kind === "break") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          return { kind: "none" } satisfies StatementResult
-        }
-
-        if (result.kind === "continue" && result.label !== undefined && !labels?.has(result.label)) return result
+        const exit = loopExit(yield* self.evaluateStatement(node.body), labels)
+        if (exit !== undefined) return exit
 
         nextIteration()
         if (updateNode) {
           yield* self.evaluateExpression(updateNode)
-        }
-
-        if (result.kind === "continue") {
-          continue
         }
       }
 
@@ -624,10 +663,12 @@ class Frame<R> {
 
       const evaluateBody = (value: unknown) =>
         Effect.gen(function* () {
-          if (declared) {
+          if (declared?.lexical) {
             self.scopes.push()
-            if (declared.lexical) self.predeclarePattern(declared.pattern, declared.mutable, left)
-            yield* self.declarePattern(declared.pattern, value, declared.mutable, left, declared.lexical)
+            self.predeclarePattern(declared.pattern, declared.mutable, left)
+            yield* self.declarePattern(declared.pattern, value, declared.mutable, left, true)
+          } else if (declared) {
+            yield* self.assignPattern(declared.pattern, value, left)
           } else if (assignment) {
             yield* self.assignPattern(assignment, value, left)
           }
@@ -635,7 +676,7 @@ class Frame<R> {
         }).pipe(
           Effect.ensuring(
             Effect.sync(() => {
-              if (declared) self.scopes.pop()
+              if (declared?.lexical) self.scopes.pop()
             }),
           ),
         )
@@ -654,22 +695,10 @@ class Frame<R> {
           }
           return yield* Effect.failCause(bodyExit.cause)
         }
-        const result = bodyExit.value
-
-        if (result.kind === "return") {
+        const exit = loopExit(bodyExit.value, labels)
+        if (exit !== undefined) {
           yield* close()
-          return result
-        }
-
-        if (result.kind === "break") {
-          yield* close()
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          return { kind: "none" } satisfies StatementResult
-        }
-
-        if (result.kind === "continue" && result.label !== undefined && !labels?.has(result.label)) {
-          yield* close()
-          return result
+          return exit
         }
       }
     }).pipe(
@@ -705,22 +734,26 @@ class Frame<R> {
   }
 
   syncIterator(value: unknown, node: AstNode) {
-    const iterator = Array.isArray(value)
-      ? value[Symbol.iterator]()
-      : typeof value === "string"
-        ? value[Symbol.iterator]()
-        : value instanceof Values.Map
-          ? value.map.entries()
-          : value instanceof Values.Set
-            ? value.set.values()
-            : value instanceof Values.URLSearchParams
-              ? value.params.entries()
-              : undefined
+    const iterator =
+      value instanceof ProgramArray
+        ? value.items[Symbol.iterator]()
+        : typeof value === "string"
+          ? value[Symbol.iterator]()
+          : value instanceof Values.Map
+            ? value.map.entries()
+            : value instanceof Values.Set
+              ? value.set.values()
+              : value instanceof Values.URLSearchParams
+                ? value.params.entries()
+                : undefined
     if (iterator !== undefined) {
       return Effect.succeed({
         next: Effect.sync(() => {
           const step = iterator.next()
-          return { done: Boolean(step.done), value: step.value }
+          return {
+            done: Boolean(step.done),
+            value: Array.isArray(step.value) ? new ProgramArray(step.value) : step.value,
+          }
         }),
         close: Effect.void,
       })
@@ -745,9 +778,9 @@ class Frame<R> {
         asynchronous: value.asynchronous,
       })
     }
-    if (!isRecord(value) || isRuntimeReference(value)) return Effect.undefined
-    const asyncMethod = allowAsync ? Reflect.get(value, AsyncIteratorSymbol) : undefined
-    const method = asyncMethod ?? Reflect.get(value, IteratorSymbol)
+    if (!(value instanceof ProgramObject)) return Effect.undefined
+    const asyncMethod = allowAsync ? get(value, AsyncIteratorSymbol) : undefined
+    const method = asyncMethod ?? get(value, IteratorSymbol)
     if (method === undefined || method === null) return Effect.undefined
     const self = this
     return Effect.map(
@@ -759,7 +792,7 @@ class Frame<R> {
           next:
             object instanceof CodeModeGenerator
               ? new GeneratorMethodReference(object, "next")
-              : self.requireIteratorMethod(object.next, "Iterator next", node),
+              : self.requireIteratorMethod(get(object, "next"), "Iterator next", node),
           asynchronous: asyncMethod !== undefined && asyncMethod !== null,
         }
       },
@@ -775,7 +808,7 @@ class Frame<R> {
           "Iterator next() result",
           node,
         )
-        return { done: Boolean(object.done), value: object.value }
+        return { done: Boolean(get(object, "done")), value: get(object, "value") }
       }
 
       const called = yield* Effect.exit(self.invokeCallable(iterator.next, [], node))
@@ -786,7 +819,7 @@ class Frame<R> {
       const captured = yield* Effect.exit(
         Effect.sync(() => {
           const object = self.requireIteratorObject(called.value, "Iterator next() result", node)
-          return { done: Boolean(object.done), value: object.value }
+          return { done: Boolean(get(object, "done")), value: get(object, "value") }
         }),
       )
       if (!Exit.isSuccess(captured)) {
@@ -806,7 +839,7 @@ class Frame<R> {
     const close =
       iterator.iterator instanceof CodeModeGenerator
         ? new GeneratorMethodReference(iterator.iterator, "return")
-        : iterator.iterator.return
+        : get(iterator.iterator, "return")
     if (close === undefined || close === null) return iterator.asynchronous || !awaiting ? Effect.void : Effect.yieldNow
     const self = this
     return Effect.gen(function* () {
@@ -826,7 +859,7 @@ class Frame<R> {
         return yield* Effect.failCause(called.cause)
       }
       const captured = yield* Effect.exit(
-        Effect.sync(() => self.requireIteratorObject(called.value, "Iterator return() result", node).value),
+        Effect.sync(() => get(self.requireIteratorObject(called.value, "Iterator return() result", node), "value")),
       )
       if (!Exit.isSuccess(captured)) {
         if (awaiting) yield* Effect.yieldNow
@@ -836,12 +869,12 @@ class Frame<R> {
     })
   }
 
-  private requireIteratorObject(value: unknown, context: string, node: AstNode): SafeObject {
-    if (isRecord(value) && !isRuntimeReference(value)) return value
+  private requireIteratorObject(value: unknown, context: string, node: AstNode): ProgramObject {
+    if (value instanceof ProgramObject) return value
     throw new InterpreterRuntimeError(`${context} must be an object.`, node).as("TypeError")
   }
 
-  private requireIterator(value: unknown, node: AstNode): SafeObject | CodeModeGenerator {
+  private requireIterator(value: unknown, node: AstNode): ProgramObject | CodeModeGenerator {
     return value instanceof CodeModeGenerator
       ? value
       : this.requireIteratorObject(value, "Iterator method result", node)
@@ -852,17 +885,11 @@ class Frame<R> {
     throw new InterpreterRuntimeError(`${context} must be a function.`, node).as("TypeError")
   }
 
-  private enumerableKeys(value: unknown): Array<string> | undefined {
-    if (value instanceof ToolReference) {
-      return [...this.runtime.toolKeys(value.path)]
-    }
-    if (Array.isArray(value)) {
-      return Object.keys(value)
-    }
-    if (value !== null && typeof value === "object" && !isRuntimeReference(value)) {
-      return Object.keys(value)
-    }
-    return undefined
+  // for...in over null/undefined iterates nothing, like JS.
+  private enumerableKeys(value: unknown, node: AstNode): Array<string> {
+    if (value instanceof ToolReference) return [...this.runtime.toolKeys(value.path)]
+    if (value === null || value === undefined) return []
+    return ownKeys(enumerableSource("for...in", value, node)).filter((key): key is string => typeof key === "string")
   }
 
   private evaluateForInStatement(
@@ -878,13 +905,7 @@ class Frame<R> {
       if (declared?.lexical) self.predeclarePattern(declared.pattern, declared.mutable, left)
       const right = yield* self.evaluateExpression(node.right)
 
-      const keys = self.enumerableKeys(right)
-      if (keys === undefined) {
-        throw new InterpreterRuntimeError(
-          "for...in requires a plain object, array, or tools reference. Use for...of for arrays/strings/Maps/Sets, or Object.keys(value) for a key list.",
-          node,
-        )
-      }
+      const keys = self.enumerableKeys(right, node.right)
 
       if (left.type !== "Identifier" && left.type !== "VariableDeclaration") {
         throw new InterpreterRuntimeError("Unsupported for...in binding.", left)
@@ -893,10 +914,12 @@ class Frame<R> {
 
       for (const key of keys) {
         const result = yield* Effect.gen(function* () {
-          if (declared) {
+          if (declared?.lexical) {
             self.scopes.push()
-            if (declared.lexical) self.predeclarePattern(declared.pattern, declared.mutable, left)
-            yield* self.declarePattern(declared.pattern, key, declared.mutable, left, declared.lexical)
+            self.predeclarePattern(declared.pattern, declared.mutable, left)
+            yield* self.declarePattern(declared.pattern, key, declared.mutable, left, true)
+          } else if (declared) {
+            yield* self.assignPattern(declared.pattern, key, left)
           } else if (assignmentName) {
             self.scopes.set(assignmentName, key, left)
           }
@@ -904,24 +927,13 @@ class Frame<R> {
         }).pipe(
           Effect.ensuring(
             Effect.sync(() => {
-              if (declared) self.scopes.pop()
+              if (declared?.lexical) self.scopes.pop()
             }),
           ),
         )
 
-        if (result.kind === "return") {
-          return result
-        }
-
-        if (result.kind === "break") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          return { kind: "none" } satisfies StatementResult
-        }
-
-        if (result.kind === "continue") {
-          if (result.label !== undefined && !labels?.has(result.label)) return result
-          continue
-        }
+        const exit = loopExit(result, labels)
+        if (exit !== undefined) return exit
       }
 
       return { kind: "none" } satisfies StatementResult
@@ -1022,8 +1034,16 @@ class Frame<R> {
         }
 
         const init = declaration.init
-        const value = init ? yield* self.evaluateExpression(init) : undefined
-        yield* self.declarePattern(declaration.id, value, kind !== "const", declaration, kind !== "var")
+        // `var x` alone is a no-op: the binding was hoisted on function entry.
+        const id = declaration.id
+        const evaluate = (init: Expression) =>
+          id.type === "Identifier" ? self.evaluateNamed(init, id.name) : self.evaluateExpression(init)
+        if (kind === "var") {
+          if (init) yield* self.assignPattern(id, yield* evaluate(init), declaration)
+          continue
+        }
+        const value = init ? yield* evaluate(init) : undefined
+        yield* self.declarePattern(declaration.id, value, kind !== "const", declaration, true)
       }
     })
   }
@@ -1045,13 +1065,13 @@ class Frame<R> {
       }
 
       if (pattern.type === "AssignmentPattern") {
-        const resolved = value === undefined ? yield* self.evaluateExpression(pattern.right) : value
+        const resolved = value === undefined ? yield* self.evaluateDefault(pattern) : value
         yield* self.declarePattern(pattern.left, resolved, mutable, node, initialize)
         return
       }
 
       if (pattern.type === "ObjectPattern") {
-        if (value === null || typeof value !== "object" || isRuntimeReference(value)) {
+        if (!(value instanceof ProgramObject)) {
           throw new InterpreterRuntimeError(
             `Object destructuring requires a data object or array value, received ${describeValue(value)}.`,
             pattern,
@@ -1062,11 +1082,8 @@ class Frame<R> {
         const consumed = new Set<PropertyKey>()
         for (const property of pattern.properties) {
           if (property.type === "RestElement") {
-            const rest: SafeObject = Object.create(null) as SafeObject
-            for (const [key, item] of Object.entries(value as SafeObject)) {
-              if (!consumed.has(key)) rest[key] = item
-            }
-            copyIteratorSymbols(value, rest, consumed)
+            const rest = new ProgramObject()
+            assign(rest, value, consumed)
             yield* self.declarePattern(property.argument, rest, mutable, property, initialize)
             continue
           }
@@ -1075,7 +1092,7 @@ class Frame<R> {
           consumed.add(typeof key === "symbol" ? key : String(key))
           yield* self.declarePattern(
             property.value,
-            self.destructuringPropertyValue(value as SafeObject | Array<unknown>, key),
+            self.destructuringPropertyValue(value, key),
             mutable,
             property,
             initialize,
@@ -1108,13 +1125,13 @@ class Frame<R> {
       }
 
       if (pattern.type === "AssignmentPattern") {
-        const resolved = value === undefined ? yield* self.evaluateExpression(pattern.right) : value
+        const resolved = value === undefined ? yield* self.evaluateDefault(pattern) : value
         yield* self.assignPattern(pattern.left, resolved, node)
         return
       }
 
       if (pattern.type === "ObjectPattern") {
-        if (value === null || typeof value !== "object" || isRuntimeReference(value)) {
+        if (!(value instanceof ProgramObject)) {
           throw new InterpreterRuntimeError(
             `Object destructuring requires a data object or array value, received ${describeValue(value)}.`,
             pattern,
@@ -1122,21 +1139,17 @@ class Frame<R> {
           )
         }
 
-        const source = value as SafeObject | Array<unknown>
         const consumed = new Set<PropertyKey>()
         for (const property of pattern.properties) {
           if (property.type === "RestElement") {
-            const rest: SafeObject = Object.create(null) as SafeObject
-            for (const [key, item] of Object.entries(source)) {
-              if (!consumed.has(key)) rest[key] = item
-            }
-            copyIteratorSymbols(source, rest, consumed)
+            const rest = new ProgramObject()
+            assign(rest, value, consumed)
             yield* self.assignPattern(property.argument, rest, property)
             continue
           }
           const key = yield* self.destructuringPropertyKey(property)
           consumed.add(typeof key === "symbol" ? key : String(key))
-          yield* self.assignPattern(property.value, self.destructuringPropertyValue(source, key), property)
+          yield* self.assignPattern(property.value, self.destructuringPropertyValue(value, key), property)
         }
         return
       }
@@ -1149,6 +1162,12 @@ class Frame<R> {
 
       throw new InterpreterRuntimeError(`Unsupported assignment pattern '${pattern.type}'.`, node)
     })
+  }
+
+  private evaluateDefault(pattern: AssignmentPattern): Effect.Effect<unknown, unknown, R> {
+    return pattern.left.type === "Identifier"
+      ? this.evaluateNamed(pattern.right, pattern.left.name)
+      : this.evaluateExpression(pattern.right)
   }
 
   private destructureArrayPattern(
@@ -1170,7 +1189,7 @@ class Frame<R> {
           if (element === null) continue
           yield* consume(
             element.type === "RestElement" ? element.argument : element,
-            element.type === "RestElement" ? [] : undefined,
+            element.type === "RestElement" ? new ProgramArray() : undefined,
             element,
           )
           if (element.type === "RestElement") return
@@ -1187,7 +1206,7 @@ class Frame<R> {
             done = next.done
             if (!done) rest.push(next.value)
           }
-          yield* consume(element.argument, rest, element)
+          yield* consume(element.argument, new ProgramArray(rest), element)
           return
         }
         const consumed = consume(element, step.done ? undefined : step.value, pattern)
@@ -1210,11 +1229,9 @@ class Frame<R> {
     throw unsupportedSyntax(keyNode.type, keyNode)
   }
 
-  private destructuringPropertyValue(source: SafeObject | Array<unknown>, key: PropertyKey): unknown {
-    if (!Array.isArray(source)) return Reflect.get(source, key)
-    if (key === "length") return source.length
-    if (typeof key === "number") return source[key]
-    if (Object.hasOwn(source, key)) return Reflect.get(source, key)
+  private destructuringPropertyValue(source: ProgramObject, key: PropertyKey): unknown {
+    if (!(source instanceof ProgramArray)) return get(source, key)
+    if (has(source, key)) return get(source, key)
     if (typeof key === "string" && arrayMethods.has(key)) return new IntrinsicReference(source, key)
     return undefined
   }
@@ -1292,7 +1309,7 @@ class Frame<R> {
         // otherwise; say `new` is unsupported for them and point at the plain call.
         const name = calleeDescription(node.callee)
         const message =
-          callee instanceof CodeModeFunction
+          callee instanceof ProgramFunction
             ? `${name} cannot be constructed: user-defined constructors and classes are not supported. Call it as a function that returns a plain object instead.`
             : callee instanceof HostFunction
               ? `new ${name}(...) is not supported; call ${name}(...) without new instead.`
@@ -1320,6 +1337,9 @@ class Frame<R> {
   private applyBinaryOperator(operator: string, lhs: unknown, rhs: unknown, node: AstNode): unknown {
     if (operator === "===") return lhs === rhs
     if (operator === "!==") return lhs !== rhs
+    if (operator === "in" && rhs instanceof ProgramObject && !containsOpaqueReference(lhs)) {
+      return has(rhs, lhs !== null && typeof lhs === "object" ? coerceToString(lhs) : (lhs as PropertyKey))
+    }
     if (containsOpaqueReference(lhs) || containsOpaqueReference(rhs)) {
       throw new InterpreterRuntimeError("Binary operators require data values.", node, "InvalidDataValue")
     }
@@ -1372,11 +1392,10 @@ class Frame<R> {
       case ">>>":
         return (l as number) >>> (r as number)
       case "in":
-        if (rhs === null || typeof rhs !== "object") {
+        if (!(rhs instanceof ProgramObject)) {
           throw new InterpreterRuntimeError("The 'in' operator requires a data object on the right-hand side.", node)
         }
-        // Never expose properties inherited from host prototypes.
-        return Object.hasOwn(rhs as object, coerceOperand(lhs) as PropertyKey)
+        return has(rhs, coerceOperand(lhs) as PropertyKey)
       default:
         throw new InterpreterRuntimeError(`Unsupported binary operator '${operator}'.`, node)
     }
@@ -1453,7 +1472,7 @@ class Frame<R> {
           const next = toProgram(self.applyCompoundAssignment(operator, current, rightValue, node), "Assignment result")
           return self.scopes.set(name, next, left)
         }
-        const rightValue = yield* self.evaluateExpression(node.right)
+        const rightValue = yield* self.evaluateNamed(node.right, name)
         return self.scopes.set(name, rightValue, left)
       }
       if (left.type === "MemberExpression") {
@@ -1485,7 +1504,7 @@ class Frame<R> {
       return Effect.gen(function* () {
         const current = self.scopes.get(name, left)
         if (!shouldAssign(current)) return current
-        const rightValue = yield* self.evaluateExpression(node.right)
+        const rightValue = yield* self.evaluateNamed(node.right, name)
         return self.scopes.set(name, rightValue, left)
       })
     }
@@ -1574,7 +1593,7 @@ class Frame<R> {
         }
         return yield* self.createToolCallPromise(callable.path, args)
       }
-      if (callable instanceof CodeModeFunction) {
+      if (callable instanceof ProgramFunction) {
         return yield* self.invokeFunction(callable, args)
       }
       if (callable instanceof GeneratorMethodReference) {
@@ -1625,7 +1644,7 @@ class Frame<R> {
     })
   }
 
-  invokeFunction(fn: CodeModeFunction, args: Array<unknown>): Effect.Effect<unknown, unknown, R> {
+  invokeFunction(fn: ProgramFunction, args: Array<unknown>): Effect.Effect<unknown, unknown, R> {
     const invocation = new Frame(this.runtime, new ScopeStack([...fn.capturedScopes, new Map()]))
     const run = Effect.gen(function* () {
       // Seed all parameters first so defaults cannot fall through to same-named outer bindings.
@@ -1637,13 +1656,21 @@ class Frame<R> {
       }
       for (const [index, parameter] of fn.parameters.entries()) {
         if (parameter.type === "RestElement") {
-          yield* invocation.declarePattern(parameter.argument, args.slice(index), true, parameter, true)
+          yield* invocation.declarePattern(
+            parameter.argument,
+            new ProgramArray(args.slice(index)),
+            true,
+            parameter,
+            true,
+          )
           break
         }
         yield* invocation.declarePattern(parameter, args[index], true, parameter, true)
       }
 
       if (fn.body.type === "BlockStatement") {
+        invocation.scopes.push()
+        invocation.hoistVars(fn.body.body, paramScope)
         const result = yield* invocation.evaluateStatement(fn.body)
         return result.kind === "return" ? result.value : undefined
       }
@@ -1652,16 +1679,8 @@ class Frame<R> {
     })
     if (fn.generator) return Effect.succeed(this.createGenerator(invocation, run, fn.async))
     if (!fn.async) return run
-    // The initial yield assigns the promise before the body can self-resolve.
-    const box: { promise?: Values.Promise } = {}
-    return Effect.map(
-      this.createPromise(
-        Effect.flatMap(run, (value) => resolvePromiseValue(invocation.runtime.runner, value, fn.body, box)),
-      ),
-      (promise) => {
-        box.promise = promise
-        return promise
-      },
+    return this.runtime.promises.createWithSelf((self) =>
+      Effect.flatMap(run, (value) => resolvePromiseValue(invocation.runtime.runner, value, fn.body, self)),
     )
   }
 
@@ -1695,12 +1714,12 @@ class Frame<R> {
       }
       if (state.completed) {
         if (kind === "throw") return Effect.fail(new ProgramThrow(value))
-        return Effect.succeed({ value: kind === "return" ? value : undefined, done: true })
+        return Effect.succeed(record({ value: kind === "return" ? value : undefined, done: true }))
       }
       if (!state.started && kind !== "next") {
         state.completed = true
         if (kind === "throw") return Effect.fail(new ProgramThrow(value))
-        return Effect.succeed({ value, done: true })
+        return Effect.succeed(record({ value, done: true }))
       }
 
       state.pending.push(request)
@@ -1730,7 +1749,7 @@ class Frame<R> {
           if (active) {
             Deferred.doneUnsafe(
               active.response,
-              Exit.isSuccess(exit) ? Exit.succeed({ value: exit.value, done: true }) : exit,
+              Exit.isSuccess(exit) ? Exit.succeed(record({ value: exit.value, done: true })) : exit,
             )
           }
           yield* invocation.completeGeneratorRequests(state, asynchronous)
@@ -1757,13 +1776,13 @@ class Frame<R> {
           const resolved = yield* Effect.exit(self.awaitValue(pending.value))
           Deferred.doneUnsafe(
             pending.response,
-            Exit.isSuccess(resolved) ? Exit.succeed({ value: resolved.value, done: true }) : resolved,
+            Exit.isSuccess(resolved) ? Exit.succeed(record({ value: resolved.value, done: true })) : resolved,
           )
           continue
         }
         Deferred.doneUnsafe(
           pending.response,
-          Exit.succeed({ value: pending.kind === "return" ? pending.value : undefined, done: true }),
+          Exit.succeed(record({ value: pending.kind === "return" ? pending.value : undefined, done: true })),
         )
       }
     })
@@ -1808,7 +1827,7 @@ class Frame<R> {
   private suspendGenerator(value: unknown, node: AstNode): Effect.Effect<unknown, unknown, R> {
     const state = this.generatorState
     if (!state?.active) throw new InterpreterRuntimeError("Generator has no active request.", node)
-    Deferred.doneUnsafe(state.active.response, Exit.succeed({ value, done: false }))
+    Deferred.doneUnsafe(state.active.response, Exit.succeed(record({ value, done: false })))
     state.active = undefined
     return Effect.flatMap(this.takeGeneratorRequest(state), (request) => {
       state.active = request
@@ -1824,7 +1843,7 @@ class Frame<R> {
     const self = this
     return Effect.gen(function* () {
       if (
-        Array.isArray(value) ||
+        value instanceof ProgramArray ||
         typeof value === "string" ||
         value instanceof Values.Map ||
         value instanceof Values.Set ||
@@ -1865,7 +1884,7 @@ class Frame<R> {
             ? iterator.next
             : iterator.iterator instanceof CodeModeGenerator
               ? new GeneratorMethodReference(iterator.iterator, kind)
-              : iterator.iterator[kind]
+              : get(iterator.iterator, kind)
         if (method === undefined || method === null) {
           if (kind === "return") return yield* Effect.fail(new GeneratorReturn(input))
           yield* self.closeIterator(iterator, node, self.generatorAsync)
@@ -1883,11 +1902,11 @@ class Frame<R> {
           `Iterator ${kind}() result`,
           node,
         )
-        const done = Boolean(result.done)
+        const done = Boolean(get(result, "done"))
         const resultValue: unknown =
           self.generatorAsync && !iterator.asynchronous
-            ? yield* self.awaitAsyncFromSyncValue(iterator, result.value, node, kind !== "return" && !done)
-            : result.value
+            ? yield* self.awaitAsyncFromSyncValue(iterator, get(result, "value"), node, kind !== "return" && !done)
+            : get(result, "value")
         if (done) {
           if (kind === "return") return yield* Effect.fail(new GeneratorReturn(resultValue))
           return resultValue
@@ -1909,23 +1928,15 @@ class Frame<R> {
     })
   }
 
-  private evaluateObjectExpression(node: ObjectExpression): Effect.Effect<Record<string, unknown>, unknown, R> {
-    const objectValue: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+  private evaluateObjectExpression(node: ObjectExpression): Effect.Effect<ProgramObject, unknown, R> {
+    const objectValue = new ProgramObject()
     const self = this
     return Effect.gen(function* () {
       for (const property of node.properties) {
         if (property.type === "SpreadElement") {
           const spread = yield* self.evaluateExpression(property.argument)
-          if (spread === null || spread === undefined || Values.isValue(spread)) continue
-          if (typeof spread !== "object" || Array.isArray(spread) || isRuntimeReference(spread)) {
-            throw new InterpreterRuntimeError(
-              `Object spread requires a data object, received ${describeValue(spread)}.`,
-              property,
-              "InvalidDataValue",
-            )
-          }
-          for (const [key, value] of Object.entries(spread)) objectValue[key] = value
-          copyIteratorSymbols(spread, objectValue)
+          if (spread === null || spread === undefined) continue
+          assign(objectValue, enumerableSource("Object spread", spread, property))
           continue
         }
 
@@ -1947,14 +1958,20 @@ class Frame<R> {
           throw new InterpreterRuntimeError("Unsupported object property key shape.", keyNode)
         }
 
-        Reflect.set(objectValue, key, yield* self.evaluateExpression(property.value))
+        const name =
+          key === IteratorSymbol
+            ? "[Symbol.iterator]"
+            : key === AsyncIteratorSymbol
+              ? "[Symbol.asyncIterator]"
+              : String(key)
+        set(objectValue, key, yield* self.evaluateNamed(property.value, name))
       }
 
       return objectValue
     })
   }
 
-  private evaluateArrayExpression(node: ArrayExpression): Effect.Effect<Array<unknown>, unknown, R> {
+  private evaluateArrayExpression(node: ArrayExpression): Effect.Effect<ProgramArray, unknown, R> {
     const values: Array<unknown> = []
 
     const self = this
@@ -1979,7 +1996,7 @@ class Frame<R> {
           values.push(yield* self.evaluateExpression(element))
         }
       }
-      return values
+      return new ProgramArray(values)
     })
   }
 
@@ -2066,7 +2083,11 @@ class Frame<R> {
       }
 
       // Values have no prototype chain, so `.constructor` resolves to the owning built-in directly.
-      if (operation === "read" && key === "constructor" && !hasOwn(objectValue, key)) {
+      if (
+        operation === "read" &&
+        key === "constructor" &&
+        !(objectValue instanceof ProgramObject && has(objectValue, key))
+      ) {
         const name = constructorName(objectValue)
         if (name !== undefined) return new ComputedValue(self.runtime.builtins.get(name))
       }
@@ -2147,6 +2168,8 @@ class Frame<R> {
         return new ComputedValue(undefined)
       }
 
+      if (objectValue instanceof ProgramObject) return { target: objectValue, key }
+
       if (isRuntimeReference(objectValue)) {
         throw new InterpreterRuntimeError(
           `Cannot read properties of ${describeValue(objectValue)}; only data values expose properties.`,
@@ -2154,42 +2177,27 @@ class Frame<R> {
           "InvalidDataValue",
         )
       }
-
-      if (typeof objectValue !== "object" || objectValue === null) {
-        throw new InterpreterRuntimeError("Cannot access a property on a non-object value.", objectNode)
-      }
-
-      if (Array.isArray(objectValue)) {
-        if (operation === "delete") return { target: objectValue, key }
-        const index = typeof key === "symbol" ? undefined : parseArrayIndex(key)
-        if (key !== "length" && !(typeof key === "string" && arrayMethods.has(key)) && index === undefined) {
-          if (typeof key === "string" && Object.hasOwn(objectValue, key)) {
-            return new ComputedValue((objectValue as Record<string, unknown> & Array<unknown>)[key])
-          }
-          return new ComputedValue(undefined)
-        }
-        return { target: objectValue, key: index ?? key }
-      }
-
-      return { target: objectValue as SafeObject, key }
+      throw new InterpreterRuntimeError("Cannot access a property on a non-object value.", objectNode)
     })
   }
 
   private readMember(node: MemberExpression): Effect.Effect<unknown, unknown, R> {
+    const self = this
     return Effect.map(this.getMemberReference(node), (reference) => {
       if (reference === OptionalShortCircuit) return OptionalShortCircuit
       if (reference instanceof ComputedValue) return reference.value
       if (reference === undefined || isOpaqueMemberReference(reference)) return reference
-      if (Array.isArray(reference.target)) {
-        if (reference.key === "length") return reference.target.length
-        if (typeof reference.key === "string") return new IntrinsicReference(reference.target, reference.key)
-        return Reflect.get(reference.target, reference.key)
+      const value = self.readReferenceValue(reference, reference.key)
+      if (
+        value === undefined &&
+        reference.target instanceof ProgramArray &&
+        typeof reference.key === "string" &&
+        arrayMethods.has(reference.key) &&
+        !has(reference.target, reference.key)
+      ) {
+        return new IntrinsicReference(reference.target, reference.key)
       }
-      if (reference.target instanceof Values.RegExp) return reference.target.lastIndex
-      if (reference.target instanceof Values.URL) {
-        return Reflect.get(reference.target.url, reference.key)
-      }
-      return Reflect.get(reference.target, reference.key)
+      return value
     })
   }
 
@@ -2215,7 +2223,7 @@ class Frame<R> {
       if (reference.target instanceof Values.RegExp) {
         return Reflect.deleteProperty(reference.target.regex, reference.key)
       }
-      return Reflect.deleteProperty(reference.target, reference.key)
+      return remove(reference.target, reference.key)
     })
   }
 
@@ -2235,12 +2243,6 @@ class Frame<R> {
       ) {
         throw new InterpreterRuntimeError("Only data fields may be assigned.", node)
       }
-      if (Array.isArray(reference.target)) {
-        if (reference.key === "length") throw new InterpreterRuntimeError("Array length cannot be assigned.", node)
-        if (typeof reference.key === "string" && arrayMethods.has(reference.key)) {
-          throw new InterpreterRuntimeError("Array methods cannot be assigned.", node)
-        }
-      }
       const key = reference.key
       const { write, next, result } = yield* compute(self.readReferenceValue(reference, key))
       if (write) self.assignToReference(reference, key, next, node)
@@ -2253,23 +2255,10 @@ class Frame<R> {
       return Reflect.get(reference.target.url, key)
     }
     if (reference.target instanceof Values.RegExp) return reference.target.lastIndex
-    return Reflect.get(reference.target, key)
+    return get(reference.target, key)
   }
 
   private assignToReference(reference: MemberReference, key: PropertyKey, next: unknown, node: AstNode): void {
-    if (Array.isArray(reference.target)) {
-      const target = reference.target
-      if (typeof key !== "number" || parseArrayIndex(key) === undefined) {
-        throw new InterpreterRuntimeError(
-          "Array assignment index must be a valid array index.",
-          node,
-          "InvalidDataValue",
-        )
-      }
-      rejectCircularInsertion(target, next, "Array assignment result", node)
-      target[key] = next
-      return
-    }
     if (reference.target instanceof Values.URL) {
       const property = key as string
       if (!urlWritableProperties.has(property)) {
@@ -2288,9 +2277,16 @@ class Frame<R> {
       reference.target.lastIndex = next
       return
     }
-    const target = reference.target as SafeObject
-    rejectCircularInsertion(target, next, "Object assignment result", node)
-    Reflect.set(target, key, next)
+    const target = reference.target
+    rejectCircularInsertion(
+      target,
+      next,
+      target instanceof ProgramArray ? "Array assignment result" : "Object assignment result",
+      node,
+    )
+    if (set(target, key, next)) return
+    if (target instanceof ProgramArray) throw new InterpreterRuntimeError("Invalid array length", node).as("RangeError")
+    throw new InterpreterRuntimeError(`Cannot assign to read only property '${String(key)}'.`, node).as("TypeError")
   }
 
   private toPropertyKey(value: unknown, node: AstNode): PropertyKey {

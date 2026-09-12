@@ -2,7 +2,8 @@ import { Effect, Exit } from "effect"
 import { Values } from "../values.js"
 import { coerceToString } from "../stdlib/value.js"
 import { HostFunction } from "./host.js"
-import { type AstNode, CodeModeFunction, InterpreterRuntimeError, IntrinsicReference } from "./model.js"
+import { type AstNode, InterpreterRuntimeError, IntrinsicReference } from "./model.js"
+import { get, has, ProgramFunction, ProgramObject } from "./objects.js"
 import { typeofValue } from "./references.js"
 
 export type IteratorCursor<R> = {
@@ -12,7 +13,7 @@ export type IteratorCursor<R> = {
 
 /** Everything a host function needs to call back into the program. */
 export type Runner<R> = {
-  readonly invokeFunction: (fn: CodeModeFunction, args: Array<unknown>) => Effect.Effect<unknown, unknown, R>
+  readonly invokeFunction: (fn: ProgramFunction, args: Array<unknown>) => Effect.Effect<unknown, unknown, R>
   readonly invokeCallable: (
     callable: unknown,
     args: Array<unknown>,
@@ -42,13 +43,14 @@ export const toPrimitive = <R>(
   if (Values.isValue(value)) {
     return Effect.succeed(value instanceof Values.Date && hint === "number" ? value.time : coerceToString(value))
   }
-  const object = value as Record<string, unknown>
+  if (!(value instanceof ProgramObject)) return Effect.succeed(value)
   const order = hint === "number" ? ["valueOf", "toString"] : ["toString", "valueOf"]
   return Effect.gen(function* () {
     for (const method of order) {
-      if (method === "toString" && !Object.hasOwn(object, "toString")) return coerceToString(value)
-      if (!Object.hasOwn(object, method) || typeofValue(object[method]) !== "function") continue
-      const result = yield* runner.invokeCallable(object[method], [], node)
+      if (method === "toString" && !has(value, "toString")) return coerceToString(value)
+      const callable = get(value, method)
+      if (typeofValue(callable) !== "function") continue
+      const result = yield* runner.invokeCallable(callable, [], node)
       if (result === null || (typeof result !== "object" && typeof result !== "function")) return result
     }
     throw new InterpreterRuntimeError("Cannot convert object to primitive value.", node).as("TypeError")
@@ -59,10 +61,10 @@ export const toPrimitive = <R>(
 // Array.from mappers, and promise reactions all admit exactly these callables.
 // Admission means dispatchable, not necessarily invocable: new-requiring
 // constructors pass the gate and throw a TypeError on call, like JS.
-export type SupportedCallback = CodeModeFunction | HostFunction<unknown> | IntrinsicReference
+export type SupportedCallback = ProgramFunction | HostFunction<unknown> | IntrinsicReference
 
 export const isSupportedCallback = (value: unknown): value is SupportedCallback =>
-  value instanceof CodeModeFunction ||
+  value instanceof ProgramFunction ||
   (value instanceof HostFunction && value.callback) ||
   value instanceof IntrinsicReference
 

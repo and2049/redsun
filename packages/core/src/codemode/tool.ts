@@ -1,15 +1,7 @@
 export * as CodeModeTool from "./tool.js"
 
 import { CodeMode, Namespace, Tool, toolError } from "@opencode/codemode"
-import type {
-  Content,
-  Context,
-  Error,
-  Info,
-  Metadata,
-  Namespace as ToolNamespace,
-  Result,
-} from "@opencode/schema/tool"
+import type { Content, Context, Error, Info, Metadata, Namespace as ToolNamespace, Result } from "@opencode/schema/tool"
 import { Effect, Ref, Schema, Semaphore } from "effect"
 import { definition, normalizedName } from "../tool/runtime.js"
 import { CodeModeCatalog } from "./catalog.js"
@@ -166,7 +158,7 @@ export const catalog = (inventory: Inventory) => {
   )
   const root: CatalogNode = { children: new Map() }
   for (const namespace of inventory.namespaces?.values() ?? []) getNode(root, namespace.name).namespace = namespace
-  for (const tool of runtime(inventory, () => Effect.fail(toolError("Execute context is unavailable"))).catalog())
+  for (const tool of runtime(inventory, () => Effect.fail(toolError("Execute context is unavailable"))).catalog)
     getNode(root, tool.path).tool = {
       type: "tool",
       name: tool.path.split(".").at(-1) ?? tool.path,

@@ -1,55 +1,50 @@
 # Config
 
-You shouldn't have to configure redsun manually. Ask redsun to update its configuration for you.
-
-## Format
-
-redsun supports both **JSON** and **JSONC** (JSON with Comments) configuration files.
+Create `redsun.jsonc` in your project to configure OpenCode. Add the schema for editor validation, then set only the options you need.
 
 ```jsonc title="redsun.jsonc"
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "openai/gpt-5.2-custom",
-  "providers": {
-    "openai": {
-      "models": {
-        "gpt-5.2-custom": {
-          "modelID": "gpt-5.2",
-          "name": "GPT-5.2 Custom",
-        },
-      },
-    },
-  },
+  "model": "anthropic/claude-sonnet-4-5",
+}
+```
+
+You can also ask redsun to update this file for you.
+
+## Format
+
+redsun supports JSON and JSONC. Use JSONC when you want comments or trailing commas.
+
+```jsonc title="redsun.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Use this model by default.
+  "model": "anthropic/claude-sonnet-4-5",
 }
 ```
 
 ## Locations
 
-redsun loads global configuration from:
+Put settings for every project in the global configuration:
 
 ```text
 ~/.config/redsun/redsun.json(c)
 ```
 
-Project-specific configuration can use either form:
+Put project settings in either of these files:
 
 ```text
 /home/user/projects/my-app/redsun.json(c)
 /home/user/projects/my-app/.redsun/redsun.json(c)
 ```
 
-During ordinary project discovery, redsun searches for configuration files
-from the current Location directory through every ancestor to the filesystem
-root, including directories above the detected project or repository root. It
-merges direct `redsun.json(c)` files from the farthest ancestor toward the
-current directory, then does the same for files inside `.redsun` directories.
-A discovered `.redsun` config therefore overrides every discovered direct
-config, even when the direct config is closer to the current directory. Avoid
-mixing the two forms across one directory hierarchy unless this precedence is
-intentional.
+redsun searches from the current directory to the filesystem root. It first
+merges direct `redsun.json(c)` files from the farthest directory to the
+closest, then merges files inside `.redsun` directories in the same order.
+This means every discovered `.redsun` config overrides every direct config.
+Use one form throughout a directory tree unless you need that behavior.
 
-For example, consider a monorepo with redsun started from
-`/home/user/projects/acme/packages/web`:
+For example, start redsun from `/home/user/projects/acme/packages/web`:
 
 ```text
 ~/.config/redsun/redsun.json
@@ -68,9 +63,8 @@ redsun applies these files from lowest to highest precedence:
 2. `/home/user/projects/acme/redsun.json`
 3. `/home/user/projects/acme/packages/web/redsun.json`
 
-In this direct-config example, the package config overrides matching settings
-from the repository config, which overrides matching settings from the global
-config. Settings that do not conflict are preserved from every file.
+The package config overrides matching settings from the repository config,
+which overrides the global config. Settings that do not conflict are preserved.
 
 ## Schema
 
@@ -112,7 +106,7 @@ does not retain a `#variant`; agent and command model references can select one.
 
 See the [models guide](models.md) for model selection and local models.
 
-### Default agent
+### Agent
 
 Choose the primary agent used when a session does not select one explicitly.
 
@@ -142,8 +136,8 @@ Project-level values are ignored.
 
 ### Sharing
 
-Set the intended session sharing policy. V2 accepts this field, but session
-sharing is not implemented yet.
+Set the session sharing policy. redsun accepts this field, but session sharing
+is not supported yet.
 
 ```jsonc
 {
@@ -155,8 +149,8 @@ See the [sharing guide](sharing.md) for more details.
 
 ### Username
 
-Set a username for future display behavior. V2 accepts this field but does not
-currently display it in conversations.
+Set a username. redsun accepts this field but does not display it in
+conversations.
 
 ```jsonc
 {
@@ -229,39 +223,16 @@ Ignore files and directories that should not trigger filesystem updates.
 
 ### Formatter
 
-Define formatter settings for compatibility and future use. V2 accepts this
-field, but it does not run formatters yet.
+Format files after the `write`, `edit`, or `patch` tools change them. Set
+`formatter` to `true` to enable available built-in formatters.
 
 ```jsonc
 {
-  "formatter": {
-    "prettier": {
-      "command": ["bunx", "prettier", "--write", "$FILE"],
-      "extensions": [".js", ".ts", ".tsx"],
-    },
-  },
+  "formatter": true,
 }
 ```
 
-See the [formatters guide](formatters.md) for accepted fields and current limitations.
-
-### LSP
-
-Define language server settings for compatibility and future use. V2 accepts
-this field, but it does not start language servers yet.
-
-```jsonc
-{
-  "lsp": {
-    "typescript": {
-      "command": ["typescript-language-server", "--stdio"],
-      "extensions": [".ts", ".tsx"],
-    },
-  },
-}
-```
-
-See the [LSP guide](lsp.md) for accepted fields and current limitations.
+See the [formatters guide](formatters.md) for built-ins and custom formatters.
 
 ### Media
 
@@ -283,7 +254,7 @@ before they are sent to a model.
 
 See the [attachments guide](attachments.md) for image processing and limits.
 
-### Tool output
+### Output
 
 Set the maximum number of lines and bytes retained from a tool result.
 
@@ -296,10 +267,10 @@ Set the maximum number of lines and bytes retained from a tool result.
 }
 ```
 
-### Web search
+### Search
 
-Use `"random"` to randomly choose a search provider for each session and keep using it until it
-returns HTTP 429. redsun then retries the query with another available provider.
+Choose how redsun searches the web. Use `"random"` to select an available
+provider automatically.
 
 ```jsonc
 {
@@ -309,12 +280,8 @@ returns HTTP 429. redsun then retries the query with another available provider.
 }
 ```
 
-- Rate-limited providers cool down for `Retry-After`, or 60 seconds if it is missing or invalid.
-- When every provider is cooling down, the search fails without waiting.
-- Each session remembers its preferred provider; cooldowns are shared within a Location.
-- State is kept in memory. Moving a session or restarting its Location services resets its preference.
-- API and plugin queries without session context share a Location-level preference.
-- Set `provider` to a provider ID to disable automatic switching, or set `websearch` to `false` to disable search.
+See the [websearch guide](websearch.md) for providers, credentials, selection,
+rate limits, and disabling search.
 
 ### MCP
 
@@ -376,7 +343,7 @@ Top-level `compaction.auto: false` disables new automatic compaction without
 discarding installed checkpoints. See the [compaction guide](compaction.md) for
 budgeting and overflow recovery.
 
-### Session warming
+### Warming
 
 Keep recently active model sessions warm with periodic transient requests.
 Warming is disabled by default; set it to `true` to use the four-minute idle
@@ -392,7 +359,7 @@ interval and 30-minute active window.
 }
 ```
 
-See the [session warming guide](warming.md) for request behavior, customization,
+See the [warming guide](warming.md) for request behavior, customization,
 and cost considerations.
 
 ### Skills
@@ -426,8 +393,8 @@ See the [commands guide](commands.md) for arguments, models, agents, and file-ba
 
 ### Instructions
 
-Declare additional instruction files, globs, or URLs. V2 accepts this field,
-but does not load these entries yet; use `AGENTS.md` for active instructions.
+Declare additional instruction files, globs, or URLs. redsun accepts this
+field but does not load its entries; use `AGENTS.md` for instructions.
 
 ```jsonc
 {

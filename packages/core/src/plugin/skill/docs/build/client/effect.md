@@ -4,7 +4,7 @@
 and decodes responses into redsun schema values.
 
 ```sh
-bun add @opencode/client@beta effect
+bun add @opencode/client effect
 ```
 
 ## Create a client

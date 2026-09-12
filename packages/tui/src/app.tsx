@@ -727,7 +727,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         suggested: true,
         category: "Agent",
         // Bias /mo toward /models over /move without changing global fuzzy scoring.
-        slash: { name: "models", aliases: ["mo"], arguments: "optional" as const },
+        slash: { name: "models", arguments: "optional" as const },
         run: (input?: string) => {
           if (input?.trim() === "refresh") return refreshModels()
           dialog.replace(() => <DialogModel />)
@@ -849,7 +849,7 @@ function App(props: { pair?: DialogPairCredentials }) {
         title: "Switch model variant",
         category: "Agent",
         palette: local.model.variant.list().length === 0 ? undefined : (true as const),
-        slash: { name: "variants" },
+        slash: { name: "variants", aliases: ["thinking"] },
         run: () => {
           if (local.model.variant.list().length === 0) {
             return toast.show({

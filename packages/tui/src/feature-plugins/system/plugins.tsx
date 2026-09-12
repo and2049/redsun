@@ -234,6 +234,15 @@ export function PluginsDialog(props: {
                 onTrigger: check,
               },
               {
+                title: "view error",
+                command: "dialog.plugins.error",
+                hidden: !pluginError(focusedTui()),
+                onTrigger: (option) => {
+                  const entry = entries().find((entry) => entry.key === option.value)
+                  if (pluginError(entry)) setDetail(entry)
+                },
+              },
+              {
                 title: toggleTitle(),
                 command: "plugins.toggle",
                 side: "right",
@@ -249,7 +258,7 @@ export function PluginsDialog(props: {
               },
             ]}
             footer={
-              <Show when={pluginError(focusedEntry())}>
+              <Show when={pluginError(focusedEntry()) && !focusedTui()}>
                 <text>
                   <span style={{ fg: props.context.theme.text.default }}>
                     <b>enter</b>

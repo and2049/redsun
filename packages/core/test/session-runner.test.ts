@@ -20,6 +20,7 @@ import { OpenAIChat } from "@opencode/ai/protocols/openai-chat"
 import { AnthropicMessages, OpenAIResponses } from "@opencode/ai/protocols"
 import { compileRequest } from "@opencode/ai/route/client"
 import { TestLLM } from "@opencode/ai/testing"
+import type { SessionHooks } from "@opencode/plugin/effect/session"
 import { Catalog } from "@opencode/core/catalog"
 import { Database } from "@opencode/core/database/database"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
@@ -62,12 +63,7 @@ import { Document, Info } from "@opencode/schema/config"
 import { ConfigCompaction } from "@opencode/schema/config/compaction"
 import { Tool } from "@opencode/core/tool"
 import type { Info as ToolInfo } from "@opencode/schema/tool"
-import {
-  InstructionStateTable,
-  SessionInboxTable,
-  SessionMessageTable,
-  SessionTable,
-} from "@opencode/core/session/sql"
+import { InstructionStateTable, SessionInboxTable, SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { SessionStore } from "@opencode/core/session/store"
 import { Instructions } from "@opencode/core/instructions/index"
@@ -1953,7 +1949,16 @@ describe("SessionRunnerLLM", () => {
     expect(yield* entries.list(sessionID)).toEqual([{ key: "nullable", value: null }])
   })
 
-  scenario("rejects API instruction entries larger than 8KB", function* () {
+  scenario("accepts API instruction entries up to 256 KiB", function* () {
+    const entries = yield* InstructionEntry.Service
+    const value = "x".repeat(InstructionEntry.MaxValueBytes - 2)
+
+    yield* entries.put({ sessionID, key: "large", value })
+
+    expect(yield* entries.list(sessionID)).toEqual([{ key: "large", value }])
+  })
+
+  scenario("rejects API instruction entries larger than 256 KiB", function* () {
     const entries = yield* InstructionEntry.Service
 
     const exit = yield* entries
@@ -2421,15 +2426,16 @@ describe("SessionRunnerLLM", () => {
           model: { id: ID.make(s.currentModel.id), providerID: Provider.ID.make(s.currentModel.provider), variant },
         })
         const requestAgents: Agent.ID[] = []
-        yield* hooks.register("session", "context", (event) =>
+        const hook = (event: SessionHooks["context"]) =>
           Effect.sync(() => {
             expect(event.agent).toBe(agentID)
             expect(event.model.variant).toBe(variant)
             event.system.push(SystemPart.make("Hook-provided instructions"))
             event.tools.echo.description = "Hook-provided tool description"
             event.options.maxTokens = 4_000
-          }),
-        )
+          })
+        yield* hooks.register("session", "context", hook)
+        yield* hooks.register("session", "compaction", hook)
         yield* hooks.register("session", "model.request", (event) =>
           Effect.sync(() => {
             requestAgents.push(event.agent)
