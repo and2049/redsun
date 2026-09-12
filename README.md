@@ -14,8 +14,7 @@ irm https://github.com/and2049/redsun/releases/latest/download/install.ps1 | iex
 
 ## Interface language
 
-Open **Settings → Appearance → Interface language**, or run **`/language`**, to choose
-English, 简体中文 (Simplified Chinese), Español (Spanish), 한국어 (Korean), or Français (French).
+Open **Settings → Appearance → Interface language**, or run **`/language`**
 The interface updates immediately and remembers your choice in the global `cli.json`.
 The picker supports native language names, English names, and locale codes.
 
@@ -65,10 +64,6 @@ rename, **D** to unpin, **Enter** to jump into the transcript, and **Escape** to
 Reading a pin fetches it directly; jumping to an old message may load intervening history
 pages. **Ctrl+End** cancels a history jump and returns to the latest message.
 
-Pins and labels survive server restarts. They belong to one session: forks start without
-pins, and deleting the original message or session removes its pins. Pins are bookmarks,
-not instructions to retain content in the model's context, and are not included in session
-exports. Optional keybindings are `session.pins` and `session.pin` in `cli.json`.
 
 ## Acknowledgements
 
