@@ -1,7 +1,8 @@
 # Plugins
 
-Load published packages, versioned packages, scoped packages, local plugin directories, or configured plugins from
-`redsun.json(c)`.
+Add published packages, versioned packages, scoped packages, or local plugin directories to `redsun.json(c)`.
+
+## Configure
 
 ```jsonc title="redsun.jsonc"
 {
@@ -34,6 +35,8 @@ from lowest to highest precedence instead of replacing one another.
 ./.redsun/redsun.jsonc
 ```
 
+## Discover
+
 redsun also loads direct `.ts` and `.js` files and immediate plugin package directories from every discovered
 `.redsun/plugins/` directory.
 
@@ -60,6 +63,8 @@ explicitly or move it under `.redsun/`.
 }
 ```
 
+## Control
+
 Plugin entries are processed in order. Prefix an ID or wildcard with `-` to disable it, use `*` for every plugin, and
 use `.*` to match an ID prefix. A later ID re-enables a plugin.
 
@@ -69,7 +74,9 @@ use `.*` to match an ID prefix. A later ID re-enables a plugin.
 }
 ```
 
-Install, inspect, list, or remove global package plugins with the CLI.
+## Manage
+
+Install, list, check, update, or remove global package plugins with the CLI.
 
 ```sh
 redsun plugin add opencode-acme-plugin@1.2.0
@@ -89,7 +96,7 @@ Git repositories can use hosted shortcuts, HTTPS, or SSH, including private repo
 Git credentials.
 
 ```sh
-redsun plugin add @acme/opencode-plugin@beta
+redsun plugin add @acme/opencode-plugin@latest
 redsun plugin add github:acme/opencode-plugin
 redsun plugin add git+ssh://git@github.com/acme/opencode-plugin.git#main
 redsun plugin add 'github:acme/plugins#main::path:packages/opencode-plugin'
@@ -97,6 +104,8 @@ redsun plugin add 'github:acme/plugins#main::path:packages/opencode-plugin'
 
 Branches, tags, complete commit hashes, and npm's `::path:` repository-subdirectory selectors are supported. Configure
 local paths directly; tarball and npm alias targets are not accepted by `plugin add`.
+
+## Reload
 
 Changes under watched config directories reload automatically. Server startup loads cached package plugins immediately,
 installs missing packages in the background, and checks unpinned npm and Git plugins for updates without changing the
@@ -107,6 +116,8 @@ still require restarting OpenCode.
 touch .redsun/plugins/concise/index.ts
 redsun service restart
 ```
+
+## Terminal
 
 CLI-only plugins are configured separately and remain active when connected to a remote server.
 

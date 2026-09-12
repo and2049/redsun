@@ -58,11 +58,12 @@ export const Plugin = define({
       draft.add({ path: AbsolutePath.make(file), content: loaded.current })
     })
 
-    yield* ctx.session.hook("context", (event) =>
-      Effect.sync(() => {
-        if (loaded.current === undefined) return
-        event.system.push({ type: "text", text: POLICY })
-      }),
-    )
+    for (const kind of ["context", "compaction", "generate"] as const)
+      yield* ctx.session.hook(kind, (event) =>
+        Effect.sync(() => {
+          if (loaded.current === undefined) return
+          event.system.push({ type: "text", text: POLICY })
+        }),
+      )
   }),
 })

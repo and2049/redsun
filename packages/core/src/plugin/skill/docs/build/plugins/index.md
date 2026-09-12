@@ -654,6 +654,16 @@ const request = await ctx.permission.get({ sessionID, requestID })
 await ctx.permission.reply({ sessionID, requestID, reply: "once" })
 ```
 
+Replace the session-scoped permission rules. They are evaluated after the agent's rules, and the
+last matching rule wins. Child sessions inherit the rules in effect when they are created.
+
+```ts
+await ctx.permission.rules({
+  sessionID,
+  permissions: [{ action: "edit", resource: "/path/to/original/checkout/**", effect: "deny" }],
+})
+```
+
 ### Sessions
 
 Create or read a session.
@@ -1195,22 +1205,34 @@ Keep prompt hooks retry-safe. They are not an exactly-once side-effect boundary:
 - Concurrent submissions can run hooks more than once, but only the first successful admission wins.
 - Prompt hooks transform input and do not expose a typed rejection API.
 
-#### Model context
+#### Model requests
 
-Modify assembled system instructions, messages, tools, or request options immediately before model dispatch.
+Modify assembled system instructions, messages, tools, or request options immediately before model dispatch. Each
+kind of request a session issues has its own hook, so a plugin can treat the agent loop and auxiliary requests
+differently:
+
+- `context` runs for the agent loop, including tool-driven continuations.
+- `compaction` runs for checkpoint summaries. `messages` is the transcript being summarized; redsun appends its
+  summary prompt after hooks run. Set `result` to record the compaction yourself and skip the model call; it takes the
+  same fields as a completed compaction message.
+- `generate` runs for transient `ctx.session.generate` calls.
+- `title` runs for title generation. It has no `agent` or `tools`. Set `result` to supply the title yourself.
 
 ```ts
 await ctx.session.hook("context", (event) => {
-  event.system.push({ text: "Keep the review focused on correctness." })
+  event.system.push({ type: "text", text: "Keep the review focused on correctness." })
   delete event.tools.write
   event.options.temperature = 0.2
   event.options.maxTokens = 8_000
 })
+
+await ctx.session.hook("compaction", async (event) => {
+  event.result = { summary: await summarize(event.messages) }
+})
 ```
 
-Context changes affect only the outgoing model call, not persisted history or
-configuration. The hook runs again for subsequent calls such as tool-driven
-continuations, transient session generation, and compaction, but not for title requests.
+Changes affect only the outgoing model call, not persisted history or configuration. A hook that should apply to
+every request must register for each kind.
 
 Request overrides follow these rules:
 
@@ -1319,6 +1341,9 @@ import type { SessionPrompt } from "@opencode/plugin/promise/session"
 interface SessionHooks {
   prompt: SessionPrompt
   context: SessionContextHook
+  compaction: SessionContextHook & { result?: SessionCompactionResult }
+  generate: SessionContextHook
+  title: SessionRequestHook & { result?: string }
   "model.request": SessionModelRequestHook
   "http.request": SessionHttpRequestHook
   "http.response": SessionHttpResponseHook
@@ -1336,13 +1361,11 @@ interface SessionRetryHook {
   decision: RetryDecision
 }
 
-interface SessionContextHook {
+interface SessionRequestHook {
   readonly sessionID: string
-  readonly agent: string
   readonly model: { providerID: string; id: string; variant?: string }
   system: SystemPart[]
   messages: Message[]
-  tools: Record<string, { description: string; input: JsonSchema }>
   options: {
     maxTokens?: number
     temperature?: number
@@ -1353,6 +1376,18 @@ interface SessionContextHook {
     seed?: number
     stop?: string[]
   } & Record<string, unknown>
+}
+
+interface SessionContextHook extends SessionRequestHook {
+  readonly agent: string
+  tools: Record<string, { description: string; input: JsonSchema }>
+}
+
+interface SessionCompactionResult {
+  summary: string
+  providerState?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  tokens?: TokenUsage
 }
 
 interface SessionHookContext {
@@ -1484,7 +1519,7 @@ manifest is:
     "./rpc": "./src/rpc.ts"
   },
   "dependencies": {
-    "@opencode/plugin": "beta"
+    "@opencode/plugin": "latest"
   }
 }
 ```
@@ -1494,9 +1529,8 @@ The `./rpc` export is optional; include it when publishing a shared
 without loading your implementation.
 
 Use versions compatible with the redsun release you target and test the
-installed package, not only a workspace-linked copy. Because the plugin API is
-beta, publish compatible plugin updates when V2 entrypoints or contracts
-change.
+installed package, not only a workspace-linked copy. Publish a compatible
+plugin update when you adopt a newer API contract.
 
 ## Support V1
 

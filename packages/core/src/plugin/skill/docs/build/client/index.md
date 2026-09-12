@@ -5,12 +5,10 @@ API. Use it when your application connects to a redsun server over the
 network. Its native types and methods are generated from the same contract as the
 [API reference](https://opencode.ai/v2/docs/api). Plugin RPC types come from imported RPC definitions.
 
-> **Warning:** The V2 API and client are beta. Method names, inputs, and outputs may change before the stable release.
-
 ## Install
 
 ```sh
-bun add @opencode/client@beta
+bun add @opencode/client
 ```
 
 ## Create a client

@@ -7,8 +7,11 @@ network hop between the client and server.
 
 For Cloudflare Durable Objects, see the [Cloudflare guide](cloudflare.md).
 
-> **Warning:** The V2 SDK is beta. Install the current preview with `bun add @opencode/sdk@dev`; its API may change before a
-> stable release.
+Install the SDK:
+
+```sh
+bun add @opencode/sdk
+```
 
 ## Create a host
 

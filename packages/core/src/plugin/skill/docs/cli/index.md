@@ -3,13 +3,13 @@
 Run the CLI in a project to open the full-screen terminal interface:
 
 ```bash
-redsun
+opencode
 ```
 
 Pass a directory to work in a different project:
 
 ```bash
-redsun ~/code/my-project
+opencode ~/code/my-project
 ```
 
 Suggested terminals:
@@ -61,7 +61,7 @@ Print a specific local path for use with other tools:
 
 ```bash
 redsun debug paths db
-sqlite3 "$(redsun debug paths db)"
+sqlite3 "$(opencode debug paths db)"
 ```
 
 The optional selector accepts `db`, `home`, `data`, `config`, `cache`, `state`, `tmp`, `bin`, `log`, or `repos` and prints

@@ -333,12 +333,13 @@ export const Plugin = define({
     const store = yield* SessionStore.Service
     const services: Services = { kv, store }
 
-    yield* ctx.session.hook("context", (event) =>
-      Effect.gen(function* () {
-        const active = yield* sync(services, event.sessionID)
-        if (active !== undefined) event.system.push({ type: "text", text: GOAL_FEATURE_PROMPT })
-      }),
-    )
+    for (const kind of ["context", "compaction", "generate"] as const)
+      yield* ctx.session.hook(kind, (event) =>
+        Effect.gen(function* () {
+          const active = yield* sync(services, event.sessionID)
+          if (active !== undefined) event.system.push({ type: "text", text: GOAL_FEATURE_PROMPT })
+        }),
+      )
 
     yield* ctx.event.subscribe().pipe(
       Stream.filter((event) => event.type === EXECUTION_SUCCEEDED),

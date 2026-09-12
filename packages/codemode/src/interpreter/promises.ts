@@ -1,13 +1,7 @@
 import { Cause, Deferred, Effect, Exit, Fiber, Scope } from "effect"
 import type { Diagnostic } from "../codemode.js"
-import type { SafeObject } from "../data.js"
-import {
-  type AstNode,
-  CodeModeFunction,
-  InterpreterRuntimeError,
-  ProgramThrow,
-  PromiseInstanceMethodReference,
-} from "./model.js"
+import { type AstNode, InterpreterRuntimeError, ProgramThrow, PromiseInstanceMethodReference } from "./model.js"
+import { get, ProgramArray, ProgramFunction, ProgramObject, record } from "./objects.js"
 import { HostFunction, requiresNew, sync } from "./host.js"
 import { caughtErrorValue, normalizeError } from "./errors.js"
 import { typeofValue } from "./references.js"
@@ -31,6 +25,17 @@ export class PromiseRuntime<R> {
   private nextID = 0
 
   constructor(private readonly scope: Scope.Scope) {}
+
+  // Resolution bodies need the promise's own identity to reject `resolve(promise)` self-resolution.
+  createWithSelf(
+    body: (self: { promise?: Values.Promise }) => Effect.Effect<unknown, unknown, R>,
+  ): Effect.Effect<Values.Promise, never, R> {
+    const self: { promise?: Values.Promise } = {}
+    return Effect.map(this.create(body(self)), (promise) => {
+      self.promise = promise
+      return promise
+    })
+  }
 
   create(effect: Effect.Effect<unknown, unknown, R>): Effect.Effect<Values.Promise, never, R> {
     return Effect.suspend(() => {
@@ -100,8 +105,8 @@ export const resolvePromiseValue = <R>(
 ): Effect.Effect<unknown, unknown, R> => {
   if (own?.promise !== undefined && value === own.promise) return Effect.fail(selfResolutionError(node))
   if (value instanceof Values.Promise) return runner.settlePromise(value)
-  if (value === null || typeof value !== "object" || !Object.hasOwn(value, "then")) return Effect.succeed(value)
-  const then = (value as SafeObject).then
+  if (!(value instanceof ProgramObject)) return Effect.succeed(value)
+  const then = get(value, "then")
   if (typeofValue(then) !== "function") return Effect.succeed(value)
 
   return Effect.gen(function* () {
@@ -126,11 +131,7 @@ export const resolvePromise = <R>(
   node: AstNode,
 ): Effect.Effect<Values.Promise, never, R> => {
   if (value instanceof Values.Promise) return Effect.succeed(value)
-  const box: { promise?: Values.Promise } = {}
-  return Effect.map(promises.create(resolvePromiseValue(runner, value, node, box)), (promise) => {
-    box.promise = promise
-    return promise
-  })
+  return promises.createWithSelf((self) => resolvePromiseValue(runner, value, node, self))
 }
 
 const promiseStatics = ["all", "allSettled", "race", "any", "resolve", "reject"] as const
@@ -167,10 +168,12 @@ const invokePromiseMethod = <R>(
       }
 
       if (name === "all") {
-        return yield* settleAfterTurn(
-          Effect.all(
-            items.map((item) => Effect.flatten(promises.await(item))),
-            { concurrency: "unbounded" },
+        return new ProgramArray(
+          yield* settleAfterTurn(
+            Effect.all(
+              items.map((item) => Effect.flatten(promises.await(item))),
+              { concurrency: "unbounded" },
+            ),
           ),
         )
       }
@@ -179,19 +182,14 @@ const invokePromiseMethod = <R>(
         for (const item of items) {
           const exit = yield* promises.await(item)
           if (Exit.isSuccess(exit)) {
-            outcomes.push(Object.assign(Object.create(null) as SafeObject, { status: "fulfilled", value: exit.value }))
+            outcomes.push(record({ status: "fulfilled", value: exit.value }))
             continue
           }
           if (Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
-          outcomes.push(
-            Object.assign(Object.create(null) as SafeObject, {
-              status: "rejected",
-              reason: caughtErrorValue(Cause.squash(exit.cause)),
-            }),
-          )
+          outcomes.push(record({ status: "rejected", reason: caughtErrorValue(Cause.squash(exit.cause)) }))
         }
         yield* Effect.yieldNow
-        return outcomes
+        return new ProgramArray(outcomes)
       }
       if (name === "race") {
         if (items.length === 0) {
@@ -246,7 +244,7 @@ const constructPromise = <R>(
   executor: unknown,
   node: AstNode,
 ): Effect.Effect<Values.Promise, unknown, R> => {
-  if (!(executor instanceof CodeModeFunction)) {
+  if (!(executor instanceof ProgramFunction)) {
     throw new InterpreterRuntimeError(
       "new Promise(...) expects an executor function (e.g. new Promise((resolve, reject) => { ... })).",
       node,
@@ -254,11 +252,9 @@ const constructPromise = <R>(
   }
   return Effect.gen(function* () {
     const deferred = Deferred.makeUnsafe<unknown, unknown>()
-    const box: { promise?: Values.Promise } = {}
-    const promise = yield* promises.create(
-      Effect.flatMap(Deferred.await(deferred), (value) => resolvePromiseValue(runner, value, node, box)),
+    const promise = yield* promises.createWithSelf((self) =>
+      Effect.flatMap(Deferred.await(deferred), (value) => resolvePromiseValue(runner, value, node, self)),
     )
-    box.promise = promise
     const resolve = capability("resolve", (value) => Deferred.doneUnsafe(deferred, Exit.succeed(value)))
     const reject = capability("reject", (value) => Deferred.doneUnsafe(deferred, Exit.fail(new ProgramThrow(value))))
     const executed = yield* Effect.exit(runner.invokeFunction(executor, [resolve, reject]))
@@ -310,19 +306,16 @@ const chainReaction = <R>(
   method: string,
   node: AstNode,
 ): Effect.Effect<Values.Promise, never, R> => {
-  const box: { promise?: Values.Promise } = {}
-  const body = Effect.gen(function* () {
-    const exit = yield* reactionExit(promises, source)
-    const handler = Exit.isSuccess(exit) ? onFulfilled : onRejected
-    if (handler === undefined) return yield* exit
-    const input = Exit.isSuccess(exit) ? exit.value : caughtErrorValue(Cause.squash(exit.cause))
-    const result = yield* applyCollectionCallback(runner, handler, method, node)([input])
-    return yield* resolvePromiseValue(runner, result, node, box)
-  })
-  return Effect.map(promises.create(body), (derived) => {
-    box.promise = derived
-    return derived
-  })
+  return promises.createWithSelf((self) =>
+    Effect.gen(function* () {
+      const exit = yield* reactionExit(promises, source)
+      const handler = Exit.isSuccess(exit) ? onFulfilled : onRejected
+      if (handler === undefined) return yield* exit
+      const input = Exit.isSuccess(exit) ? exit.value : caughtErrorValue(Cause.squash(exit.cause))
+      const result = yield* applyCollectionCallback(runner, handler, method, node)([input])
+      return yield* resolvePromiseValue(runner, result, node, self)
+    }),
+  )
 }
 
 const chainFinally = <R>(

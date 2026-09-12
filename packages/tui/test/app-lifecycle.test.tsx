@@ -1163,23 +1163,10 @@ test("configured app bindings execute settings and permission commands", async (
   const settings = await setup.waitForFrame((frame) => frame.includes("Settings"))
   expect(settings).toContain("Appearance")
   expect(settings).toContain("Animations")
-
   setup.mockInput.pressEscape()
   await setup.waitForFrame((frame) => !frame.includes("Settings"))
   setup.mockInput.pressKey("F7")
-  await setup.renderOnce()
-  setup.mockInput.pressKey("p", { ctrl: true })
-  await setup.waitForFrame((frame) => frame.includes("Commands"))
-  setup.mockInput.pressKey("END")
-  const commands = await setup.waitForFrame(
-    (frame) => {
-      if (frame.includes("Disable auto-approve permissions")) return true
-      setup.mockInput.pressArrow("up")
-      return false
-    },
-    { maxPasses: 100 },
-  )
-  expect(commands).not.toContain("Enable auto-approve permissions")
+  await setup.waitForFrame((frame) => frame.includes("Auto-approve all enabled"))
 })
 
 test.each([

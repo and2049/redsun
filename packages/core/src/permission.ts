@@ -166,7 +166,7 @@ const layer = Layer.effect(
       const session = yield* sessions.get(sessionID)
       if (!session) return yield* new SessionErrors.NotFoundError({ sessionID })
       const agent = yield* agents.resolve(agentID ?? session.agent)
-      return agent?.permissions ?? missingAgentPermissions
+      return merge(agent?.permissions ?? missingAgentPermissions, session.permissions ?? [])
     })
 
     function denied(input: Pick<Request, "action" | "resources">, rules: Permission.Ruleset) {
@@ -192,8 +192,7 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      if (autoApprove && event.effect === "ask")
-        return { effect: "allow" as const, message: event.message, rules: all }
+      if (autoApprove && event.effect === "ask") return { effect: "allow" as const, message: event.message, rules: all }
       return { effect: event.effect, message: event.message, rules: all }
     })
 

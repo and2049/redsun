@@ -27,6 +27,12 @@ Paths are relative to the docs directory above.
 - `cli/config.md`: terminal-only preferences in `cli.json`: themes, keybinds, terminal plugins, scrolling, alerts
 - `cli/keybinds.md`: keybind IDs, defaults, leader key, binding syntax
 - `cli/plugins.md`: loading TUI plugins from the CLI
+- `cli/acp.md`: Agent Client Protocol integrations
+- `cli/commands.md`: command-line commands and options
+- `cli/providers.md`: provider connections from the terminal
+- `cli/theme.md`: terminal theme configuration
+- `cli/tui.md`: interactive terminal usage
+- `cli/web.md`: connecting the web interface
 - `agents.md`: agent definitions, modes, permissions, model preferences
 - `commands.md`: custom commands and prompt templates
 - `skills.md`: skill files, discovery, frontmatter
@@ -36,7 +42,9 @@ Paths are relative to the docs directory above.
 - `providers.md`: configuring providers, models, variants, custom endpoints
 - `models.md`: the model catalog and model references
 - `mcp-servers.md`: MCP server configuration and authentication
-- `lsp.md`: language server integrations
+- `network.md`: proxies, certificates, and network configuration
+- `tools.md`: built-in tools and their configuration
+- `websearch.md`: web search providers and configuration
 - `formatters.md`: formatter configuration
 - `attachments.md`: file and image attachments
 - `compaction.md`: context compaction behaviour and settings
@@ -67,6 +75,9 @@ Upstream features redsun deliberately does not carry, even though the vendored
 pages still describe them: the `session.panel` slot and `ui.panel` API in
 `build/plugins/cli.md` (redsun has no session panes), and session tabs, whose
 `ui.tabs` methods exist but always report disabled. Do not build on either.
+The upstream `session.permissions` CLI preference is also absent: redsun uses
+the server-side auto-approve toggle (`Shift+Tab`), which applies across sessions.
+Per-session permission rules in the server API are supported.
 
 ## Naming differences from upstream
 

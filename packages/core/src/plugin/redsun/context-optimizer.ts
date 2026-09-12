@@ -138,16 +138,17 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const maxChars = instructionMaxChars(yield* config.entries())
-    yield* ctx.session.hook("context", (event) =>
-      Effect.gen(function* () {
-        const entries = yield* config.entries()
-        const messages =
-          Config.latest(entries, "stale_read_deduplication") === true
-            ? dedupeStaleReads(event.messages)
-            : event.messages
-        event.system = event.system.map((part) => boundSystem(part, maxChars))
-        event.messages = messages.map((message) => boundMessage(message, maxChars))
-      }),
-    )
+    for (const kind of ["context", "compaction", "generate"] as const)
+      yield* ctx.session.hook(kind, (event) =>
+        Effect.gen(function* () {
+          const entries = yield* config.entries()
+          const messages =
+            Config.latest(entries, "stale_read_deduplication") === true
+              ? dedupeStaleReads(event.messages)
+              : event.messages
+          event.system = event.system.map((part) => boundSystem(part, maxChars))
+          event.messages = messages.map((message) => boundMessage(message, maxChars))
+        }),
+      )
   }),
 })
