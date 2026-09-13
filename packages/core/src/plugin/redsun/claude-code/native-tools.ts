@@ -14,6 +14,7 @@ const TOOL_NAMES: Record<string, string> = {
   WebFetch: "webfetch",
   WebSearch: "websearch",
   Skill: "skill",
+  AskUserQuestion: "question",
 }
 
 const INPUT_KEYS: Record<string, Record<string, string>> = {
@@ -52,10 +53,11 @@ export const resultMetadata = (
   name: string,
   input: Record<string, unknown>,
   toolUseResult: unknown,
-): { files: DiffFile[] } | undefined => {
-  if (name !== "edit" && name !== "write") return undefined
+): { files: DiffFile[]; answers?: undefined } | { answers: string[][]; files?: undefined } | undefined => {
   const result = record(toolUseResult)
   if (!result) return undefined
+  if (name === "question") return questionAnswers(input, result)
+  if (name !== "edit" && name !== "write") return undefined
   const path = typeof input.path === "string" ? input.path : undefined
   if (!path) return undefined
   if (typeof result.filePath === "string" && result.filePath !== path) return undefined
@@ -77,4 +79,16 @@ export const resultMetadata = (
       : original.replace(oldString, () => newString)
   if (replaced === original) return undefined
   return { files: [fileDiff(path, original, replaced, "modified")] }
+}
+
+const questionAnswers = (input: Record<string, unknown>, result: Record<string, unknown>) => {
+  const answers = record(result.answers)
+  if (!answers || !Array.isArray(input.questions)) return undefined
+  return {
+    answers: input.questions.map((question) => {
+      const text = record(question)?.question
+      const answer = typeof text === "string" ? answers[text] : undefined
+      return typeof answer === "string" && answer ? [answer] : []
+    }),
+  }
 }

@@ -191,6 +191,26 @@ describe("ClaudeCodeTranslate", () => {
     })
   })
 
+  it("renders a delegated AskUserQuestion as a question row with its answers", () => {
+    const questions = [{ question: "Which database?", header: "Database", options: [{ label: "Postgres" }] }]
+    const { parts } = run([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_q", name: "AskUserQuestion", input: { questions } }] },
+      },
+      {
+        type: "user",
+        tool_use_result: { questions, answers: { "Which database?": "Postgres" } },
+        message: { content: [{ type: "tool_result", tool_use_id: "tu_q", content: "User answered" }] },
+      },
+    ])
+    expect(parts[0]).toMatchObject({ toolName: "question", input: JSON.stringify({ questions }) })
+    expect(parts[1]).toMatchObject({
+      toolName: "question",
+      result: { output: "User answered", metadata: { answers: [["Postgres"]] } },
+    })
+  })
+
   it("leaves a plain result plain, and never attaches a diff to a failed edit", () => {
     const editCall = {
       type: "assistant",
