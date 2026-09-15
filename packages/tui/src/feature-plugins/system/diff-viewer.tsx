@@ -533,6 +533,13 @@ export function DiffViewerContent(props: {
       run: close,
     },
     {
+      id: "diff.close.ctrl_c",
+      title: "Close diff viewer",
+      group: "VCS",
+      bind: "ctrl+c",
+      run: close,
+    },
+    {
       id: "diff.down",
       title: "Move diff viewer down",
       group: "VCS",

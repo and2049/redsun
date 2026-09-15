@@ -7,6 +7,7 @@ import path from "node:path"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 import { createAppFixture } from "./fixture/app"
+import { takeDraft } from "../src/component/prompt/draft-stash"
 import type { PluginInfo } from "@opencode/client"
 
 test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s", async (width) => {
@@ -1224,6 +1225,7 @@ test.each(["", "unsent draft"])("Ctrl+Q exits with prompt %j", async (draft) => 
   await setup.mockInput.typeText(draft)
   setup.mockInput.pressKey("q", { ctrl: true })
   await setup.waitFor(() => setup.renderer.isDestroyed)
+  expect(takeDraft(undefined)?.prompt.text ?? "").toBe(draft)
 })
 
 test.each(["manual", "select"] as const)("selection copy and dismissal respect %s mode in the prompt", async (copy) => {
@@ -1269,6 +1271,8 @@ test.each(["manual", "select"] as const)("selection copy and dismissal respect %
     await ready.promise
     await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
     await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+    setup.renderer.currentFocusedEditor?.focus()
+    await setup.renderOnce()
     await setup.mockInput.typeText("selection audit draft")
     await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "selection audit draft")
     setup.mockInput.pressKey("a", { ctrl: true, shift: true })
