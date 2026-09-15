@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createTestRenderer } from "@opentui/core/testing"
+import { createMockKeys, createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Global } from "@opencode/util/global"
@@ -1179,7 +1179,7 @@ test.each([
   expect(frame).toContain(expected)
 })
 
-test("ctrl+c dismisses autocomplete and shell mode before exiting", async () => {
+test("ctrl+c dismisses autocomplete and shell mode without exiting", async () => {
   await using setup = await createAppFixture()
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("commands"))
@@ -1195,6 +1195,35 @@ test("ctrl+c dismisses autocomplete and shell mode before exiting", async () => 
   setup.mockInput.pressKey("c", { ctrl: true })
   await setup.waitForFrame((frame) => !frame.includes("Shell"))
   expect(setup.renderer.isDestroyed).toBe(false)
+})
+
+test.each(["\x03", "\x1b[99;5u", "\x1b[1089::99;5u"])(
+  "Ctrl+C clears the prompt and repeated %j keystrokes never exit",
+  async (key) => {
+    await using setup = await createAppFixture()
+    await setup.ready
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: false })
+    await setup.mockInput.typeText("draft to clear")
+    keys.pressKey(key)
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "")
+    keys.pressKey(key)
+    keys.pressKey(key)
+    await setup.renderOnce()
+    expect(setup.renderer.isDestroyed).toBeFalse()
+    await setup.mockInput.typeText("new draft")
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "new draft")
+    keys.pressKey(key)
+  },
+)
+
+test.each(["", "unsent draft"])("Ctrl+Q exits with prompt %j", async (draft) => {
+  await using setup = await createAppFixture()
+  await setup.ready
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText(draft)
+  setup.mockInput.pressKey("q", { ctrl: true })
+  await setup.waitFor(() => setup.renderer.isDestroyed)
 })
 
 test.each(["manual", "select"] as const)("selection copy and dismissal respect %s mode in the prompt", async (copy) => {
@@ -1244,10 +1273,6 @@ test.each(["manual", "select"] as const)("selection copy and dismissal respect %
     await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "selection audit draft")
     setup.mockInput.pressKey("a", { ctrl: true, shift: true })
     expect(setup.renderer.getSelection()?.getSelectedText()).toBe("selection audit draft")
-
-    setup.mockInput.pressEscape()
-    expect(setup.renderer.hasSelection).toBeFalse()
-    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("selection audit draft")
 
     setup.mockInput.pressKey("c", { ctrl: true })
     await setup.waitForFrame((frame) => !frame.includes("selection audit draft"))

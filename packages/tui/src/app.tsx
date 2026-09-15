@@ -534,6 +534,14 @@ function App(props: { pair?: DialogPairCredentials }) {
   const offSelectionKeys = keymap.intercept(
     "key",
     ({ event }) => {
+      if (
+        promptRef.current?.focused &&
+        event.ctrl &&
+        (event.name === "c" || event.baseCode === 99 || event.baseCode === 67)
+      ) {
+        renderer.clearSelection()
+        return
+      }
       Selection.handleSelectionKey(renderer, toast, event, clipboard, copyOnSelectEnabled())
     },
     { priority: 101 },
@@ -1145,11 +1153,6 @@ function App(props: { pair?: DialogPairCredentials }) {
   }))
 
   Keymap.createLayer(() => ({
-    enabled: () => {
-      const current = promptRef.current
-      if (!current?.focused) return true
-      return current.current.text === ""
-    },
     bindings: ["app.exit"],
   }))
 

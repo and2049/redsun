@@ -105,6 +105,8 @@ test("uses command IDs as keybind keys", () => {
 test("preserves current navigation defaults", () => {
   const config = resolve({}, { terminalSuspend: true })
 
+  expect(config.keybinds.get("app.exit")).toMatchObject([{ key: "ctrl+q" }])
+  expect(config.keybinds.get("prompt.clear")).toMatchObject([{ key: "ctrl+c" }])
   expect(config.keybinds.get("open.menu")).toMatchObject([{ key: "ctrl+o" }])
   // Redsun has no tab strip, so no session.tab.* command is defined and none
   // resolves to a key. An override for one is dropped at decode rather than

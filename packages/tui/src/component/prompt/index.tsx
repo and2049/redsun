@@ -978,7 +978,7 @@ export function Prompt(props: PromptProps) {
   Keymap.createLayer(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !disabled() && store.prompt.text !== "",
+      enabled: inputTarget() !== undefined && !disabled(),
       bindings: ["prompt.clear"],
     }
   })
