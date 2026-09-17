@@ -166,7 +166,6 @@ test("accepts every v2-only named command ID", () => {
     "diff.first",
     "diff.last",
     "diff.mark_reviewed",
-    "composer.subagent.interrupt",
     "opencode.settings",
     "service.restart",
     "permission.mode",

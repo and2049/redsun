@@ -119,7 +119,6 @@ export const Definitions = {
   "queued_prompt.delete": keybind("ctrl+d", "Delete queued prompt"),
   "session.toggle.exploration_grouping": keybind("none", "Toggle related tool call grouping"),
   "session.child.first": keybind("ctrl+down", "Go to first child session"),
-  "composer.subagent.interrupt": keybind("ctrl+d", "Interrupt subagent"),
   "session.child.next": keybind("right", "Go to next child session"),
   "session.child.previous": keybind("left", "Go to previous child session"),
   "session.child.list.next": keybind("down", "Select next active subagent"),
