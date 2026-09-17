@@ -25,7 +25,7 @@ const mutations = [
   [new RegExp(`^/api/session/${id}/agent$`), ["agent"]],
   [new RegExp(`^/api/session/${id}/model$`), ["model"]],
   [new RegExp(`^/api/session/${id}/interrupt$`), []],
-  [new RegExp(`^/api/session/${id}/permission/per_[A-Za-z0-9_-]+/reply$`), ["reply", "message"]],
+  [new RegExp(`^/api/session/${id}/permission/per_[A-Za-z0-9_-]+/reply$`), ["decision", "message"]],
   [new RegExp(`^/api/session/${id}/form/frm_[A-Za-z0-9_-]+/reply$`), ["answer"]],
   [new RegExp(`^/api/session/${id}/form/frm_[A-Za-z0-9_-]+/cancel$`), []],
 ] as const

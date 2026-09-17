@@ -8,7 +8,7 @@ state. Start by determining whether an issue is in a client, the shared server, 
 
 ## Check the background service
 
-Show the current server status:
+Show the current server information:
 
 ```bash
 redsun service status
@@ -17,7 +17,7 @@ redsun service status
 Verify that its API is healthy:
 
 ```bash
-redsun api get /api/health
+redsun api get /api/info
 ```
 
 If the service is stuck or unhealthy, restart it:
@@ -109,7 +109,7 @@ On macOS and Linux, you can signal a running redsun process to capture diagnosti
 from the health endpoint:
 
 ```bash
-redsun api get /api/health
+redsun api get /api/info
 ```
 
 Use the `pid` from the response with one of these signals:

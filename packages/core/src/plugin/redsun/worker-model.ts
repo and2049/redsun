@@ -2,13 +2,13 @@ export * as RedsunWorkerModel from "./worker-model.js"
 
 import { Effect } from "effect"
 import { Model } from "@opencode/schema/model"
-import type { Catalog } from "../../catalog.js"
+import type { Model as ModelRegistry } from "../../model.js"
 import type { KV } from "../../kv.js"
 import type { SessionStore } from "../../session/store.js"
 
 export interface Services {
   readonly kv: KV.Interface
-  readonly catalog: Catalog.Interface
+  readonly models: ModelRegistry.Interface
   readonly store: SessionStore.Interface
 }
 
@@ -81,7 +81,7 @@ export const sessionOverride = Effect.fn("RedsunWorkerModel.sessionOverride")(fu
     yield* Effect.logWarning("ignoring unparseable session worker model", { sessionID, stored: ref })
     return undefined
   }
-  const model = yield* services.catalog.model.get(parsed.providerID, parsed.id)
+  const model = yield* services.models.get(parsed.providerID, parsed.id)
   if (model === undefined) {
     yield* Effect.logWarning("ignoring unavailable session worker model", { sessionID, stored: ref })
     return undefined

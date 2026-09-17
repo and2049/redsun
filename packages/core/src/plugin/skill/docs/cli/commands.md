@@ -4,7 +4,7 @@ Every command accepts `--help` for its full flag list, for example `redsun run -
 
 ## run
 
-`redsun run` sends a message and prints the reply without opening the interactive interface.
+Sends a message and prints the reply without opening the interactive interface.
 
 ```bash
 $ redsun run "Explain this repository"
@@ -67,7 +67,7 @@ $ redsun run --help
 
 ## mini
 
-`redsun mini` starts the minimal interactive interface instead of the full-screen TUI.
+Starts the minimal interactive interface instead of the full-screen TUI.
 
 ```bash
 $ redsun mini
@@ -93,7 +93,7 @@ $ redsun mini --help
 
 ## session
 
-`redsun session` manages sessions.
+Manages sessions.
 
 ```bash
 $ redsun session list
@@ -143,7 +143,7 @@ $ redsun session --help
 
 ## auth
 
-`redsun auth` manages AI providers and credentials.
+Manages AI providers and credentials.
 
 ```bash
 $ redsun auth list
@@ -187,7 +187,7 @@ $ redsun auth --help
 
 ## models
 
-`redsun models` lists every available model.
+Lists every available model.
 
 ```bash
 $ redsun models
@@ -201,7 +201,7 @@ $ redsun models --help
 
 ## mcp
 
-`redsun mcp` manages MCP (Model Context Protocol) servers.
+Manages MCP (Model Context Protocol) servers.
 
 ```bash
 $ redsun mcp list
@@ -251,7 +251,7 @@ $ redsun mcp --help
 
 ## plugin
 
-`redsun plugin` manages plugins.
+Manages plugins.
 
 ```bash
 $ redsun plugin list
@@ -295,7 +295,7 @@ $ redsun plugin --help
 
 ## stats
 
-`redsun stats` shows shareable usage statistics.
+Shows shareable usage statistics.
 
 ```bash
 $ redsun stats
@@ -333,7 +333,7 @@ $ redsun stats --help
 
 ## serve
 
-`redsun serve` starts the API and web server. See [Web](web.md).
+Starts the API and web server. See [Web](web.md).
 
 ```bash
 $ redsun serve
@@ -359,7 +359,7 @@ $ redsun serve --help
 
 ## pair
 
-`redsun pair` shows server pairing information, including URLs, credentials, and a QR code.
+Shows server pairing information, including URLs, credentials, and a QR code.
 
 ```bash
 $ redsun pair
@@ -379,7 +379,7 @@ $ redsun pair --help
 
 ## service
 
-`redsun service` manages the background server. See [Web](web.md).
+Manages the background server. See [Web](web.md).
 
 ```bash
 $ redsun service start
@@ -439,9 +439,17 @@ View all subcommands and flags.
 $ redsun service --help
 ```
 
+## reload
+
+Reloads configuration without restarting the server. Running sessions continue with fresh services at the next step boundary.
+
+```bash
+$ redsun reload
+```
+
 ## api
 
-`redsun api` makes a request to the running server.
+Makes a request to the running server.
 
 ```bash
 $ redsun api GET /api/session
@@ -473,7 +481,7 @@ $ redsun api --help
 
 ## acp
 
-`redsun acp` starts an Agent Client Protocol server over stdin and stdout for editor integrations. It runs until the client closes the connection.
+Starts an Agent Client Protocol server over stdin and stdout for editor integrations. It runs until the client closes the connection.
 
 ```bash
 $ redsun acp
@@ -487,7 +495,7 @@ $ redsun acp --help
 
 ## debug
 
-`redsun debug` provides debugging and troubleshooting tools.
+Provides debugging and troubleshooting tools.
 
 ```bash
 $ redsun debug agents
@@ -519,7 +527,7 @@ $ redsun debug --help
 
 ## upgrade
 
-`redsun upgrade` upgrades redsun to the latest or a specific version. Alias: `update`.
+Upgrades redsun to the latest or a specific version. Alias: `update`.
 
 ```bash
 $ redsun upgrade
@@ -539,7 +547,7 @@ $ redsun upgrade --help
 
 ## uninstall
 
-`redsun uninstall` removes redsun and all related files.
+Removes redsun and all related files.
 
 ```bash
 $ redsun uninstall

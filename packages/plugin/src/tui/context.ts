@@ -1,9 +1,9 @@
 import type {
   AgentInfo,
   CommandInfo,
-  FormCancelInput,
+  SessionFormCancelInput,
   FormInfo,
-  FormReplyInput,
+  SessionFormReplyInput,
   IntegrationInfo,
   LocationRef,
   McpResource,
@@ -96,8 +96,8 @@ export interface Data {
       list(sessionID: string, location?: LocationRef): Array<FormInfo & { readonly location?: LocationRef }> | undefined
       sync(sessionID: string, location?: LocationRef): Promise<void>
       invalidate(sessionID: string, location?: LocationRef): void
-      reply(input: FormReplyInput, location?: LocationRef): Promise<void>
-      cancel(input: FormCancelInput, location?: LocationRef): Promise<void>
+      reply(input: SessionFormReplyInput, location?: LocationRef): Promise<void>
+      cancel(input: SessionFormCancelInput, location?: LocationRef): Promise<void>
     }
   }
   readonly project: {
@@ -179,6 +179,7 @@ export interface SlotMap {
   readonly "home.footer": Readonly<Record<string, never>>
   readonly "home.logo": Readonly<Record<string, never>>
   readonly "home.backdrop": { readonly width: number; readonly height: number }
+  readonly "home.footer.status": Readonly<Record<string, never>>
   readonly "prompt.footer": PromptFooterInput
   readonly "prompt.footer.status": PromptFooterInput
   readonly "prompt.footer.file": PromptFooterInput

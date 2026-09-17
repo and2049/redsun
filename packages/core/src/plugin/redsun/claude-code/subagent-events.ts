@@ -30,6 +30,7 @@ export const one = (
         assistantMessageID: SessionMessage.ID.make(event.messageID),
         agent: Agent.ID.make(event.agent),
         model,
+        started: Date.now(),
       })
     case "step-ended":
       return bus.publish(SessionEvent.Step.Ended, {
@@ -61,10 +62,12 @@ export const one = (
     }
     case "tool-called": {
       const base = { sessionID, assistantMessageID: SessionMessage.ID.make(event.messageID), id: event.id }
-      return bus.publish(SessionEvent.Tool.Input.Started, { ...base, name: event.name }).pipe(
-        Effect.andThen(bus.publish(SessionEvent.Tool.Input.Ended, { ...base, text: JSON.stringify(event.input) })),
-        Effect.andThen(bus.publish(SessionEvent.Tool.Called, { ...base, input: event.input, executed: true })),
-      )
+      return bus
+        .publish(SessionEvent.Tool.Input.Started, { ...base, name: event.name })
+        .pipe(
+          Effect.andThen(bus.publish(SessionEvent.Tool.Input.Ended, { ...base, text: JSON.stringify(event.input) })),
+          Effect.andThen(bus.publish(SessionEvent.Tool.Called, { ...base, input: event.input, executed: true })),
+        )
     }
     case "tool-result": {
       const base = { sessionID, assistantMessageID: SessionMessage.ID.make(event.messageID), id: event.id }

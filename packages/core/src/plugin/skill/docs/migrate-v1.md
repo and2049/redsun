@@ -7,7 +7,7 @@ package-managed V1 installation before installing V2; the V2 curl installer repl
 
 V2 has three intentional breaking changes:
 
-- [Plugins](#plugins) use a new plugin API.
+- [Plugins](build/plugins/migrate-v1.md) use a new plugin API.
 - The [server API and clients](#server-api-and-clients) have new contracts.
 - [Terminal client configuration](cli/config.md) moves from layered `tui.json(c)` files to one global `cli.json` file (auto
   migrated).
@@ -26,6 +26,17 @@ compatibility bug rather than an expected migration requirement.
 ## Install V2
 
 Install the V2 terminal client with the [terminal startup guide](cli/index.md).
+
+You do not need to rewrite everything before starting V2. A practical migration is:
+
+1. Keep your existing configuration and file-based definitions.
+2. Start V2 and verify models, credentials, agents, permissions, and MCP servers.
+3. Port plugins, because V1 plugin implementations do not run in V2.
+4. Port integrations that call the server API.
+5. Convert configuration to the native V2 shape when you are ready. This step is optional.
+
+Keep a copy of your V1 setup while validating the migration. V1 and V2 use the same configuration locations, so do not
+point V1 at files after converting them to native V2-only shapes.
 
 ## Configuration
 
@@ -509,7 +520,7 @@ V2 replaces layered V1 `tui.json(c)` files with one global terminal client confi
 The terminal client owns this file; the background service does not load it. When `cli.json` is absent, the first V2
 terminal client startup migrates supported global `tui.json` settings and persisted preferences while leaving V1 files
 unchanged. Project-local client configuration is not migrated because V2 client configuration is global. See
-[CLI config](cli/config.md) for current client settings.
+[CLI settings](cli/config.md) for the current client settings reference.
 
 ## Plugins
 
@@ -518,10 +529,7 @@ Rename `plugin` to `plugins`. Replace a package-and-options tuple with an object
 ```jsonc
 // V1
 {
-  "plugin": [
-    "opencode-example-plugin",
-    ["./plugin/local.ts", { "enabled": true }]
-  ]
+  "plugin": ["opencode-example-plugin", ["./plugin/local.ts", { "enabled": true }]]
 }
 
 // V2
@@ -537,13 +545,11 @@ Rename `plugin` to `plugins`. Replace a package-and-options tuple with an object
 ```
 
 V2 discovers local plugins from both `.redsun/plugin/` and `.redsun/plugins/`; use `.redsun/plugins/` for V2 files.
-Moving a file between these directories does not migrate its implementation.
 
-> **Warning:** V1 plugins will not work in V2.
+> **Warning:** V1 plugin implementations do not run in V2. Moving a file or renaming its config entry is not enough.
 
-The config entry can be translated automatically, but plugin implementation code must be ported to the released V2 API.
-Use the [Plugins guide](build/plugins/index.md) to replace V1 hooks and entrypoints. Related local modules and dependencies can
-remain with the plugin while you port its implementation.
+Port entrypoints, hooks, tools, events, and package exports with the dedicated
+[plugin migration guide](build/plugins/migrate-v1.md).
 
 ## Server API and clients
 

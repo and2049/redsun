@@ -78,7 +78,13 @@ test("local enrollment creates the handoff before issuing, prints no credential,
       const url = new URL(request.url)
       if (request.headers.get("authorization") !== `Basic ${btoa("opencode:fixture-password")}`)
         return new Response(null, { status: 401 })
-      if (url.pathname === "/api/health") return Response.json({ healthy: true, version: "fixture", pid: process.pid })
+      if (url.pathname === "/api/info")
+        return Response.json({
+          version: "fixture",
+          pid: process.pid,
+          urls: [url.origin],
+          paths: { tmp: temporary.path },
+        })
       if (url.pathname === "/api/remote")
         return Response.json({
           supported: true,

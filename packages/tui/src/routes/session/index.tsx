@@ -35,12 +35,15 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageUser,
   SessionInfo,
+  ModelInfo,
 } from "@opencode/client"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
 import { FilePath } from "../../ui/file-path"
 import {
   canonicalToolName,
+  executeCalls,
+  executeCallSummary,
   finiteNumber,
   flattenTodos,
   primitiveInputSummary,
@@ -48,7 +51,9 @@ import {
   toolDisplayContent,
   toolDisplayMetadata,
   type TodoItem,
+  type ExecuteCall,
 } from "../../util/tool-display"
+import { DialogExecute } from "./dialog-execute"
 import { RetryProvider } from "../../component/retry-provider"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useClient } from "../../context/client"
@@ -100,6 +105,7 @@ import {
   cacheReuseDrop,
   createSessionRows,
   completionStamp,
+  legacyTurns,
   messageBoundaryIDs,
   explorationSummary,
   resolvePart,
@@ -179,6 +185,7 @@ export function Session() {
   const session = createMemo(() => data.session.get(route.sessionID))
   const messages = () => data.session.message.list(route.sessionID)
   const messageIndexes = createMemo(() => new Map(messages().map((message, index) => [message.id, index])))
+  const legacy = createMemo(() => legacyTurns(messages()))
   const messagesBeforeRevert = () => {
     const messageID = session()?.revert?.messageID
     if (!messageID) return messages()
@@ -563,9 +570,9 @@ export function Session() {
     const result = await runPendingAction(inboxID, async () => {
       const request =
         action === "steer"
-          ? client.api.session.inbox.steer({ sessionID: route.sessionID, inboxID })
+          ? client.api.session.inbox.update({ sessionID: route.sessionID, inboxID, delivery: "steer" })
           : action === "queue"
-            ? client.api.session.inbox.queue({ sessionID: route.sessionID, inboxID })
+            ? client.api.session.inbox.update({ sessionID: route.sessionID, inboxID, delivery: "queue" })
             : client.api.session.inbox.cancel({ sessionID: route.sessionID, inboxID })
       const error = await request.then(
         () => undefined,
@@ -966,7 +973,7 @@ export function Session() {
         const title = input.trim()
         void (
           title
-            ? client.api.session.rename({ sessionID: route.sessionID, title })
+            ? client.api.session.update({ sessionID: route.sessionID, title })
             : data.session.title.generate(route.sessionID)
         ).catch((error) => toast.error(error))
       },
@@ -1556,6 +1563,7 @@ export function Session() {
         diffWrapMode,
         models,
         messageIndex: (messageID) => messageIndexes().get(messageID),
+        legacyTurns: legacy,
         config,
         mutatePending,
         pendingDelivery: (inboxID) => pendingDeliveries().get(inboxID),
@@ -1666,13 +1674,7 @@ export function Session() {
                     }}
                   </Show>
                 </Match>
-                <Match
-                  when={
-                    session() &&
-                    currentLocation.error?.location.directory === session()!.location.directory &&
-                    currentLocation.error?.location.workspaceID === session()!.location.workspaceID
-                  }
-                >
+                <Match when={session() && currentLocation.error?.location.directory === session()!.location.directory}>
                   <SessionLocationMissing
                     directory={session()!.location.directory}
                     projectID={session()!.projectID}
@@ -2244,12 +2246,19 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
     onCleanup(() => clearInterval(timer))
   })
   const duration = createMemo(() => {
-    if (!generating()) return turnDuration(props.message, messages())
-    const input = turnInput(props.message, messages())
+    if (!generating())
+      return turnDuration(props.message, messages(), ctx.messageIndex(props.message.id), ctx.legacyTurns())
+    const input = turnInput(props.message, messages(), ctx.messageIndex(props.message.id), ctx.legacyTurns())
     return Math.max(0, now() - (input?.time.created ?? props.message.time.created))
   })
   const tokensPerSecond = createMemo(() =>
-    turnTokensPerSecond(props.message, messages(), undefined, generating() ? { now: now() } : undefined),
+    turnTokensPerSecond(
+      props.message,
+      messages(),
+      ctx.messageIndex(props.message.id),
+      ctx.legacyTurns(),
+      generating() ? { now: now() } : undefined,
+    ),
   )
   // Seeded by the turn's input so the verb holds steady across the steps of one turn
   // and through the flip from "Cooking" to "Cooked".
@@ -3287,7 +3296,7 @@ function ShellDisplay(props: {
           id,
           cursor,
           limit: SHELL_DISPLAY_LIMIT,
-          location: location ? { directory: location.directory, workspace: location.workspaceID } : undefined,
+          location: location ? { directory: location.directory } : undefined,
         })
         .catch(() => undefined)
       if (!response) break
@@ -3632,6 +3641,7 @@ function Subagent(props: ToolProps) {
   const sessionID = createMemo(() => stringValue(props.metadata.sessionID) ?? stringValue(props.metadata.sessionId))
   const description = createMemo(() => stringValue(props.input.description))
   const continuation = createMemo(() => Boolean(stringValue(props.input.sessionID)))
+  const model = createMemo(() => subagentModelLabel(stringValue(props.input.model), data.location.model.list()))
   const isRunning = createMemo(() => {
     const id = sessionID()
     return props.part.state.status === "running" || Boolean(id && data.session.status(id) === "running")
@@ -3655,11 +3665,22 @@ function Subagent(props: ToolProps) {
         ) : undefined
       }
     >
-      {continuation()
-        ? `Continue subagent — ${description() ?? "Subagent"}`
-        : `${Locale.titlecase(stringValue(props.input.agent) ?? stringValue(props.input.subagent_type) ?? "General")} Subagent — ${description() ?? "Subagent"}`}
+      {`${continuation() ? "Continue subagent" : `${Locale.titlecase(stringValue(props.input.agent) ?? stringValue(props.input.subagent_type) ?? "General")} Subagent`} — ${description() ?? "Subagent"}${model() ? ` · ${model()}` : ""}`}
     </InlineTool>
   )
+}
+
+export function subagentModelLabel(
+  value: string | undefined,
+  models: readonly Pick<ModelInfo, "providerID" | "id" | "name">[] | undefined,
+) {
+  if (!value) return
+  const [reference, variant] = value.split("#")
+  const separator = reference.indexOf("/")
+  const providerID = separator === -1 ? "" : reference.slice(0, separator)
+  const modelID = separator === -1 ? reference : reference.slice(separator + 1)
+  const name = models?.find((item) => item.providerID === providerID && item.id === modelID)?.name
+  return `${name ?? reference}${variant ? ` (${variant})` : ""}`
 }
 
 export function isBackgroundSubagent(
@@ -3669,23 +3690,7 @@ export function isBackgroundSubagent(
   return status === "completed" && metadata.status === "running"
 }
 
-type ExecuteCall = { tool: string; status: "running" | "completed" | "error"; input?: Record<string, unknown> }
-
-function executeCalls(value: unknown): ExecuteCall[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((call) => {
-    const item = recordValue(call)
-    const tool = stringValue(item?.tool)
-    const status = stringValue(item?.status)
-    if (!tool || !status || !["running", "completed", "error"].includes(status)) return []
-    return [{ tool, status: status as ExecuteCall["status"], input: recordValue(item?.input) }]
-  })
-}
-
-export function executeCallSummary(call: ExecuteCall) {
-  const args = primitiveInputSummary(call.input ?? {}).replace(/\s+/g, " ")
-  return `${call.tool}${args ? ` ${args}` : ""}`
-}
+export { executeCallSummary }
 
 function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
   const theme = useTheme()
@@ -3743,6 +3748,7 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
 function Execute(props: ToolProps) {
   const ctx = use()
   const theme = useTheme()
+  const dialog = useDialog()
   const isLoading = createMemo(() => props.part.state.status === "streaming" || props.part.state.status === "running")
   const calls = createMemo(() => executeCalls(props.metadata.toolCalls))
   const output = createMemo(() => stripAnsi(props.output?.trim() ?? ""))
@@ -3760,6 +3766,7 @@ function Execute(props: ToolProps) {
         pending="execute"
         complete={true}
         part={props.part}
+        onClick={() => dialog.replace(() => <DialogExecute part={props.part} />)}
       >
         {""}
       </InlineTool>

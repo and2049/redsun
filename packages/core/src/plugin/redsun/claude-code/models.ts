@@ -89,7 +89,9 @@ export const parseDiscovered = (value: unknown): Discovered[] => {
     if (typeof record.value !== "string" || !record.value) continue
     result.push({
       value: record.value,
-      ...(typeof record.resolvedModel === "string" && record.resolvedModel ? { resolvedModel: record.resolvedModel } : {}),
+      ...(typeof record.resolvedModel === "string" && record.resolvedModel
+        ? { resolvedModel: record.resolvedModel }
+        : {}),
       ...(typeof record.displayName === "string" && record.displayName ? { displayName: record.displayName } : {}),
     })
   }
@@ -114,8 +116,7 @@ export const parseRetired = (value: unknown): Map<string, Retirement> => {
 // as a version.
 const GENERATION = /^claude-([a-z]+)-(\d+)(?:-(\d)(?!\d))?/
 
-const isOneMillion = (entry: Discovered) =>
-  entry.value.endsWith("[1m]") || (entry.resolvedModel ?? "").endsWith("[1m]")
+const isOneMillion = (entry: Discovered) => entry.value.endsWith("[1m]") || (entry.resolvedModel ?? "").endsWith("[1m]")
 
 export const discoveredName = (entry: Discovered): string | undefined => {
   const match = GENERATION.exec(stripVariant(entry.resolvedModel ?? ""))
@@ -134,30 +135,32 @@ const discoveredFamily = (entry: Discovered): string => {
   return match ? `claude-${match[1]}` : "claude"
 }
 
-// Structural subset of both the plugin context's CatalogDraft and core's
-// Catalog.Draft (method syntax keeps the id brands bivariant), so the same
-// registration runs from provider.ts and from a test driving a real Catalog.
-type CatalogTarget = {
-  readonly provider: { update(providerID: Provider.ID, fn: (provider: Provider.MutableInfo) => void): void }
-  readonly model: { update(providerID: Provider.ID, modelID: Model.ID, fn: (model: Model.MutableInfo) => void): void }
+// Structural subset of both the plugin context's ProviderEditor and core's
+// Provider.Editor (method syntax keeps the id brands bivariant), so the same
+// registration runs from provider.ts and from a test driving a real registry.
+type ProviderTarget = {
+  update(providerID: Provider.ID, fn: (provider: Provider.MutableInfo) => void): void
+  readonly models: {
+    update(providerID: Provider.ID, modelID: Model.ID, fn: (model: Model.MutableInfo) => void): void
+  }
 }
 
 export const applyCatalog = (
-  catalog: CatalogTarget,
+  providers: ProviderTarget,
   extras?: {
     readonly retired?: ReadonlyMap<string, Retirement>
     readonly discovered?: readonly Discovered[]
   },
 ) => {
   const info = providerInfo()
-  catalog.provider.update(PROVIDER_ID, (provider) => {
+  providers.update(PROVIDER_ID, (provider) => {
     provider.name = info.name
     provider.activation = info.activation
     provider.package = info.package
   })
   const curated = new Set(MODELS.map((entry) => String(entry.id)))
   for (const entry of MODELS) {
-    catalog.model.update(PROVIDER_ID, entry.id, (draft) => {
+    providers.models.update(PROVIDER_ID, entry.id, (draft) => {
       Object.assign(draft, entry)
     })
   }
@@ -168,7 +171,7 @@ export const applyCatalog = (
     if (found.value === "default") continue
     const name = discoveredName(found)
     if (curated.has(found.value)) {
-      if (name) catalog.model.update(PROVIDER_ID, Model.ID.make(found.value), (draft) => void (draft.name = name))
+      if (name) providers.models.update(PROVIDER_ID, Model.ID.make(found.value), (draft) => void (draft.name = name))
       continue
     }
     const entry = model(found.value, {
@@ -176,7 +179,7 @@ export const applyCatalog = (
       family: discoveredFamily(found),
       limit: isOneMillion(found) ? CONTEXT_1M : CONTEXT_200K,
     })
-    catalog.model.update(PROVIDER_ID, entry.id, (draft) => {
+    providers.models.update(PROVIDER_ID, entry.id, (draft) => {
       Object.assign(draft, entry)
     })
   }
@@ -184,7 +187,7 @@ export const applyCatalog = (
   // (which runs after this transform) says otherwise.
   for (const id of extras?.retired?.keys() ?? []) {
     if (!curated.has(id)) continue
-    catalog.model.update(PROVIDER_ID, Model.ID.make(id), (draft) => void (draft.enabled = false))
+    providers.models.update(PROVIDER_ID, Model.ID.make(id), (draft) => void (draft.enabled = false))
   }
 }
 

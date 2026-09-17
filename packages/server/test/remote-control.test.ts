@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Effect, Schema, Logger, References } from "effect"
+import { Effect, Schedule, Schema, Logger, References } from "effect"
 import { RemoteControl } from "@opencode/schema/remote-control"
 import { Session } from "@opencode/schema/session"
 import { HttpServer } from "effect/unstable/http"
@@ -558,7 +558,17 @@ it.live(
         ),
       )
       expect(created.data.title).toBe("Remote fixture")
-      yield* request(`/api/plugin/await-activation?location[directory]=${encodeURIComponent(dir.path)}`, "POST")
+      // Agent definitions arrive with plugin activation; the activation-wait route is gone upstream.
+      yield* Effect.gen(function* () {
+        const agents = (yield* read(
+          yield* request(`/api/agent?location[directory]=${encodeURIComponent(dir.path)}`, "GET"),
+        )) as { data?: { id: string }[] }
+        return agents.data?.some((agent) => agent.id === "compose") ?? false
+      }).pipe(
+        Effect.filterOrFail((ready) => ready),
+        Effect.retry(Schedule.spaced("10 millis")),
+        Effect.timeout("5 seconds"),
+      )
       const permission = decodePermission(
         yield* read(
           yield* request(`/api/session/${created.data.id}/permission`, "POST", {
@@ -578,7 +588,7 @@ it.live(
         (yield* request(
           `/api/session/${created.data.id}/permission/${permission.data.id}/reply`,
           "POST",
-          { reply: "once" },
+          { decision: "once" },
           bearer,
         )).status,
       ).toBe(204)

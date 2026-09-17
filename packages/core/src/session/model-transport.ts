@@ -13,6 +13,7 @@ import {
 import { AIError, AIErrorReason, TransportError, type TransportOperation } from "@opencode/ai"
 import { Hash } from "@opencode/util/hash"
 import { Cause, Clock, Context, Effect, Fiber, Layer, Metric, Queue, Scope, Semaphore, Stream } from "effect"
+import { Headers } from "effect/unstable/http"
 import { Socket } from "effect/unstable/socket"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { SessionSchema } from "./schema.js"
@@ -52,8 +53,24 @@ interface State {
   channel?: Channel
 }
 
+/** Selects the connection for one exchange. Its output feeds the affinity key, so changed headers reopen the socket. */
+export interface Handshake {
+  readonly url: string
+  readonly headers: Record<string, string>
+}
+
+/**
+ * Per-exchange taps. `handshake` runs before the connection is selected; `send` sees each outbound
+ * frame after the driver builds it; `receive` sees each inbound frame before the driver observes it.
+ */
+export interface Interceptor {
+  readonly handshake?: (connect: Handshake) => Effect.Effect<Handshake>
+  readonly send?: (frame: string) => Effect.Effect<string>
+  readonly receive?: (frame: string) => Effect.Effect<string>
+}
+
 export interface Interface {
-  readonly bind: (sessionID: SessionSchema.ID) => WebSocketChannelExecutor
+  readonly bind: (sessionID: SessionSchema.ID, interceptor?: Interceptor) => WebSocketChannelExecutor
   readonly close: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   readonly closeAll: Effect.Effect<void>
 }
@@ -267,7 +284,8 @@ export const makeLayer = (connector: WebSocketConnector) =>
 
       const start = Effect.fn("SessionModelTransport.start")(function* (
         owner: State,
-        exchange: WebSocketChannelExchange,
+        input: WebSocketChannelExchange,
+        interceptor?: Interceptor,
       ) {
         if (owner.closed)
           return yield* transportError("Session WebSocket owner is closed", {
@@ -276,7 +294,13 @@ export const makeLayer = (connector: WebSocketConnector) =>
             phase: "queue",
             delivery: "not-sent",
           })
-        if (owner.httpFallback) return fallback(exchange)
+        if (owner.httpFallback) return fallback(input)
+        const selected = interceptor?.handshake
+          ? yield* interceptor.handshake({ url: input.connect.url, headers: { ...input.connect.headers } })
+          : undefined
+        const exchange: WebSocketChannelExchange = selected
+          ? { ...input, connect: { ...input.connect, url: selected.url, headers: Headers.fromInput(selected.headers) } }
+          : input
         const key = affinity(exchange)
         const now = yield* Clock.currentTimeMillis
         const current = owner.channel
@@ -337,6 +361,9 @@ export const makeLayer = (connector: WebSocketConnector) =>
           Effect.onInterrupt(() => closeChannel(owner, channel)),
         )
         if (create.mode === "full") channel.checkpoint = undefined
+        const message = interceptor?.send
+          ? yield* interceptor.send(create.message).pipe(Effect.onInterrupt(() => closeChannel(owner, channel)))
+          : create.message
         yield* Effect.logDebug("session websocket sending", {
           sessionTransport: "websocket",
           phase: "send",
@@ -347,7 +374,7 @@ export const makeLayer = (connector: WebSocketConnector) =>
           delivery: "send-attempted",
         }
         channel.active = active
-        const sent = yield* channel.connection.sendText(create.message).pipe(
+        const sent = yield* channel.connection.sendText(message).pipe(
           Effect.withSpan("SessionModelTransport.send"),
           Effect.onInterrupt(() => closeChannel(owner, channel)),
           Effect.result,
@@ -388,6 +415,7 @@ export const makeLayer = (connector: WebSocketConnector) =>
                 }),
               ),
           }),
+          Stream.mapEffect((frame) => (interceptor?.receive ? interceptor.receive(frame) : Effect.succeed(frame))),
           Stream.mapEffect((frame) => exchange.driver.observe(create, frame)),
           Stream.tap((observation) =>
             Effect.sync(() => {
@@ -465,7 +493,7 @@ export const makeLayer = (connector: WebSocketConnector) =>
         return { frames, complete, http: channel.connection.http }
       })
 
-      const bind = (sessionID: SessionSchema.ID): WebSocketChannelExecutor => ({
+      const bind = (sessionID: SessionSchema.ID, interceptor?: Interceptor): WebSocketChannelExecutor => ({
         execute: (exchange) => {
           const owner = state(sessionID)
           let execution: WebSocketChannelExecution | undefined
@@ -475,7 +503,7 @@ export const makeLayer = (connector: WebSocketConnector) =>
             },
             frames: Stream.unwrap(
               Effect.acquireRelease(owner.lock.take(1), () => owner.lock.release(1), { interruptible: true }).pipe(
-                Effect.andThen(start(owner, exchange)),
+                Effect.andThen(start(owner, exchange, interceptor)),
                 Effect.tap((started) =>
                   Effect.sync(() => {
                     execution = started

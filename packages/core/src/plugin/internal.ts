@@ -7,7 +7,8 @@ import { AppProcess } from "@opencode/util/process"
 import { Context, Effect, Scope } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { Agent } from "../agent.js"
-import { Catalog } from "../catalog.js"
+import { Model } from "../model.js"
+import { Provider } from "../provider.js"
 import { Command } from "../command.js"
 import { Config } from "../config.js"
 import { Credential } from "../credential.js"
@@ -25,10 +26,12 @@ import { ConfigReferencePlugin } from "../config/plugin/reference.js"
 import { ConfigShellPlugin } from "../config/plugin/shell.js"
 import { ConfigSnapshotPlugin } from "../config/plugin/snapshot.js"
 import { ConfigSkillPlugin } from "../config/plugin/skill.js"
+import { ConfigCompatibilityPlugin } from "../config/plugin/compatibility.js"
 import { ConfigToolOutputPlugin } from "../config/plugin/tool-output.js"
 import { ConfigWebSearchPlugin } from "../config/plugin/websearch.js"
 import { ConfigWorktreePlugin } from "../config/plugin/worktree.js"
 import { Worktree } from "../worktree.js"
+import { WorktreeStrategies } from "../worktree/strategies.js"
 import { Bus } from "../bus.js"
 import { Environment } from "../environment/index.js"
 import { FileAccess } from "../file-access.js"
@@ -90,6 +93,7 @@ import { WellKnown } from "../wellknown.js"
 import { WriteTool } from "../tool/plugin/write.js"
 import { AgentPlugin } from "./agent.js"
 import { CommandPlugin } from "./command.js"
+import { IdentityPlugin } from "./identity.js"
 import { PlanPlugin } from "./plan.js"
 import { ModelsDevPlugin } from "./models-dev.js"
 import { McpCodeModeExclusionPlugin } from "./mcp-codemode-exclusion.js"
@@ -98,7 +102,6 @@ import { WebSearchPlugins } from "./websearch/index.js"
 import { SkillPlugin } from "./skill.js"
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { OptimizePlugin } from "./optimize.js"
-import { VariantPlugin } from "./variant.js"
 import { VcsGitPlugin } from "./vcs/git.js"
 import { WarmingPlugin } from "./warming.js"
 import { WellKnownPlugin } from "../wellknown/plugin.js"
@@ -106,7 +109,8 @@ import { WellKnownPlugin } from "../wellknown/plugin.js"
 const services = [
   Agent.Service,
   AppProcess.Service,
-  Catalog.Service,
+  Provider.Service,
+  Model.Service,
   Command.Service,
   Config.Service,
   Credential.Service,
@@ -149,6 +153,7 @@ const services = [
   Watcher.Service,
   WellKnown.Service,
   Worktree.Service,
+  WorktreeStrategies.Service,
 ] as const
 
 export type Requirements = Context.Service.Identifier<(typeof services)[number]>
@@ -156,7 +161,8 @@ export type Requirements = Context.Service.Identifier<(typeof services)[number]>
 export const requirements = LayerNode.group([
   Agent.node,
   AppProcess.node,
-  Catalog.node,
+  Provider.node,
+  Model.node,
   Command.node,
   Config.node,
   Credential.node,
@@ -199,11 +205,13 @@ export const requirements = LayerNode.group([
   Watcher.node,
   WellKnown.node,
   Worktree.node,
+  WorktreeStrategies.node,
 ])
 
 export type InternalPlugin = Plugin<Requirements | Scope.Scope>
 
 const pre = [
+  ConfigWorktreePlugin.Plugin,
   ConfigMcpPlugin.Plugin,
   McpCodeModeExclusionPlugin.Plugin,
   WellKnownPlugin.Plugin,
@@ -220,6 +228,7 @@ const pre = [
   PatchTool.Plugin,
   // Render model prompts after the patch plugin selects the available editing tools.
   ...OptimizePlugin.Plugins,
+  IdentityPlugin.Plugin,
   EditTool.Plugin,
   GlobTool.Plugin,
   GrepTool.Plugin,
@@ -247,11 +256,10 @@ const post = [
   ConfigShellPlugin.Plugin,
   ConfigSnapshotPlugin.Plugin,
   ConfigToolOutputPlugin.Plugin,
+  ConfigCompatibilityPlugin.Plugin,
   ConfigSkillPlugin.Plugin,
   ConfigProviderPlugin.Plugin,
   ConfigWebSearchPlugin.Plugin,
-  ConfigWorktreePlugin.Plugin,
-  VariantPlugin.Plugin,
   ConfigPolicyPlugin.Plugin,
   RedsunComposePlugin.Plugin,
   RedsunWorkerModelTool.Plugin,

@@ -18,7 +18,7 @@ import {
 } from "../theme"
 import { discoverThemes } from "../theme/discovery"
 import { createComponentTheme, createComponentThemeView, type ComponentTheme } from "../theme/component"
-import { createEffect, createMemo, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useConfig } from "../config"
@@ -89,7 +89,6 @@ export {
 const THEME_REFRESH_DELAY = 1000
 
 type State = {
-  themes: Record<string, ThemeDocumentSource>
   active: string
   ready: boolean
   locked: number
@@ -121,13 +120,13 @@ type ThemeContextValue = {
 const FALLBACK_THEME = "dusk"
 
 const [store, setStore] = createStore<State>({
-  themes: allThemes(),
   active: FALLBACK_THEME,
   ready: false,
   locked: 0,
 })
+const [themeSources, setThemeSources] = createSignal(allThemes())
 
-subscribeThemes((themes) => setStore("themes", themes))
+subscribeThemes(setThemeSources)
 
 const themeContext = createSimpleContext({
   name: "Theme",
@@ -162,17 +161,17 @@ const themeContext = createSimpleContext({
 
     onMount(() => {
       void syncCustomThemes().finally(() => {
-        valuesV2()
+        tokens()
         setStore("ready", true)
       })
     })
 
     let themeRefreshTimeout: ReturnType<typeof setTimeout> | undefined
-    const refresh = () => {
+    const refreshThemes = () => {
       clearTimeout(themeRefreshTimeout)
       themeRefreshTimeout = setTimeout(() => void syncCustomThemes(), THEME_REFRESH_DELAY)
     }
-    const unsubscribeRefresh = themes.subscribeRefresh?.(refresh)
+    const unsubscribeRefresh = themes.subscribeRefresh?.(refreshThemes)
 
     onCleanup(() => {
       unsubscribeRefresh?.()
@@ -181,28 +180,29 @@ const themeContext = createSimpleContext({
 
     const initStarted = performance.now()
     const selected = createMemo(() => {
-      const name = store.themes[store.active] ? store.active : FALLBACK_THEME
+      const sources = themeSources()
+      const name = sources[store.active] ? store.active : FALLBACK_THEME
       try {
-        return loadTheme(store.themes[name], name)
+        return loadTheme(sources[name], name)
       } catch (error) {
         if (name === FALLBACK_THEME) throw error
         themeErrors.emit(name, error)
         setStore("active", FALLBACK_THEME)
-        return loadTheme(store.themes[FALLBACK_THEME], FALLBACK_THEME)
+        return loadTheme(sources[FALLBACK_THEME], FALLBACK_THEME)
       }
     })
     const mode = () => selected().mode
-    const valuesV2 = () => selected().theme
-    valuesV2()
+    const tokens = () => selected().theme
+    tokens()
     themePerformance.set("Init", `${(performance.now() - initStarted).toFixed(2)} ms`)
-    const current = createComponentTheme(valuesV2, mode)
+    const current = createComponentTheme(tokens, mode)
 
-    createEffect(() => renderer.setBackgroundColor(valuesV2().background.default))
+    createEffect(() => renderer.setBackgroundColor(tokens().background.default))
 
-    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(valuesV2(), mode()))
+    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens(), mode()))
     const service: Themes = {
       current,
-      currentTokens: valuesV2,
+      currentTokens: tokens,
       currentSyntax,
       get selected() {
         return store.active

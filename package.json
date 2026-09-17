@@ -17,6 +17,7 @@
     "test:lint-rules": "ast-grep test -c script/ast-grep/sgconfig.yml",
     "test:effect-simplification-rules": "ast-grep test -c script/ast-grep/effect-simplifications/sgconfig.yml",
     "typecheck": "bun turbo typecheck --concurrency=3",
+    "check": "bun run lint && bun run typecheck",
     "typecheck:profile": "bun script/profile-typecheck.ts",
     "typecheck:profile:packages": "bun script/profile-typecheck-packages.ts",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
@@ -29,7 +30,7 @@
       "packages/*"
     ],
     "catalog": {
-      "@anthropic-ai/claude-agent-sdk": "0.3.269",
+      "@anthropic-ai/claude-agent-sdk": "0.3.274",
       "@effect/opentelemetry": "4.0.0-rc.112",
       "@effect/platform-node": "4.0.0-rc.112",
       "@effect/platform-node-shared": "4.0.0-rc.112",
@@ -159,8 +160,8 @@
     "pacote@21.5.0": "patches/pacote@21.5.0.patch",
     "@ai-sdk/google@3.0.73": "patches/@ai-sdk%2Fgoogle@3.0.73.patch",
     "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch",
-    "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
     "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
-    "@ff-labs/fff-bun@0.10.5": "patches/@ff-labs%2Ffff-bun@0.10.5.patch"
+    "@ff-labs/fff-bun@0.10.5": "patches/@ff-labs%2Ffff-bun@0.10.5.patch",
+    "@modelcontextprotocol/client@2.0.0": "patches/@modelcontextprotocol%2Fclient@2.0.0.patch"
   }
 }

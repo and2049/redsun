@@ -3,8 +3,7 @@ export * as RedsunWorkerModelTool from "./worker-model-tool.js"
 import { ToolFailure } from "@opencode/ai"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
-import { Model } from "@opencode/schema/model"
-import { Catalog } from "../../catalog.js"
+import { Model } from "../../model.js"
 import { Form } from "../../form.js"
 import { KV } from "../../kv.js"
 import { SessionStore } from "../../session/store.js"
@@ -34,10 +33,10 @@ export const Plugin = define({
   id: "redsun.tool.worker-model",
   effect: Effect.fn(function* (ctx) {
     const forms = yield* Form.Service
-    const catalog = yield* Catalog.Service
+    const registry = yield* Model.Service
     const services: RedsunWorkerModel.Services = {
       kv: yield* KV.Service,
-      catalog,
+      models: registry,
       store: yield* SessionStore.Service,
     }
 
@@ -51,7 +50,7 @@ export const Plugin = define({
           output: Schema.Struct({ model: Schema.String }),
           execute: (_input, context) =>
             Effect.gen(function* () {
-              const models = yield* catalog.model.available()
+              const models = yield* registry.available()
               if (models.length === 0)
                 return yield* new ToolFailure({ message: "No models are available to choose from." })
 
@@ -91,7 +90,7 @@ export const Plugin = define({
               const ref = yield* Effect.try(() => Model.Ref.parse(chosen)).pipe(
                 Effect.mapError(() => new ToolFailure({ message: `Not a model reference: ${chosen}` })),
               )
-              const known = yield* catalog.model.get(ref.providerID, ref.id)
+              const known = yield* registry.get(ref.providerID, ref.id)
               if (!known) return yield* new ToolFailure({ message: `No such model: ${chosen}` })
 
               yield* RedsunWorkerModel.setSessionOverride(services, context.sessionID, chosen)
@@ -103,6 +102,5 @@ export const Plugin = define({
         }),
       )
       .pipe(Effect.orDie)
-
   }),
 })

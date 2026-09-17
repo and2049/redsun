@@ -156,8 +156,8 @@ describe("ClaudeCodeModels", () => {
   it("applies retirements and discovered picker rows through the catalog transform", () => {
     const models = new Map<string, Record<string, unknown>>()
     const target = {
-      provider: { update: (_id: string, fn: (provider: Record<string, unknown>) => void) => fn({}) },
-      model: {
+      update: (_id: string, fn: (provider: Record<string, unknown>) => void) => fn({}),
+      models: {
         update: (_pid: string, mid: string, fn: (model: Record<string, unknown>) => void) => {
           const key = String(mid)
           const draft = models.get(key) ?? { id: mid }
@@ -278,7 +278,11 @@ describe("ClaudeCodeExecutable", () => {
   })
 
   it("reports an actionable error when the CLI is absent", () => {
-    const result = ClaudeCodeExecutable.resolveWith({ env: { PATH: "/usr/bin" }, platform: "linux", filesystem: fs([]) })
+    const result = ClaudeCodeExecutable.resolveWith({
+      env: { PATH: "/usr/bin" },
+      platform: "linux",
+      filesystem: fs([]),
+    })
     expect(result).toHaveProperty("error")
     expect("error" in result && result.error).toContain("not found on PATH")
   })

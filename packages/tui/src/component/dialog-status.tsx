@@ -44,7 +44,9 @@ export function DialogStatus() {
                       <Match when={item.status.status === "connected"}>{t("ui.connected")}</Match>
                       <Match when={item.status.status === "failed" && item.status}>{(val) => val().error}</Match>
                       <Match when={item.status.status === "disabled"}>{t("ui.disabledInConfiguration")}</Match>
-                      <Match when={item.status.status === "needs_auth"}>{t("ui.needsAuthentication")}</Match>
+                      <Match when={item.status.status === "needs_auth" && item.status}>
+                        {(val) => `${t("ui.needsAuthentication")}: ${val().error}`}
+                      </Match>
                     </Switch>
                   </span>
                 </text>

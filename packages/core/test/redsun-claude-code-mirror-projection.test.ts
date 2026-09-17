@@ -89,7 +89,7 @@ describe("ClaudeCodeSubagentEvents", () => {
       ])
 
       const messages = yield* readMessages
-      expect(messages).toHaveLength(1)
+      expect(messages.map((item) => item.type)).toEqual(["assistant", "idle"])
       const assistant = messages[0]
       if (assistant?.type !== "assistant") return yield* Effect.die("expected an assistant message")
 

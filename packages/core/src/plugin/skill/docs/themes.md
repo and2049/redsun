@@ -13,7 +13,7 @@ set it directly in your global CLI config:
 ```
 
 Themes belong to the terminal client. Put theme selection in `cli.json`, not `redsun.json`. See
-[CLI config](cli/config.md) for the config location and other terminal settings.
+[CLI settings](cli/config.md) for the config location and other terminal settings.
 
 ## Modes
 

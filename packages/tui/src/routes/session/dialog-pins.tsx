@@ -71,8 +71,8 @@ export function DialogPins(props: { sessionID: string; onJump: (messageID: strin
     setFailed(false)
     setLoading(true)
     setView("reader")
-    void client.api.session
-      .message({ sessionID: props.sessionID, messageID: id }, { signal: current.signal })
+    void client.api.session.message
+      .get({ sessionID: props.sessionID, messageID: id }, { signal: current.signal })
       .then((response) => {
         if (!alive || current.signal.aborted) return
         setMessage(response)

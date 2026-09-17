@@ -94,7 +94,7 @@ redsun serve
 Check that the CLI can reach the background service after applying the settings:
 
 ```bash
-redsun api get /api/health
+redsun api get /api/info
 ```
 
 A successful health response verifies the local client-to-service connection. Run a normal provider request to verify the
