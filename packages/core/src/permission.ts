@@ -107,6 +107,7 @@ export type Mode = typeof Mode.Type
 const MODE_KEY = "permission.mode"
 
 export interface Interface {
+  readonly close: Effect.Effect<void>
   readonly ask: (input: AssertInput) => Effect.Effect<AskResult, SessionErrors.NotFoundError>
   readonly assert: (input: AssertInput) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
@@ -140,17 +141,22 @@ const layer = Layer.effect(
     const stored = yield* kv.get(MODE_KEY)
     let autoApprove = stored === "auto"
 
-    yield* Effect.addFinalizer(() =>
-      Effect.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new DeclinedError()), {
-        discard: true,
-      }).pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            pending.clear()
-          }),
-        ),
-      ),
-    )
+    let closed = false
+
+    const close = Effect.gen(function* () {
+      closed = true
+      yield* Effect.forEach(Array.from(pending.values()), (item) =>
+        bus
+          .publish(Permission.Event.Replied, {
+            sessionID: item.request.sessionID,
+            requestID: item.request.id,
+            reply: "reject",
+          })
+          .pipe(Effect.ensuring(Deferred.fail(item.deferred, new DeclinedError()))),
+      )
+      pending.clear()
+    }).pipe(Effect.uninterruptible)
+    yield* Effect.addFinalizer(() => close)
 
     const savedRules = Effect.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
@@ -214,6 +220,10 @@ const layer = Layer.effect(
         Effect.gen(function* () {
           const deferred = yield* Deferred.make<void, DeclinedError | CorrectedError>()
           const item = { request, agent, deferred }
+          if (closed) {
+            yield* Deferred.fail(deferred, new DeclinedError())
+            return item
+          }
           if (pending.has(request.id))
             return yield* Effect.die(new Error(`Duplicate pending permission ID: ${request.id}`))
           pending.set(request.id, item)
@@ -225,6 +235,7 @@ const layer = Layer.effect(
       )
 
     const ask = Effect.fn("Permission.ask")(function* (input: AssertInput) {
+      if (closed) return { id: input.id ?? ID.create(), effect: "deny" as const }
       const result = yield* evaluateInput(input)
       const value = request(input, result.message)
       if (result.effect === "ask") yield* create(value, input.agent)
@@ -233,6 +244,7 @@ const layer = Layer.effect(
 
     const assert = Effect.fn("Permission.assert")((input: AssertInput) =>
       Effect.gen(function* () {
+        if (closed) return yield* Effect.die(new DeclinedError())
         const result = yield* evaluateInput(input)
         return yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
@@ -358,7 +370,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ ask, assert, reply, get, forSession, list, mode, setMode })
+    return Service.of({ ask, assert, reply, get, forSession, list, mode, setMode, close })
   }),
 )
 

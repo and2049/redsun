@@ -1,13 +1,13 @@
 import { describe, expect } from "bun:test"
 import { Document, Info, type Entry } from "@opencode/schema/config"
 import { Effect, Exit, Schema } from "effect"
-import { Catalog } from "@opencode/core/catalog"
 import { Config } from "@opencode/core/config"
 import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { Model } from "@opencode/core/model"
 import { ModelResolver } from "@opencode/core/model-resolver"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
+import { Provider } from "@opencode/core/provider"
 import { ClaudeCodeModels } from "@opencode/core/plugin/redsun/claude-code/models"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
@@ -18,7 +18,7 @@ import { PluginTestLayer } from "./plugin/fixture"
  * config-added model carries no `package` and `projectModel` falls back to the
  * provider's sentinel, which the aisdk hooks then claim by providerID. This
  * drives the real registration entry point (`applyCatalog`) and the real
- * `ConfigProviderPlugin` against a real Catalog, so a regression in any link
+ * `ConfigProviderPlugin` against the real provider/model registries, so a regression in any link
  * of that chain fails here rather than at the first live delegated turn.
  */
 
@@ -37,8 +37,9 @@ const configDocument = (info: unknown) => new Document({ type: "document", info:
 describe("Claude Code config-declared models", () => {
   it.effect("inherits the sentinel package so a config-added id resolves as delegated", () =>
     Effect.gen(function* () {
-      const catalog = yield* Catalog.Service
-      yield* catalog.transform(ClaudeCodeModels.applyCatalog)
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      yield* providers.transform(ClaudeCodeModels.applyCatalog)
       yield* addProviderPlugin([
         configDocument({
           providers: {
@@ -51,7 +52,7 @@ describe("Claude Code config-declared models", () => {
         }),
       ])
 
-      const model = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-1"))
+      const model = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-1"))
       expect(model).toBeDefined()
       expect(model?.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
       expect(model?.name).toBe("Claude Opus 4.1")
@@ -78,8 +79,9 @@ describe("Claude Code config-declared models", () => {
 
   it.effect("keeps the provider record intact when config only adds models", () =>
     Effect.gen(function* () {
-      const catalog = yield* Catalog.Service
-      yield* catalog.transform(ClaudeCodeModels.applyCatalog)
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      yield* providers.transform(ClaudeCodeModels.applyCatalog)
       yield* addProviderPlugin([
         configDocument({
           providers: {
@@ -88,7 +90,7 @@ describe("Claude Code config-declared models", () => {
         }),
       ])
 
-      const provider = yield* catalog.provider.get(ClaudeCodeModels.PROVIDER_ID)
+      const provider = yield* providers.get(ClaudeCodeModels.PROVIDER_ID)
       expect(provider?.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)
       expect(provider?.name).toBe(ClaudeCodeModels.DISPLAY_NAME)
     }),
@@ -99,11 +101,12 @@ describe("Claude Code config-declared models", () => {
       // The auto-retire path: a substitution observed at runtime lands in the
       // retired map the registered transform reads, and user config -- which
       // runs after it -- stays the final word.
-      const catalog = yield* Catalog.Service
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
       const retired = new Map([["claude-opus-4-8", { served: "claude-opus-5" }]])
-      yield* catalog.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired }))
+      yield* providers.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired }))
 
-      const hidden = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      const hidden = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
       expect(hidden?.enabled).toBe(false)
 
       yield* addProviderPlugin([
@@ -113,31 +116,32 @@ describe("Claude Code config-declared models", () => {
           },
         }),
       ])
-      const resurrected = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      const resurrected = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
       expect(resurrected?.enabled).toBe(true)
     }),
   )
 
-  it.live("re-applies live retirements and discoveries on catalog.reload", () =>
+  it.live("re-applies live retirements and discoveries on provider reload", () =>
     Effect.gen(function* () {
       // provider.ts registers the transform once over mutable state and calls
       // reload() when a substitution or picker probe lands; the transform must
       // see the mutation. Live clock: reload's debounce sleeps for real.
-      const catalog = yield* Catalog.Service
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
       const retired = new Map<string, ClaudeCodeModels.Retirement>()
       let discovered: ClaudeCodeModels.Discovered[] = []
-      yield* catalog.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
+      yield* providers.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
 
-      const before = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      const before = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
       expect(before?.enabled).toBe(true)
 
       retired.set("claude-opus-4-8", { served: "claude-opus-5" })
       discovered = [{ value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" }]
-      yield* catalog.reload()
+      yield* providers.reload()
 
-      const after = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
+      const after = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
       expect(after?.enabled).toBe(false)
-      const alias = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("sonnet"))
+      const alias = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("sonnet"))
       expect(alias?.name).toBe("Claude Sonnet 5")
     }),
   )
@@ -146,9 +150,10 @@ describe("Claude Code config-declared models", () => {
     Effect.gen(function* () {
       // Registration order (claude-code plugin before ConfigProviderPlugin in
       // internal.ts) means config transforms run after `applyCatalog`, so a
-      // user override of a curated entry wins -- also on catalog.reload().
-      const catalog = yield* Catalog.Service
-      yield* catalog.transform(ClaudeCodeModels.applyCatalog)
+      // user override of a curated entry wins -- also on provider reload().
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      yield* providers.transform(ClaudeCodeModels.applyCatalog)
       yield* addProviderPlugin([
         configDocument({
           providers: {
@@ -161,7 +166,7 @@ describe("Claude Code config-declared models", () => {
         }),
       ])
 
-      const model = yield* catalog.model.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-sonnet-4-5"))
+      const model = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-sonnet-4-5"))
       expect(model?.name).toBe("Sonnet 4.5 (pinned)")
       expect(model?.enabled).toBe(false)
       expect(model?.package).toBe(ClaudeCodeModels.SENTINEL_PACKAGE)

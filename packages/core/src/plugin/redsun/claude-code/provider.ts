@@ -73,7 +73,7 @@ export const Plugin = define({
       yield* kv.get(DISCOVERED_KEY).pipe(Effect.orElseSucceed(() => undefined)),
     )
 
-    yield* ctx.catalog.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
+    yield* ctx.provider.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
 
     yield* ctx.integration.transform((draft) => {
       draft.update(ClaudeCodeModels.PROVIDER_ID, (integration) => {
@@ -113,15 +113,25 @@ export const Plugin = define({
       discovered = models
       Effect.runFork(
         kv
-          .set(DISCOVERED_KEY, models.map((entry) => ({ ...entry })))
-          .pipe(Effect.andThen(ctx.catalog.reload()), Effect.catch(() => Effect.void)),
+          .set(
+            DISCOVERED_KEY,
+            models.map((entry) => ({ ...entry })),
+          )
+          .pipe(
+            Effect.andThen(ctx.provider.reload()),
+            Effect.catch(() => Effect.void),
+          ),
       )
     }
 
     const manager = new ClaudeCodeSessions.SessionManager(ClaudeCodeQuery.defaultCreateQuery, {
       // The picker probe rides the session the user is already spawning; it
       // costs no tokens and no extra process.
-      onStart: (query) => void query.supportedModels?.().then(onDiscovered).catch(() => {}),
+      onStart: (query) =>
+        void query
+          .supportedModels?.()
+          .then(onDiscovered)
+          .catch(() => {}),
     })
 
     const retire = (input: { requested: string; served: string }) => {
@@ -129,9 +139,10 @@ export const Plugin = define({
       if (retired.has(input.requested)) return
       retired.set(input.requested, { served: input.served, at: new Date().toISOString() })
       Effect.runFork(
-        kv
-          .set(RETIRED_KEY, Object.fromEntries([...retired].map(([id, record]) => [id, { ...record }])))
-          .pipe(Effect.andThen(ctx.catalog.reload()), Effect.catch(() => Effect.void)),
+        kv.set(RETIRED_KEY, Object.fromEntries([...retired].map(([id, record]) => [id, { ...record }]))).pipe(
+          Effect.andThen(ctx.provider.reload()),
+          Effect.catch(() => Effect.void),
+        ),
       )
     }
 
@@ -294,9 +305,7 @@ export const Plugin = define({
                 input: args,
               } as never,
             })
-            return result.content
-              .flatMap((part) => (part.type === "text" ? [part.text] : []))
-              .join("\n")
+            return result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
           }).pipe(
             Effect.mapError((error) =>
               error instanceof Error ? error : new Error(String((error as { message?: string })?.message ?? error)),

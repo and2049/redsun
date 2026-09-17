@@ -101,15 +101,11 @@ export function DialogIntegration(
   })
 
   const options = createMemo(() => {
-    const providers = data.location.websearch.list(location) ?? []
-    const providersByID = new Map(providers.map((provider) => [provider.id, provider]))
     return integrations().map((integration) => {
       const methods = connectMethods(integration)
-      const provider = providersByID.get(integration.id)
       const credentials = credentialConnections(integration)
       let category = "Services"
       if (integration.id in INTEGRATION_PRIORITY) category = "Popular"
-      if (provider) category = "Web search"
       if (integration.metadata?.source === "mcp") category = "MCP"
       return {
         title: integration.name,
@@ -203,7 +199,7 @@ function manageConnections(
                 onSelect: () => {
                   if (credentialConnections(current() ?? integration)[0]?.id === connection.id) return
                   void client.api.credential
-                    .activate({ credentialID: connection.id, location: locationQuery(location) })
+                    .activate({ credentialID: connection.id })
                     .catch(toast.error)
                 },
               }
@@ -227,7 +223,7 @@ function manageConnections(
                     const label = value.trim()
                     if (!label) return
                     void client.api.credential
-                      .update({ credentialID: option.value, label, location: locationQuery(location) })
+                      .update({ credentialID: option.value, label })
                       .then(() => manageConnections(integration, methods, location, dialog, onConnected))
                       .catch(toast.error)
                   }}
@@ -244,7 +240,7 @@ function manageConnections(
               if (deleting() !== option.value) return setDeleting(option.value)
               const final = credentialConnections(current() ?? integration).length === 1
               void client.api.credential
-                .remove({ credentialID: option.value, location: locationQuery(location) })
+                .remove({ credentialID: option.value })
                 .then(() => {
                   setDeleting(undefined)
                   if (!final) return
@@ -793,7 +789,7 @@ async function formAnswer(dialog: ReturnType<typeof useDialog>, title: string, f
   const answer: FormAnswer = {}
   for (const field of fields) {
     if (!active(field, answer)) continue
-    const value = await fieldAnswer(dialog, title, field)
+    const value = field.type !== "external" && field.hidden ? field.default : await fieldAnswer(dialog, title, field)
     if (value === CANCELLED) return null
     if (value !== undefined) answer[field.key] = value
   }
@@ -1056,7 +1052,7 @@ function providerID(data: ReturnType<typeof useData>, location: LocationRef, int
 }
 
 function locationQuery(location: LocationRef) {
-  return { directory: location.directory, workspace: location.workspaceID }
+  return { directory: location.directory }
 }
 
 function message(cause: unknown) {

@@ -36,7 +36,6 @@ export function CommandBar() {
     if (!sessionID()) return undefined
     const current = location.current
     if (!current) return undefined
-    if (current.workspaceID) return current.workspaceID
     return current.directory.split(/[\\/]/).filter(Boolean).at(-1)
   })
   const branch = createMemo(() => data.location.vcs.info(location.current)?.branch.current)

@@ -1,5 +1,5 @@
 import { Agent } from "@opencode/core/agent"
-import { Catalog } from "@opencode/core/catalog"
+import { Model } from "@opencode/core/model"
 import { Global } from "@opencode/util/global"
 import { Effect, FileSystem } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -26,7 +26,7 @@ export const RemoteCatalogHandler = HttpApiBuilder.group(Api, "server.remoteCata
       )
       .handle("remoteCatalog.models", () =>
         response(
-          Catalog.Service.use((catalog) => catalog.model.available()).pipe(
+          Model.Service.use((models) => models.available()).pipe(
             Effect.map((models) =>
               models.map(({ id, providerID, name, variants }) => ({
                 id,

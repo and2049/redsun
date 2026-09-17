@@ -42,7 +42,7 @@ export const Plugin = define({
           id: Skill.ID.make("redsun"),
           name: Skill.Name.make("redsun"),
           description: OpencodeDescription,
-          location: AbsolutePath.make(path.join(directory, "SKILL.md")),
+          path: AbsolutePath.make(path.join(directory, "SKILL.md")),
           content: skillContent(directory),
         }),
       )
@@ -51,8 +51,7 @@ export const Plugin = define({
           id: Skill.ID.make("report"),
           name: Skill.Name.make("Report"),
           description: REPORT_DESCRIPTION,
-          slash: true,
-          location: AbsolutePath.make("/builtin/report.md"),
+          path: AbsolutePath.make("/builtin/report.md"),
           content: reportContent,
         }),
       )

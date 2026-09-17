@@ -35,7 +35,6 @@ export const ClientApi: ClientApiShape = makeDefaultApi({
 export const groupNames = {
   "server.remote": "remote",
   "server.remoteCatalog": "remoteCatalog",
-  "server.health": "health",
   "server.server": "server",
   "server.debug": "debug",
   "server.migration": "migration",
@@ -64,10 +63,9 @@ export const groupNames = {
   "server.reference": "reference",
   "server.project": "project",
   "server.worktree": "worktree",
-  "server.workspace": "workspace",
   "server.vcs": "vcs",
   "server.config": "config",
 } as const
 
 export const promiseOmitEndpoints = new Set(["pty.connect", "persistentPty.connect"])
-export const effectOmitEndpoints = new Set(["fs.read", "pty.connect", "persistentPty.connect"])
+export const effectOmitEndpoints = new Set(["fs.read", "fs.write", "pty.connect", "persistentPty.connect"])

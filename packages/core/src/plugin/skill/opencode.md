@@ -59,6 +59,7 @@ Paths are relative to the docs directory above.
 - `build/plugins/rpc.md`: custom methods and events shared with other plugins and clients
 - `build/plugins/effect.md`: the Effect-native plugin API
 - `build/plugins/effect/rpc.md`: RPC with the Effect plugin API
+- `build/plugins/migrate-v1.md`: porting V1 plugin implementations to the V2 plugin API
 - `build/client/index.md`: `@opencode/client`, the TypeScript HTTP client
 - `build/client/effect.md`: `@opencode/client/effect`
 - `build/sdk/index.md`: `@opencode/sdk`, embedding redsun without an HTTP listener
@@ -125,8 +126,9 @@ links to.
 CLI and TUI preferences are separate from redsun's server and project
 configuration. They live in the global `~/.config/redsun/cli.json`, or
 `$XDG_CONFIG_HOME/redsun/cli.json` when `XDG_CONFIG_HOME` is set. There is no
-project-local CLI configuration. Most preferences can also be changed from the
-TUI by pressing `Ctrl+P` and selecting **Open settings**.
+project-local CLI configuration. Set `OPENCODE_CLI_CONFIG_CONTENT` to merge
+inline JSON over the global settings. Most preferences can also be changed from
+the TUI by pressing `Ctrl+P` and selecting **Open settings**.
 
 Read `cli/config.md` before editing `cli.json`. It covers terminal-only
 settings such as themes, keybindings, terminal plugins, scrolling, attention
@@ -276,7 +278,7 @@ HTTP method and path or an OpenAPI operation ID.
 Call an endpoint with an HTTP method and path:
 
 ```sh
-redsun api get /api/health
+redsun api get /api/info
 ```
 
 Pass a request body with `--data` or `-d`, and additional headers with
@@ -320,7 +322,7 @@ redsun runs a client and a background server. Start by determining whether a
 problem belongs to the client, the shared server, or one project.
 
 - Check the service with `redsun service status` and verify the API with
-  `redsun api get /api/health`.
+  `redsun api get /api/info`.
 - Compare with `redsun --standalone`, which runs the TUI with a private
   server, to isolate shared-service issues.
 - Inspect `~/.local/share/redsun/log/opencode.log`. Filter `role=cli` for

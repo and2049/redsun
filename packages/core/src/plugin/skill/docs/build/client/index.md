@@ -154,7 +154,7 @@ const client = OpenCode.make({
   headers: Service.headers(endpoint),
 })
 
-const health = await client.health.get()
+const info = await client.server.info()
 ```
 
 `Service.ensure()` accepts an optional registration file, version, service

@@ -6,7 +6,7 @@ redsun includes built-in light and dark themes. Choose a color scheme in setting
 
 Press `Ctrl+P`, then select **Open settings** to change the theme and color mode.
 
-You can also set them in your global [CLI config](config.md):
+You can also set them in your global [CLI settings](config.md):
 
 ```json title="~/.config/redsun/cli.json"
 {

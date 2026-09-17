@@ -14,7 +14,7 @@ export function user(value: SessionInbox.User): SessionInbox.User {
   return {
     id: value.id,
     sessionID: value.sessionID,
-    timeCreated: value.timeCreated,
+    time: value.time,
     type: value.type,
     delivery: value.delivery,
     payload: { text: value.payload.text },
@@ -22,7 +22,7 @@ export function user(value: SessionInbox.User): SessionInbox.User {
 }
 
 export function inbox(value: SessionInbox.Info): SessionInbox.Info {
-  const base = { id: value.id, sessionID: value.sessionID, timeCreated: value.timeCreated, delivery: value.delivery }
+  const base = { id: value.id, sessionID: value.sessionID, time: value.time, delivery: value.delivery }
   switch (value.type) {
     case "user":
       return user(value)

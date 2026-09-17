@@ -28,7 +28,7 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
   dialog.setCentered(true)
 
   const [server] = createResource(() =>
-    client.api.server.get().catch((error) => {
+    client.api.server.info().catch((error) => {
       setLoadError(error)
       return undefined
     }),

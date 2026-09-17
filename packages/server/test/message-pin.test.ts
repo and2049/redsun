@@ -83,7 +83,7 @@ it.live("pins old user and assistant messages, validates ownership, and resets l
         role: "assistant",
       })
       expect(pins.find((pin) => pin.messageID === "msg_first")?.preview).toBe("Original question")
-      expect(await api.session.message(target)).toEqual(messages[1]!)
+      expect(await api.session.message.get(target)).toEqual(messages[1]!)
       await api.message.renamePin({ ...target, label: " " })
       expect(
         (await api.message.pins({ sessionID: session.id })).data.find((pin) => pin.messageID === target.messageID)
@@ -94,7 +94,7 @@ it.live("pins old user and assistant messages, validates ownership, and resets l
       await expect(api.message.renamePin({ ...target, label: "\u{1f600}".repeat(201) })).rejects.toThrow()
       await expect(api.message.renamePin({ ...target, label: "a".repeat(201) })).rejects.toThrow()
       await expect(api.message.pin({ ...target, sessionID: template.id })).rejects.toThrow()
-      await expect(api.session.message({ ...target, sessionID: template.id })).rejects.toThrow()
+      await expect(api.session.message.get({ ...target, sessionID: template.id })).rejects.toThrow()
       await expect(api.message.pin({ ...target, messageID: "msg_compact" })).rejects.toThrow()
       await expect(api.message.pin({ ...target, messageID: "msg_missing" })).rejects.toThrow()
       expect((await api.message.pins({ sessionID: template.id })).data).toEqual([])
@@ -145,7 +145,7 @@ it.live(
         expect(second.next).toBeUndefined()
         expect(new Set([...first.data, ...second.data].map((pin) => pin.messageID)).size).toBe(112)
         expect(second.data.find((pin) => pin.messageID === "msg_first")?.label).toBe("Restart bookmark")
-        expect(await api.session.message({ sessionID, messageID: "msg_first" })).toEqual(messages[0]!)
+        expect(await api.session.message.get({ sessionID, messageID: "msg_first" })).toEqual(messages[0]!)
         await api.session.remove({ sessionID })
         await expect(api.message.pins({ sessionID })).rejects.toThrow()
       })

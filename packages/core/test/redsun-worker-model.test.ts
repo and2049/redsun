@@ -27,12 +27,10 @@ const services = (input?: {
       remove: (key) => Effect.sync(() => void kv.delete(key)),
       scan: () => Effect.succeed({ entries: [] }),
     },
-    catalog: {
-      model: {
-        get: (providerID, modelID) =>
-          Effect.succeed(known.has(`${providerID}/${modelID}`) ? ({ id: modelID } as never) : undefined),
-      },
-    } as RedsunWorkerModel.Services["catalog"],
+    models: {
+      get: (providerID, modelID) =>
+        Effect.succeed(known.has(`${providerID}/${modelID}`) ? ({ id: modelID } as never) : undefined),
+    } as RedsunWorkerModel.Services["models"],
     store: {
       context: () => Effect.succeed((input?.messages ?? []) as never),
     } as unknown as RedsunWorkerModel.Services["store"],

@@ -66,7 +66,7 @@ export function useWorkerModelDialog() {
       const field = form.fields.find(isFormAnswerField)
       if (!field) return
       answered = true
-      void client.api.form
+      void client.api.session.form
         .reply({ sessionID: form.sessionID, formID: form.id, answer: { [field.key]: ref } }, formRequestOptions(form))
         .catch(() => {})
     }
@@ -86,7 +86,7 @@ export function useWorkerModelDialog() {
       ),
       () => {
         if (!form || answered) return
-        void client.api.form
+        void client.api.session.form
           .cancel({ sessionID: form.sessionID, formID: form.id }, formRequestOptions(form))
           .catch(() => {})
       },

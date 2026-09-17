@@ -57,7 +57,6 @@ describe("SkillPlugin.Plugin", () => {
           description: expect.stringContaining("redsun issue"),
         }),
       )
-      expect(report?.slash).toBe(true)
       expect(report?.content).toContain("- redsun version: 1.2.3")
       expect(report?.content).toContain("- install/channel: beta")
     }),
@@ -78,7 +77,7 @@ describe("SkillPlugin.Plugin", () => {
 
       yield* setup({ version: "1.2.3", channel: "beta" })
       const redsun = (yield* skill.list()).find((item) => item.id === "redsun")!
-      expect(String(redsun.location)).toBe(path.join(directory, "SKILL.md"))
+      expect(String(redsun.path)).toBe(path.join(directory, "SKILL.md"))
       expect(redsun.content).toContain(directory)
       expect(redsun.content).not.toContain(SkillPlugin.DOCS_PLACEHOLDER)
       expect(yield* Effect.promise(() => fs.readFile(page, "utf8"))).toContain("# CLI")
