@@ -56,7 +56,7 @@ message from its picker. Right-click any message for its actions (jump, pin, cop
 fork); left-clicking a user message opens the same menu.
 
 Press **Escape** to leave the prompt, then **J**/**K** step through messages (the selected
-one carries a bar in the left margin), **Shift+J**/**Shift+K** scroll by line, **F** pins the
+one carries a bar in the right margin), **Shift+J**/**Shift+K** scroll by line, **F** pins the
 selected message and **I** returns to the prompt.
 
 **`/pins`** opens the current session's searchable pin list. Select a pin to read its full

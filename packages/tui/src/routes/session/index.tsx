@@ -1726,7 +1726,14 @@ function SessionRowView(props: SessionRowViewProps) {
   const renderer = useRenderer()
   const promptRef = usePromptRef()
   const messageID = createMemo(() => rowMessageID(props.row))
-  const navigated = () => messageID() !== undefined && ctx.navigationMessage() === messageID()
+  const navigated = () => {
+    const id = messageID()
+    if (!id || ctx.navigationMessage() !== id) return false
+    if (props.row.type === "message") return true
+    if (props.row.type !== "part") return false
+    const message = props.message(id)
+    return message?.type === "assistant" && resolvePart(message, props.row.ref.partID)?.type === "text"
+  }
   return (
     <box
       id={sessionRowID(props.row, props.boundaryID)}
@@ -1794,7 +1801,7 @@ function SessionRowView(props: SessionRowViewProps) {
       <Show when={navigated()}>
         <box
           position="absolute"
-          left={0}
+          right={-1}
           top={0}
           bottom={0}
           width={1}
