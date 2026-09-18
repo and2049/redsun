@@ -117,6 +117,10 @@ test("normal-mode j/k tints the navigated message, f pins it, and right-click op
     const bars = barred(setup.captureCharFrame())
     expect(bars).toHaveLength(1)
     expect(bars[0]!.indexOf("┃")).toBe(0)
+    const reply = setup
+      .captureSpans()
+      .lines.find((line) => line.spans.some((span) => span.text.includes("Final answer")))!
+    expect(new Set(reply.spans.slice(0, -1).map((span) => JSON.stringify(span.bg))).size).toBe(1)
     expect(tinted()).toBeUndefined()
     setup.mockInput.pressKey("i")
     await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)

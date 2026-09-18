@@ -10,7 +10,8 @@ import { Spinner } from "../../component/spinner"
 import { useTheme, useThemes } from "../../context/theme"
 import { reasoningSummary } from "../../context/thinking"
 import { usePlugin } from "../../plugin/context"
-import { TRANSCRIPT_GUTTER, use } from "./render-context"
+import { NAVIGATION_TINT, TRANSCRIPT_GUTTER, use } from "./render-context"
+import { tint } from "../../theme/color"
 
 import { useLanguage } from "../../i18n"
 import { useRenderer } from "@opentui/solid"
@@ -66,6 +67,10 @@ export function TextPart(props: {
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
   const plugins = usePlugin()
+  const bg = () =>
+    ctx.navigationMessage() === props.message.id
+      ? tint(theme.background.default, theme.accent, NAVIGATION_TINT)
+      : theme.background.default
   return (
     <Show when={props.part.text.trim()}>
       <box paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
@@ -79,7 +84,7 @@ export function TextPart(props: {
           tableOptions={{ style: "grid", cellPaddingX: 1 }}
           conceal={ctx.markdownMode() === "rendered"}
           fg={theme.markdown.text}
-          bg={theme.background.default}
+          bg={bg()}
         />
       </box>
     </Show>

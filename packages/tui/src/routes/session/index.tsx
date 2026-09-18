@@ -151,7 +151,6 @@ const BACKGROUND_TOOL_HINT_DELAY = 3_000
 // The tail comfortably overfills a tall viewport; older rows mount as the reader approaches them.
 const TRANSCRIPT_TAIL_ROWS = 40
 const TRANSCRIPT_BACKFILL_CHUNK = 60
-const NAVIGATION_TINT = 0.2
 
 // Prompt-metadata contract with the redsun goal plugin (core/src/plugin/redsun/goal.ts).
 const GOAL_METADATA_KEY = "redsun.goal"
@@ -165,6 +164,7 @@ const ADVISOR_METADATA_KEY = "redsun.advisor"
 const MODEL_SUBSTITUTED_METADATA_KEY = "redsun.claude-code.model-substituted"
 
 export { TRANSCRIPT_GUTTER } from "./render-context"
+import { NAVIGATION_TINT } from "./render-context"
 
 export function Session() {
   const setEpilogue = useEpilogue()
@@ -714,10 +714,7 @@ export function Session() {
         .then(() => {
           if (request.signal.aborted || scroll.isDestroyed) return
           const boundary = boundaries().indexOf(messageID)
-          const index =
-            boundary >= 0
-              ? boundary
-              : rows.findIndex((row) => rowMessageID(row) === messageID)
+          const index = boundary >= 0 ? boundary : rows.findIndex((row) => rowMessageID(row) === messageID)
           if (index < 0) {
             clearMessageNavigation()
             toast.show({ message: language.t("pins.outsideTranscript"), variant: "error" })

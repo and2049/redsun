@@ -7,6 +7,7 @@ import type { ThinkingMode } from "../../context/thinking"
 export type PendingAction = "steer" | "queue" | "cancel"
 
 export const TRANSCRIPT_GUTTER = 1
+export const NAVIGATION_TINT = 0.2
 
 export const context = createContext<{
   /** Content width: terminal width minus vertical tabs, sidebar, and padding. */
