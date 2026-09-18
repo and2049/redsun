@@ -785,6 +785,11 @@ export function Session() {
       vim.setMode("insert")
     }
 
+    if (event.name === "escape" && navigationMessage()) {
+      clearMessageNavigation()
+      scroll.stickyScroll = !isAwayFromBottom()
+      return
+    }
     if (event.name === "j" || event.name === "k") {
       event.preventDefault()
       const down = event.name === "j"

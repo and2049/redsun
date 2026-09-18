@@ -7,7 +7,7 @@ import { Global } from "@opencode/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 
-test("normal-mode j/k tints the navigated message, f pins it, and right-click opens message actions", async () => {
+test("normal-mode j/k tints the navigated message, f pins it, escape clears it, and right-click opens message actions", async () => {
   await using state = await tmpdir()
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
   setup.renderer.start()
@@ -122,6 +122,9 @@ test("normal-mode j/k tints the navigated message, f pins it, and right-click op
       .lines.find((line) => line.spans.some((span) => span.text.includes("Final answer")))!
     expect(new Set(reply.spans.slice(0, -1).map((span) => JSON.stringify(span.bg))).size).toBe(1)
     expect(tinted()).toBeUndefined()
+    setup.mockInput.pressEscape()
+    await setup.waitForFrame((frame) => barred(frame).length === 0)
+    expect(setup.renderer.currentFocusedEditor).toBeNull()
     setup.mockInput.pressKey("i")
     await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)
     await setup.waitForVisualIdle()
