@@ -1,5 +1,5 @@
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
-import { RGBA, TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes, type MouseEvent } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type {
   SessionMessageAssistant,
@@ -10,7 +10,8 @@ import { Spinner } from "../../component/spinner"
 import { useTheme, useThemes } from "../../context/theme"
 import { reasoningSummary } from "../../context/thinking"
 import { usePlugin } from "../../plugin/context"
-import { TRANSCRIPT_GUTTER, use } from "./render-context"
+import { NAVIGATION_TINT, TRANSCRIPT_GUTTER, use } from "./render-context"
+import { tint } from "../../theme/color"
 
 import { useLanguage } from "../../i18n"
 import { useRenderer } from "@opentui/solid"
@@ -66,6 +67,10 @@ export function TextPart(props: {
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
   const plugins = usePlugin()
+  const bg = () =>
+    ctx.navigationMessage() === props.message.id
+      ? tint(theme.background.default, theme.accent, NAVIGATION_TINT)
+      : theme.background.default
   return (
     <Show when={props.part.text.trim()}>
       <box paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
@@ -79,7 +84,7 @@ export function TextPart(props: {
           tableOptions={{ style: "grid", cellPaddingX: 1 }}
           conceal={ctx.markdownMode() === "rendered"}
           fg={theme.markdown.text}
-          bg={theme.background.default}
+          bg={bg()}
         />
       </box>
     </Show>
@@ -105,7 +110,7 @@ export function InlineToolRow(props: {
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
-  onMouseUp?: () => void
+  onMouseUp?: (event: MouseEvent) => void
 }) {
   return (
     <box
@@ -275,8 +280,8 @@ export function Disclosure(props: {
         <box
           onMouseOver={() => props.toggleable && setHover(true)}
           onMouseOut={() => setHover(false)}
-          onMouseUp={() => {
-            if (!props.toggleable) return
+          onMouseUp={(event: MouseEvent) => {
+            if (event.button !== 0 || !props.toggleable) return
             if (renderer.getSelection()?.getSelectedText()) return
             props.onToggle()
           }}

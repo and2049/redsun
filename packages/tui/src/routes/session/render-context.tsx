@@ -7,6 +7,7 @@ import type { ThinkingMode } from "../../context/thinking"
 export type PendingAction = "steer" | "queue" | "cancel"
 
 export const TRANSCRIPT_GUTTER = 1
+export const NAVIGATION_TINT = 0.2
 
 export const context = createContext<{
   /** Content width: terminal width minus vertical tabs, sidebar, and padding. */
@@ -30,6 +31,7 @@ export const context = createContext<{
   mutatePending: (action: PendingAction, inboxID: string) => Promise<boolean>
   pendingDelivery: (inboxID: string) => SessionInbox.Delivery | undefined
   jumpToMessage: (messageID: string) => void
+  navigationMessage: () => string | undefined
 }>()
 
 export function use() {

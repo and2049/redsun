@@ -509,25 +509,17 @@ export function sessionRowID(row: SessionRow, boundaryID?: string) {
   if (row.type === "part") return `session-part:${row.ref.messageID}:${row.ref.partID}`
 }
 
+export function rowMessageID(row: SessionRow) {
+  if (row.type === "message" || row.type === "assistant-footer") return row.messageID
+  if (row.type === "part") return row.ref.messageID
+  if (row.type === "group") return groupRefs(row)[0]?.messageID
+  if (row.type === "turn-usage") return row.messageIDs[0]
+}
+
 function rowBoundaryMessageID(row: SessionRow, messages: Map<string, SessionMessageInfo>) {
-  if (row.type === "message") {
-    const message = messages.get(row.messageID)
-    if (message?.type === "user" && message.text.trim()) return message.id
-    return undefined
-  }
-  const messageID =
-    row.type === "part"
-      ? row.ref.messageID
-      : row.type === "group"
-        ? groupRefs(row)[0]?.messageID
-        : row.type === "assistant-footer"
-          ? row.messageID
-          : row.type === "turn-usage"
-            ? row.messageIDs[0]
-            : undefined
-  if (!messageID) return undefined
-  const message = messages.get(messageID)
-  if (message?.type === "assistant") return message.id
+  const message = messages.get(rowMessageID(row) ?? "")
+  if (row.type === "message") return message?.type === "user" && message.text.trim() ? message.id : undefined
+  return message?.type === "assistant" ? message.id : undefined
 }
 
 export function resolvePart(message: SessionMessageAssistant, partID: string) {

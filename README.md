@@ -52,7 +52,13 @@ can override them. The corresponding configuration is:
 ## Pinned messages
 
 Use **`/pin`** to pin or unpin the message selected by transcript navigation, or choose a
-message from its picker. You can also click a user message or an assistant's **Message actions**.
+message from its picker. Right-click any message for its actions (jump, pin, copy, revert,
+fork); left-clicking a user message opens the same menu.
+
+Press **Escape** to leave the prompt, then **J**/**K** step through messages (the selected
+one is tinted, with an accent bar in the margin for assistant replies), **Shift+J**/**Shift+K**
+scroll by line, **F** pins the
+selected message, **Escape** clears the selection and **I** returns to the prompt.
 
 **`/pins`** opens the current session's searchable pin list. Select a pin to read its full
 message, including messages beyond the loaded scrollback. In the list, **Ctrl+R** renames a
