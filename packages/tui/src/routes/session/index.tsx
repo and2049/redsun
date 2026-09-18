@@ -20,6 +20,7 @@ import { useRoute, useRouteData } from "../../context/route"
 import { createStore } from "solid-js/store"
 import { useData } from "../../context/data"
 import { SplitBorder } from "../../ui/border"
+import { tint } from "../../theme/color"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { PatchDiff } from "../../component/patch-diff"
@@ -150,6 +151,7 @@ const BACKGROUND_TOOL_HINT_DELAY = 3_000
 // The tail comfortably overfills a tall viewport; older rows mount as the reader approaches them.
 const TRANSCRIPT_TAIL_ROWS = 40
 const TRANSCRIPT_BACKFILL_CHUNK = 60
+const NAVIGATION_TINT = 0.2
 
 // Prompt-metadata contract with the redsun goal plugin (core/src/plugin/redsun/goal.ts).
 const GOAL_METADATA_KEY = "redsun.goal"
@@ -1726,11 +1728,9 @@ function SessionRowView(props: SessionRowViewProps) {
   const renderer = useRenderer()
   const promptRef = usePromptRef()
   const messageID = createMemo(() => rowMessageID(props.row))
-  const navigated = () => {
+  const highlighted = () => {
     const id = messageID()
-    if (!id || ctx.navigationMessage() !== id) return false
-    if (props.row.type === "message") return true
-    if (props.row.type !== "part") return false
+    if (!id || ctx.navigationMessage() !== id || props.row.type !== "part") return false
     const message = props.message(id)
     return message?.type === "assistant" && resolvePart(message, props.row.ref.partID)?.type === "text"
   }
@@ -1739,6 +1739,7 @@ function SessionRowView(props: SessionRowViewProps) {
       id={sessionRowID(props.row, props.boundaryID)}
       marginTop={1}
       flexShrink={0}
+      backgroundColor={highlighted() ? tint(theme.background.default, theme.accent, NAVIGATION_TINT) : undefined}
       onMouseUp={(event: MouseEvent) => {
         const id = messageID()
         if (event.button !== 2 || !id || renderer.getSelection()?.getSelectedText()) return
@@ -1798,10 +1799,10 @@ function SessionRowView(props: SessionRowViewProps) {
           )}
         </Match>
       </Switch>
-      <Show when={navigated()}>
+      <Show when={highlighted()}>
         <box
           position="absolute"
-          right={-1}
+          left={0}
           top={0}
           bottom={0}
           width={1}
@@ -2644,6 +2645,10 @@ function UserMessage(props: { message: SessionMessageUser }) {
   const mode = themes.mode
   const [hover, setHover] = createSignal(false)
   const color = createMemo(() => local.agent.color(data.session.get(ctx.sessionID)?.agent ?? "build"))
+  const surface = () =>
+    ctx.navigationMessage() === props.message.id
+      ? tint(theme.background.surface.offset, color(), NAVIGATION_TINT)
+      : theme.background.surface.offset
   const delivery = createMemo(() => ctx.pendingDelivery(props.message.id))
   const dialog = useDialog()
   const renderer = useRenderer()
@@ -2692,7 +2697,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
           }}
           paddingLeft={TRANSCRIPT_GUTTER}
           paddingRight={TRANSCRIPT_GUTTER}
-          backgroundColor={hover() ? theme.raise(theme.background.surface.offset) : theme.background.surface.offset}
+          backgroundColor={hover() ? theme.raise(surface()) : surface()}
           flexShrink={0}
         >
           <text fg={theme.text.default}>
