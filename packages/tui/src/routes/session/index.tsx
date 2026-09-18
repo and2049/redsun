@@ -69,6 +69,7 @@ import { DialogPins } from "./dialog-pins"
 import { DialogFork } from "./dialog-fork"
 import { DialogTimeline } from "./dialog-timeline"
 import { Sidebar } from "./sidebar"
+import { SESSION_SIDEBAR_WIDTH } from "../../ui/layout"
 import { SubagentFooter } from "./subagent-footer"
 import { scrollAnchor, setScrollAnchor } from "./scroll-anchor"
 import { activeChildren, childSessions as familyChildren, nextChild, nextInActiveList } from "./child-navigation"
@@ -275,7 +276,7 @@ export function Session() {
     if (sidebar() === "auto" && wide()) return true
     return false
   })
-  const contentWidth = createMemo(() => availableWidth() - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(() => availableWidth() - (sidebarVisible() && wide() ? SESSION_SIDEBAR_WIDTH : 0) - 4)
   const models = createMemo(() => data.location.model.list(location()) ?? [])
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
@@ -1569,7 +1570,7 @@ export function Session() {
       }}
     >
       <box flexDirection="row" flexGrow={1} minHeight={0}>
-        <box flexGrow={1} minHeight={0}>
+        <box flexGrow={1} minWidth={0} minHeight={0}>
           <Show when={session()}>
             <box flexGrow={1} minHeight={0} position="relative">
               <scrollbox
@@ -1712,6 +1713,18 @@ export function Session() {
             </box>
           </Show>
         </box>
+        <Show when={sidebarVisible()}>
+          <Show
+            when={wide()}
+            fallback={
+              <box position="absolute" top={0} left={0} right={0} bottom={0} alignItems="flex-end">
+                <Sidebar sessionID={route.sessionID} />
+              </box>
+            }
+          >
+            <Sidebar sessionID={route.sessionID} />
+          </Show>
+        </Show>
       </box>
     </context.Provider>
   )
