@@ -97,7 +97,6 @@ import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, reasoningSummary, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
-import { formatGoalBudget, parseGoalArgs } from "../../util/goal"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { useLocation } from "../../context/location"
@@ -153,11 +152,6 @@ const BACKGROUND_TOOL_HINT_DELAY = 3_000
 const TRANSCRIPT_TAIL_ROWS = 40
 const TRANSCRIPT_BACKFILL_CHUNK = 60
 
-// Prompt-metadata contract with the redsun goal plugin (core/src/plugin/redsun/goal.ts).
-const GOAL_METADATA_KEY = "redsun.goal"
-const GOAL_BUDGET_KEY = "redsun.goal.budget"
-const GOAL_VERDICT_KEY = "redsun.goal.verdict"
-const GOAL_CLEAR = "__clear__"
 // Message-metadata key stamped on advisor asides (core/src/plugin/redsun/advisor.ts).
 const ADVISOR_METADATA_KEY = "redsun.advisor"
 // Message-metadata key stamped when the Claude Code CLI silently substitutes a
@@ -1029,66 +1023,6 @@ export function Session() {
             }}
           />
         ))
-      },
-    },
-    {
-      title: language.t("session.setOrClearASessionGoal"),
-      id: "session.goal",
-      group: "Session",
-      slash: {
-        name: "goal",
-        arguments: true as const,
-      },
-      run: async (input?: string) => {
-        const raw = input?.trim() ?? ""
-        const selection = local.model.current()
-        // A delegated Claude Code session runs its own /goal loop: forward the
-        // literal command text (flags included) so the CLI handles it, and store
-        // nothing here.
-        if (selection?.providerID === "claude-code") {
-          await client.api.session.prompt({
-            sessionID: route.sessionID,
-            text: raw ? `/goal ${raw}` : "/goal",
-          })
-          dialog.clear()
-          return
-        }
-        const parsed = parseGoalArgs(raw)
-        if (parsed.error) {
-          toast.show({ message: `/goal: ${parsed.error}`, variant: "error" })
-          return
-        }
-        if (!parsed.condition) {
-          // resume: false keeps the clear from waking the session for a model turn.
-          await client.api.session.synthetic({
-            sessionID: route.sessionID,
-            text: "Goal cleared.",
-            description: "Goal cleared.",
-            resume: false,
-            metadata: {
-              [GOAL_METADATA_KEY]: GOAL_CLEAR,
-              [GOAL_VERDICT_KEY]: { ok: false, reason: "cleared by user", attempt: 0, cleared: "manual" },
-            },
-          })
-          toast.show({ message: "Goal cleared", variant: "info" })
-          dialog.clear()
-          return
-        }
-        // The condition rides as a real user turn; the metadata is the write path
-        // the redsun goal plugin reads to arm the judge loop.
-        await client.api.session.prompt({
-          sessionID: route.sessionID,
-          text: parsed.condition,
-          metadata: {
-            [GOAL_METADATA_KEY]: parsed.condition,
-            ...(parsed.budget ? { [GOAL_BUDGET_KEY]: parsed.budget as { [key: string]: number } } : {}),
-          },
-        })
-        toast.show({
-          message: parsed.budget ? `Goal set (budget: ${formatGoalBudget(parsed.budget, language.t)})` : "Goal set",
-          variant: "info",
-        })
-        dialog.clear()
       },
     },
     {
@@ -2415,29 +2349,15 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
     if (state() === "cancelled") return theme.text.feedback.warning.default
     return theme.text.feedback.info.default
   }
-  // REDSUN: goal verdicts and advisor notes carry metadata that colors the notice row.
-  const goalVerdict = () =>
-    metadata()?.[GOAL_VERDICT_KEY] as
-      | { ok?: boolean; impossible?: boolean; error?: boolean; cleared?: string }
-      | undefined
   const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
   const modelSubstituted = () => metadata()?.[MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
   const noticeLabel = () =>
-    goalVerdict()
-      ? language.t("session.goal")
-      : advisorNote()
-        ? language.t("session.advisor")
-        : modelSubstituted()
-          ? language.t("command.category.model")
-          : language.t("session.notice")
-  const noticeIcon = () => (goalVerdict() ? "◎" : "◈")
+    advisorNote()
+      ? language.t("session.advisor")
+      : modelSubstituted()
+        ? language.t("command.category.model")
+        : language.t("session.notice")
   const noticeColor = () => {
-    const verdict = goalVerdict()
-    if (verdict) {
-      if (verdict.ok) return theme.text.feedback.success.default
-      if (verdict.error || verdict.impossible) return theme.text.feedback.error.default
-      return theme.text.feedback.warning.default
-    }
     if (advisorNote()) return theme.text.feedback.info.default
     if (modelSubstituted()) return theme.text.feedback.warning.default
     return theme.text.subdued
@@ -2446,7 +2366,7 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
     <Show
       when={completion()}
       fallback={
-        <InlineToolRow icon={noticeIcon()} color={noticeColor()} pending={noticeLabel()} complete={true}>
+        <InlineToolRow icon="◈" color={noticeColor()} pending={noticeLabel()} complete={true}>
           {text()}
         </InlineToolRow>
       }

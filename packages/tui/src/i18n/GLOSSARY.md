@@ -39,7 +39,7 @@ reviewed in their TUI context.
   as an application tab or the verb “switch”.
 - **Canonical commands remain runnable.** Preserve `redsun remote disable` and
   `tailscale serve status`, as well as flags, URLs, model IDs and placeholders.
-- **User text remains untouched.** Goal conditions, task descriptions, messages,
+- **User text remains untouched.** Task descriptions, messages,
   session names and provider errors are interpolated as values, never looked up
   as translation keys.
 

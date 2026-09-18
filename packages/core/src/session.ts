@@ -182,7 +182,6 @@ export interface Interface {
   readonly generate: (input: {
     sessionID: SessionSchema.ID
     prompt: string
-    // REDSUN: judge/advisor controls — see SessionGenerate.Interface.
     temperature?: number
     model?: Model.Ref
     tools?: boolean

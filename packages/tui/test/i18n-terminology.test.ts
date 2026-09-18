@@ -25,9 +25,5 @@ test("keyboard hints and recovery commands retain their executable identifiers",
     expect(translate(locale, "Tailscale Serve mapping conflicts; inspect tailscale serve status.")).toContain(
       "tailscale serve status",
     )
-    const value = "Settings {{tokens}} /tmp/secret"
-    expect(
-      translate(locale, "◎ {{goal}}: {{condition}}", { goal: translate(locale, "Goal"), condition: value }),
-    ).toContain(value)
   }
 })

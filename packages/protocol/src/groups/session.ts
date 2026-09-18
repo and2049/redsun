@@ -704,8 +704,6 @@ export const makeSessionGroup = <
     .add(
       HttpApiEndpoint.post("session.generate", "/api/session/:sessionID/generate", {
         params: { sessionID: Session.ID },
-        // REDSUN: optional judge/advisor controls — temperature, model override, and
-        // tool-call suppression for transient evaluation calls.
         payload: Schema.Struct({
           prompt: Schema.String,
           temperature: Schema.Number.pipe(Schema.optional),

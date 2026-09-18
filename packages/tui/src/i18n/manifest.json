@@ -1184,11 +1184,6 @@
       "context": "session",
       "legacy": ["Fork session"]
     },
-    "session.setOrClearASessionGoal": {
-      "message": "Set or clear a session goal",
-      "context": "session",
-      "legacy": ["Set or clear a session goal"]
-    },
     "session.unshareSession": {
       "message": "Unshare session",
       "context": "session",
@@ -1418,11 +1413,6 @@
       "message": "cancelled",
       "context": "session",
       "legacy": ["cancelled"]
-    },
-    "session.goal": {
-      "message": "Goal",
-      "context": "session",
-      "legacy": ["Goal"]
     },
     "session.advisor": {
       "message": "Advisor",
@@ -2432,11 +2422,6 @@
       "message": "{{count}} more",
       "context": "activity",
       "legacy": ["{{count}} more"]
-    },
-    "activity.label": {
-      "message": "◎ {{goal}}: {{condition}}",
-      "context": "activity",
-      "legacy": ["◎ {{goal}}: {{condition}}"]
     },
     "session.usage.tokenCount": {
       "message": "{{tokens}} tokens",

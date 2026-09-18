@@ -22,9 +22,7 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
   session: SessionSchema.Info
   prompt: string
   temperature?: number
-  /** REDSUN: model override for judge/advisor calls; defaults to the session model. */
   model?: Model.Ref
-  /** REDSUN: `false` keeps the tool definitions (cached prefix) but forces toolChoice "none". */
   tools?: boolean
 }) {
   const instances = yield* Instance.Service
