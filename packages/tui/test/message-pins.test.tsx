@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { InputRenderable, TextareaRenderable } from "@opentui/core"
-import { createTestRenderer } from "@opentui/core/testing"
+import { MouseButtons, createTestRenderer } from "@opentui/core/testing"
 import type { SessionMessagePinInfo, SessionMessageInfo } from "@opencode/client"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
@@ -176,10 +176,10 @@ test.each([60, 100])(
       await setup.waitForFrame((frame) => !frame.includes("No pinned messages"))
       await setup.waitForVisualIdle()
       const lines = setup.captureCharFrame().split("\n")
-      const row = lines.findIndex((line) => line.includes("Message Actions"))
+      const row = lines.findIndex((line) => line.includes("Important historical answer"))
       expect(row).toBeGreaterThanOrEqual(0)
-      await setup.mockMouse.click(lines[row]!.indexOf("Message Actions") + 1, row)
-      await setup.waitForFrame((frame) => frame.includes("Pin message"))
+      await setup.mockMouse.click(lines[row]!.indexOf("Important") + 1, row, MouseButtons.RIGHT)
+      await setup.waitForFrame((frame) => frame.includes("Message Actions"))
       await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof InputRenderable)
       setup.mockInput.pressArrow("down")
       setup.mockInput.pressEnter()

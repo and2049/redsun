@@ -93,6 +93,7 @@ export const NORMAL_LETTER_COMMANDS: Record<string, string> = {
   b: "session.sidebar.toggle",
   c: "session.compact",
   e: "prompt.editor",
+  f: "session.pin",
   g: "session.timeline",
   l: "session.list",
   m: "model.list",

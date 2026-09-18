@@ -109,6 +109,7 @@ import {
   messageBoundaryIDs,
   explorationSummary,
   resolvePart,
+  rowMessageID,
   sessionRowID,
   turnDuration,
   turnInput,
@@ -714,15 +715,7 @@ export function Session() {
           const index =
             boundary >= 0
               ? boundary
-              : rows.findIndex((row) =>
-                  row.type === "message" || row.type === "assistant-footer"
-                    ? row.messageID === messageID
-                    : row.type === "part"
-                      ? row.ref.messageID === messageID
-                      : row.type === "group"
-                        ? groupRefs(row, true).some((ref) => ref.messageID === messageID)
-                        : false,
-                )
+              : rows.findIndex((row) => rowMessageID(row) === messageID)
           if (index < 0) {
             clearMessageNavigation()
             toast.show({ message: language.t("pins.outsideTranscript"), variant: "error" })
@@ -797,8 +790,8 @@ export function Session() {
       event.preventDefault()
       const down = event.name === "j"
       const count = vim.takeCount()
-      if (event.shift) for (let step = 0; step < count; step++) scrollToMessage(down ? "next" : "prev", dialog)
-      else moveTranscript(down ? count : -count)
+      if (event.shift) moveTranscript(down ? count : -count)
+      else for (let step = 0; step < count; step++) scrollToMessage(down ? "next" : "prev", dialog)
       release()
       return
     }
@@ -1568,6 +1561,7 @@ export function Session() {
         mutatePending,
         pendingDelivery: (inboxID) => pendingDeliveries().get(inboxID),
         jumpToMessage: jumpToPin,
+        navigationMessage,
       }}
     >
       <box flexDirection="row" flexGrow={1} minHeight={0}>
@@ -1728,35 +1722,31 @@ type SessionRowViewProps = {
 function SessionRowView(props: SessionRowViewProps) {
   const ctx = use()
   const dialog = useDialog()
-  const data = useData()
-  const { t } = useLanguage()
   const theme = useTheme()
   const renderer = useRenderer()
-  const assistant = () =>
-    props.boundaryID && props.message(props.boundaryID)?.type === "assistant" ? props.boundaryID : undefined
+  const promptRef = usePromptRef()
+  const messageID = createMemo(() => rowMessageID(props.row))
+  const navigated = () => messageID() !== undefined && ctx.navigationMessage() === messageID()
   return (
-    <box id={sessionRowID(props.row, props.boundaryID)} marginTop={1} flexShrink={0}>
-      <Show when={assistant()}>
-        {(id) => (
-          <box
-            paddingLeft={TRANSCRIPT_GUTTER}
-            flexShrink={0}
-            onMouseUp={() => {
-              if (renderer.getSelection()?.getSelectedText()) return
-              dialog.replace(() => (
-                <DialogMessage sessionID={ctx.sessionID} messageID={id()} onJump={ctx.jumpToMessage} />
-              ))
-            }}
-          >
-            <text fg={theme.text.subdued}>
-              {t("session.messageActions")}
-              {data.session.pins.list(ctx.sessionID).some((pin) => pin.messageID === id())
-                ? ` · ${t("pins.pinned")}`
-                : ""}
-            </text>
-          </box>
-        )}
-      </Show>
+    <box
+      id={sessionRowID(props.row, props.boundaryID)}
+      marginTop={1}
+      flexShrink={0}
+      onMouseUp={(event: MouseEvent) => {
+        const id = messageID()
+        if (event.button !== 2 || !id || renderer.getSelection()?.getSelectedText()) return
+        const type = props.message(id)?.type
+        if (type !== "user" && type !== "assistant") return
+        dialog.replace(() => (
+          <DialogMessage
+            sessionID={ctx.sessionID}
+            messageID={id}
+            setPrompt={(value) => promptRef.current?.set(value)}
+            onJump={ctx.jumpToMessage}
+          />
+        ))
+      }}
+    >
       <Switch>
         <Match when={props.row.type === "message" ? props.row : undefined}>
           {(row) => (
@@ -1801,6 +1791,18 @@ function SessionRowView(props: SessionRowViewProps) {
           )}
         </Match>
       </Switch>
+      <Show when={navigated()}>
+        <box
+          position="absolute"
+          left={0}
+          top={0}
+          bottom={0}
+          width={1}
+          border={["left"]}
+          customBorderChars={SplitBorder.customBorderChars}
+          borderColor={theme.accent}
+        />
+      </Show>
     </box>
   )
 }
@@ -1885,8 +1887,8 @@ export function TurnTokenUsage(props: {
           flexDirection="row"
           onMouseOver={() => setHover(true)}
           onMouseOut={() => setHover(false)}
-          onMouseUp={() => {
-            if (renderer.getSelection()?.getSelectedText()) return
+          onMouseUp={(event: MouseEvent) => {
+            if (event.button !== 0 || renderer.getSelection()?.getSelectedText()) return
             setExpanded((value) => !value)
           }}
         >
@@ -2182,8 +2184,8 @@ function SessionGroupView(props: {
             spinner={!completed()}
             onMouseOver={() => setHover(true)}
             onMouseOut={() => setHover(false)}
-            onMouseUp={() => {
-              if (renderer.getSelection()?.getSelectedText()) return
+            onMouseUp={(event: MouseEvent) => {
+              if (event.button !== 0 || renderer.getSelection()?.getSelectedText()) return
               setExpanded((value) => !value)
             }}
           >
@@ -2230,6 +2232,7 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
   const local = useLocal()
   const theme = useTheme("elevated")
   const interrupted = createMemo(() => props.message.error?.message === "Step interrupted")
+  const pinned = () => data.session.pins.list(ctx.sessionID).some((pin) => pin.messageID === props.message.id)
   const messages = createMemo(() => data.session.message.list(ctx.sessionID))
   // The line lives for the whole turn: present tense with a ticking clock while the
   // model works ("Cooking for 12s"), past tense once the turn settles. A step that
@@ -2307,6 +2310,9 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
                         · {t("session.done", { time: completionStamp(completed(), Date.now()) })}
                       </span>
                     )}
+                  </Show>
+                  <Show when={pinned()}>
+                    <span style={{ fg: theme.text.subdued }}> · {t("pins.pinned")}</span>
                   </Show>
                 </>
               }
@@ -2534,8 +2540,8 @@ function RevertMessage(props: {
     <box
       onMouseOver={() => setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
-        if (renderer.getSelection()?.getSelectedText()) return
+      onMouseUp={(event: MouseEvent) => {
+        if (event.button !== 0 || renderer.getSelection()?.getSelectedText()) return
         void (async () => {
           const error = await client.api.session.revert.clear({ sessionID: route.sessionID }).then(
             () => undefined,
@@ -2651,8 +2657,8 @@ function UserMessage(props: { message: SessionMessageUser }) {
           onMouseOut={() => {
             setHover(false)
           }}
-          onMouseUp={() => {
-            if (renderer.getSelection()?.getSelectedText()) return
+          onMouseUp={(event: MouseEvent) => {
+            if (event.button !== 0 || renderer.getSelection()?.getSelectedText()) return
             if (delivery() === "steer") {
               dialog.replace(() => (
                 <DialogSelect
@@ -3104,8 +3110,8 @@ function InlineTool(props: {
       status={props.status}
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
-        if (renderer.getSelection()?.getSelectedText()) return
+      onMouseUp={(event: MouseEvent) => {
+        if (event.button !== 0 || renderer.getSelection()?.getSelectedText()) return
         if (failed()) {
           setErrorExpanded((value) => !value)
           return
@@ -3171,8 +3177,8 @@ function BlockToolContent(props: BlockToolProps & { borderColor: RGBA }) {
       borderColor={props.borderColor}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
-        if (renderer.getSelection()?.getSelectedText()) return
+      onMouseUp={(event: MouseEvent) => {
+        if (event.button !== 0 || renderer.getSelection()?.getSelectedText()) return
         props.onClick?.()
       }}
     >
@@ -3711,8 +3717,8 @@ function ExecuteCallView(props: { call: Accessor<ExecuteCall> }) {
       paddingLeft={3}
       onMouseOver={() => expandable() && setHover(true)}
       onMouseOut={() => setHover(false)}
-      onMouseUp={() => {
-        if (!expandable() || renderer.getSelection()?.getSelectedText()) return
+      onMouseUp={(event: MouseEvent) => {
+        if (event.button !== 0 || !expandable() || renderer.getSelection()?.getSelectedText()) return
         setExpanded((value) => !value)
       }}
     >

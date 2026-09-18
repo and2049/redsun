@@ -1,5 +1,5 @@
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
-import { RGBA, TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes, type MouseEvent } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type {
   SessionMessageAssistant,
@@ -105,7 +105,7 @@ export function InlineToolRow(props: {
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
-  onMouseUp?: () => void
+  onMouseUp?: (event: MouseEvent) => void
 }) {
   return (
     <box
@@ -275,8 +275,8 @@ export function Disclosure(props: {
         <box
           onMouseOver={() => props.toggleable && setHover(true)}
           onMouseOut={() => setHover(false)}
-          onMouseUp={() => {
-            if (!props.toggleable) return
+          onMouseUp={(event: MouseEvent) => {
+            if (event.button !== 0 || !props.toggleable) return
             if (renderer.getSelection()?.getSelectedText()) return
             props.onToggle()
           }}
