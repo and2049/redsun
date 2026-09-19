@@ -15,8 +15,11 @@ const commitCall = (message: string) =>
 
 const attributed = [commitCall(`fix\n\n${RedsunAttribution.DEFAULT_TRAILER}`)]
 
-const run = (commit: boolean | string | undefined, messages: Message[] = []) =>
+type Commit = boolean | string | undefined
+
+const run = (commit: Commit | Commit[], messages: Message[] = []) =>
   Effect.gen(function* () {
+    const layers = Array.isArray(commit) ? commit : [commit]
     const hooks: Record<string, (event: never) => Effect.Effect<unknown, unknown, never>> = {}
     yield* RedsunAttribution.Plugin.effect(
       host({
@@ -30,7 +33,12 @@ const run = (commit: boolean | string | undefined, messages: Message[] = []) =>
     ).pipe(
       Effect.provideService(Config.Service, {
         entries: () =>
-          Effect.succeed(commit === undefined ? [] : ([{ type: "document", info: { attribution: { commit } } }] as never)),
+          Effect.succeed(
+            layers.map((value) => ({
+              type: "document",
+              info: value === undefined ? {} : { attribution: { commit: value } },
+            })) as never,
+          ),
       } as never),
     )
     const system: SystemPart[] = []
@@ -67,6 +75,14 @@ it.effect("counter-instructs when disabled after the session already attributed"
     const parts = yield* run(false, attributed)
     expect(parts).toHaveLength(1)
     expect(parts[0]).toContain("Do not add a Co-authored-by trailer")
+  }),
+)
+
+it.effect("project config overrides the global setting in either direction", () =>
+  Effect.gen(function* () {
+    expect(yield* run([true, false])).toEqual([])
+    expect((yield* run([false, true]))[0]).toContain(RedsunAttribution.DEFAULT_TRAILER)
+    expect((yield* run([true, undefined]))[0]).toContain(RedsunAttribution.DEFAULT_TRAILER)
   }),
 )
 
