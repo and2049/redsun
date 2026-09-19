@@ -70,6 +70,7 @@ import { RedsunComposePlugin } from "./redsun/compose.js"
 import { RedsunProjectMemory } from "./redsun/project-memory.js"
 import { RedsunContextOptimizer } from "./redsun/context-optimizer.js"
 import { RedsunAdvisor } from "./redsun/advisor.js"
+import { RedsunAttribution } from "./redsun/attribution.js"
 import { RedsunTodo } from "./redsun/todo.js"
 import { RedsunMultiedit } from "./redsun/multiedit.js"
 import { RedsunWorkerModelTool } from "./redsun/worker-model-tool.js"
@@ -265,6 +266,7 @@ const post = [
   RedsunProjectMemory.Plugin,
   RedsunContextOptimizer.Plugin,
   RedsunAdvisor.Plugin,
+  RedsunAttribution.Plugin,
   RedsunTodo.Plugin,
   RedsunMultiedit.Plugin,
 ] as const satisfies readonly InternalPlugin[]

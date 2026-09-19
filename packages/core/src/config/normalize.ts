@@ -215,6 +215,7 @@ export function normalize(input: unknown): Result {
     instruction_max_chars: Info.fields.instruction_max_chars,
     stale_read_deduplication: Info.fields.stale_read_deduplication,
     advisor: Info.fields.advisor,
+    attribution: Info.fields.attribution,
   }
   Object.entries(nativeAtomic).forEach(([key, schema]) => {
     if (!own(input, key)) return

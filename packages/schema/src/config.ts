@@ -5,6 +5,7 @@ import { ephemeral, inventory } from "./event.js"
 import { Permission } from "./permission.js"
 import { AbsolutePath, optional } from "./schema.js"
 import { ConfigAgent } from "./config/agent.js"
+import { ConfigAttribution } from "./config/attribution.js"
 import { ConfigMedia } from "./config/media.js"
 import { ConfigAdvisor } from "./config/advisor.js"
 import { ConfigCompaction } from "./config/compaction.js"
@@ -83,6 +84,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   compaction: ConfigCompaction.Info.pipe(optional).annotate({
     description: "Conversation compaction behavior",
   }),
+  attribution: ConfigAttribution.Info.pipe(optional).annotate({
+    description: "Attribution added to git commits the agent creates",
+  }),
   advisor: ConfigAdvisor.Info.pipe(optional).annotate({
     description: "Redsun watchdog advisor that reviews completed session turns with a second model",
   }),
@@ -128,6 +132,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
 export class ContextSettings extends Schema.Class<ContextSettings>("Config.ContextSettings")({
   stale_read_deduplication: Info.fields.stale_read_deduplication,
   compaction: Schema.Struct({ strategy: ConfigCompaction.Info.fields.strategy }).pipe(optional),
+  attribution: Info.fields.attribution,
 }) {}
 
 export const Patch = Schema.Struct({

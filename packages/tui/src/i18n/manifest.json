@@ -1679,6 +1679,16 @@
       "context": "settings",
       "legacy": ["LLM: model summary. Hybrid: adds an inventory. Algorithmic: inventory only, no model call."]
     },
+    "settings.commitAttribution": {
+      "message": "Commit attribution",
+      "context": "settings",
+      "legacy": ["Commit attribution"]
+    },
+    "settings.commitAttributionDescription": {
+      "message": "Asks the agent to end its commit messages with a Co-authored-by trailer for redsun-agent[bot].",
+      "context": "settings",
+      "legacy": ["Asks the agent to end its commit messages with a Co-authored-by trailer for redsun-agent[bot]."]
+    },
     "settings.globalDefaultsOtherConfigSourcesCanOverride": {
       "message": "Global defaults; other config sources can override.",
       "context": "settings",
@@ -2702,6 +2712,11 @@
         "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
         "match": "exact"
       }
+    },
+    "command.category.git": {
+      "message": "Git",
+      "context": "catalog",
+      "legacy": ["Git"]
     },
     "command.category.context": {
       "message": "Context",

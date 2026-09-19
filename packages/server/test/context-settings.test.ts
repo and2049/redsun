@@ -47,22 +47,29 @@ it.live("global context settings persist partial updates without changing projec
     expect(yield* Effect.promise(() => before.json())).toEqual({
       stale_read_deduplication: false,
       compaction: { strategy: "hybrid" },
+      attribution: { commit: false },
     })
     const responses = yield* Effect.all(
-      [update({ stale_read_deduplication: true }), update({ compaction: { strategy: "algorithmic" } })],
+      [
+        update({ stale_read_deduplication: true }),
+        update({ compaction: { strategy: "algorithmic" } }),
+        update({ attribution: { commit: true } }),
+      ],
       { concurrency: "unbounded" },
     )
-    expect(responses.map((response) => response.status)).toEqual([200, 200])
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
     const after = yield* get()
     expect(yield* Effect.promise(() => after.json())).toEqual({
       stale_read_deduplication: true,
       compaction: { strategy: "algorithmic" },
+      attribution: { commit: true },
     })
     const saved = yield* Effect.promise(() => fs.readFile(file, "utf8"))
     expect(saved).toContain("// keep this comment")
     expect(parse(saved)).toEqual({
       stale_read_deduplication: true,
       compaction: { strategy: "algorithmic", buffer: 1234 },
+      attribution: { commit: true },
       instruction_max_chars: 12000,
     })
     expect(yield* Effect.promise(() => fs.readFile(projectFile, "utf8"))).toBe(projectText)
@@ -110,6 +117,7 @@ it.live("context settings start cache-first and create global configuration when
     expect(yield* Effect.promise(() => response.json())).toEqual({
       stale_read_deduplication: false,
       compaction: { strategy: "llm" },
+      attribution: { commit: false },
     })
     const updated = yield* Effect.promise(() =>
       fetch(url, {

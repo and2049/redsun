@@ -60,6 +60,17 @@ export const settings: Setting[] = [
     keywords: ["summary", "compression", "context", "hybrid", "algorithmic"],
   },
   {
+    title: "Commit attribution",
+    category: "Git",
+    path: ["attribution", "commit"],
+    default: false,
+    values: [false, true],
+    labels: ["off", "on"],
+    backend: true,
+    description: "Asks the agent to end its commit messages with a Co-authored-by trailer for redsun-agent[bot].",
+    keywords: ["co-author", "coauthor", "trailer", "commit", "git", "attribution"],
+  },
+  {
     title: "Theme",
     category: "Appearance",
     path: ["theme", "name"],
@@ -409,7 +420,9 @@ export function DialogConfig(props: { current?: string }) {
       const update: Config.ContextSettings =
         setting.path[0] === "stale_read_deduplication"
           ? { stale_read_deduplication: next === true }
-          : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
+          : setting.path[0] === "attribution"
+            ? { attribution: { commit: next === true } }
+            : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
       await client.api.config.context
         .update({ location: ref(), payload: update })
         .then(mutate)

@@ -2191,6 +2191,7 @@ export type ConfigEntry =
           strategy?: "hybrid" | "algorithmic" | "llm"
           max_tool_results?: number
         }
+        attribution?: { commit?: boolean | string }
         advisor?: {
           enabled?: boolean
           model?: string
@@ -6599,6 +6600,7 @@ export type ConfigContextGetInput = {
 export type ConfigContextGetOutput = {
   stale_read_deduplication?: boolean
   compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
+  attribution?: { commit?: boolean | string }
 }
 
 export type ConfigContextUpdateInput = {
@@ -6606,12 +6608,14 @@ export type ConfigContextUpdateInput = {
   readonly payload: {
     readonly stale_read_deduplication?: boolean
     readonly compaction?: { readonly strategy?: "hybrid" | "algorithmic" | "llm" }
+    readonly attribution?: { readonly commit?: boolean | string }
   }
 }
 
 export type ConfigContextUpdateOutput = {
   stale_read_deduplication?: boolean
   compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
+  attribution?: { commit?: boolean | string }
 }
 
 export type ConfigShellsOutput = Array<ConfigShellOption>

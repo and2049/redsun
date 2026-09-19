@@ -64,6 +64,9 @@ const layer = Layer.effect(
           strategy:
             files.findLast((file) => file.info.compaction?.strategy !== undefined)?.info.compaction?.strategy ?? "llm",
         },
+        attribution: {
+          commit: files.findLast((file) => file.info.attribution?.commit !== undefined)?.info.attribution?.commit ?? false,
+        },
       })
     const get = () => read().pipe(Effect.map(resolve), Effect.mapError(error))
     const update = Effect.fn("ContextSettings.update")(
@@ -73,6 +76,7 @@ const layer = Layer.effect(
         const edits = [
           { path: ["stale_read_deduplication"], value: input.stale_read_deduplication },
           { path: ["compaction", "strategy"], value: input.compaction?.strategy },
+          { path: ["attribution", "commit"], value: input.attribution?.commit },
         ].filter((edit) => edit.value !== undefined)
         if (!edits.length) return resolve(files)
         const text = yield* Effect.try(() =>
