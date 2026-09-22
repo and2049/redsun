@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { RGBA, type CliRenderer } from "@opentui/core"
-import { createTerminalBackground, resumeTerminal, suspendTerminal } from "../../src/util/terminal-background"
+import {
+  createTerminalBackground,
+  resumeTerminal,
+  setTerminalBackgroundGain,
+  suspendTerminal,
+} from "../../src/util/terminal-background"
 
 function setup() {
   const output: string[] = []
@@ -26,6 +31,33 @@ function setup() {
 const osc = (color: string) => `\x1b]11;${color}\x1b\\`
 
 describe("terminal background", () => {
+  test("dims padding with the backdrop and restores the latest theme when it closes", async () => {
+    const { background, output, renderer, reply } = setup()
+    background.update("#ffffff")
+    await reply()
+    setTerminalBackgroundGain(renderer, 1 - 150 / 255)
+    expect(output.at(-1)).toBe(osc("#696969"))
+    background.update("#ff0000")
+    expect(output.at(-1)).toBe(osc("#690000"))
+    setTerminalBackgroundGain(renderer, 1)
+    expect(output.at(-1)).toBe(osc("#ff0000"))
+    background.dispose()
+    expect(output.at(-1)).toBe(osc("#123456"))
+  })
+
+  test("keeps backdrop dimming through palette detection and terminal handoff", async () => {
+    const { background, output, renderer, reply } = setup()
+    background.update("#ffffff")
+    setTerminalBackgroundGain(renderer, 1 - 150 / 255)
+    await reply()
+    expect(output).toEqual([osc("#696969")])
+    suspendTerminal(renderer)
+    expect(output.slice(-2)).toEqual([osc("#123456"), "suspend"])
+    resumeTerminal(renderer)
+    expect(output.slice(-2)).toEqual(["resume", osc("#696969")])
+    background.dispose()
+  })
+
   test("captures the original before applying the latest theme and restores on disable", async () => {
     const { background, output, reply } = setup()
     background.update("#282828")

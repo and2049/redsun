@@ -1,4 +1,4 @@
-import { parseColor, rgbToHex, type CliRenderer, type ColorInput } from "@opentui/core"
+import { parseColor, rgbToHex, RGBA, type CliRenderer, type ColorInput } from "@opentui/core"
 
 const backgrounds = new WeakMap<object, ReturnType<typeof createTerminalBackground>>()
 
@@ -14,6 +14,7 @@ export function createTerminalBackground(
   let suspended = false
   let disposed = false
   let queried = false
+  let gain = 1
 
   const set = (color: string) => write(`\x1b]11;${color}\x1b\\`)
   const restore = () => {
@@ -24,11 +25,16 @@ export function createTerminalBackground(
   const apply = () => {
     if (disposed || suspended || !original) return
     if (!desired) return restore()
-    set(desired)
+    const color = parseColor(desired)
+    set(gain === 1 ? desired : rgbToHex(RGBA.fromValues(color.r * gain, color.g * gain, color.b * gain)))
     applied = true
   }
 
   const background = {
+    setGain(value: number) {
+      gain = value
+      apply()
+    },
     update(color: ColorInput | undefined) {
       if (disposed) return
       const rgba = color === undefined ? undefined : parseColor(color)
@@ -73,4 +79,8 @@ export function suspendTerminal(renderer: Pick<CliRenderer, "suspend">) {
 export function resumeTerminal(renderer: Pick<CliRenderer, "resume">) {
   renderer.resume()
   backgrounds.get(renderer)?.resume()
+}
+
+export function setTerminalBackgroundGain(renderer: object, gain: number) {
+  backgrounds.get(renderer)?.setGain(gain)
 }

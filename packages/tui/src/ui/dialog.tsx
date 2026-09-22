@@ -9,6 +9,9 @@ import { useClipboard } from "../context/clipboard"
 import { useConfig } from "../config"
 import { SplitBorder } from "./border"
 import { copy, copyOnSelectRelease } from "../util/selection"
+import { setTerminalBackgroundGain } from "../util/terminal-background"
+
+const BACKDROP_GAIN = 1 - 150 / 255
 
 export type DialogSize = "medium" | "large" | "xlarge"
 
@@ -33,6 +36,11 @@ export function Dialog(
   const renderer = useRenderer()
   const bottom = () => props.placement === "bottom"
 
+  createEffect(() => {
+    setTerminalBackgroundGain(renderer, bottom() ? 1 : BACKDROP_GAIN)
+  })
+  onCleanup(() => setTerminalBackgroundGain(renderer, 1))
+
   let dismiss = false
   return (
     <box
@@ -56,7 +64,7 @@ export function Dialog(
       left={0}
       top={0}
       renderBefore={(buffer) => {
-        if (!bottom()) applyGain(buffer, 1 - 150 / 255)
+        if (!bottom()) applyGain(buffer, BACKDROP_GAIN)
       }}
     >
       <box
