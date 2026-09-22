@@ -24,6 +24,7 @@ import { createSimpleContext } from "./helper"
 import { useConfig } from "../config"
 import { DevTools } from "../devtools"
 import { configDirectories } from "../util/config-directories"
+import { createTerminalBackground } from "../util/terminal-background"
 
 const themePerformance = DevTools.register({ id: "theme-performance", title: "Theme performance" })
 export type ThemeError = { name: string; error: Error }
@@ -198,6 +199,20 @@ const themeContext = createSimpleContext({
     const current = createComponentTheme(tokens, mode)
 
     createEffect(() => renderer.setBackgroundColor(tokens().background.default))
+
+    if (process.stdout.isTTY && !process.env.OPENCODE_DRIVE) {
+      const background = createTerminalBackground(renderer, (sequence) => {
+        process.stdout.write(sequence)
+      })
+      renderer.on("destroy", background.dispose)
+      onCleanup(() => {
+        renderer.off("destroy", background.dispose)
+        background.dispose()
+      })
+      createEffect(() => {
+        background.update(tokens().background.default)
+      })
+    }
 
     const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens(), mode()))
     const service: Themes = {

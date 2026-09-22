@@ -9,6 +9,7 @@ import { LogProvider, useLog, type LogSink } from "./context/log"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
 import { Selection } from "./util/selection"
+import { resumeTerminal, suspendTerminal } from "./util/terminal-background"
 import {
   CliRenderEvents,
   createCliRenderer,
@@ -1047,8 +1048,8 @@ function App(props: { pair?: DialogPairCredentials }) {
         palette: undefined,
         enabled: process.platform !== "win32",
         run: () => {
-          renderer.suspend()
-          process.once("SIGCONT", () => renderer.resume())
+          suspendTerminal(renderer)
+          process.once("SIGCONT", () => resumeTerminal(renderer))
           process.kill(0, "SIGTSTP")
         },
       },
