@@ -70,6 +70,34 @@ rename, **D** to unpin, **Enter** to jump into the transcript, and **Escape** to
 Reading a pin fetches it directly; jumping to an old message may load intervening history
 pages. **Ctrl+End** cancels a history jump and returns to the latest message.
 
+## Claude Code behavior
+
+The delegated `claude-code` provider uses your installed `claude` executable through the official
+Agent SDK. Claude Code owns its native agent loop, conversation history and compaction; redsun
+provides the surrounding session interface and host integrations.
+
+`claude_code.behavior` defaults to `"redsun"`. This adds a short Claude Code-specific workflow
+extension to its native system prompt and delivers redsun agent instructions and discovered project
+context. Claude Code retains its native identity. Claude models used through ordinary API providers
+continue using the normal redsun harness prompt.
+
+To select the native behavior profile explicitly:
+
+```json
+{
+  "claude_code": { "behavior": "native" }
+}
+```
+
+Use a fresh session after changing profiles for a clean comparison: a resumed Claude transcript can
+retain previously delivered instructions. The native profile still uses redsun's existing question,
+permission and worker integration. Authentication remains owned by the installed CLI; behavior
+selection does not select or guarantee a billing category.
+
+Explicit host permission denials are checked before native tool execution, including under Claude
+Code's auto-approval modes. Native tools otherwise retain Claude Code's approval flow: a host `ask`
+rule does not force an extra prompt for a call the native runtime already approves. Host tools exposed
+through MCP retain their own redsun permission checks.
 
 ## Acknowledgements
 
