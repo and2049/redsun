@@ -132,6 +132,30 @@ const run = async (input: {
 }
 
 describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upstream", () => {
+  it("delivers host context through the native prompt-submit hook", async () => {
+    let submitted = 0
+    const context = "HOST_CONTEXT_HOOK_SENTINEL: the qualification skill is available."
+    const result = await run({
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              async (event) => {
+                expect(event.hook_event_name).toBe("UserPromptSubmit")
+                submitted++
+                return { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context } }
+              },
+            ],
+          },
+        ],
+      },
+      blocks: [{ block: { type: "text", text: "Context received." }, stop: "end_turn" }],
+    })
+    expect(submitted).toBe(1)
+    expect(result.messages.at(-1)?.subtype).toBe("success")
+    expect(JSON.stringify(result.seen[0])).toContain(context)
+  }, 20_000)
+
   it("calls the canonical MCP skill and sends its full textual instructions back to the model", async () => {
     const canonical = "SKILL_BODY_CANONICAL_SENTINEL: use the redsun skill instructions"
     const metadata = { name: "fixture-skill", directory: "/fixture" }

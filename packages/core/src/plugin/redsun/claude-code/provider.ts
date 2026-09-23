@@ -2,6 +2,7 @@ export * as ClaudeCodeProviderPlugin from "./provider.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
+import path from "node:path"
 import { Model } from "@opencode/schema/model"
 import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
@@ -13,6 +14,7 @@ import { Permission } from "../../../permission.js"
 import { Session } from "../../../session.js"
 import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"
+import { Skill } from "../../../skill.js"
 import { Tool } from "../../../tool.js"
 import { ClaudeCodeAuth } from "./auth.js"
 import { ClaudeCodeExecutable } from "./executable.js"
@@ -20,14 +22,16 @@ import { ClaudeCodeLanguageModel } from "./language-model.js"
 import { ClaudeCodeMcp } from "./mcp.js"
 import { ClaudeCodeModes } from "./modes.js"
 import { ClaudeCodeModels } from "./models.js"
-import { ClaudeCodePermissionBridge } from "./permission-bridge.js"
-import { ClaudeCodePermissions } from "./permissions.js"
+import { ClaudeCodePolicyHooks } from "./policy-hooks.js"
 import { ClaudeCodeQuery } from "./query.js"
 import { ClaudeCodeQuestions } from "./questions.js"
 import { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
-import { ClaudeCodeTurnBrief } from "./turn-brief.js"
+import { ClaudeCodeContext } from "./context.js"
+import { InstructionDiscovery } from "../../../instruction-discovery.js"
+import { RedsunProjectMemory } from "../project-memory.js"
+import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 
 const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
 
@@ -94,14 +98,27 @@ export const Plugin = define({
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
     const agentRegistry = yield* Agent.Service
+    const discovery = yield* InstructionDiscovery.Service
+    const skills = yield* Skill.Service
 
     const cursors = new Map<string, string>()
     const agents = new Map<string, string>()
     const workers = new Set<string>()
-    const briefed = new Map<string, string>()
+    const context = new ClaudeCodeContext.Tracker()
     const profiles = new Map<string, { mode?: string; system?: string }>()
     const pendingOneShot = new Set<string>()
     const substitutionsNotified = new Set<string>()
+    const runtimes = new Map<
+      string,
+      {
+        policy: ReturnType<typeof ClaudeCodePolicyHooks.make>
+        server: ReturnType<typeof ClaudeCodeMcp.makeHostServer>
+        binding?: ReturnType<typeof ClaudeCodeMcp.fromSnapshot>
+        catalog: string
+        results: Map<string, Tool.Metadata>
+        submission?: ReturnType<ClaudeCodeContext.Tracker["prepare"]>
+      }
+    >()
 
     let discoveredSnapshot = JSON.stringify(discovered)
     const onDiscovered = (value: unknown) => {
@@ -212,18 +229,67 @@ export const Plugin = define({
       }),
     )
 
-    const turnBrief = (sessionID: string) => {
+    const turnContext = async (sessionID: string, freshProcess: boolean) => {
       const agentID = agents.get(sessionID)
-      if (!agentID) return undefined
-      const agentChanged = briefed.get(sessionID) !== agentID
-      briefed.set(sessionID, agentID)
+      if (!agentID) return { delivered: () => {} }
       const profile = profiles.get(agentID)
-      return ClaudeCodeTurnBrief.make({
+      const listed = settings?.behavior === "native" ? undefined : await Effect.runPromise(discovery.list())
+      const runtime = runtimes.get(sessionID)
+      const hasSkillTool =
+        settings?.behavior !== "native" && runtime?.binding?.definitions.some((item) => item.name === "skill")
+      const catalog = hasSkillTool
+        ? await (async () => {
+            const agent = await Effect.runPromise(agentRegistry.resolve(agentID))
+            if (!agent) return []
+            const candidates = Skill.available(await Effect.runPromise(skills.list()), agent).filter(
+              (skill) => skill.description !== undefined && skill.autoinvoke !== false,
+            )
+            const allowed = await Promise.all(
+              candidates.map(async (skill) => ({
+                skill,
+                result: await Effect.runPromise(
+                  permission.inspect({
+                    action: "skill",
+                    resources: [skill.id],
+                    sessionID: sessionID as never,
+                    agent: Agent.ID.make(agentID),
+                  }),
+                ),
+              })),
+            )
+            return allowed
+              .filter(({ result }) => result.effect !== "deny")
+              .map(({ skill }) => ({ id: skill.id, name: skill.name, description: skill.description! }))
+          })()
+        : settings?.behavior === "native"
+          ? undefined
+          : []
+      // Discovery's unavailable result is not an observed removal: keep the last
+      // successfully delivered project rules until the canonical source recovers.
+      const delivery = context.prepare(sessionID, {
         agent: { id: agentID, mode: profile?.mode, system: profile?.system },
         isWorker: workers.has(sessionID),
-        agentChanged,
+        freshProcess,
+        ...(catalog === undefined ? {} : { skills: catalog }),
+        ...(Array.isArray(listed)
+          ? {
+              files: listed.map((file) => ({
+                path: file.path,
+                content:
+                  file.path === path.join(location.project.directory, RedsunProjectMemory.RELATIVE_PATH)
+                    ? `${RedsunProjectMemory.POLICY}\n\n${file.content}`
+                    : file.content,
+              })),
+            }
+          : {}),
       })
+      if (runtime) runtime.submission = delivery
+      return delivery
     }
+
+    // The callback is registered at process startup but reads the current turn's
+    // captured delivery. Do not inspect or reinterpret the user prompt here.
+    const userPromptSubmit = (sessionID: string) => ClaudeCodeContext.submit(() => runtimes.get(sessionID)?.submission)
 
     const permissionMode = async (sessionID: string) => {
       const agentID = agents.get(sessionID)
@@ -236,11 +302,21 @@ export const Plugin = define({
       })
     }
 
-    const canUseTool = (sessionID: string) =>
-      ClaudeCodePermissionBridge.make({
+    const policyFor = (sessionID: string) =>
+      ClaudeCodePolicyHooks.make({
         worktree: location.directory,
         agent: () => agents.get(sessionID),
-        assert: (action, resource) =>
+        policy: (action, resource, signal) =>
+          Effect.runPromise(
+            permission.inspect({
+              action,
+              resources: [resource],
+              sessionID: sessionID as never,
+              ...(agents.get(sessionID) ? { agent: Agent.ID.make(agents.get(sessionID)!) } : {}),
+            }),
+            { signal },
+          ),
+        assert: (action, resource, signal) =>
           Effect.runPromise(
             permission
               .assert({
@@ -251,11 +327,12 @@ export const Plugin = define({
                 ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
               })
               .pipe(Effect.as({ ok: true as const })),
+            { signal },
           ).catch((error) => {
             const feedback = correctionFeedback(error)
             return feedback === undefined ? { ok: false as const } : { ok: false as const, feedback }
           }),
-        form: (fields) =>
+        form: (fields, signal) =>
           Effect.runPromise(
             forms.ask({
               sessionID,
@@ -263,8 +340,9 @@ export const Plugin = define({
               metadata: { kind: "question", source: "claude-code" },
               fields: fields as never,
             }),
+            { signal },
           ).catch(() => undefined),
-        exitPlan: () =>
+        exitPlan: (signal) =>
           Effect.runPromise(
             Effect.gen(function* () {
               yield* permission.assert({
@@ -273,46 +351,91 @@ export const Plugin = define({
                 sessionID: sessionID as never,
                 ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
               })
-              yield* sessions.switchAgent({
-                sessionID: sessionID as never,
-                agent: Agent.ID.make("build"),
-              })
-              agents.set(sessionID, "build")
               return true
             }),
+            { signal },
           ).catch(() => false),
+        commitPlanExit: async (signal) => {
+          await Effect.runPromise(
+            sessions.switchAgent({ sessionID: sessionID as never, agent: Agent.ID.make("build") }),
+            { signal },
+          )
+          agents.set(sessionID, "build")
+        },
       })
 
-    const delegate =
-      (sessionID: string): ClaudeCodeMcp.Delegate =>
-      async (args) => {
-        const agent = agents.get(sessionID)
-        if (!agent) throw new Error("Task delegation is not available for this session.")
-        return Effect.runPromise(
-          Effect.gen(function* () {
-            const snapshot = yield* tools.snapshot()
-            const messages = yield* sessions.messages({ sessionID: sessionID as never, order: "desc", limit: 1 })
-            const messageID = messages[0]?.id
-            if (!messageID) return yield* Effect.fail(new Error("Session has no message to attribute the task to."))
-            const result = yield* snapshot.execute({
-              sessionID: sessionID as never,
-              agent: agent as never,
-              messageID,
-              call: {
-                type: "tool-call",
-                id: `claude-code-subagent-${Date.now().toString(36)}`,
-                name: "subagent",
-                input: args,
-              } as never,
-            })
-            return result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
-          }).pipe(
-            Effect.mapError((error) =>
-              error instanceof Error ? error : new Error(String((error as { message?: string })?.message ?? error)),
-            ),
-          ),
-        )
+    const prepareTurn = async (
+      sessionID: string,
+      messageID: string,
+      signal: AbortSignal,
+      mode: PermissionMode,
+      availableTools: readonly string[],
+    ) => {
+      if (!messageID) throw new Error("Claude Code turn is missing its assistant message ID for host tool attribution.")
+      if (signal.aborted) throw new Error("Claude Code turn was cancelled before host tools were bound.")
+      const session = await Effect.runPromise(sessions.get(sessionID as never), { signal })
+      const agentID = agents.get(sessionID)
+      if (!session || !agentID) throw new Error("Claude Code turn has no active session or agent.")
+      if (manager.busy(sessionID)) throw new Error("Claude Code session is already processing a turn")
+      const agent = Agent.ID.make(agentID)
+      const info = await Effect.runPromise(agentRegistry.resolve(agentID), { signal })
+      if (!info) throw new Error(`Claude Code agent is no longer available: ${agentID}`)
+      const snapshot = await Effect.runPromise(
+        tools.snapshot(Permission.merge(info.permissions, session.permissions ?? [])),
+        { signal },
+      )
+      if (signal.aborted) throw new Error("Claude Code turn was cancelled before host tools were bound.")
+      const captured = ClaudeCodeMcp.fromSnapshot({
+        snapshot,
+        sessionID: session.id,
+        agent,
+        messageID: SessionMessage.ID.make(messageID),
+        onResult: ({ nativeToolUseID, result }) => {
+          const active = runtimes.get(sessionID)
+          if (nativeToolUseID && result.metadata && active?.binding === binding)
+            active.results.set(nativeToolUseID, result.metadata)
+        },
+      })
+      const available = new Set(availableTools)
+      const binding = {
+        ...captured,
+        definitions: captured.definitions.filter(
+          (item) => available.has(item.name) && (settings?.behavior !== "native" || item.name === "subagent"),
+        ),
       }
+      const catalog = JSON.stringify(
+        binding.definitions.filter((item) => ClaudeCodeMcp.HOST_TOOL_NAMES.includes(item.name as never)),
+      )
+      let runtime = runtimes.get(sessionID)
+      if (runtime && runtime.catalog !== catalog && !manager.busy(sessionID)) {
+        manager.stop(sessionID) // The SDK does not update an existing MCP tool catalog.
+        runtime.policy.clear()
+        runtimes.delete(sessionID)
+        runtime = undefined
+      }
+      if (!runtime || manager.willStart(sessionID, mode)) {
+        runtime?.policy.clear()
+        const policy = policyFor(sessionID)
+        const next = {
+          policy,
+          server: undefined as unknown as ReturnType<typeof ClaudeCodeMcp.makeHostServer>,
+          binding: undefined as typeof binding | undefined,
+          catalog,
+          results: new Map<string, Tool.Metadata>(),
+          submission: undefined as ReturnType<ClaudeCodeContext.Tracker["prepare"]> | undefined,
+        }
+        next.server = ClaudeCodeMcp.makeHostServer(() => next.binding)
+        runtime = next
+        runtimes.set(sessionID, runtime)
+      }
+      runtime.binding = binding // Bind before the CLI's initial tools/list.
+      return () => {
+        if (runtime.binding === binding) runtime.binding = undefined
+        runtime.results.clear()
+        runtime.submission = undefined
+        runtime.policy.clear()
+      }
+    }
 
     yield* ctx.aisdk.hook(
       "sdk",
@@ -344,19 +467,30 @@ export const Plugin = define({
             configDir: settings?.config_dir,
             extraArgs: settings?.extra_args,
             env: settings?.env,
+            behavior: settings?.behavior,
           },
           manager,
           createQuery: ClaudeCodeQuery.defaultCreateQuery,
           hooks: {
-            canUseTool,
+            prepareTurn,
+            canUseTool: (sessionID) => runtimes.get(sessionID)?.policy.canUseTool,
+            preToolUse: (sessionID) => runtimes.get(sessionID)?.policy.preToolUse,
+            postToolUse: (sessionID) => runtimes.get(sessionID)?.policy.postToolUse,
+            hostResultMetadata: (sessionID, id) => {
+              const result = runtimes.get(sessionID)?.results.get(id)
+              runtimes.get(sessionID)?.results.delete(id)
+              return result
+            },
             turnOptions: (sessionID) => ({
-              mcpServers: { redsun: ClaudeCodeMcp.makeSubagentServer(delegate(sessionID)) },
+              mcpServers: { redsun: runtimes.get(sessionID)!.server },
             }),
             isOneShot: (sessionID) => pendingOneShot.delete(sessionID),
-            turnBrief,
+            context: turnContext,
+            userPromptSubmit,
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
             observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
+            onCompacted: (sessionID) => context.clear(sessionID),
             onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
             onModelSubstituted: notifySubstitution,
             resolvedModel: (id) => discovered.find((entry) => entry.value === id)?.resolvedModel,
@@ -375,6 +509,8 @@ export const Plugin = define({
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         manager.stopAll()
+        for (const runtime of runtimes.values()) runtime.policy.clear()
+        runtimes.clear()
         mirrors.clear()
       }),
     )

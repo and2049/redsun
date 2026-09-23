@@ -8,6 +8,7 @@ import type {
 } from "@ai-sdk/provider"
 import type {
   CanUseTool,
+  HookCallback,
   Options,
   PermissionMode,
   PermissionResult,
@@ -16,16 +17,18 @@ import type {
 import { SessionModelHeaders } from "../../../session/model-headers.js"
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
+import type { Tool } from "../../../tool.js"
 import { ClaudeCodeTranslate } from "./translate.js"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
 import PLAN_WORKFLOW from "./prompt/plan-workflow.txt" with { type: "text" }
+import BEHAVIOR from "./prompt/behavior.txt" with { type: "text" }
 
 export const SESSION_HEADER = "x-opencode-session"
+export const MESSAGE_HEADER = "x-opencode-message"
 
 export const sessionIDFrom = (headers: Record<string, string | undefined> | undefined) => {
   if (!headers) return undefined
-  for (const [key, value] of Object.entries(headers))
-    if (key.toLowerCase() === SESSION_HEADER && value) return value
+  for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === SESSION_HEADER && value) return value
   return undefined
 }
 
@@ -118,6 +121,17 @@ export const flattenTranscript = (prompt: LanguageModelV3Prompt): string =>
 
 export interface Hooks {
   readonly canUseTool?: (sessionID: string) => CanUseTool | undefined
+  readonly preToolUse?: (sessionID: string) => HookCallback | undefined
+  readonly postToolUse?: (sessionID: string) => HookCallback | undefined
+  readonly userPromptSubmit?: (sessionID: string) => HookCallback | undefined
+  readonly hostResultMetadata?: (sessionID: string, nativeToolUseID: string) => Tool.Metadata | undefined
+  readonly prepareTurn?: (
+    sessionID: string,
+    messageID: string,
+    signal: AbortSignal,
+    permissionMode: PermissionMode,
+    availableTools: readonly string[],
+  ) => Promise<() => void>
   readonly turnOptions?: (sessionID: string) => Partial<Options>
   readonly taskChildren?: (sessionID: string) => ReadonlyMap<string, ClaudeCodeTranslate.TaskChild> | undefined
   readonly observer?: (sessionID: string, message: SDKMessage, inTurn: boolean) => Promise<void> | void
@@ -125,7 +139,9 @@ export interface Hooks {
   readonly onCursor?: (sessionID: string, claudeSessionID: string) => void
   readonly isOneShot?: (sessionID: string) => boolean
   readonly turnBrief?: (sessionID: string) => string | undefined
+  readonly context?: (sessionID: string, freshProcess: boolean) => Promise<{ text?: string; delivered: () => void }>
   readonly onTurnEnd?: (sessionID: string) => Promise<void> | void
+  readonly onCompacted?: (sessionID: string) => void
   readonly onExit?: (sessionID: string) => Promise<void> | void
   readonly permissionMode?: (sessionID: string) => Promise<PermissionMode>
   readonly onModelSubstituted?: (sessionID: string, input: { requested: string; served: string }) => void
@@ -140,6 +156,7 @@ export interface Config {
   readonly configDir?: string
   readonly extraArgs?: readonly string[] | Readonly<Record<string, string | null>>
   readonly env?: Record<string, string>
+  readonly behavior?: "native" | "redsun"
 }
 
 const extraArgs = (value: Config["extraArgs"]) => {
@@ -163,8 +180,15 @@ const baseOptions = (config: Config): Options =>
 const interactiveOptions = (config: Config): Options =>
   ({
     ...baseOptions(config),
-    systemPrompt: { type: "preset", preset: "claude_code" },
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      ...(config.behavior === "native" ? {} : { append: BEHAVIOR }),
+    },
     settingSources: ["user", "project", "local"],
+    ...(config.behavior === "native"
+      ? {}
+      : { disallowedTools: ["TodoWrite", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"] }),
   }) as Options
 
 const errorStream = (message: string): ReadableStream<LanguageModelV3StreamPart> =>
@@ -201,7 +225,7 @@ export const make = (input: {
       return { stream: errorStream("No user prompt to deliver to Claude Code."), request: {}, response: {} }
 
     const children = hooks?.taskChildren?.(sessionID)
-    const state = ClaudeCodeTranslate.makeState(children)
+    const state = ClaudeCodeTranslate.makeState(children, (id) => hooks?.hostResultMetadata?.(sessionID, id))
 
     if (oneShot) {
       const run = createQuery({
@@ -218,14 +242,31 @@ export const make = (input: {
       return { stream: toStream(run, state), request: {}, response: {} }
     }
 
-    const prompt = ClaudeCodeTurnBrief.prepend(hooks?.turnBrief?.(sessionID), text)
     const resume = hooks?.resumeCursor?.(sessionID)
     const permissionMode =
       (await hooks?.permissionMode?.(sessionID)) ?? ((config.permissionMode ?? "default") as PermissionMode)
-    const content = [
-      ...(prompt ? [{ type: "text" as const, text: prompt }] : []),
-      ...delta.blocks,
-    ] as Parameters<typeof manager.turn>[1]
+    const release = await hooks?.prepareTurn?.(
+      sessionID,
+      options.headers?.[MESSAGE_HEADER] ?? "",
+      options.abortSignal ?? new AbortController().signal,
+      permissionMode,
+      options.toolChoice?.type === "none"
+        ? []
+        : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : [])),
+    )
+    const context = await hooks?.context?.(sessionID, manager.willStart(sessionID, permissionMode)).catch((error) => {
+      release?.()
+      throw error
+    })
+    // The host context goes through the SDK's genuine submission hook. Legacy
+    // callers without that hook retain the old brief fallback; never parse or
+    // relabel a user-authored <system-update> in the prompt as host context.
+    const prompt = hooks?.userPromptSubmit
+      ? text
+      : ClaudeCodeTurnBrief.prepend(context?.text ?? hooks?.turnBrief?.(sessionID), text)
+    const content = [...(prompt ? [{ type: "text" as const, text: prompt }] : []), ...delta.blocks] as Parameters<
+      typeof manager.turn
+    >[1]
     // The CLI silently serves its default when a pinned id is unknown or not
     // on the subscription; every main-thread assistant frame names the model
     // that actually answered, so a mismatch is only detectable here. Subagent
@@ -236,28 +277,47 @@ export const make = (input: {
       if (served && ClaudeCodeModels.isSubstituted(modelID, served, hooks?.resolvedModel?.(modelID)))
         hooks?.onModelSubstituted?.(sessionID, { requested: modelID, served })
     }
-    const turn = await manager.turn(sessionID, content, {
-      model: ClaudeCodeModels.cliModel(modelID),
-      permissionMode,
-      observer:
-        hooks?.observer || hooks?.onModelSubstituted
-          ? (message, inTurn) => {
-              watchServedModel(message)
-              return hooks?.observer?.(sessionID, message, inTurn)
-            }
-          : undefined,
-      onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
-      options: {
-        ...interactiveOptions(config),
-        ...(resume ? { resume } : {}),
-        ...(hooks?.canUseTool?.(sessionID) ? { canUseTool: hooks.canUseTool(sessionID) as CanUseTool } : {}),
-        ...hooks?.turnOptions?.(sessionID),
-      } as Options,
-    })
+    let turn: AsyncIterable<SDKMessage>
+    let compacted = false
+    const preToolUse = hooks?.preToolUse?.(sessionID)
+    const postToolUse = hooks?.postToolUse?.(sessionID)
+    const userPromptSubmit = hooks?.userPromptSubmit?.(sessionID)
+    const canUseTool = hooks?.canUseTool?.(sessionID)
+    try {
+      turn = await manager.turn(sessionID, content, {
+        model: ClaudeCodeModels.cliModel(modelID),
+        permissionMode,
+        observer:
+          hooks?.observer || hooks?.onModelSubstituted
+            ? (message, inTurn) => {
+                watchServedModel(message)
+                return hooks?.observer?.(sessionID, message, inTurn)
+              }
+            : undefined,
+        onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
+        options: {
+          ...interactiveOptions(config),
+          ...(resume ? { resume } : {}),
+          ...(canUseTool ? { canUseTool } : {}),
+          ...(preToolUse || postToolUse || userPromptSubmit
+            ? {
+                hooks: {
+                  ...(preToolUse ? { PreToolUse: [{ hooks: [preToolUse] }] } : {}),
+                  ...(postToolUse ? { PostToolUse: [{ hooks: [postToolUse] }] } : {}),
+                  ...(userPromptSubmit ? { UserPromptSubmit: [{ hooks: [userPromptSubmit] }] } : {}),
+                },
+              }
+            : {}),
+          ...hooks?.turnOptions?.(sessionID),
+        } as Options,
+      })
+    } catch (error) {
+      release?.()
+      throw error
+    }
 
     const interrupt = () => {
-      void manager.interrupt(sessionID).catch(() => {
-      })
+      void manager.interrupt(sessionID).catch(() => {})
     }
     const onAbort = () => interrupt()
     options.abortSignal?.addEventListener("abort", onAbort, { once: true })
@@ -267,15 +327,22 @@ export const make = (input: {
       stream: toStream(
         turn,
         state,
-        async () => {
+        async (delivered) => {
           options.abortSignal?.removeEventListener("abort", onAbort)
+          if (!userPromptSubmit && delivered && !options.abortSignal?.aborted) context?.delivered()
+          if (compacted) hooks?.onCompacted?.(sessionID)
           if (state.claudeSessionID) hooks?.onCursor?.(sessionID, state.claudeSessionID)
           try {
             await hooks?.onTurnEnd?.(sessionID)
           } catch {
+          } finally {
+            release?.()
           }
         },
         interrupt,
+        (message) => {
+          if (message.type === "system" && message.subtype === "compact_boundary") compacted = true
+        },
       ),
       request: {},
       response: {},
@@ -297,12 +364,14 @@ export const make = (input: {
 const toStream = (
   messages: AsyncIterable<SDKMessage>,
   state: ClaudeCodeTranslate.State,
-  onDone?: () => Promise<void> | void,
+  onDone?: (delivered: boolean) => Promise<void> | void,
   onCancel?: () => void,
+  onMessage?: (message: SDKMessage) => void,
 ): ReadableStream<LanguageModelV3StreamPart> => {
   // After the reader cancels, enqueue/close throw — swallow them so the
   // consuming loop keeps draining and onDone still runs exactly once.
   let closed = false
+  let delivered = false
   const safely = (action: () => void) => {
     if (closed) return
     try {
@@ -315,12 +384,15 @@ const toStream = (
     async start(controller) {
       safely(() => controller.enqueue({ type: "stream-start", warnings: [] }))
       try {
-        for await (const message of messages)
+        for await (const message of messages) {
+          onMessage?.(message)
+          if (message.type === "result" && message.subtype === "success") delivered = true
           for (const part of ClaudeCodeTranslate.translate(state, message)) safely(() => controller.enqueue(part))
+        }
       } catch (error) {
         safely(() => controller.enqueue({ type: "error", error }))
       } finally {
-        await onDone?.()
+        await onDone?.(delivered && !closed)
         safely(() => controller.close())
       }
     },

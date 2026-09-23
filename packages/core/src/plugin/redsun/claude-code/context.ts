@@ -1,0 +1,100 @@
+export * as ClaudeCodeContext from "./context.js"
+
+import { createHash } from "node:crypto"
+import type { HookCallback } from "@anthropic-ai/claude-agent-sdk"
+import { ClaudeCodeTurnBrief } from "./turn-brief.js"
+
+export interface File {
+  readonly path: string
+  readonly content: string
+}
+
+export interface SkillSummary {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+}
+
+export interface Input {
+  readonly agent: ClaudeCodeTurnBrief.Input["agent"]
+  readonly isWorker: boolean
+  readonly files?: readonly File[]
+  /** Omitted when the host skill loader is unavailable in this turn. */
+  readonly skills?: readonly SkillSummary[]
+  readonly freshProcess: boolean
+}
+
+type Snapshot = { agent: string; files: ReadonlyMap<string, string>; skills?: string }
+
+const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
+
+/** The CLI already loads CLAUDE.md through settingSources; avoid a second delivery. */
+const inherited = (file: File) => /(?:^|\/)CLAUDE\.md$/i.test(file.path)
+
+export class Tracker {
+  private delivered = new Map<string, Snapshot>()
+
+  prepare(sessionID: string, input: Input): { text?: string; delivered: () => void } {
+    if (input.freshProcess) this.clear(sessionID)
+    const previous = input.freshProcess ? undefined : this.delivered.get(sessionID)
+    const agent = fingerprint([input.agent, input.isWorker])
+    const files = new Map(
+      (input.files ?? []).filter((file) => !inherited(file)).map((file) => [file.path, file.content]),
+    )
+    const parts: string[] = []
+    if (agent !== previous?.agent) {
+      const brief = ClaudeCodeTurnBrief.make({ agent: input.agent, isWorker: input.isWorker, agentChanged: true })
+      if (brief) parts.push(`[redsun agent instructions: ${input.agent.id}]\n${brief}`)
+    }
+    if (input.files !== undefined) {
+      for (const [path, content] of files) {
+        if (previous?.files.get(path) === content) continue
+        parts.push(`Instructions from: ${path}\n${content}`)
+      }
+      for (const path of previous?.files.keys() ?? []) {
+        if (!files.has(path)) parts.push(`The instructions from ${path} no longer apply.`)
+      }
+    }
+    const skills = input.skills?.toSorted((a, b) => a.id.localeCompare(b.id))
+    const skillRevision = skills === undefined ? previous?.skills : fingerprint(skills)
+    if (skills !== undefined && skillRevision !== previous?.skills) {
+      parts.push(
+        skills.length
+          ? [
+              "Available redsun skills (load an applicable ID with mcp__redsun__skill; this catalog supersedes earlier redsun skill lists):",
+              ...skills.map((skill) => `- ${JSON.stringify(skill)}`),
+            ].join("\n")
+          : "No redsun skills are currently available through the host skill loader; previous redsun skill lists no longer apply.",
+      )
+    }
+    const next = {
+      agent,
+      files: input.files === undefined ? (previous?.files ?? new Map()) : files,
+      skills: skillRevision,
+    }
+    return {
+      ...(parts.length ? { text: parts.join("\n\n") } : {}),
+      delivered: () => this.delivered.set(sessionID, next),
+    }
+  }
+
+  clear(sessionID: string) {
+    this.delivered.delete(sessionID)
+  }
+}
+
+/** SDK hook context is separate from the user's prompt and native transcript text. */
+export const submit = (current: () => ReturnType<Tracker["prepare"]> | undefined): HookCallback => {
+  const submitted = new WeakSet<ReturnType<Tracker["prepare"]>>()
+  return async (event, _toolUseID, options) => {
+    if (event.hook_event_name !== "UserPromptSubmit" || options.signal.aborted) return {}
+    if (event.source && event.source !== "sdk" && event.source !== "user") return {}
+    const delivery = current()
+    if (!delivery || submitted.has(delivery)) return {}
+    submitted.add(delivery)
+    delivery.delivered()
+    return delivery.text
+      ? { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: delivery.text } }
+      : {}
+  }
+}
