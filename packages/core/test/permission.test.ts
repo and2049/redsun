@@ -10,6 +10,7 @@ import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
 import { PermissionTable } from "@opencode/core/permission/sql"
 import { PermissionSaved } from "@opencode/core/permission/saved"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Project } from "@opencode/core/project"
 import { ProjectTable } from "@opencode/core/project/sql"
 import { AbsolutePath } from "@opencode/core/schema"
@@ -27,7 +28,15 @@ const current = Layer.succeed(
 )
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, Bus.node, SessionStore.node, PermissionSaved.node, Agent.node, Permission.node]),
+    LayerNode.group([
+      Database.node,
+      Bus.node,
+      SessionStore.node,
+      PermissionSaved.node,
+      Agent.node,
+      PluginHooks.node,
+      Permission.node,
+    ]),
     [Location.node.replace(current)],
   ),
 )
@@ -99,6 +108,75 @@ function waitForRequest(input: Partial<Permission.AssertInput> = {}) {
 }
 
 describe("Permission", () => {
+  it.effect("inspects ask without queuing or emitting an approval request", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* Permission.Service
+      const bus = yield* Bus.Service
+      let events = 0
+      const unsubscribe = yield* bus.listen((event) =>
+        Effect.sync(() => {
+          if (event.type === Permission.Event.Asked.type) events++
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+      expect(yield* service.inspect(assertion())).toEqual({ effect: "ask", message: undefined })
+      expect(yield* service.inspect(assertion())).toEqual({ effect: "ask", message: undefined })
+      expect(yield* service.list()).toEqual([])
+      expect(events).toBe(0)
+    }),
+  )
+
+  it.effect("inspects configured denials and plugin evaluations with the same precedence as assert", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "read", resource: "secret/*", effect: "deny" }])
+      const hooks = yield* PluginHooks.Service
+      const seen: string[] = []
+      yield* hooks.register("permission", "evaluate", (event) =>
+        Effect.sync(() => {
+          seen.push(`${event.action}:${event.resources.join(",")}`)
+          event.effect = "deny"
+          event.message = "Blocked by plugin policy"
+        }),
+      )
+      const service = yield* Permission.Service
+      expect(yield* service.inspect(assertion({ resources: ["secret/key"] }))).toMatchObject({ effect: "deny" })
+      // Configured denials short-circuit the plugin, just as Permission.assert does.
+      expect(seen).toEqual([])
+      expect(yield* service.inspect(assertion())).toEqual({ effect: "deny", message: "Blocked by plugin policy" })
+      expect(seen).toEqual(["read:src/index.ts"])
+      yield* service.setMode("auto")
+      expect(yield* service.inspect(assertion())).toEqual({ effect: "deny", message: "Blocked by plugin policy" })
+      expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("inspects saved approvals, auto-approval and configured denials without prompts", () =>
+    Effect.gen(function* () {
+      yield* setup([])
+      const service = yield* Permission.Service
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["src/index.ts"] })
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "allow" })
+      expect(yield* service.inspect(assertion({ resources: ["src/other.ts"] }))).toMatchObject({ effect: "ask" })
+      yield* service.setMode("auto")
+      expect(yield* service.inspect(assertion({ resources: ["src/other.ts"] }))).toMatchObject({ effect: "allow" })
+      yield* setRules([{ action: "read", resource: "src/index.ts", effect: "deny" }])
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "deny" })
+      expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("fails closed on inspection after service shutdown", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "read", resource: "*", effect: "allow" }])
+      const service = yield* Permission.Service
+      yield* service.close
+      expect(yield* service.inspect(assertion())).toEqual({ effect: "deny" })
+      expect(yield* service.list()).toEqual([])
+    }),
+  )
+
   it.effect("returns the evaluated effect and only queues prompts", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])

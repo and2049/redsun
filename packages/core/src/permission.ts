@@ -108,6 +108,10 @@ const MODE_KEY = "permission.mode"
 
 export interface Interface {
   readonly close: Effect.Effect<void>
+  /** Evaluate effective host policy without registering an approval request. */
+  readonly inspect: (
+    input: AssertInput,
+  ) => Effect.Effect<{ effect: Permission.Effect; message?: string }, SessionErrors.NotFoundError>
   readonly ask: (input: AssertInput) => Effect.Effect<AskResult, SessionErrors.NotFoundError>
   readonly assert: (input: AssertInput) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
@@ -200,6 +204,12 @@ const layer = Layer.effect(
       })
       if (autoApprove && event.effect === "ask") return { effect: "allow" as const, message: event.message, rules: all }
       return { effect: event.effect, message: event.message, rules: all }
+    })
+
+    const inspect = Effect.fn("Permission.inspect")(function* (input: AssertInput) {
+      if (closed) return { effect: "deny" as const }
+      const { effect, message } = yield* evaluateInput(input)
+      return { effect, message }
     })
 
     function request(input: AssertInput, message?: string): Request {
@@ -370,7 +380,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ ask, assert, reply, get, forSession, list, mode, setMode, close })
+    return Service.of({ inspect, ask, assert, reply, get, forSession, list, mode, setMode, close })
   }),
 )
 
