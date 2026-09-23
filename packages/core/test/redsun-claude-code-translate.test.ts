@@ -77,9 +77,20 @@ describe("ClaudeCodeTranslate", () => {
     // content_block_stop for the same block; a trailing tool-input-end would
     // kill the runner ("Duplicate tool input end").
     const { parts } = run([
-      streamEvent({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "Grep" } }),
-      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] } },
-      streamEvent({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"pat" } }),
+      streamEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "tu_1", name: "Grep" },
+      }),
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] },
+      },
+      streamEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '{"pat' },
+      }),
       streamEvent({ type: "content_block_stop", index: 0 }),
     ])
     expect(parts.map((part) => part.type)).toEqual(["tool-input-start", "tool-call"])
@@ -87,8 +98,15 @@ describe("ClaudeCodeTranslate", () => {
 
   it("suppresses a stream block that opens after its aggregate tool call", () => {
     const { parts } = run([
-      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] } },
-      streamEvent({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "Grep" } }),
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] },
+      },
+      streamEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "tu_1", name: "Grep" },
+      }),
       streamEvent({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{}" } }),
       streamEvent({ type: "content_block_stop", index: 0 }),
     ])
@@ -97,17 +115,36 @@ describe("ClaudeCodeTranslate", () => {
 
   it("keeps the normal partial-stream order intact", () => {
     const { parts } = run([
-      streamEvent({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "Grep" } }),
-      streamEvent({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"pattern\":\"x\"}" } }),
+      streamEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "tu_1", name: "Grep" },
+      }),
+      streamEvent({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '{"pattern":"x"}' },
+      }),
       streamEvent({ type: "content_block_stop", index: 0 }),
-      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_1", name: "Grep", input: { pattern: "x" } }] },
+      },
     ])
-    expect(parts.map((part) => part.type)).toEqual(["tool-input-start", "tool-input-delta", "tool-input-end", "tool-call"])
+    expect(parts.map((part) => part.type)).toEqual([
+      "tool-input-start",
+      "tool-input-delta",
+      "tool-input-end",
+      "tool-call",
+    ])
   })
 
   it("maps Bash onto shell and flags error results", () => {
     const { parts } = run([
-      { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_2", name: "Bash", input: { command: "ls" } }] } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_2", name: "Bash", input: { command: "ls" } }] },
+      },
       {
         type: "user",
         message: { content: [{ type: "tool_result", tool_use_id: "tu_2", content: "boom", is_error: true }] },
@@ -117,11 +154,63 @@ describe("ClaudeCodeTranslate", () => {
     expect(parts[1]).toMatchObject({ toolName: "shell", result: "boom", isError: true })
   })
 
+  it("renders host MCP calls once with original arguments and only correlated metadata", () => {
+    const state = ClaudeCodeTranslate.makeState(undefined, (id) =>
+      id === "tu_host" ? { todos: [{ content: "done" }] } : undefined,
+    )
+    const call = (id: string, name: string) =>
+      ClaudeCodeTranslate.translate(
+        state,
+        msg({
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id, name, input: { skill: "example" } }] },
+        }),
+      )
+    for (const [name, expected] of [
+      ["subagent", "subagent"],
+      ["skill", "skill"],
+      ["todowrite", "todowrite"],
+      ["worker_model", "worker_model"],
+    ]) {
+      const id = name === "todowrite" ? "tu_host" : `tu_${name}`
+      expect(call(id, `mcp__redsun__${name}`)).toEqual([
+        {
+          type: "tool-call",
+          toolCallId: id,
+          toolName: expected,
+          input: '{"skill":"example"}',
+          providerExecuted: true,
+        },
+      ])
+      const parts = ClaudeCodeTranslate.translate(
+        state,
+        msg({
+          type: "user",
+          tool_use_result: { _meta: { "redsun/metadata": { untrusted: true } } },
+          message: { content: [{ type: "tool_result", tool_use_id: id, content: "ok" }] },
+        }),
+      )
+      expect(parts[0]).toMatchObject({
+        toolName: expected,
+        result: id === "tu_host" ? { output: "ok", metadata: { todos: [{ content: "done" }] } } : "ok",
+      })
+    }
+    expect(call("tu_native", "Skill")[0]).toMatchObject({ toolName: "skill", input: '{"id":"example"}' })
+  })
+
   it("drops subagent-attributed frames from the parent stream", () => {
     const { parts } = run([
       streamEvent({ type: "content_block_start", index: 0, content_block: { type: "text" } }, "tu_parent"),
-      { type: "assistant", parent_tool_use_id: "tu_parent", message: { content: [{ type: "tool_use", id: "x", name: "Read", input: {} }] } },
-      { type: "user", parent_tool_use_id: "tu_parent", message: { content: [{ type: "tool_result", tool_use_id: "x", content: "y" }] } },
+      {
+        type: "assistant",
+        parent_tool_use_id: "tu_parent",
+        message: { content: [{ type: "tool_use", id: "x", name: "Read", input: {} }] },
+      },
+      {
+        type: "user",
+        parent_tool_use_id: "tu_parent",
+        message: { content: [{ type: "tool_result", tool_use_id: "x", content: "y" }] },
+      },
     ])
     expect(parts).toEqual([])
   })
@@ -134,7 +223,9 @@ describe("ClaudeCodeTranslate", () => {
       [
         {
           type: "assistant",
-          message: { content: [{ type: "tool_use", id: "tu_3", name: "Agent", input: { description: "review docs" } }] },
+          message: {
+            content: [{ type: "tool_use", id: "tu_3", name: "Agent", input: { description: "review docs" } }],
+          },
         },
         {
           type: "user",
@@ -184,7 +275,10 @@ describe("ClaudeCodeTranslate", () => {
         message: { content: [{ type: "tool_result", tool_use_id: "tu_edit", content: "Applied 1 edit" }] },
       },
     ])
-    expect(parts[0]).toMatchObject({ toolName: "edit", input: JSON.stringify({ path: "/a.ts", oldString: "one", newString: "two" }) })
+    expect(parts[0]).toMatchObject({
+      toolName: "edit",
+      input: JSON.stringify({ path: "/a.ts", oldString: "one", newString: "two" }),
+    })
     expect(parts[1]).toMatchObject({
       toolName: "edit",
       result: { output: "Applied 1 edit", metadata: { files: [{ file: "/a.ts", status: "modified" }] } },
@@ -216,7 +310,12 @@ describe("ClaudeCodeTranslate", () => {
       type: "assistant",
       message: {
         content: [
-          { type: "tool_use", id: "tu_e", name: "Edit", input: { file_path: "/a.ts", old_string: "x", new_string: "y" } },
+          {
+            type: "tool_use",
+            id: "tu_e",
+            name: "Edit",
+            input: { file_path: "/a.ts", old_string: "x", new_string: "y" },
+          },
         ],
       },
     }
@@ -279,7 +378,9 @@ describe("ClaudeCodeTranslate", () => {
       // result.usage sums every API call in the turn and must not be used for the input side.
       result({ usage: { input_tokens: 999_999, cache_read_input_tokens: 9_999_999, output_tokens: 700 } }),
     ])
-    const finish = parts.at(-1) as { usage: { inputTokens: Record<string, number>; outputTokens: Record<string, number> } }
+    const finish = parts.at(-1) as {
+      usage: { inputTokens: Record<string, number>; outputTokens: Record<string, number> }
+    }
     expect(finish.usage.inputTokens).toEqual({ total: 4015, noCache: 10, cacheRead: 4000, cacheWrite: 5 })
     expect(finish.usage.outputTokens.total).toBe(120)
   })
@@ -293,9 +394,7 @@ describe("ClaudeCodeTranslate", () => {
   })
 
   it("finishes normally for an interrupt-shaped error result", () => {
-    const { parts } = run([
-      { type: "result", subtype: "error_during_execution", is_error: false, usage: {} },
-    ])
+    const { parts } = run([{ type: "result", subtype: "error_during_execution", is_error: false, usage: {} }])
     expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
   })
 
@@ -318,17 +417,33 @@ describe("ClaudeCodeTranslate", () => {
     expect(String((parts[0] as { error: Error }).error.message)).toContain("turn limit")
   })
 
-  it("renders a manual compaction boundary and stays silent for an automatic one", () => {
-    const manual = run([
-      { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual", pre_tokens: 120_000, post_tokens: 20_000 } },
+  it("shows native compaction status and both boundary triggers exactly once, excluding child boundaries", () => {
+    const boundary = (uuid: string, trigger: string) => ({
+      type: "system",
+      subtype: "compact_boundary",
+      uuid,
+      compact_metadata: { trigger, pre_tokens: 120_000, post_tokens: 20_000 },
+    })
+    const { parts } = run([
+      { type: "system", subtype: "status", status: "compacting" },
+      { type: "system", subtype: "status", status: "compacting" },
+      boundary("first", "manual"),
+      boundary("first", "manual"),
+      { ...boundary("child", "auto"), parent_tool_use_id: "tu_child" },
+      { type: "system", subtype: "status", status: "compacting" },
+      boundary("second", "auto"),
+      boundary("second", "auto"),
     ])
-    expect(manual.parts.map((part) => part.type)).toEqual(["text-start", "text-delta", "text-end"])
-    expect((manual.parts[1] as { delta: string }).delta).toContain("120,000")
-
-    const auto = run([
-      { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto", pre_tokens: 1, post_tokens: 2 } },
+    expect(parts.map((part) => part.type)).toEqual(
+      Array(3).fill(["text-start", "text-delta", "text-end"]).flat().concat(["text-start", "text-delta", "text-end"]),
+    )
+    const deltas = parts.filter((part) => part.type === "text-delta").map((part) => part.delta)
+    expect(deltas).toEqual([
+      "Claude Code is compacting its native session history…",
+      "Claude Code compacted its native session history (manual) (120,000 to 20,000 conversation tokens).",
+      "Claude Code is compacting its native session history…",
+      "Claude Code compacted its native session history (auto) (120,000 to 20,000 conversation tokens).",
     ])
-    expect(auto.parts).toEqual([])
   })
 
   it("tracks the claude session id for resume", () => {

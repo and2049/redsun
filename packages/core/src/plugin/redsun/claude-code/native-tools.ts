@@ -3,6 +3,12 @@ export * as ClaudeCodeNativeTools from "./native-tools.js"
 import { fileDiff } from "../../../tool/plugin/file-diff.js"
 
 export const SUBAGENT_TOOLS = new Set(["Task", "Agent"])
+export const HOST_TOOLS = new Set([
+  "mcp__redsun__subagent",
+  "mcp__redsun__skill",
+  "mcp__redsun__todowrite",
+  "mcp__redsun__worker_model",
+])
 
 const TOOL_NAMES: Record<string, string> = {
   Bash: "shell",
@@ -15,6 +21,10 @@ const TOOL_NAMES: Record<string, string> = {
   WebSearch: "websearch",
   Skill: "skill",
   AskUserQuestion: "question",
+  mcp__redsun__subagent: "subagent",
+  mcp__redsun__skill: "skill",
+  mcp__redsun__todowrite: "todowrite",
+  mcp__redsun__worker_model: "worker_model",
 }
 
 const INPUT_KEYS: Record<string, Record<string, string>> = {

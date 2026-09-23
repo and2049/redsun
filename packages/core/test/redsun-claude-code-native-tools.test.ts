@@ -22,7 +22,12 @@ describe("tool name mapping", () => {
 
   it("leaves an unlisted tool on its raw name and the generic renderer", () => {
     expect(toolName("BashOutput")).toBe("BashOutput")
-    expect(toolName("mcp__redsun__subagent")).toBe("mcp__redsun__subagent")
+    expect(toolName("unrelated__subagent")).toBe("unrelated__subagent")
+  })
+
+  it("routes only the host MCP catalog to canonical rows", () => {
+    for (const name of ["subagent", "skill", "todowrite", "worker_model"])
+      expect(toolName(`mcp__redsun__${name}`)).toBe(name)
   })
 
   it("knows both spellings of the subagent tool", () => {
@@ -55,6 +60,13 @@ describe("tool input mapping", () => {
     const input = { file_path: "/a.ts" }
     expect(toolInput("NotebookEdit", input)).toBe(input)
   })
+
+  it("does not convert host MCP skill arguments with the native Skill adapter", () => {
+    for (const name of ["subagent", "skill", "todowrite", "worker_model"]) {
+      const input = { skill: "example", todos: [], agent: "worker" }
+      expect(toolInput(`mcp__redsun__${name}`, input)).toBe(input)
+    }
+  })
 })
 
 describe("result metadata", () => {
@@ -78,8 +90,16 @@ describe("result metadata", () => {
 
   it("replaces every occurrence when the edit did", () => {
     const original = "x\nx\n"
-    const one = resultMetadata("edit", { path: "/a.ts" }, { ...editResult, originalFile: original, oldString: "x", newString: "y", replaceAll: false })
-    const all = resultMetadata("edit", { path: "/a.ts" }, { ...editResult, originalFile: original, oldString: "x", newString: "y", replaceAll: true })
+    const one = resultMetadata(
+      "edit",
+      { path: "/a.ts" },
+      { ...editResult, originalFile: original, oldString: "x", newString: "y", replaceAll: false },
+    )
+    const all = resultMetadata(
+      "edit",
+      { path: "/a.ts" },
+      { ...editResult, originalFile: original, oldString: "x", newString: "y", replaceAll: true },
+    )
     expect(one?.files?.[0]?.additions).toBe(1)
     expect(all?.files?.[0]?.additions).toBe(2)
   })
@@ -129,7 +149,10 @@ describe("result metadata", () => {
       ],
     }
     // The SDK keys answers by question text; multi-select answers arrive comma-joined.
-    const result = { questions: input.questions, answers: { "Which database?": "Postgres", "Which suites?": "unit, integration", "Skipped?": "" } }
+    const result = {
+      questions: input.questions,
+      answers: { "Which database?": "Postgres", "Which suites?": "unit, integration", "Skipped?": "" },
+    }
     expect(resultMetadata("question", input, result)).toEqual({
       answers: [["Postgres"], ["unit, integration"], []],
     })

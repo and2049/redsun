@@ -2,6 +2,7 @@ export * as ClaudeCodeTranslate from "./translate.js"
 
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import type { Tool } from "../../../tool.js"
 import { ClaudeCodeNativeTools } from "./native-tools.js"
 
 type OpenBlock =
@@ -16,7 +17,7 @@ export interface TaskChild {
 }
 
 export interface State {
-  toolCalls: Map<string, { name: string; input: Record<string, unknown> }>
+  toolCalls: Map<string, { name: string; rawName: string; input: Record<string, unknown> }>
   openBlocks: Map<number, OpenBlock>
   calledToolIds: Set<string>
   messageId: string
@@ -25,14 +26,26 @@ export interface State {
   lastCallUsage?: Record<string, unknown>
   lastCallOutput?: number
   taskChildren?: ReadonlyMap<string, TaskChild>
+  /** Only metadata correlated by the host to this native tool_use_id is trusted. */
+  hostResultMetadata?: (toolUseID: string) => Tool.Metadata | undefined
+  compactBoundaries: Set<string>
+  compactSequence: number
+  compacting: boolean
 }
 
-export const makeState = (taskChildren?: ReadonlyMap<string, TaskChild>): State => ({
+export const makeState = (
+  taskChildren?: ReadonlyMap<string, TaskChild>,
+  hostResultMetadata?: (toolUseID: string) => Tool.Metadata | undefined,
+): State => ({
   toolCalls: new Map(),
   openBlocks: new Map(),
   calledToolIds: new Set(),
   messageId: "claude",
   taskChildren,
+  hostResultMetadata,
+  compactBoundaries: new Set(),
+  compactSequence: 0,
+  compacting: false,
 })
 
 export const taskChildMetadata = (child: TaskChild) => ({
@@ -102,7 +115,7 @@ const contentBlockStart = (state: State, index: number, block: Record<string, an
           return []
         }
         const name = emittedToolName(block.name)
-        state.toolCalls.set(block.id, { name, input: {} })
+        state.toolCalls.set(block.id, { name, rawName: block.name, input: {} })
         state.openBlocks.set(index, { kind: "tool", id: block.id, name })
         return [{ type: "tool-input-start", id: block.id, toolName: name, providerExecuted: true }]
       }
@@ -174,7 +187,7 @@ const assistantMessage = (state: State, content: unknown): LanguageModelV3Stream
     const name = emittedToolName(item.name)
     const raw = item.input && typeof item.input === "object" ? (item.input as Record<string, unknown>) : {}
     const input = ClaudeCodeNativeTools.toolInput(item.name, raw)
-    state.toolCalls.set(item.id, { name, input })
+    state.toolCalls.set(item.id, { name, rawName: item.name, input })
     state.calledToolIds.add(item.id)
     for (const [index, open] of state.openBlocks)
       if (open.kind === "tool" && open.id === item.id) state.openBlocks.set(index, { kind: "ignored" })
@@ -228,7 +241,9 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
 
     const metadata = item.is_error
       ? undefined
-      : ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result)
+      : ClaudeCodeNativeTools.HOST_TOOLS.has(call.rawName)
+        ? state.hostResultMetadata?.(item.tool_use_id)
+        : ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result)
     parts.push({
       type: "tool-result",
       toolCallId: item.tool_use_id,
@@ -282,17 +297,32 @@ const resultMessage = (state: State, result: SDKResultMessage): LanguageModelV3S
 
 const compactBoundary = (state: State, message: Record<string, any>): LanguageModelV3StreamPart[] => {
   const meta = message.compact_metadata
-  if (!meta || typeof meta !== "object" || meta.trigger !== "manual") return []
+  if (!meta || typeof meta !== "object" || (meta.trigger !== "manual" && meta.trigger !== "auto")) return []
+  const key = typeof message.uuid === "string" ? message.uuid : JSON.stringify(meta)
+  if (state.compactBoundaries.has(key)) return []
+  state.compactBoundaries.add(key)
+  state.compacting = false
   const before = typeof meta.pre_tokens === "number" ? meta.pre_tokens : undefined
   const after = typeof meta.post_tokens === "number" ? meta.post_tokens : undefined
   const detail =
     before !== undefined && after !== undefined
       ? ` (${before.toLocaleString("en-US")} to ${after.toLocaleString("en-US")} conversation tokens)`
       : ""
-  const id = `${state.messageId}:compact`
+  const id = `claude-native-compact:${++state.compactSequence}`
   return [
     { type: "text-start", id },
-    { type: "text-delta", id, delta: `Claude Code compacted its session history${detail}.` },
+    { type: "text-delta", id, delta: `Claude Code compacted its native session history (${meta.trigger})${detail}.` },
+    { type: "text-end", id },
+  ]
+}
+
+const compactStatus = (state: State, message: Record<string, any>): LanguageModelV3StreamPart[] => {
+  if (message.status !== "compacting" || state.compacting) return []
+  state.compacting = true
+  const id = `claude-native-compact-status:${++state.compactSequence}`
+  return [
+    { type: "text-start", id },
+    { type: "text-delta", id, delta: "Claude Code is compacting its native session history…" },
     { type: "text-end", id },
   ]
 }
@@ -315,8 +345,10 @@ export const translate = (state: State, message: SDKMessage): LanguageModelV3Str
       if (message.parent_tool_use_id) return []
       return userMessage(state, message as unknown as Record<string, any>)
     case "system":
-      if ((message as unknown as Record<string, any>).subtype === "compact_boundary")
+      if ((message as unknown as Record<string, any>).parent_tool_use_id) return []
+      if (message.subtype === "compact_boundary")
         return compactBoundary(state, message as unknown as Record<string, any>)
+      if (message.subtype === "status") return compactStatus(state, message as unknown as Record<string, any>)
       return []
     case "result":
       return resultMessage(state, message)
