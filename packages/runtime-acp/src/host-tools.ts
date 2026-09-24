@@ -24,8 +24,13 @@ export const NAMES: ReadonlySet<string> = new Set(["subagent", "skill", "todowri
 /** Some agents add bookkeeping fields to a tool's input before reporting it. */
 const BOOKKEEPING = ["__tool_use_purpose"]
 
+/** Code Mode's tool; offered only with its catalog, which the host context delivers. */
+export const CODE_MODE = "execute"
+
 export const select = (binding: DelegatedToolBinding) =>
-  binding.definitions.filter((item) => NAMES.has(item.name) || binding.direct.has(item.name))
+  binding.definitions.filter(
+    (item) => NAMES.has(item.name) || binding.direct.has(item.name) || (item.name === CODE_MODE && !!binding.codeMode),
+  )
 
 /** The agent lists tools once per session; a different key needs a new session. */
 export const catalogKey = (definitions: ReadonlyArray<ToolDefinition>) =>

@@ -1,4 +1,5 @@
 import { define } from "@opencode/plugin/effect/plugin"
+import { Agent } from "@opencode/schema/agent"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
 import { Effect } from "effect"
@@ -36,6 +37,8 @@ export default define({
     const { agents, errors } = AcpOptions.parse(ctx.options)
     for (const error of errors) yield* Effect.logWarning(error)
 
+    // A session is a worker once any of its turns ran under a parent session.
+    const workers = new Set<string>()
     const shared: AcpRuntime.Host = {
       cwd: ctx.location.directory,
       mode: () => Effect.runPromise(ctx.delegate.permission.mode()),
@@ -50,6 +53,25 @@ export default define({
               }),
             )
           : Promise.resolve(undefined),
+      context: async (turn, input) => {
+        if (turn.parentID) workers.add(turn.sessionID)
+        const info = await Effect.runPromise(
+          ctx.agent.get({ agentID: Agent.ID.make(turn.agent) }).pipe(
+            Effect.map((result) => result.data),
+            Effect.orElseSucceed(() => undefined),
+          ),
+        )
+        const files = await Effect.runPromise(ctx.delegate.context.instructions())
+        const skills = input.skills
+          ? await Effect.runPromise(ctx.delegate.context.skills({ sessionID: turn.sessionID, agent: turn.agent }))
+          : []
+        return {
+          agent: { id: turn.agent, mode: info?.mode, system: info?.system },
+          isWorker: workers.has(turn.sessionID),
+          ...(files === undefined ? {} : { files }),
+          skills,
+        }
+      },
     }
 
     for (const agent of agents) {

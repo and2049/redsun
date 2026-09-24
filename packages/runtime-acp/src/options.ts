@@ -37,6 +37,11 @@ export interface Agent {
   readonly nativeApprovalArgs?: readonly string[]
   /** The mode to restore when `native_auto` is not selected. Defaults to the session's initial mode. */
   readonly defaultMode?: string
+  /**
+   * Instruction files the agent loads itself, so the host does not send them again. Paths are
+   * relative to the working directory (Kiro reads `AGENTS.md` there).
+   */
+  readonly inheritedInstructions: readonly string[]
   /** A prompt the agent understands as "compact your context" (e.g. `/compact`). */
   readonly compactCommand?: string
 }
@@ -82,6 +87,9 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       args,
       env,
       models,
+      inheritedInstructions: Array.isArray(entry.inheritedInstructions)
+        ? entry.inheritedInstructions.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [],
       ...(string(entry.nativeApprovalMode) ? { nativeApprovalMode: string(entry.nativeApprovalMode) } : {}),
       ...(nativeApprovalArgs.length ? { nativeApprovalArgs } : {}),
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),

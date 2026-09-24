@@ -13,6 +13,7 @@ const agent = (extra: Partial<AcpOptions.Agent> = {}): AcpOptions.Agent => ({
   args: [path.join(import.meta.dir, "fixture/agent.ts")],
   env: {},
   models: [{ id: "default", name: "Fake ACP" }],
+  inheritedInstructions: [],
   ...extra,
 })
 
@@ -23,6 +24,8 @@ const host = (
     tools?: () => DelegatedToolBinding | undefined
     cursors?: Map<string, string>
     reported?: string[][]
+    context?: () => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
+    skillsAsked?: boolean[]
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -37,6 +40,14 @@ const host = (
       },
       tools: async () => input.tools?.(),
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
+      ...(input.context
+        ? {
+            context: async (_turn: DelegatedTurn, request: { readonly skills: boolean }) => {
+              input.skillsAsked?.push(request.skills)
+              return input.context!()
+            },
+          }
+        : {}),
       ...(input.cursors
         ? {
             cursor: {
@@ -434,6 +445,99 @@ describe("ACP runtime against a scripted agent", () => {
       const parts = await collect((await runtime.turn(HOSTED, call([user("plan!")]))).stream)
       expect(bound.calls).toEqual([])
       expect(parts.some((part) => part.type === "tool-call")).toBe(false)
+    })
+  })
+
+  describe("host context", () => {
+    const agentsFile = path.join(import.meta.dir, "AGENTS.md")
+    let rules = "Use tabs."
+    const context = () => ({
+      agent: { id: "build", system: "Be brief." },
+      isWorker: false,
+      files: [
+        { path: agentsFile, content: "Kiro reads this itself." },
+        { path: "/etc/redsun/rules.md", content: rules },
+      ],
+      skills: [{ id: "deploy", name: "deploy", description: "Ship it" }],
+    })
+    const promptOf = (parts: readonly LanguageModelV3StreamPart[]) => textOf(parts).split("PROMPT=")[1] ?? ""
+
+    test("goes ahead of the first prompt once, then only what changed", async () => {
+      rules = "Use tabs."
+      const asked: boolean[] = []
+      await withRuntime(
+        {
+          agent: { inheritedInstructions: ["AGENTS.md"] },
+          host: { context, skillsAsked: asked, tools: () => binding(["skill"]).tools },
+        },
+        async (runtime) => {
+          const first = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+          expect(first).toStartWith("<redsun-context>\nContext from redsun")
+          expect(first).toContain("[redsun agent instructions: build]\nBe brief.")
+          expect(first).toContain("Instructions from: /etc/redsun/rules.md\nUse tabs.")
+          expect(first).not.toContain("Kiro reads this itself.")
+          expect(first).toContain('the `skill` tool of the "redsun" MCP server')
+          expect(first).toContain('"id":"deploy"')
+          expect(first).toEndWith("</redsun-context>\n\necho one")
+          expect(asked).toEqual([true])
+
+          const second = promptOf(
+            await collect(
+              (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo two")]))).stream,
+            ),
+          )
+          expect(second).toBe("echo two")
+
+          rules = "Use spaces."
+          const third = promptOf(
+            await collect(
+              (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo three")]))).stream,
+            ),
+          )
+          expect(third).toContain("Instructions from: /etc/redsun/rules.md\nUse spaces.")
+          expect(third).not.toContain("Be brief.")
+          expect(third).not.toContain("deploy")
+        },
+      )
+    })
+
+    test("sends a compaction command alone, then everything again", async () => {
+      rules = "Use tabs."
+      await withRuntime({ agent: { compactCommand: "/compact echo" }, host: { context } }, async (runtime) => {
+        await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream)
+        const compact = promptOf(
+          await collect(
+            (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("/compact echo")]))).stream,
+          ),
+        )
+        expect(compact).toBe("/compact echo")
+        const after = promptOf(
+          await collect((await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo")]))).stream),
+        )
+        expect(after).toContain("Instructions from: /etc/redsun/rules.md")
+        expect(after).toContain("Be brief.")
+      })
+    })
+
+    test("offers Code Mode with its catalog", async () => {
+      const bound = binding(["todowrite", "execute"])
+      const tools: DelegatedToolBinding = {
+        ...bound.tools,
+        codeMode: { summary: { tools: ["a"] }, render: () => "CODE MODE CATALOG", update: () => "CODE MODE UPDATE" },
+      }
+      await withRuntime({ host: { context, tools: () => tools } }, async (runtime) => {
+        const parts = await collect((await runtime.turn(HOSTED, call([user("tools? echo")]))).stream)
+        expect(textOf(parts)).toStartWith("TOOLS=todowrite,execute")
+      })
+      await withRuntime({ host: { context, tools: () => tools } }, async (runtime) => {
+        const prompt = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+        expect(prompt).toContain("CODE MODE CATALOG")
+      })
+      // Without a catalog, execute is not offered.
+      await withRuntime({ host: { context, tools: () => bound.tools } }, async (runtime) => {
+        const parts = await collect((await runtime.turn(HOSTED, call([user("tools?")]))).stream)
+        expect(textOf(parts)).toBe("TOOLS=todowrite")
+      })
     })
   })
 

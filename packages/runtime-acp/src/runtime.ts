@@ -11,12 +11,16 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import { DelegateContext } from "@opencode/plugin/effect/delegate-context"
 import type {
+  DelegatedInstructionFile,
+  DelegatedSkillSummary,
   DelegatedPermissionCheck,
   DelegatedStreamResult,
   DelegatedToolBinding,
   DelegatedTurn,
 } from "@opencode/plugin/effect/delegate"
+import { AcpContext } from "./context.js"
 import { AcpHostTools } from "./host-tools.js"
 import { AcpModels } from "./models.js"
 import { AcpPlan } from "./plan.js"
@@ -37,6 +41,19 @@ export interface Host {
     readonly get: (sessionID: string) => Promise<string | undefined>
     readonly set: (sessionID: string, acpSessionID: string) => Promise<void>
   }
+  /**
+   * The host context for a primary turn: the agent's profile, instruction files and, when the
+   * agent can load them, skills. Absent when the host sends no context.
+   */
+  readonly context?: (
+    turn: DelegatedTurn,
+    input: { readonly skills: boolean },
+  ) => Promise<{
+    readonly agent: DelegateContext.Agent
+    readonly isWorker: boolean
+    readonly files?: readonly DelegatedInstructionFile[]
+    readonly skills?: readonly DelegatedSkillSummary[]
+  }>
   /** The agent's own model list, as each new agent session reports it. */
   readonly onModels?: (models: readonly AcpModels.Discovered[]) => void
 }
@@ -130,12 +147,41 @@ export class Runtime {
   private readonly endpoint = new AcpHostTools.Endpoint()
   /** The model a new agent session starts with; a loaded session reports the one it last used. */
   private defaultModel?: string
+  private readonly context: DelegateContext.Tracker
 
   constructor(
     private readonly agent: AcpOptions.Agent,
     private readonly host: Host,
     private readonly spawn: Spawn = spawnProcess,
-  ) {}
+  ) {
+    this.context = new DelegateContext.Tracker({
+      inherited: AcpContext.inherited(host.cwd, agent.inheritedInstructions),
+      skillTool: AcpContext.SKILL_TOOL,
+      brief: AcpContext.brief,
+    })
+  }
+
+  /**
+   * What the host context adds to this turn. Sent ahead of the prompt; a compaction command goes
+   * alone, and the agent holds none of the earlier context after it.
+   */
+  private async prepareContext(
+    turn: DelegatedTurn,
+    session: Session,
+    binding: DelegatedToolBinding | undefined,
+    fresh: boolean,
+  ) {
+    if (!this.host.context) return undefined
+    const served = (name: string) => session.slot?.definitions.some((item) => item.name === name) === true
+    const gathered = await this.host.context(turn, { skills: served("skill") }).catch(() => undefined)
+    if (!gathered) return undefined
+    return this.context.prepare(turn.sessionID, {
+      ...gathered,
+      skills: gathered.skills ?? [],
+      codeMode: served(AcpHostTools.CODE_MODE) ? (binding?.codeMode ?? null) : null,
+      fresh,
+    })
+  }
 
   /**
    * Callbacks for one agent process. ACP session ids are only unique per connection (a one-shot
@@ -360,7 +406,10 @@ export class Runtime {
           options.prompt.some((message) => message.role === "assistant"),
         )
     if (binding && turn.assistantMessageID) session.slot?.bind(binding, turn.assistantMessageID)
-    const prompt = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
+    const delta = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
+    const compacting = !oneShot && !!this.agent.compactCommand && delta.trim() === this.agent.compactCommand
+    const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, !remembers)
+    const prompt = AcpContext.wrap(delivery?.text, delta)
     session.agent = turn.agent
     if (!oneShot) await this.applyMode(session, native)
     await this.applyModel(session, turn.modelID).catch((error) => {
@@ -444,6 +493,8 @@ export class Runtime {
               prompt: [{ type: "text", text: prompt }],
             })
             await Promise.all(recording)
+            if (compacting) this.context.clear(turn.sessionID)
+            else if (response.stopReason !== "cancelled") delivery?.delivered()
             emit(AcpTranslate.finish(state, response.stopReason))
           } catch (error) {
             // Let an exit notification land first so the message can say the process is gone.

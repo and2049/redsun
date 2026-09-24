@@ -1,20 +1,16 @@
 export * as ClaudeCodeContext from "./context.js"
 
-import { createHash } from "node:crypto"
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk"
+import { DelegateContext } from "@opencode/plugin/effect/delegate-context"
+import type {
+  DelegatedCodeMode,
+  DelegatedInstructionFile,
+  DelegatedSkillSummary,
+} from "@opencode/plugin/effect/delegate"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
-import type { DelegatedCodeMode } from "@opencode/plugin/effect/delegate"
 
-export interface File {
-  readonly path: string
-  readonly content: string
-}
-
-export interface SkillSummary {
-  readonly id: string
-  readonly name: string
-  readonly description: string
-}
+export type File = DelegatedInstructionFile
+export type SkillSummary = DelegatedSkillSummary
 
 export interface Input {
   readonly agent: ClaudeCodeTurnBrief.Input["agent"]
@@ -27,79 +23,24 @@ export interface Input {
   readonly freshProcess: boolean
 }
 
-type Snapshot = {
-  agent: string
-  files: ReadonlyMap<string, string>
-  skills?: string
-  /** The last delivered Code Mode summary (opaque, JSON-comparable). */
-  codeMode?: unknown
-}
-
-const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
-
 /** The CLI already loads CLAUDE.md through settingSources; avoid a second delivery. */
 const inherited = (file: File) => /(?:^|\/)CLAUDE\.md$/i.test(file.path)
 
+/** The shared delivery tracker with Claude Code's inherited files, skill tool and agent briefs. */
 export class Tracker {
-  private delivered = new Map<string, Snapshot>()
+  private readonly shared = new DelegateContext.Tracker({
+    inherited,
+    skillTool: "mcp__redsun__skill",
+    brief: ({ agent, isWorker }) => ClaudeCodeTurnBrief.make({ agent, isWorker, agentChanged: true }),
+  })
 
-  prepare(sessionID: string, input: Input): { text?: string; delivered: () => void } {
-    if (input.freshProcess) this.clear(sessionID)
-    const previous = input.freshProcess ? undefined : this.delivered.get(sessionID)
-    const agent = fingerprint([input.agent, input.isWorker])
-    const files = new Map(
-      (input.files ?? []).filter((file) => !inherited(file)).map((file) => [file.path, file.content]),
-    )
-    const parts: string[] = []
-    if (agent !== previous?.agent) {
-      const brief = ClaudeCodeTurnBrief.make({ agent: input.agent, isWorker: input.isWorker, agentChanged: true })
-      if (brief) parts.push(`[redsun agent instructions: ${input.agent.id}]\n${brief}`)
-    }
-    if (input.files !== undefined) {
-      for (const [path, content] of files) {
-        if (previous?.files.get(path) === content) continue
-        parts.push(`Instructions from: ${path}\n${content}`)
-      }
-      for (const path of previous?.files.keys() ?? []) {
-        if (!files.has(path)) parts.push(`The instructions from ${path} no longer apply.`)
-      }
-    }
-    const skills = input.skills?.toSorted((a, b) => a.id.localeCompare(b.id))
-    const skillRevision = skills === undefined ? previous?.skills : fingerprint(skills)
-    if (skills !== undefined && skillRevision !== previous?.skills) {
-      parts.push(
-        skills.length
-          ? [
-              "Available redsun skills (load an applicable ID with mcp__redsun__skill; this catalog supersedes earlier redsun skill lists):",
-              ...skills.map((skill) => `- ${JSON.stringify(skill)}`),
-            ].join("\n")
-          : "No redsun skills are currently available through the host skill loader; previous redsun skill lists no longer apply.",
-      )
-    }
-    const codeMode = input.codeMode === undefined ? previous?.codeMode : input.codeMode?.summary
-    if (input.codeMode !== undefined && JSON.stringify(codeMode) !== JSON.stringify(previous?.codeMode)) {
-      parts.push(
-        !input.codeMode
-          ? "Code Mode tools are no longer available. Do not use any previously listed Code Mode tools."
-          : previous?.codeMode === undefined
-            ? input.codeMode.render()
-            : input.codeMode.update(previous.codeMode),
-      )
-    }
-    const next = {
-      agent,
-      files: input.files === undefined ? (previous?.files ?? new Map()) : files,
-      skills: skillRevision,
-      codeMode,
-    }
-    return {
-      ...(parts.length ? { text: parts.join("\n\n") } : {}),
-      delivered: () => this.delivered.set(sessionID, next),
-    }
+  prepare(sessionID: string, input: Input): DelegateContext.Delivery {
+    const { freshProcess, ...rest } = input
+    return this.shared.prepare(sessionID, { ...rest, fresh: freshProcess })
   }
 
   clear(sessionID: string) {
-    this.delivered.delete(sessionID)
+    this.shared.clear(sessionID)
   }
 }
 
