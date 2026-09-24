@@ -121,6 +121,47 @@ export interface DelegatedSkillSummary {
   readonly description: string
 }
 
+/**
+ * A row the host writes into a mirrored child transcript. A runtime whose native agent spawns its
+ * own subagents records their progress in child sessions through these.
+ */
+export type DelegatedTranscriptEvent =
+  | { readonly kind: "execution-started"; readonly sessionID: string }
+  | { readonly kind: "execution-succeeded"; readonly sessionID: string }
+  | { readonly kind: "synthetic"; readonly sessionID: string; readonly text: string }
+  | { readonly kind: "step-started"; readonly sessionID: string; readonly messageID: string; readonly agent: string }
+  | { readonly kind: "step-ended"; readonly sessionID: string; readonly messageID: string }
+  | {
+      readonly kind: "text"
+      readonly sessionID: string
+      readonly messageID: string
+      readonly ordinal: number
+      readonly text: string
+    }
+  | {
+      readonly kind: "reasoning"
+      readonly sessionID: string
+      readonly messageID: string
+      readonly ordinal: number
+      readonly text: string
+    }
+  | {
+      readonly kind: "tool-called"
+      readonly sessionID: string
+      readonly messageID: string
+      readonly id: string
+      readonly name: string
+      readonly input: Record<string, unknown>
+    }
+  | {
+      readonly kind: "tool-result"
+      readonly sessionID: string
+      readonly messageID: string
+      readonly id: string
+      readonly text: string
+      readonly failed: boolean
+    }
+
 export interface DelegateDomain {
   readonly register: (runtime: DelegatedRuntime) => Effect.Effect<Registration, never, Scope.Scope>
   /** Whether a registered runtime owns this model's agent loop. */
@@ -163,6 +204,32 @@ export interface DelegateDomain {
       readonly sessionID: string
       readonly agent: string
     }) => Effect.Effect<readonly DelegatedSkillSummary[]>
+  }
+  readonly transcript: {
+    /** A fresh message id for a mirrored step. */
+    readonly messageID: () => string
+    /** Creates a child session under `parentID`; fails if the parent is gone. */
+    readonly createChild: (input: {
+      readonly parentID: string
+      readonly title: string
+      readonly agent: string
+      readonly model: { readonly providerID: string; readonly id: string }
+    }) => Effect.Effect<string, Error>
+    /** Writes mirrored rows, attributing steps to `model`. */
+    readonly record: (
+      model: { readonly providerID: string; readonly id: string },
+      events: readonly DelegatedTranscriptEvent[],
+    ) => Effect.Effect<void>
+    /**
+     * A visible notice row that does not steer the running turn (unlike `session.synthetic`,
+     * which is admitted to the inbox and would spend a model call).
+     */
+    readonly notice: (input: {
+      readonly sessionID: string
+      readonly text: string
+      readonly description?: string
+      readonly metadata?: Record<string, unknown>
+    }) => Effect.Effect<void>
   }
   readonly form: {
     /** Shows a form in the session and waits for it to settle. */

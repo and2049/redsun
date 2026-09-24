@@ -15,7 +15,9 @@ import { Agent } from "./agent.js"
 import { CodeModeCatalog } from "./codemode/catalog.js"
 import { CodeModeInstructions } from "./codemode/instructions.js"
 import { Config } from "./config.js"
+import { Bus } from "./bus.js"
 import { DelegatedRuntime } from "./delegate.js"
+import { DelegateTranscript } from "./delegate-transcript.js"
 import { Form } from "./form.js"
 import { InstructionDiscovery } from "./instruction-discovery.js"
 import { KV } from "./kv.js"
@@ -26,7 +28,10 @@ import { PluginHooks } from "./plugin/hooks.js"
 import { RedsunContextOptimizer } from "./plugin/redsun/context-optimizer.js"
 import { RedsunProjectMemory } from "./plugin/redsun/project-memory.js"
 import { Session } from "./session.js"
+import { SessionEvent } from "./session/event.js"
 import { SessionMessage } from "./session/message.js"
+import { Model } from "./model.js"
+import { Provider } from "./provider.js"
 import { SessionSchema } from "./session/schema.js"
 import { Skill } from "./skill.js"
 import { Tool } from "./tool.js"
@@ -117,6 +122,9 @@ export const make = Effect.gen(function* () {
   const discovery = Option.getOrUndefined(yield* Effect.serviceOption(InstructionDiscovery.Service))
   const location = yield* Location.Service
   const skills = yield* Skill.Service
+  const bus = yield* Bus.Service
+  const modelRef = (model: { readonly providerID: string; readonly id: string }) =>
+    Model.Ref.make({ providerID: Provider.ID.make(model.providerID), id: Model.ID.make(model.id) })
   const missing = (name: string) => Effect.die(new Error(`${name} is not available to this plugin host.`))
 
   const check = (input: Parameters<DelegateDomain["permission"]["inspect"]>[0]) => ({
@@ -216,6 +224,31 @@ export const make = Effect.gen(function* () {
             .filter(({ result }) => result.effect !== "deny")
             .map(({ skill }) => ({ id: skill.id, name: skill.name, description: skill.description! }))
         }),
+    },
+    transcript: {
+      messageID: () => SessionMessage.ID.create(),
+      createChild: (input) =>
+        sessions
+          .create({
+            parentID: SessionSchema.ID.make(input.parentID),
+            title: input.title,
+            agent: Agent.ID.make(input.agent),
+            model: modelRef(input.model),
+          })
+          .pipe(
+            Effect.map((session) => session.id as string),
+            Effect.mapError((cause) => new Error(`Could not create a child session: ${String(cause)}`)),
+          ),
+      record: (model, events) => DelegateTranscript.publish(bus, modelRef(model), events),
+      notice: (input) =>
+        bus
+          .publish(SessionEvent.Synthetic, {
+            sessionID: SessionSchema.ID.make(input.sessionID),
+            text: input.text,
+            ...(input.description === undefined ? {} : { description: input.description }),
+            ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+          })
+          .pipe(Effect.asVoid),
     },
     form: {
       ask: (input) =>

@@ -1,21 +1,19 @@
-export * as ClaudeCodeSubagentEvents from "./subagent-events.js"
+export * as DelegateTranscript from "./delegate-transcript.js"
+
+// REDSUN: writes a delegated runtime's mirrored child transcript rows (`ctx.delegate.transcript`).
 
 import { Effect } from "effect"
 import { Agent } from "@opencode/schema/agent"
 import type { Model } from "@opencode/schema/model"
 import { Money } from "@opencode/schema/money"
-import type { Bus } from "../../../bus.js"
-import { SessionEvent } from "../../../session/event.js"
-import { SessionMessage } from "../../../session/message.js"
-import type { ClaudeCodeSubagents } from "./subagents.js"
+import type { DelegatedTranscriptEvent } from "@opencode/plugin/effect/delegate"
+import type { Bus } from "./bus.js"
+import { SessionEvent } from "./session/event.js"
+import { SessionMessage } from "./session/message.js"
 
 const NO_TOKENS = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 
-export const one = (
-  bus: Bus.Interface,
-  model: Model.Ref,
-  event: ClaudeCodeSubagents.ChildEvent,
-): Effect.Effect<unknown> => {
+export const one = (bus: Bus.Interface, model: Model.Ref, event: DelegatedTranscriptEvent): Effect.Effect<unknown> => {
   const sessionID = event.sessionID as never
   switch (event.kind) {
     case "execution-started":
@@ -87,5 +85,5 @@ export const one = (
 export const publish = (
   bus: Bus.Interface,
   model: Model.Ref,
-  events: readonly ClaudeCodeSubagents.ChildEvent[],
+  events: readonly DelegatedTranscriptEvent[],
 ): Effect.Effect<void> => Effect.forEach(events, (event) => one(bus, model, event), { discard: true })

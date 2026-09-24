@@ -14,7 +14,7 @@ import { Session } from "@opencode/core/session"
 import { SessionMessage } from "@opencode/core/session/message"
 import { SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { SessionProjector } from "@opencode/core/session/projector"
-import { ClaudeCodeSubagentEvents } from "@opencode/core/plugin/redsun/claude-code/subagent-events"
+import { DelegateTranscript } from "@opencode/core/delegate-transcript"
 import type { ClaudeCodeSubagents } from "@opencode/core/plugin/redsun/claude-code/subagents"
 import { testEffect } from "./lib/effect"
 
@@ -63,10 +63,10 @@ const readMessages = Effect.gen(function* () {
 const publish = (events: readonly ClaudeCodeSubagents.ChildEvent[]) =>
   Effect.gen(function* () {
     const bus = yield* Bus.Service
-    yield* ClaudeCodeSubagentEvents.publish(bus, model, events)
+    yield* DelegateTranscript.publish(bus, model, events)
   })
 
-describe("ClaudeCodeSubagentEvents", () => {
+describe("DelegateTranscript", () => {
   it.effect("projects a mirrored subagent turn into real child message rows", () =>
     Effect.gen(function* () {
       yield* seed

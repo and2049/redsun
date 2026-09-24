@@ -3,13 +3,8 @@ export * as ClaudeCodeProviderPlugin from "./provider.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Model } from "@opencode/schema/model"
-import { Agent } from "../../../agent.js"
-import { Bus } from "../../../bus.js"
-import { Permission } from "../../../permission.js"
+import { Agent } from "@opencode/schema/agent"
 import type { ConfigClaudeCode } from "@opencode/schema/config/claude-code"
-import { Session } from "../../../session.js"
-import { SessionEvent } from "../../../session/event.js"
-import { SessionMessage } from "../../../session/message.js"
 import type { Tool as ToolSchema } from "@opencode/schema/tool"
 import { ClaudeCodeAuth } from "./auth.js"
 import { ClaudeCodeExecutable } from "./executable.js"
@@ -22,7 +17,6 @@ import { ClaudeCodePolicyHooks } from "./policy-hooks.js"
 import { ClaudeCodeQuery } from "./query.js"
 import { ClaudeCodeQuestions } from "./questions.js"
 import { ClaudeCodeSessions } from "./sessions.js"
-import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeContext } from "./context.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
@@ -130,9 +124,6 @@ export const Plugin = define({
     })
 
     const permission = ctx.delegate.permission
-    const sessions = yield* Session.Service
-    const bus = yield* Bus.Service
-    const agentRegistry = yield* Agent.Service
 
     const cursors = new Map<string, string>()
     const agents = new Map<string, string>()
@@ -220,9 +211,9 @@ export const Plugin = define({
       // arrives mid-turn, and an inbox-admitted synthetic is steer-delivered
       // into the live turn, spending a model call on the notice itself.
       Effect.runFork(
-        bus
-          .publish(SessionEvent.Synthetic, {
-            sessionID: sessionID as never,
+        ctx.delegate.transcript
+          .notice({
+            sessionID,
             text: `The requested Claude Code model "${input.requested}" is not available (unknown id, retired, or not on this subscription); Claude Code substituted its default and this turn was answered by "${input.served}".`,
             description: `${input.requested} unavailable — Claude Code answered with ${input.served}`,
             metadata: {
@@ -240,20 +231,17 @@ export const Plugin = define({
       const mirror = ClaudeCodeSubagents.make({
         parentSessionID: sessionID,
         ops: {
-          messageID: () => SessionMessage.ID.create(),
+          messageID: ctx.delegate.transcript.messageID,
           createChild: (input) =>
             Effect.runPromise(
-              sessions
-                .create({
-                  parentID: sessionID as never,
-                  title: input.title,
-                  agent: Agent.ID.make(input.agent),
-                  model,
-                })
-                .pipe(Effect.map((session) => session.id as string)),
+              ctx.delegate.transcript.createChild({
+                parentID: sessionID,
+                title: input.title,
+                agent: input.agent,
+                model,
+              }),
             ).catch(() => undefined),
-          publish: (events) =>
-            Effect.runPromise(ClaudeCodeSubagentEvents.publish(bus, model, events)).catch(() => undefined),
+          publish: (events) => Effect.runPromise(ctx.delegate.transcript.record(model, events)).catch(() => undefined),
         },
       })
       mirrors.set(sessionID, mirror)

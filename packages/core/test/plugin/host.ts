@@ -44,6 +44,12 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       },
       form: { ask: () => Effect.die("unused delegate.form.ask") },
       tools: { bind: () => Effect.die("unused delegate.tools.bind") },
+      transcript: {
+        messageID: () => "msg_unused",
+        createChild: () => Effect.die("unused delegate.transcript.createChild"),
+        record: () => Effect.die("unused delegate.transcript.record"),
+        notice: () => Effect.die("unused delegate.transcript.notice"),
+      },
       context: {
         instructions: () => Effect.die("unused delegate.context.instructions"),
         skills: () => Effect.die("unused delegate.context.skills"),

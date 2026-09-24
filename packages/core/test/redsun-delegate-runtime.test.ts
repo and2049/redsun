@@ -284,6 +284,23 @@ describe("delegated runtime host capabilities", () => {
     }),
   )
 
+  it.effect("creates mirrored child sessions under their parent", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const parent = yield* host.session.create({ title: "parent" })
+      const childID = yield* host.delegate.transcript.createChild({
+        parentID: parent.id,
+        title: "explore the repo (@explore subagent)",
+        agent: "explore",
+        model: { providerID: OWNED, id: "model-1" },
+      })
+      const child = yield* host.session.get({ sessionID: childID as never })
+      expect(child.parentID).toBe(parent.id)
+      expect(child.title).toBe("explore the repo (@explore subagent)")
+      expect(host.delegate.transcript.messageID()).not.toBe(host.delegate.transcript.messageID())
+    }),
+  )
+
   it.effect("inspects without prompting and forwards the typed check", () =>
     Effect.gen(function* () {
       const seen: unknown[] = []

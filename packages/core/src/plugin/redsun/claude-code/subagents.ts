@@ -2,43 +2,9 @@ export * as ClaudeCodeSubagents from "./subagents.js"
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeNativeTools } from "./native-tools.js"
+import type { DelegatedTranscriptEvent } from "@opencode/plugin/effect/delegate"
 
-export type ChildEvent =
-  | { readonly kind: "execution-started"; readonly sessionID: string }
-  | { readonly kind: "execution-succeeded"; readonly sessionID: string }
-  | { readonly kind: "synthetic"; readonly sessionID: string; readonly text: string }
-  | { readonly kind: "step-started"; readonly sessionID: string; readonly messageID: string; readonly agent: string }
-  | { readonly kind: "step-ended"; readonly sessionID: string; readonly messageID: string }
-  | {
-      readonly kind: "text"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly ordinal: number
-      readonly text: string
-    }
-  | {
-      readonly kind: "reasoning"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly ordinal: number
-      readonly text: string
-    }
-  | {
-      readonly kind: "tool-called"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly id: string
-      readonly name: string
-      readonly input: Record<string, unknown>
-    }
-  | {
-      readonly kind: "tool-result"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly id: string
-      readonly text: string
-      readonly failed: boolean
-    }
+export type ChildEvent = DelegatedTranscriptEvent
 
 export interface Ops {
   readonly createChild: (input: { title: string; agent: string }) => Promise<string | undefined>
