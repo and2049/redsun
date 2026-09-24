@@ -7,6 +7,8 @@ import { Agent } from "@opencode/schema/agent"
 import { Money } from "@opencode/schema/money"
 import { Session } from "@opencode/schema/session"
 import { AISDK } from "@opencode/core/aisdk"
+import { KV } from "@opencode/core/kv"
+import { Permission } from "@opencode/core/permission"
 import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
@@ -193,6 +195,66 @@ describe("delegated runtime registration", () => {
       expect(yield* delegates.owns({ providerID: OWNED })).toBe(false)
       const untagged = yield* prepare(OWNED, "primary")
       expect(untagged.request.http?.headers?.["x-redsun-delegate-kind"]).toBeUndefined()
+    }),
+  )
+})
+
+describe("delegated runtime host capabilities", () => {
+  const hostWith = (permission: Partial<Permission.Interface>) =>
+    Effect.gen(function* () {
+      const base = yield* Permission.Service
+      const plugin = yield* Plugin.Service
+      return yield* PluginHost.make(plugin).pipe(
+        Effect.provideService(Permission.Service, Permission.Service.of({ ...base, ...permission })),
+      )
+    })
+
+  it.effect("keeps runtime storage under the stable redsun.<id> prefix", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const storage = host.delegate.storage("fake-agent")
+      yield* storage.set("-session/ses_1", "cursor_1")
+      expect(yield* (yield* KV.Service).get("redsun.fake-agent-session/ses_1")).toBe("cursor_1")
+      expect(yield* storage.get("-session/ses_1")).toBe("cursor_1")
+      yield* storage.remove("-session/ses_1")
+      expect(yield* storage.get("-session/ses_1")).toBeUndefined()
+    }),
+  )
+
+  it.effect("reports approvals, declines and corrections as data", () =>
+    Effect.gen(function* () {
+      const input = { sessionID: "ses_1", agent: "build", action: "edit", resources: ["src/a.ts"] }
+      const approved = yield* hostWith({ assert: () => Effect.void })
+      expect(yield* approved.delegate.permission.assert(input)).toEqual({ ok: true })
+
+      const declined = yield* hostWith({ assert: () => Effect.die(new Permission.DeclinedError()) })
+      expect(yield* declined.delegate.permission.assert(input)).toEqual({ ok: false })
+
+      const corrected = yield* hostWith({
+        assert: () => Effect.fail(new Permission.CorrectedError({ feedback: "use b.ts" })),
+      })
+      expect(yield* corrected.delegate.permission.assert(input)).toEqual({ ok: false, feedback: "use b.ts" })
+    }),
+  )
+
+  it.effect("inspects without prompting and forwards the typed check", () =>
+    Effect.gen(function* () {
+      const seen: unknown[] = []
+      const host = yield* hostWith({
+        inspect: (input) =>
+          Effect.sync(() => {
+            seen.push(input)
+            return { effect: "deny" as const, message: "blocked" }
+          }),
+      })
+      const result = yield* host.delegate.permission.inspect({
+        sessionID: "ses_1",
+        agent: "plan",
+        action: "shell",
+        resources: ["rm -rf /"],
+      })
+      expect(result).toEqual({ effect: "deny", message: "blocked" })
+      expect(seen).toEqual([{ sessionID: "ses_1", agent: "plan", action: "shell", resources: ["rm -rf /"] }])
     }),
   )
 })

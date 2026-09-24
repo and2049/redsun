@@ -11,6 +11,7 @@ import { Agent } from "../agent.js"
 import { AISDK } from "../aisdk.js"
 import { Command } from "../command.js"
 import { DelegatedRuntime } from "../delegate.js"
+import { DelegateHost } from "../delegate-host.js"
 import { Credential } from "../credential.js"
 import { Bus } from "../bus.js"
 import { Integration } from "../integration.js"
@@ -55,7 +56,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const providers = yield* Provider.Service
   const models = yield* Model.Service
   const commands = yield* Command.Service
-  const delegates = yield* DelegatedRuntime.Service
+  const delegate = yield* DelegateHost.make
   const bus = yield* Bus.Service
   const integration = yield* Integration.Service
   const kv = yield* KV.Service
@@ -157,17 +158,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         }),
     },
     // REDSUN: delegated agent runtimes.
-    delegate: {
-      register: (runtime) =>
-        Effect.gen(function* () {
-          const registered = yield* delegates.transform((editor) => editor.add(runtime))
-          const tagged = yield* hooks.register("session", "model.request", DelegatedRuntime.tagRequest, {
-            providerID: runtime.providerID,
-          })
-          return { dispose: Effect.andThen(tagged.dispose, registered.dispose) }
-        }),
-      owns: delegates.owns,
-    },
+    delegate,
     aisdk: {
       hook: (name, callback, options) => {
         if (name === "sdk") {

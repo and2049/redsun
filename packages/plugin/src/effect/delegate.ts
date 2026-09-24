@@ -1,5 +1,7 @@
 import type { LanguageModelV3, LanguageModelV3CallOptions } from "@ai-sdk/provider"
-import type { Effect, Scope } from "effect"
+import type { Form } from "@opencode/schema/form"
+import type { Permission } from "@opencode/schema/permission"
+import type { Effect, Schema, Scope } from "effect"
 import type { Registration } from "./registration.js"
 import type { SessionRequestKind } from "./session.js"
 
@@ -51,8 +53,52 @@ export interface DelegatedRuntime {
   }
 }
 
+export interface DelegatedPermissionCheck {
+  readonly sessionID: string
+  readonly agent?: string
+  readonly action: string
+  readonly resources: readonly string[]
+  readonly metadata?: Record<string, unknown>
+}
+
+/** The host's answer to an interactive approval; a decline may carry the user's correction. */
+export type DelegatedApproval = { readonly ok: true } | { readonly ok: false; readonly feedback?: string }
+
+export type DelegatedFormState = Exclude<Form.State, { readonly status: "pending" }>
+
+/** Key-value storage under the stable prefix `redsun.<runtime id>`; keys are appended verbatim. */
+export interface DelegatedStorage {
+  readonly get: (key: string) => Effect.Effect<Schema.Json | undefined>
+  readonly set: (key: string, value: Schema.Json) => Effect.Effect<void>
+  readonly remove: (key: string) => Effect.Effect<void>
+}
+
 export interface DelegateDomain {
   readonly register: (runtime: DelegatedRuntime) => Effect.Effect<Registration, never, Scope.Scope>
   /** Whether a registered runtime owns this model's agent loop. */
   readonly owns: (model: { readonly providerID: string }) => Effect.Effect<boolean>
+  /** Live read of a top-level config key; the highest-priority document that sets it wins. */
+  readonly config: (key: string) => Effect.Effect<unknown>
+  readonly storage: (runtimeID: string) => DelegatedStorage
+  readonly permission: {
+    /** The effective decision without prompting; for mandatory policy checks. */
+    readonly inspect: (
+      input: DelegatedPermissionCheck,
+    ) => Effect.Effect<{ readonly effect: Permission.Effect; readonly message?: string }>
+    /** Prompts when policy asks; `save` persists an "always" answer for these resources. */
+    readonly assert: (
+      input: DelegatedPermissionCheck & { readonly save?: readonly string[] },
+    ) => Effect.Effect<DelegatedApproval>
+    /** The session-wide approval mode the user selected. */
+    readonly mode: () => Effect.Effect<Permission.Mode>
+  }
+  readonly form: {
+    /** Shows a form in the session and waits for it to settle. */
+    readonly ask: (input: {
+      readonly sessionID: string
+      readonly title: string
+      readonly metadata?: Record<string, unknown>
+      readonly fields: readonly Form.Field[]
+    }) => Effect.Effect<DelegatedFormState>
+  }
 }

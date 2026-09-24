@@ -5,12 +5,9 @@ import { Effect } from "effect"
 import { Model } from "@opencode/schema/model"
 import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
-import { Config } from "../../../config.js"
-import { Form } from "../../../form.js"
-import { KV } from "../../../kv.js"
-import { Location } from "../../../location.js"
 import { Mcp } from "../../../mcp/index.js"
 import { Permission } from "../../../permission.js"
+import type { ConfigClaudeCode } from "@opencode/schema/config/claude-code"
 import { Session } from "../../../session.js"
 import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"
@@ -43,26 +40,17 @@ const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
 // plugin sends them as a primary request.
 const isOneShot = (turn: DelegatedTurn) => turn.kind !== "primary" || ONE_SHOT_AGENTS.has(turn.agent)
 
-const cursorKey = (sessionID: string) => `redsun.claude-code-session/${sessionID}`
-
-const RETIRED_KEY = "redsun.claude-code.retired"
-const DISCOVERED_KEY = "redsun.claude-code.discovered"
-
-const correctionFeedback = (error: unknown): string | undefined => {
-  for (let node: unknown = error, depth = 0; node !== undefined && node !== null && depth < 4; depth++) {
-    const candidate = node as { _tag?: unknown; feedback?: unknown; cause?: unknown; error?: unknown }
-    if (candidate._tag === "Permission.CorrectedError" && typeof candidate.feedback === "string")
-      return candidate.feedback
-    node = candidate.cause ?? candidate.error
-  }
-  return undefined
-}
+// Storage keys under the runtime prefix `redsun.claude-code`, unchanged from when the plugin
+// wrote raw KV, so existing cursors and caches carry over.
+const RUNTIME_ID = "claude-code"
+const cursorKey = (sessionID: string) => `-session/${sessionID}`
+const RETIRED_KEY = ".retired"
+const DISCOVERED_KEY = ".discovered"
 
 export const Plugin = define({
   id: "redsun.provider.claude-code",
   effect: Effect.fn(function* (ctx) {
-    const config = yield* Config.Service
-    const settings = Config.latest(yield* config.entries(), "claude_code")
+    const settings = (yield* ctx.delegate.config("claude_code")) as ConfigClaudeCode.Info | undefined
     if (settings?.enabled === false) return
 
     const resolution = ClaudeCodeExecutable.resolve(settings?.binary_path)
@@ -71,8 +59,13 @@ export const Plugin = define({
       return
     }
 
-    const kv = yield* KV.Service
-    const location = yield* Location.Service
+    const kv = ctx.delegate.storage(RUNTIME_ID)
+    const location = ctx.location
+    const resolveAgent = (agentID: string) =>
+      ctx.agent.get({ agentID: Agent.ID.make(agentID) }).pipe(
+        Effect.map((result) => result.data),
+        Effect.orElseSucceed(() => undefined),
+      )
 
     // The registry keeps itself fresh through two KV-backed inputs re-applied
     // on every catalog reload: pinned ids the CLI was observed substituting
@@ -142,8 +135,7 @@ export const Plugin = define({
       )
     })
 
-    const permission = yield* Permission.Service
-    const forms = yield* Form.Service
+    const permission = ctx.delegate.permission
     const tools = yield* Tool.Service
     const mcp = yield* Mcp.Service
     const sessions = yield* Session.Service
@@ -282,9 +274,7 @@ export const Plugin = define({
     const beginTurn = async (turn: DelegatedTurn) => {
       if (!isOneShot(turn)) {
         agents.set(turn.sessionID, turn.agent)
-        const info = await Effect.runPromise(
-          agentRegistry.resolve(turn.agent).pipe(Effect.orElseSucceed(() => undefined)),
-        )
+        const info = await Effect.runPromise(resolveAgent(turn.agent))
         profiles.set(turn.agent, { mode: info?.mode, system: info?.system })
         if (turn.parentID) workers.add(turn.sessionID)
       }
@@ -300,7 +290,8 @@ export const Plugin = define({
       const profile = profiles.get(agentID)
       const listed = settings?.behavior === "native" ? undefined : await Effect.runPromise(discovery.list())
       // Read at delivery time so an instruction_max_chars edit applies to the next turn.
-      const maxChars = RedsunContextOptimizer.instructionMaxChars(await Effect.runPromise(config.entries()))
+      const configured = await Effect.runPromise(ctx.delegate.config("instruction_max_chars"))
+      const maxChars = typeof configured === "number" ? configured : RedsunContextOptimizer.INSTRUCTION_MAX_CHARS
       const runtime = runtimes.get(sessionID)
       const hasSkillTool =
         settings?.behavior !== "native" && runtime?.binding?.definitions.some((item) => item.name === "skill")
@@ -318,8 +309,8 @@ export const Plugin = define({
                   permission.inspect({
                     action: "skill",
                     resources: [skill.id],
-                    sessionID: sessionID as never,
-                    agent: Agent.ID.make(agentID),
+                    sessionID,
+                    agent: agentID,
                   }),
                 ),
               })),
@@ -363,7 +354,7 @@ export const Plugin = define({
 
     const permissionMode = async (sessionID: string) => {
       const agentID = agents.get(sessionID)
-      const info = agentID ? await Effect.runPromise(agentRegistry.resolve(agentID)).catch(() => undefined) : undefined
+      const info = agentID ? await Effect.runPromise(resolveAgent(agentID)) : undefined
       return ClaudeCodeModes.permissionMode({
         agentID,
         agentMode: info?.mode,
@@ -384,30 +375,25 @@ export const Plugin = define({
             permission.inspect({
               action,
               resources: [resource],
-              sessionID: sessionID as never,
-              ...(agents.get(sessionID) ? { agent: Agent.ID.make(agents.get(sessionID)!) } : {}),
+              sessionID,
+              ...(agents.get(sessionID) ? { agent: agents.get(sessionID)! } : {}),
             }),
             { signal },
           ),
         assert: (action, resource, signal) =>
           Effect.runPromise(
-            permission
-              .assert({
-                action,
-                resources: [resource],
-                save: [resource],
-                sessionID: sessionID as never,
-                ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
-              })
-              .pipe(Effect.as({ ok: true as const })),
+            permission.assert({
+              action,
+              resources: [resource],
+              save: [resource],
+              sessionID,
+              ...(agents.get(sessionID) ? { agent: agents.get(sessionID)! } : {}),
+            }),
             { signal },
-          ).catch((error) => {
-            const feedback = correctionFeedback(error)
-            return feedback === undefined ? { ok: false as const } : { ok: false as const, feedback }
-          }),
+          ).catch(() => ({ ok: false as const })),
         form: (fields, signal) =>
           Effect.runPromise(
-            forms.ask({
+            ctx.delegate.form.ask({
               sessionID,
               title: "Questions",
               metadata: { kind: "question", source: "claude-code" },
@@ -417,22 +403,21 @@ export const Plugin = define({
           ).catch(() => undefined),
         exitPlan: (signal) =>
           Effect.runPromise(
-            Effect.gen(function* () {
-              yield* permission.assert({
-                action: "plan_exit",
-                resources: ["*"],
-                sessionID: sessionID as never,
-                ...(agents.get(sessionID) ? { agent: agents.get(sessionID) as never } : {}),
-              })
-              return true
+            permission.assert({
+              action: "plan_exit",
+              resources: ["*"],
+              sessionID,
+              ...(agents.get(sessionID) ? { agent: agents.get(sessionID)! } : {}),
             }),
             { signal },
-          ).catch(() => false),
+          ).then(
+            (approval) => approval.ok,
+            () => false,
+          ),
         commitPlanExit: async (signal) => {
-          await Effect.runPromise(
-            sessions.switchAgent({ sessionID: sessionID as never, agent: Agent.ID.make("build") }),
-            { signal },
-          )
+          await Effect.runPromise(ctx.session.switchAgent({ sessionID: sessionID as never, agent: "build" as never }), {
+            signal,
+          })
           agents.set(sessionID, "build")
         },
       })
