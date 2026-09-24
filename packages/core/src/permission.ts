@@ -143,7 +143,7 @@ const layer = Layer.effect(
     const pending = new Map<ID, Pending>()
 
     const stored = yield* kv.get(MODE_KEY)
-    let autoApprove = stored === "auto"
+    let currentMode: Mode = stored === "auto" ? "auto" : stored === "claude_auto" ? "claude_auto" : "normal"
 
     let closed = false
 
@@ -202,7 +202,8 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      if (autoApprove && event.effect === "ask") return { effect: "allow" as const, message: event.message, rules: all }
+      if (currentMode === "auto" && event.effect === "ask")
+        return { effect: "allow" as const, message: event.message, rules: all }
       return { effect: event.effect, message: event.message, rules: all }
     })
 
@@ -357,14 +358,16 @@ const layer = Layer.effect(
     })
 
     const mode = Effect.fn("Permission.mode")(function* () {
-      return (autoApprove ? "auto" : "normal") as Mode
+      return currentMode
     })
 
     const setMode = Effect.fn("Permission.setMode")(function* (next: Mode) {
-      if (autoApprove === (next === "auto")) return
-      autoApprove = next === "auto"
+      if (currentMode === next) return
+      currentMode = next
       yield* kv.set(MODE_KEY, next)
-      if (!autoApprove) return
+      // Claude's classifier is native-only. Host asks (including already pending
+      // requests and non-Claude clients) remain manual in this mode.
+      if (next !== "auto") return
       for (const [id, item] of [...pending]) {
         const rules = yield* configured(item.request.sessionID, item.agent).pipe(
           Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),

@@ -5,7 +5,6 @@ import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
-import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
 import { PermissionTable } from "@opencode/core/permission/sql"
@@ -230,6 +229,26 @@ describe("Permission", () => {
       // the mode the user just chose.
       yield* Fiber.join(fiber)
       expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("claude_auto retains host asks, existing requests, and explicit denies", () =>
+    Effect.gen(function* () {
+      yield* setup([])
+      const { service, fiber, request } = yield* waitForRequest()
+      yield* service.setMode("claude_auto")
+      expect(yield* service.mode()).toBe("claude_auto")
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "ask" })
+      expect(yield* service.list()).toEqual([request])
+      yield* service.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.join(fiber)
+      expect(yield* service.ask(assertion())).toMatchObject({ effect: "ask" })
+      yield* service.setMode("auto")
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "allow" })
+      yield* service.setMode("claude_auto")
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "ask" })
+      yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "deny" })
     }),
   )
 

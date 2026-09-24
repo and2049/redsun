@@ -10,6 +10,7 @@ import { Config } from "../../../config.js"
 import { Form } from "../../../form.js"
 import { KV } from "../../../kv.js"
 import { Location } from "../../../location.js"
+import { Mcp } from "../../../mcp/index.js"
 import { Permission } from "../../../permission.js"
 import { Session } from "../../../session.js"
 import { SessionEvent } from "../../../session/event.js"
@@ -20,6 +21,7 @@ import { ClaudeCodeAuth } from "./auth.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
 import { ClaudeCodeMcp } from "./mcp.js"
+import { ClaudeCodeHostTools } from "./host-tools.js"
 import { ClaudeCodeModes } from "./modes.js"
 import { ClaudeCodeModels } from "./models.js"
 import { ClaudeCodePolicyHooks } from "./policy-hooks.js"
@@ -29,6 +31,7 @@ import { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeContext } from "./context.js"
+import { CodeModeCatalog } from "../../../codemode/catalog.js"
 import { InstructionDiscovery } from "../../../instruction-discovery.js"
 import { RedsunProjectMemory } from "../project-memory.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
@@ -95,6 +98,7 @@ export const Plugin = define({
     const permission = yield* Permission.Service
     const forms = yield* Form.Service
     const tools = yield* Tool.Service
+    const mcp = yield* Mcp.Service
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
     const agentRegistry = yield* Agent.Service
@@ -114,7 +118,8 @@ export const Plugin = define({
       {
         policy: ReturnType<typeof ClaudeCodePolicyHooks.make>
         server: ReturnType<typeof ClaudeCodeMcp.makeHostServer>
-        binding?: ReturnType<typeof ClaudeCodeMcp.fromSnapshot>
+        binding?: ReturnType<typeof ClaudeCodeMcp.fromSnapshot> & { directNames: ReadonlySet<string> }
+        codeMode?: CodeModeCatalog.Summary | null
         catalog: string
         results: Map<string, Tool.Metadata>
         submission?: ReturnType<ClaudeCodeContext.Tracker["prepare"]>
@@ -265,6 +270,7 @@ export const Plugin = define({
         : settings?.behavior === "native"
           ? undefined
           : []
+      const codeMode = runtime?.codeMode
       // Discovery's unavailable result is not an observed removal: keep the last
       // successfully delivered project rules until the canonical source recovers.
       return ClaudeCodeContext.commitIfCurrent(current, () => {
@@ -273,6 +279,7 @@ export const Plugin = define({
           isWorker: workers.has(sessionID),
           freshProcess,
           ...(catalog === undefined ? {} : { skills: catalog }),
+          ...(codeMode === undefined ? {} : { codeMode }),
           ...(Array.isArray(listed)
             ? {
                 files: listed.map((file) => ({
@@ -307,6 +314,8 @@ export const Plugin = define({
       return ClaudeCodeModes.permissionMode({
         agentID,
         agentMode: info?.mode,
+        isWorker: workers.has(sessionID),
+        global: await Effect.runPromise(permission.mode()),
         configured: settings?.permission_mode,
         worker: settings?.worker_permission_mode,
       })
@@ -316,6 +325,7 @@ export const Plugin = define({
       ClaudeCodePolicyHooks.make({
         worktree: location.directory,
         agent: () => agents.get(sessionID),
+        isDirectHostTool: (name) => runtimes.get(sessionID)?.binding?.directNames.has(name) === true,
         policy: (action, resource, signal) =>
           Effect.runPromise(
             permission.inspect({
@@ -394,28 +404,37 @@ export const Plugin = define({
         tools.snapshot(Permission.merge(info.permissions, session.permissions ?? [])),
         { signal },
       )
+      const connected = await Effect.runPromise(mcp.tools(), { signal })
       if (signal.aborted) throw new Error("Claude Code turn was cancelled before host tools were bound.")
+      const definitions = ClaudeCodeHostTools.select({
+        definitions: snapshot.definitions,
+        available: availableTools,
+        direct: ClaudeCodeHostTools.directNames(connected),
+        behavior: settings?.behavior,
+      })
+      const allowed = new Set(definitions.map((item) => item.name))
       const captured = ClaudeCodeMcp.fromSnapshot({
         snapshot,
         sessionID: session.id,
         agent,
         messageID: SessionMessage.ID.make(messageID),
+        allowed,
         onResult: ({ nativeToolUseID, result }) => {
           const active = runtimes.get(sessionID)
           if (nativeToolUseID && result.metadata && active?.binding === binding)
             active.results.set(nativeToolUseID, result.metadata)
         },
       })
-      const available = new Set(availableTools)
       const binding = {
         ...captured,
-        definitions: captured.definitions.filter(
-          (item) => available.has(item.name) && (settings?.behavior !== "native" || item.name === "subagent"),
+        definitions,
+        directNames: new Set(
+          [...ClaudeCodeHostTools.directNames(connected)]
+            .filter((name) => allowed.has(name))
+            .map((name) => `mcp__redsun__${name}`),
         ),
       }
-      const catalog = JSON.stringify(
-        binding.definitions.filter((item) => ClaudeCodeMcp.HOST_TOOL_NAMES.includes(item.name as never)),
-      )
+      const catalog = ClaudeCodeHostTools.discoveryKey(definitions)
       let runtime = runtimes.get(sessionID)
       if (runtime && runtime.catalog !== catalog && !manager.busy(sessionID)) {
         manager.stop(sessionID) // The SDK does not update an existing MCP tool catalog.
@@ -430,6 +449,7 @@ export const Plugin = define({
           policy,
           server: undefined as unknown as ReturnType<typeof ClaudeCodeMcp.makeHostServer>,
           binding: undefined as typeof binding | undefined,
+          codeMode: undefined as CodeModeCatalog.Summary | null | undefined,
           catalog,
           results: new Map<string, Tool.Metadata>(),
           submission: undefined as ReturnType<ClaudeCodeContext.Tracker["prepare"]> | undefined,
@@ -439,6 +459,8 @@ export const Plugin = define({
         runtimes.set(sessionID, runtime)
       }
       runtime.binding = binding // Bind before the CLI's initial tools/list.
+      runtime.codeMode =
+        allowed.has("execute") && snapshot.codeModeCatalog ? CodeModeCatalog.summarize(snapshot.codeModeCatalog) : null
       return () => {
         if (runtime.binding === binding) runtime.binding = undefined
         runtime.results.clear()
@@ -486,6 +508,7 @@ export const Plugin = define({
             canUseTool: (sessionID) => runtimes.get(sessionID)?.policy.canUseTool,
             preToolUse: (sessionID) => runtimes.get(sessionID)?.policy.preToolUse,
             postToolUse: (sessionID) => runtimes.get(sessionID)?.policy.postToolUse,
+            isDirectHostTool: (sessionID, name) => runtimes.get(sessionID)?.binding?.directNames.has(name) === true,
             hostResultMetadata: (sessionID, id) => {
               const result = runtimes.get(sessionID)?.results.get(id)
               runtimes.get(sessionID)?.results.delete(id)

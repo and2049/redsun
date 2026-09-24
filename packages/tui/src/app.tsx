@@ -1131,7 +1131,13 @@ function App(props: { pair?: DialogPairCredentials }) {
       {
         name: "permission.mode",
         title:
-          local.permission.mode === "auto" ? "Disable auto-approve permissions" : "Enable auto-approve permissions",
+          local.permission.mode === "auto"
+            ? "Disable auto-approve permissions"
+            : local.permission.mode === "claude_auto"
+              ? "Enable auto-approve permissions"
+              : local.model.current()?.providerID === "claude-code"
+                ? "Approve for me"
+                : "Enable auto-approve permissions",
         category: "System",
         run: () => {
           local.permission.toggle()

@@ -4,7 +4,17 @@ import { useArgs } from "./args"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
 
-export type PermissionMode = "auto" | "normal"
+export type PermissionMode = "auto" | "normal" | "claude_auto"
+
+export function effectivePermissionMode(mode: PermissionMode, providerID?: string): PermissionMode {
+  return mode === "claude_auto" && providerID !== "claude-code" ? "normal" : mode
+}
+
+export function nextPermissionMode(mode: PermissionMode, providerID?: string): PermissionMode {
+  const effective = effectivePermissionMode(mode, providerID)
+  if (providerID !== "claude-code") return effective === "auto" ? "normal" : "auto"
+  return effective === "normal" ? "claude_auto" : effective === "claude_auto" ? "auto" : "normal"
+}
 
 export const { use: usePermission, provider: PermissionProvider } = createSimpleContext({
   name: "Permission",
@@ -15,9 +25,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     const [hydrated, setHydrated] = createSignal(false)
 
     const push = (mode: PermissionMode) =>
-      client.api.permission.mode
-        .set({ mode })
-        .catch((error) => console.error("Failed to set permission mode", error))
+      client.api.permission.mode.set({ mode }).catch((error) => console.error("Failed to set permission mode", error))
 
     createEffect(
       on(
@@ -33,7 +41,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
           void client.api.permission.mode
             .get()
             .then((result) => {
-              setStore("mode", result.mode === "auto" ? "auto" : "normal")
+              setStore("mode", result.mode === "auto" || result.mode === "claude_auto" ? result.mode : "normal")
               setHydrated(true)
             })
             .catch((error) => console.error("Failed to read permission mode", error))
@@ -55,8 +63,8 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
         return hydrated()
       },
       set,
-      toggle() {
-        set(store.mode === "auto" ? "normal" : "auto")
+      toggle(providerID?: string) {
+        set(nextPermissionMode(store.mode, providerID))
       },
     }
   },

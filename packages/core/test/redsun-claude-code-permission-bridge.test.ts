@@ -13,6 +13,7 @@ const harness = (input?: {
   readonly pending?: readonly string[]
   /** False when the user would rather keep planning. */
   readonly exitPlan?: boolean
+  readonly direct?: ReadonlySet<string>
 }) => {
   const asked: { action: string; resource: string }[] = []
   const forms: Form.Field[][] = []
@@ -20,6 +21,7 @@ const harness = (input?: {
   const bridge = ClaudeCodePermissionBridge.make({
     worktree: "/repo",
     agent: () => input?.agent,
+    isDirectHostTool: (name) => input?.direct?.has(name) === true,
     assert: (action, resource) => {
       asked.push({ action, resource })
       if (input?.pending?.includes(action)) return new Promise<never>(() => {})
@@ -242,6 +244,28 @@ describe("ClaudeCodePermissionBridge", () => {
       },
     )
     expect(h.actions()).toEqual(["skill"])
+  })
+
+  it("trusts only selected direct MCP tools with SDK redsun provenance", async () => {
+    const selected = new Set(["mcp__redsun__files_search"])
+    const h = harness({ direct: selected })
+    const name = "mcp__redsun__files_search"
+    const sdk = { signal: live.signal, mcpServer: { name: "redsun", source: "sdk" } }
+    expect(await h.bridge(name, { query: "x" }, sdk)).toMatchObject({ behavior: "allow" })
+    expect(h.actions()).toEqual([])
+
+    // A lookalike name and a formerly selected tool are not in this turn's
+    // canonical snapshot, even when the caller advertises SDK provenance.
+    await h.bridge("mcp__redsun__files_write", {}, sdk)
+    selected.clear()
+    await h.bridge(name, { query: "x" }, sdk)
+    expect(h.actions()).toEqual(["claude_code", "claude_code"])
+
+    selected.add(name)
+    await h.bridge(name, {}, { signal: live.signal, mcpServer: { name: "redsun", source: "user" } })
+    await h.bridge(name, {}, { signal: live.signal, mcpServer: { name: "other", source: "sdk" } })
+    await h.bridge(name, {}, live)
+    expect(h.actions()).toEqual(["claude_code", "claude_code", "claude_code", "claude_code", "claude_code"])
   })
 
   it("does not decide until the user has answered", async () => {

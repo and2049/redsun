@@ -80,6 +80,39 @@ describe("ClaudeCodeContext.Tracker", () => {
     expect(tracker.prepare("one", { ...updated, freshProcess: true }).text).toContain('"id":"qualification"')
   })
 
+  it("delivers Code Mode discovery changes, removals and a fresh compact epoch without restarting for catalog text", () => {
+    const tracker = new ClaudeCodeContext.Tracker()
+    const codeMode = {
+      total: 1,
+      shown: 1,
+      namespaces: [
+        { name: "tools", count: 1, entries: [{ path: "tools.echo", line: "  - tools.echo(input): Promise<string>" }] },
+      ],
+    }
+    const input = { agent, isWorker: false, freshProcess: false, codeMode }
+    const initial = tracker.prepare("one", input)
+    expect(initial.text).toContain("The Code Mode tool catalog below")
+    initial.delivered()
+    expect(tracker.prepare("one", input).text).toBeUndefined()
+    const updated = {
+      ...input,
+      codeMode: {
+        ...codeMode,
+        namespaces: [
+          { ...codeMode.namespaces[0]!, entries: [{ path: "tools.echo", line: "  - tools.echo(changed)" }] },
+        ],
+      },
+    }
+    const changed = tracker.prepare("one", updated)
+    expect(changed.text).toContain("tools.echo(changed)")
+    changed.delivered()
+    const removed = tracker.prepare("one", { ...input, codeMode: null })
+    expect(removed.text).toContain("Code Mode tools are no longer available")
+    removed.delivered()
+    expect(tracker.prepare("one", { ...input, codeMode: null }).text).toBeUndefined()
+    expect(tracker.prepare("one", { ...input, freshProcess: true }).text).toContain("tools.echo(input)")
+  })
+
   it("uses UserPromptSubmit additionalContext, not a user-authored tag or machine-injected prompt", async () => {
     const tracker = new ClaudeCodeContext.Tracker()
     const delivery = tracker.prepare("one", { agent, isWorker: false, freshProcess: false, files })

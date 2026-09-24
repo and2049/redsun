@@ -8,6 +8,7 @@ export const HOST_TOOLS = new Set([
   "mcp__redsun__skill",
   "mcp__redsun__todowrite",
   "mcp__redsun__worker_model",
+  "mcp__redsun__execute",
 ])
 
 const TOOL_NAMES: Record<string, string> = {
@@ -25,6 +26,7 @@ const TOOL_NAMES: Record<string, string> = {
   mcp__redsun__skill: "skill",
   mcp__redsun__todowrite: "todowrite",
   mcp__redsun__worker_model: "worker_model",
+  mcp__redsun__execute: "execute",
 }
 
 const INPUT_KEYS: Record<string, Record<string, string>> = {
@@ -41,6 +43,12 @@ const INPUT_KEYS: Record<string, Record<string, string>> = {
 }
 
 export const toolName = (name: string) => TOOL_NAMES[name] ?? name
+
+const HOST_PREFIX = "mcp__redsun__"
+
+/** Only a name selected into this turn's host bridge can be unwrapped to its canonical tool id. */
+export const directHostToolName = (name: string, selected: (name: string) => boolean) =>
+  name.startsWith(HOST_PREFIX) && selected(name) ? name.slice(HOST_PREFIX.length) : undefined
 
 export const toolInput = (name: string, input: Record<string, unknown>): Record<string, unknown> => {
   const keys = INPUT_KEYS[name]

@@ -127,6 +127,7 @@ export interface Hooks {
   readonly sessionStart?: (sessionID: string) => HookCallback | undefined
   readonly compactRestored?: (sessionID: string) => number
   readonly hostResultMetadata?: (sessionID: string, nativeToolUseID: string) => Tool.Metadata | undefined
+  readonly isDirectHostTool?: (sessionID: string, nativeName: string) => boolean
   readonly prepareTurn?: (
     sessionID: string,
     messageID: string,
@@ -227,7 +228,11 @@ export const make = (input: {
       return { stream: errorStream("No user prompt to deliver to Claude Code."), request: {}, response: {} }
 
     const children = hooks?.taskChildren?.(sessionID)
-    const state = ClaudeCodeTranslate.makeState(children, (id) => hooks?.hostResultMetadata?.(sessionID, id))
+    const state = ClaudeCodeTranslate.makeState(
+      children,
+      (id) => hooks?.hostResultMetadata?.(sessionID, id),
+      (name) => hooks?.isDirectHostTool?.(sessionID, name) === true,
+    )
 
     if (oneShot) {
       const run = createQuery({

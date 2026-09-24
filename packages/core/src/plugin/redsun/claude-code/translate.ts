@@ -28,6 +28,8 @@ export interface State {
   taskChildren?: ReadonlyMap<string, TaskChild>
   /** Only metadata correlated by the host to this native tool_use_id is trusted. */
   hostResultMetadata?: (toolUseID: string) => Tool.Metadata | undefined
+  /** True only for native names selected into this turn's direct host MCP bridge. */
+  isDirectHostTool?: (name: string) => boolean
   compactBoundaries: Set<string>
   compactSequence: number
   compacting: boolean
@@ -36,6 +38,7 @@ export interface State {
 export const makeState = (
   taskChildren?: ReadonlyMap<string, TaskChild>,
   hostResultMetadata?: (toolUseID: string) => Tool.Metadata | undefined,
+  isDirectHostTool?: (name: string) => boolean,
 ): State => ({
   toolCalls: new Map(),
   openBlocks: new Map(),
@@ -43,6 +46,7 @@ export const makeState = (
   messageId: "claude",
   taskChildren,
   hostResultMetadata,
+  isDirectHostTool,
   compactBoundaries: new Set(),
   compactSequence: 0,
   compacting: false,
@@ -53,8 +57,11 @@ export const taskChildMetadata = (child: TaskChild) => ({
   parentSessionID: child.parentSessionID,
 })
 
-const emittedToolName = (name: string) =>
-  ClaudeCodeNativeTools.SUBAGENT_TOOLS.has(name) ? "subagent" : ClaudeCodeNativeTools.toolName(name)
+const emittedToolName = (state: State, name: string) =>
+  ClaudeCodeNativeTools.SUBAGENT_TOOLS.has(name)
+    ? "subagent"
+    : ((state.isDirectHostTool && ClaudeCodeNativeTools.directHostToolName(name, state.isDirectHostTool)) ??
+      ClaudeCodeNativeTools.toolName(name))
 
 const TOOL_USE_TYPES = new Set(["tool_use", "server_tool_use", "mcp_tool_use"])
 
@@ -114,7 +121,7 @@ const contentBlockStart = (state: State, index: number, block: Record<string, an
           state.openBlocks.set(index, { kind: "ignored" })
           return []
         }
-        const name = emittedToolName(block.name)
+        const name = emittedToolName(state, block.name)
         state.toolCalls.set(block.id, { name, rawName: block.name, input: {} })
         state.openBlocks.set(index, { kind: "tool", id: block.id, name })
         return [{ type: "tool-input-start", id: block.id, toolName: name, providerExecuted: true }]
@@ -184,7 +191,7 @@ const assistantMessage = (state: State, content: unknown): LanguageModelV3Stream
     const item = block as Record<string, any>
     if (!TOOL_USE_TYPES.has(item.type)) continue
     if (typeof item.id !== "string" || typeof item.name !== "string") continue
-    const name = emittedToolName(item.name)
+    const name = emittedToolName(state, item.name)
     const raw = item.input && typeof item.input === "object" ? (item.input as Record<string, unknown>) : {}
     const input = ClaudeCodeNativeTools.toolInput(item.name, raw)
     state.toolCalls.set(item.id, { name, rawName: item.name, input })
@@ -239,11 +246,12 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
       continue
     }
 
+    // Only our in-process bridge records metadata under a verified native tool-use ID.
+    // A name-matching user MCP server cannot manufacture an entry in that map.
     const metadata = item.is_error
       ? undefined
-      : ClaudeCodeNativeTools.HOST_TOOLS.has(call.rawName)
-        ? state.hostResultMetadata?.(item.tool_use_id)
-        : ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result)
+      : (state.hostResultMetadata?.(item.tool_use_id) ??
+        ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result))
     parts.push({
       type: "tool-result",
       toolCallId: item.tool_use_id,

@@ -52,9 +52,61 @@ describe("ClaudeCodeModes.permissionMode", () => {
   it("falls back to default for an absent or unknown mode", () => {
     expect(ClaudeCodeModes.permissionMode({})).toBe("default")
     expect(ClaudeCodeModes.permissionMode({ configured: "not-a-mode" })).toBe("default")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "worker", agentMode: "subagent", worker: "not-a-mode" })).toBe(
+      "default",
+    )
+  })
+
+  it("maps the primary global selection without weakening explicit plan mode", () => {
     expect(
-      ClaudeCodeModes.permissionMode({ agentID: "worker", agentMode: "subagent", worker: "not-a-mode" }),
+      ClaudeCodeModes.permissionMode({ agentID: "build", global: "normal", configured: "bypassPermissions" }),
     ).toBe("default")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "auto", configured: "auto" })).toBe("default")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "claude_auto" })).toBe("auto")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "plan", global: "claude_auto" })).toBe("plan")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "claude_auto", configured: "plan" })).toBe("plan")
+  })
+
+  it("does not push the main session classifier mode into workers", () => {
+    expect(
+      ClaudeCodeModes.permissionMode({
+        agentID: "worker",
+        agentMode: "subagent",
+        global: "claude_auto",
+        configured: "acceptEdits",
+        worker: "inherit",
+      }),
+    ).toBe("acceptEdits")
+    expect(
+      ClaudeCodeModes.permissionMode({
+        agentID: "worker",
+        agentMode: "subagent",
+        global: "claude_auto",
+        worker: "dontAsk",
+      }),
+    ).toBe("dontAsk")
+    expect(
+      ClaudeCodeModes.permissionMode({
+        agentID: "custom-all",
+        agentMode: "all",
+        isWorker: true,
+        global: "claude_auto",
+        configured: "acceptEdits",
+        worker: "inherit",
+      }),
+    ).toBe("acceptEdits")
+    expect(
+      ClaudeCodeModes.permissionMode({
+        agentID: "custom-all",
+        agentMode: "all",
+        isWorker: true,
+        global: "claude_auto",
+        worker: "dontAsk",
+      }),
+    ).toBe("dontAsk")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "custom-all", agentMode: "all", global: "claude_auto" })).toBe(
+      "auto",
+    )
   })
 })
 
@@ -104,6 +156,22 @@ describe("ClaudeCodeSessions.SessionManager permission modes", () => {
 
     expect(spawns).toHaveLength(1)
     expect(calls.setPermissionMode).toEqual(["plan"])
+    manager.stopAll()
+  })
+
+  it("passes native classifier mode to the SDK without enabling dangerous bypass", async () => {
+    const spawns: { options: Options }[] = []
+    const { createQuery, calls } = fakeQuery(spawns)
+    const manager = new ClaudeCodeSessions.SessionManager(createQuery)
+
+    await runTurn(manager, "auto")
+    await runTurn(manager, "default")
+    await runTurn(manager, "auto")
+
+    expect(spawns).toHaveLength(1)
+    expect(spawns[0]?.options.permissionMode).toBe("auto")
+    expect(spawns[0]?.options.allowDangerouslySkipPermissions).toBeUndefined()
+    expect(calls.setPermissionMode).toEqual(["default", "auto"])
     manager.stopAll()
   })
 

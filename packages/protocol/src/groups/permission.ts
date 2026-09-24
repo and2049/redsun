@@ -39,8 +39,8 @@ export const makePermissionGroup = <
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.permission.mode.get",
-          summary: "Get auto-approve mode",
-          description: "Retrieve whether permissions that would prompt are approved automatically.",
+          summary: "Get permission mode",
+          description: "Retrieve manual, approve-all, or Claude Code native classifier mode.",
         }),
       ),
     )
@@ -51,9 +51,9 @@ export const makePermissionGroup = <
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.permission.mode.set",
-          summary: "Set auto-approve mode",
+          summary: "Set permission mode",
           description:
-            "Approve every permission that would prompt. Rules that deny still deny, so read-only agents stay read-only.",
+            "Auto approves host asks; claude_auto selects the native Claude Code classifier for primary Claude sessions while host asks remain manual. Explicit denies always deny.",
         }),
       ),
     )

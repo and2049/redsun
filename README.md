@@ -99,6 +99,19 @@ Code's auto-approval modes. Native tools otherwise retain Claude Code's approval
 rule does not force an extra prompt for a call the native runtime already approves. Host tools exposed
 through MCP retain their own redsun permission checks.
 
+In the redsun profile, connected MCP tools are available through the host bridge: direct tools stay
+direct, and Code Mode tools use redsun's `execute` tool and catalog discovery. These calls reuse
+redsun's connections and authentication. MCP resources, prompts and server instructions are not
+forwarded by this bridge.
+
+The permission toggle adds **Approve for me** when the selected main model is `claude-code`:
+manual approvals → Approve for me → Auto-approve all. Approve for me selects Claude Code's native
+automatic permission classifier; fallback approvals and host MCP permission requests can still
+appear. Auto-approve all deterministically approves host `ask` decisions while retaining explicit
+denials. Other main providers keep the two-state toggle and treat a stored Approve for me selection
+as manual approval. The selection is location-wide; plan mode and worker-specific native permission
+settings retain their separate behavior.
+
 ## Acknowledgements
 
 Forked from [OpenCode](https://github.com/anomalyco/opencode/) under the MIT license.

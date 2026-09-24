@@ -13,6 +13,8 @@ export type Outcome = { readonly ok: true } | { readonly ok: false; readonly fee
 export interface Ports {
   readonly worktree: string
   readonly agent: () => string | undefined
+  /** Exact direct MCP tools exposed in the current turn's host snapshot. */
+  readonly isDirectHostTool?: (toolName: string) => boolean
   readonly assert: (action: string, resource: string, signal: AbortSignal) => Promise<Outcome>
   readonly form: (fields: Form.Field[], signal: AbortSignal) => Promise<Form.TerminalState | undefined>
   readonly exitPlan: (signal: AbortSignal) => Promise<boolean>
@@ -74,7 +76,7 @@ export const make =
     // the interactive permission. Do not ask here and then ask again at the leaf.
     // Name alone is not proof: inherited/user MCP servers may spoof the prefix.
     if (
-      ClaudeCodePermissions.isHostTool(toolName) &&
+      (ClaudeCodePermissions.isHostTool(toolName) || ports.isDirectHostTool?.(toolName) === true) &&
       options.mcpServer?.source === "sdk" &&
       options.mcpServer.name === "redsun"
     )

@@ -198,6 +198,49 @@ describe("ClaudeCodeTranslate", () => {
     expect(call("tu_native", "Skill")[0]).toMatchObject({ toolName: "skill", input: '{"id":"example"}' })
   })
 
+  it("uses canonical direct MCP names for stream starts, aggregate calls and results only when selected", () => {
+    const selected = new Set(["mcp__redsun__my_server_ping"])
+    const state = ClaudeCodeTranslate.makeState(undefined, undefined, (name) => selected.has(name))
+    const events = [
+      streamEvent({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "tu_direct", name: "mcp__redsun__my_server_ping" },
+      }),
+      streamEvent({ type: "content_block_stop", index: 0 }),
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "tu_direct", name: "mcp__redsun__my_server_ping", input: { text: "hello" } },
+            { type: "tool_use", id: "tu_other", name: "mcp__redsun__other_ping", input: {} },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", tool_use_id: "tu_direct", content: "pong" },
+            { type: "tool_result", tool_use_id: "tu_other", content: "other" },
+          ],
+        },
+      },
+    ]
+    const parts = events.flatMap((event) => ClaudeCodeTranslate.translate(state, msg(event)))
+    expect(parts.filter((part) => "toolName" in part).map((part) => part.toolName)).toEqual([
+      "my_server_ping",
+      "my_server_ping",
+      "mcp__redsun__other_ping",
+      "my_server_ping",
+      "mcp__redsun__other_ping",
+    ])
+    expect(parts.find((part) => part.type === "tool-call" && part.toolCallId === "tu_direct")).toMatchObject({
+      input: '{"text":"hello"}',
+      providerExecuted: true,
+    })
+  })
+
   it("drops subagent-attributed frames from the parent stream", () => {
     const { parts } = run([
       streamEvent({ type: "content_block_start", index: 0, content_block: { type: "text" } }, "tu_parent"),

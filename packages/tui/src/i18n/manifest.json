@@ -1459,6 +1459,16 @@
       "context": "session",
       "legacy": ["Auto-approve all enabled "]
     },
+    "permission.claudeAuto.compact": {
+      "message": "Approve for me",
+      "context": "session",
+      "legacy": []
+    },
+    "permission.claudeAuto.enabled": {
+      "message": "Approve for me ",
+      "context": "session",
+      "legacy": []
+    },
     "session.permissionChoices": {
       "message": "Permission choices",
       "context": "session",
@@ -2073,6 +2083,11 @@
       "message": "Enable auto-approve permissions",
       "context": "application",
       "legacy": ["Enable auto-approve permissions"]
+    },
+    "application.approveForMe": {
+      "message": "Approve for me",
+      "context": "application",
+      "legacy": ["Approve for me"]
     },
     "remote.disabled": {
       "message": "disabled",

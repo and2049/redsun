@@ -1170,6 +1170,41 @@ test("configured app bindings execute settings and permission commands", async (
   await setup.waitForFrame((frame) => frame.includes("Auto-approve all enabled"))
 })
 
+test("Claude Code cycles manual, approve-for-me, auto-approve via the app binding", async () => {
+  const modes: string[] = []
+  await using setup = await createAppFixture({
+    args: { model: "claude-code/sonnet" },
+    config: { animations: false, keybinds: { "permission.mode": "f7" } },
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/agent")
+        return json({
+          location: { directory, project: { id: "proj_test", directory } },
+          data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }],
+        })
+      if (url.pathname === "/api/model")
+        return json({
+          location: { directory, project: { id: "proj_test", directory } },
+          data: [{ id: "sonnet", providerID: "claude-code", name: "Sonnet", variants: [] }],
+        })
+      if (url.pathname === "/api/permission/mode") {
+        if (request.method === "GET") return json({ data: { mode: "normal" } })
+        modes.push(((await request.json()) as { mode: string }).mode)
+        return new Response(null, { status: 204 })
+      }
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("Build · Sonnet") && frame.includes("Auto-approve all disabled"))
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("Approve for me"))
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("Auto-approve all enabled"))
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("Auto-approve all disabled"))
+  await setup.waitFor(() => modes.length === 3)
+  expect(modes).toEqual(["claude_auto", "auto", "normal"])
+})
+
 test.each([
   { auto: undefined, expected: "Auto-approve all disabled (Shift+Tab)" },
   { auto: true, expected: "Auto-approve all enabled" },

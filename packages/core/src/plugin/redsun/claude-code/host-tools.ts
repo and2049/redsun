@@ -9,9 +9,40 @@ import type { Agent } from "../../../agent.js"
 import type { SessionMessage } from "../../../session/message.js"
 import type { SessionSchema } from "../../../session/schema.js"
 import type { Tool } from "../../../tool.js"
+import { McpTool } from "../../../tool/mcp.js"
+import type { Mcp } from "../../../mcp/index.js"
 
-export const NAMES = ["subagent", "skill", "todowrite", "worker_model"] as const
+export const NAMES = ["subagent", "skill", "todowrite", "worker_model", "execute"] as const
 export const MCP_NAMES = NAMES.map((name) => `mcp__redsun__${name}`)
+
+/** Exact effective names of connected direct MCP registrations, not a name-prefix heuristic. */
+export const directNames = (discovered: readonly Mcp.Tool[]): ReadonlySet<string> =>
+  new Set(discovered.filter((tool) => tool.codemode === false).map((tool) => McpTool.name(tool.server, tool.name)))
+
+/** Keep selection at the canonical request boundary; neither arbitrary host nor Code Mode leaf tools are direct. */
+export const select = (input: {
+  readonly definitions: HostExecution["definitions"]
+  readonly available: readonly string[]
+  readonly direct: ReadonlySet<string>
+  readonly behavior?: "redsun" | "native"
+}) => {
+  const available = new Set(input.available)
+  return input.definitions.filter(
+    (item) =>
+      available.has(item.name) &&
+      (input.behavior === "native"
+        ? item.name === "subagent"
+        : NAMES.includes(item.name as (typeof NAMES)[number]) || input.direct.has(item.name)),
+  )
+}
+
+/** The CLI caches tools/list; direct tool descriptions and schemas require rediscovery. */
+export const discoveryKey = (definitions: HostExecution["definitions"]) =>
+  JSON.stringify(
+    definitions
+      .map((item) => [item.name, item.inputSchema, item.description])
+      .sort(([a], [b]) => String(a).localeCompare(String(b))),
+  )
 
 /**
  * A turn captures one canonical Tool.Snapshot and its attribution. The caller
@@ -22,6 +53,7 @@ export const MCP_NAMES = NAMES.map((name) => `mcp__redsun__${name}`)
  */
 export interface HostExecution {
   readonly definitions: ReadonlyArray<ToolDefinition>
+  readonly allowed?: ReadonlySet<string>
   readonly execute: (input: {
     readonly name: string
     readonly args: unknown
@@ -50,8 +82,10 @@ export const fromSnapshot = (input: {
   readonly agent: Agent.ID
   readonly messageID: SessionMessage.ID
   readonly onResult?: HostExecution["onResult"]
+  readonly allowed?: ReadonlySet<string>
 }): HostExecution => ({
   definitions: input.snapshot.definitions,
+  allowed: input.allowed,
   onResult: input.onResult,
   execute: ({ name, args, requestId, nativeToolUseID, signal }) =>
     Effect.runPromise(
@@ -65,6 +99,15 @@ export const fromSnapshot = (input: {
           name,
           input: args,
         } as never,
+        ...(input.allowed === undefined
+          ? {}
+          : {
+              definitions: new Map(
+                input.snapshot.definitions
+                  .filter((item) => input.allowed?.has(item.name))
+                  .map((item) => [item.name, item]),
+              ),
+            }),
       }),
       { signal },
     ),
@@ -97,7 +140,7 @@ export const makeServer = (
   const definitions = (host: HostExecution | undefined) =>
     new Map(
       host?.definitions
-        .filter((item) => NAMES.includes(item.name as (typeof NAMES)[number]))
+        .filter((item) => host.allowed?.has(item.name) ?? NAMES.includes(item.name as (typeof NAMES)[number]))
         .map((item) => [item.name, item]) ?? [],
     )
   const server = createSdkMcpServer({ name: "redsun", tools: [] })

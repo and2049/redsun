@@ -3,6 +3,8 @@ export * as ClaudeCodeContext from "./context.js"
 import { createHash } from "node:crypto"
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
+import { CodeModeCatalog } from "../../../codemode/catalog.js"
+import { CodeModeInstructions } from "../../../codemode/instructions.js"
 
 export interface File {
   readonly path: string
@@ -21,10 +23,17 @@ export interface Input {
   readonly files?: readonly File[]
   /** Omitted when the host skill loader is unavailable in this turn. */
   readonly skills?: readonly SkillSummary[]
+  /** null means execute was removed; omitted means this source was not inspected. */
+  readonly codeMode?: CodeModeCatalog.Summary | null
   readonly freshProcess: boolean
 }
 
-type Snapshot = { agent: string; files: ReadonlyMap<string, string>; skills?: string }
+type Snapshot = {
+  agent: string
+  files: ReadonlyMap<string, string>
+  skills?: string
+  codeMode?: CodeModeCatalog.Summary
+}
 
 const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
 
@@ -67,10 +76,21 @@ export class Tracker {
           : "No redsun skills are currently available through the host skill loader; previous redsun skill lists no longer apply.",
       )
     }
+    const codeMode = input.codeMode === undefined ? previous?.codeMode : (input.codeMode ?? undefined)
+    if (input.codeMode !== undefined && JSON.stringify(codeMode) !== JSON.stringify(previous?.codeMode)) {
+      parts.push(
+        codeMode === undefined
+          ? "Code Mode tools are no longer available. Do not use any previously listed Code Mode tools."
+          : previous?.codeMode === undefined
+            ? CodeModeInstructions.render(codeMode)
+            : CodeModeInstructions.update(previous.codeMode, codeMode),
+      )
+    }
     const next = {
       agent,
       files: input.files === undefined ? (previous?.files ?? new Map()) : files,
       skills: skillRevision,
+      codeMode,
     }
     return {
       ...(parts.length ? { text: parts.join("\n\n") } : {}),

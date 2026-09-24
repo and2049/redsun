@@ -26,7 +26,7 @@ describe("tool name mapping", () => {
   })
 
   it("routes only the host MCP catalog to canonical rows", () => {
-    for (const name of ["subagent", "skill", "todowrite", "worker_model"])
+    for (const name of ["subagent", "skill", "todowrite", "worker_model", "execute"])
       expect(toolName(`mcp__redsun__${name}`)).toBe(name)
   })
 
