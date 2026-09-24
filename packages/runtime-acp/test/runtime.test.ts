@@ -21,6 +21,7 @@ const host = (
     mode?: "normal" | "auto" | "native_auto"
     approve?: boolean
     tools?: () => DelegatedToolBinding | undefined
+    cursors?: Map<string, string>
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -34,6 +35,14 @@ const host = (
         return input.approve ?? true
       },
       tools: async () => input.tools?.(),
+      ...(input.cursors
+        ? {
+            cursor: {
+              get: async (sessionID: string) => input.cursors!.get(sessionID),
+              set: async (sessionID: string, acpSessionID: string) => void input.cursors!.set(sessionID, acpSessionID),
+            },
+          }
+        : {}),
     } satisfies AcpRuntime.Host,
   }
 }
@@ -324,6 +333,42 @@ describe("ACP runtime against a scripted agent", () => {
     } finally {
       endpoint.stop()
     }
+  })
+
+  test("resumes the agent session a host session last used after the host restarts", async () => {
+    const cursors = new Map<string, string>()
+    await withRuntime({ host: { cursors } }, async (runtime) => {
+      await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
+    })
+    expect(cursors.get("ses_1")).toBe("acp_1")
+    // A new runtime (a restarted host): the agent loads its session and gets only the new prompt.
+    await withRuntime({ host: { cursors } }, async (runtime) => {
+      const parts = await collect(
+        (await runtime.turn(TURN, call([user("hello"), assistant("Hello from the fake agent"), user("echo")]))).stream,
+      )
+      expect(textOf(parts)).toBe("SESSION=acp_1 TURNS=1 PROMPT=echo")
+    })
+  })
+
+  test("sends the whole transcript when the agent joins a conversation it has not seen", async () => {
+    // No stored session (e.g. the user switched to this agent mid-conversation).
+    await withRuntime({ host: { cursors: new Map() } }, async (runtime) => {
+      const parts = await collect(
+        (await runtime.turn(TURN, call([user("hello"), assistant("Hi from another model"), user("echo")]))).stream,
+      )
+      expect(textOf(parts)).toBe(
+        "SESSION=acp_1 TURNS=1 PROMPT=user: hello\n\nassistant: Hi from another model\n\nuser: echo",
+      )
+    })
+    // A stored session the agent cannot load gets the transcript too.
+    const cursors = new Map([["ses_1", "acp_9"]])
+    await withRuntime({ agent: { env: { FAKE_ACP_NO_LOAD: "1" } }, host: { cursors } }, async (runtime) => {
+      const parts = await collect(
+        (await runtime.turn(TURN, call([user("hello"), assistant("Hello"), user("echo")]))).stream,
+      )
+      expect(textOf(parts)).toStartWith("SESSION=acp_1 TURNS=1 PROMPT=user: hello")
+    })
+    expect(cursors.get("ses_1")).toBe("acp_1")
   })
 
   test("reports an agent that dies mid-turn as its own error, and starts fresh next turn", () =>

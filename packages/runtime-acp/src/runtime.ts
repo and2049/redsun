@@ -30,6 +30,11 @@ export interface Host {
   readonly approve: (check: DelegatedPermissionCheck) => Promise<boolean>
   /** The host tools a primary turn may use, bound to its attribution; absent when it has none. */
   readonly tools?: (turn: DelegatedTurn) => Promise<DelegatedToolBinding | undefined>
+  /** The agent session a host session last used, kept across host restarts. */
+  readonly cursor?: {
+    readonly get: (sessionID: string) => Promise<string | undefined>
+    readonly set: (sessionID: string, acpSessionID: string) => Promise<void>
+  }
 }
 
 export interface Process {
@@ -258,12 +263,17 @@ export class Runtime {
    * The live session for a turn. The approval selection is read once per turn, so switching modes
    * costs nothing until the next prompt, and switching back before then costs nothing at all. An
    * agent whose auto-approval is a launch flag is restarted only when the selection differs from
-   * how its process was launched; the conversation is loaded back into the new process.
+   * how its process was launched; the conversation is loaded back into the new process. A host
+   * session this process has not run yet resumes the agent session it last used.
+   *
+   * `remembers` says whether the agent holds the conversation. When it does not (nothing to
+   * load, or the load failed) and the host transcript has history, the whole transcript is sent.
    */
   private async acquire(
     turn: DelegatedTurn,
     native: boolean,
     tools: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] },
+    history: boolean,
   ) {
     const trusted = native && Boolean(this.agent.nativeApprovalArgs?.length)
     const existing = this.sessions.get(turn.sessionID)
@@ -272,15 +282,12 @@ export class Runtime {
     if (existing && existing.trusted === trusted && existing.catalog === tools.catalog)
       return { session: existing, remembers: true }
     if (existing) this.close(existing)
-    const opened = await this.open(turn.sessionID, {
-      trusted,
-      tools,
-      ...(existing ? { resume: existing.acpSessionID } : {}),
-    })
+    const resume = existing?.acpSessionID ?? (await this.host.cursor?.get(turn.sessionID).catch(() => undefined))
+    const opened = await this.open(turn.sessionID, { trusted, tools, ...(resume ? { resume } : {}) })
     this.sessions.set(turn.sessionID, opened.session)
-    // A relaunched agent that could not load the conversation is sent the whole transcript. (A
-    // session new to this runtime is sent only the new prompt, as before; see the open resume item.)
-    return { session: opened.session, remembers: existing ? opened.resumed : true }
+    if (opened.session.acpSessionID !== resume)
+      await this.host.cursor?.set(turn.sessionID, opened.session.acpSessionID).catch(() => {})
+    return { session: opened.session, remembers: opened.resumed || !history }
   }
 
   async turn(turn: DelegatedTurn, options: LanguageModelV3CallOptions): Promise<DelegatedStreamResult> {
@@ -294,7 +301,12 @@ export class Runtime {
     const definitions = binding ? AcpHostTools.select(binding) : []
     const { session, remembers } = oneShot
       ? { session: (await this.open(turn.sessionID)).session, remembers: false }
-      : await this.acquire(turn, native, { catalog: AcpHostTools.catalogKey(definitions), definitions })
+      : await this.acquire(
+          turn,
+          native,
+          { catalog: AcpHostTools.catalogKey(definitions), definitions },
+          options.prompt.some((message) => message.role === "assistant"),
+        )
     if (binding && turn.assistantMessageID) session.slot?.bind(binding, turn.assistantMessageID)
     const prompt = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     session.agent = turn.agent

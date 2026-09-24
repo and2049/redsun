@@ -12,6 +12,9 @@ import { AcpRuntime } from "./runtime.js"
 /** Never installed: core routes a registered runtime's models to it ahead of any SDK loading. */
 export const PACKAGE = "aisdk:@redsun/runtime-acp"
 
+/** The agent session a host session last used, under the runtime's storage prefix. */
+const cursorKey = (sessionID: string) => `-session/${sessionID}`
+
 const LIMIT = { context: 200_000, output: 32_000 }
 
 export default define({
@@ -20,7 +23,7 @@ export default define({
     const { agents, errors } = AcpOptions.parse(ctx.options)
     for (const error of errors) yield* Effect.logWarning(error)
 
-    const host: AcpRuntime.Host = {
+    const shared: AcpRuntime.Host = {
       cwd: ctx.location.directory,
       mode: () => Effect.runPromise(ctx.delegate.permission.mode()),
       approve: (check) => Effect.runPromise(ctx.delegate.permission.assert(check)).then((result) => result.ok),
@@ -37,6 +40,17 @@ export default define({
     }
 
     for (const agent of agents) {
+      const storage = ctx.delegate.storage(agent.id)
+      const host: AcpRuntime.Host = {
+        ...shared,
+        cursor: {
+          get: (sessionID) =>
+            Effect.runPromise(storage.get(cursorKey(sessionID))).then((value) =>
+              typeof value === "string" && value ? value : undefined,
+            ),
+          set: (sessionID, acpSessionID) => Effect.runPromise(storage.set(cursorKey(sessionID), acpSessionID)),
+        },
+      }
       yield* ctx.provider.transform((editor) => {
         editor.update(agent.id, (provider) => {
           provider.name = agent.name
