@@ -721,7 +721,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         set: permission.set,
         toggle() {
-          permission.toggle(permission.nativeFor(model.current()))
+          return permission.toggle(model.current())
         },
       },
     }

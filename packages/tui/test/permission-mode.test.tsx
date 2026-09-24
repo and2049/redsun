@@ -48,16 +48,47 @@ test("local permission follows the selected model's runtime without changing per
   await until(() => !setup.local.permission.native() && asked.includes("provider/other"))
   expect(setup.local.permission.mode).toBe("normal")
   expect(writes).toEqual([])
-  setup.local.permission.toggle()
+  await setup.local.permission.toggle()
   expect(setup.local.permission.mode).toBe("auto")
   setup.local.model.set({ providerID: "delegated-agent", modelID: "sonnet" })
   expect(setup.local.permission.mode).toBe("auto")
-  setup.local.permission.toggle()
+  await setup.local.permission.toggle()
   expect(setup.local.permission.mode).toBe("normal")
-  setup.local.permission.toggle()
+  await setup.local.permission.toggle()
   expect(setup.local.permission.mode).toBe("native_auto")
   await setup.waitFor(() => writes.length === 3)
   expect(writes).toEqual(["auto", "normal", "native_auto"])
   // Each model's runtime is asked once.
   expect(asked.filter((key) => key === "delegated-agent/sonnet")).toHaveLength(1)
+})
+
+test("a toggle pressed before the runtime options arrive waits for them", async () => {
+  const writes: string[] = []
+  let answer: (() => void) | undefined
+  await using setup = await renderLocal({
+    models: [{ ...model("sonnet"), providerID: "delegated-agent" }],
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/permission/mode/options") {
+        await new Promise<void>((resolve) => (answer = resolve))
+        return json({ data: { native: true } })
+      }
+      if (url.pathname !== "/api/permission/mode") return
+      if (request.method === "GET") return json({ data: { mode: "normal" } })
+      writes.push(((await request.json()) as { mode: string }).mode)
+      return new Response(null, { status: 204 })
+    },
+  })
+
+  setup.local.model.set({ providerID: "delegated-agent", modelID: "sonnet" })
+  // Not known yet: the lookup this read starts is still out.
+  expect(setup.local.permission.native()).toBe(false)
+  await until(() => setup.local.permission.hydrated && answer !== undefined)
+  const toggled = setup.local.permission.toggle()
+  expect(setup.local.permission.mode).toBe("normal")
+  answer!()
+  await toggled
+  expect(setup.local.permission.native()).toBe(true)
+  expect(setup.local.permission.mode).toBe("native_auto")
+  await setup.waitFor(() => writes.length === 1)
+  expect(writes).toEqual(["native_auto"])
 })
