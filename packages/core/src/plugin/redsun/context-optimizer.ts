@@ -66,11 +66,12 @@ export const dedupeStaleReads = (messages: Array<Message>, minChars = STALE_READ
 /**
  * Truncate one instruction block (`Instructions from: <path>\n<content>`) at a line
  * boundary with a visible marker naming the source and how to read the rest. Marker
- * space is reserved for the worst-case line number so output never exceeds maxChars.
+ * space is reserved for the worst-case line number so output never exceeds maxChars,
+ * except that a limit shorter than the header still keeps the header whole.
  */
-export const boundInstruction = (filepath: string, text: string, maxChars = INSTRUCTION_MAX_CHARS) => {
+const bound = (filepath: string, text: string, maxChars: number) => {
   const header = `${INSTRUCTION_HEADER}${filepath}\n`
-  if (header.length + text.length <= maxChars) return `${header}${text}`
+  if (header.length + text.length <= maxChars) return { header, body: text }
 
   const isUrl = filepath.startsWith("http://") || filepath.startsWith("https://")
   const totalLines = text.split("\n").length
@@ -80,18 +81,25 @@ export const boundInstruction = (filepath: string, text: string, maxChars = INST
       : `\n[redsun: instructions truncated at line ${line} of ${totalLines} (${maxChars} char limit). Read the remainder with the read tool: ${filepath} offset=${line + 1}.]`
 
   const budget = maxChars - header.length - marker(totalLines).length
-  if (budget <= 0) return `${header}${marker(0)}`.slice(0, maxChars)
+  // A limit too small for even the marker keeps the header whole and what
+  // fits of the marker; the header is never cut into.
+  if (budget <= 0) return { header, body: marker(0).slice(0, Math.max(0, maxChars - header.length)) }
 
   const slice = text.slice(0, budget)
   const cut = slice.lastIndexOf("\n")
   const kept = cut > 0 ? slice.slice(0, cut) : slice
   const keptLines = kept.split("\n").length
-  return `${header}${kept}${marker(keptLines)}`
+  return { header, body: `${kept}${marker(keptLines)}` }
+}
+
+export const boundInstruction = (filepath: string, text: string, maxChars = INSTRUCTION_MAX_CHARS) => {
+  const result = bound(filepath, text, maxChars)
+  return `${result.header}${result.body}`
 }
 
 /** {@link boundInstruction} without the header, for hosts that render the header themselves. */
 export const boundInstructionContent = (filepath: string, text: string, maxChars = INSTRUCTION_MAX_CHARS) =>
-  boundInstruction(filepath, text, maxChars).slice(`${INSTRUCTION_HEADER}${filepath}\n`.length)
+  bound(filepath, text, maxChars).body
 
 /**
  * Bound every `Instructions from:` block inside a text value. Blocks that were already

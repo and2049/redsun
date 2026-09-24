@@ -3,6 +3,7 @@ export * as RedsunProjectMemory from "./project-memory.js"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, PubSub, Stream } from "effect"
+import type { ConfigProjectMemory } from "@opencode/schema/config/project-memory"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Config } from "../../config.js"
 import { Watcher } from "../../filesystem/watcher.js"
@@ -79,8 +80,20 @@ export const outline = (content: string, file: string) => {
       .filter((heading) => heading.level <= top + depth)
       .map(entry)
       .join("\n")
+  // Past the cap the nested level goes first; a top level that still does not
+  // fit is cut at an entry boundary with a pointer to the rest.
+  const capped = (text: string) => {
+    if (text.length <= OUTLINE_INDEX_MAX_CHARS) return text
+    const cut = text.lastIndexOf("\n", OUTLINE_INDEX_MAX_CHARS)
+    const kept = cut > 0 ? text.slice(0, cut) : text.slice(0, OUTLINE_INDEX_MAX_CHARS)
+    const dropped = text
+      .slice(kept.length)
+      .split("\n")
+      .filter((line) => line.length > 0).length
+    return `${kept}\n[index truncated: ${dropped} more sections. List them with grep: ^#{1,${top}} ${file}]`
+  }
   const nested = index(1)
-  const entries = nested.length <= OUTLINE_INDEX_MAX_CHARS ? nested : index(0)
+  const entries = nested.length <= OUTLINE_INDEX_MAX_CHARS ? nested : capped(index(0))
 
   const first = sections[0]!.line - 1
   const preamble = lines.slice(0, lastContentLine(lines, 0, first)).join("\n")
@@ -111,18 +124,46 @@ export const Plugin = define({
     const watcher = yield* Watcher.Service
     const file = path.join(location.project.directory, RELATIVE_PATH)
     const loaded: { current: string | undefined } = { current: undefined }
+    const state: { content: string | undefined; load: NonNullable<ConfigProjectMemory.Info["load"]> } = {
+      content: undefined,
+      load: "outline",
+    }
+
+    const configuredLoad = () =>
+      config.entries().pipe(Effect.map((entries) => Config.latest(entries, "project_memory")?.load ?? "outline"))
+    const project = () => {
+      loaded.current =
+        state.content === undefined || state.load === "full" ? state.content : outline(state.content, file)
+    }
 
     const refresh = Effect.fn("RedsunProjectMemory.refresh")(function* () {
-      const content = yield* fs
+      state.content = yield* fs
         .readFileStringSafe(file)
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("project memory unreadable", { file, cause }).pipe(Effect.as(undefined)),
           ),
         )
-      const load = Config.latest(yield* config.entries(), "project_memory")?.load ?? "outline"
-      loaded.current = content === undefined || load === "full" ? content : outline(content, file)
+      state.load = yield* configuredLoad()
+      project()
     })
+
+    // The load mode is live config: re-project the same file when it flips,
+    // and only then, so an unrelated config edit sends no instruction update.
+    yield* ctx.event.subscribe().pipe(
+      Stream.filter((event) => event.type === "config.updated"),
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const load = yield* configuredLoad()
+          if (load === state.load) return
+          state.load = load
+          project()
+          yield* discovery.reload()
+        }).pipe(Effect.catchCause((cause) => Effect.logError("failed to apply project memory config", { cause }))),
+      ),
+      Effect.ignore,
+      Effect.forkScoped({ startImmediately: true }),
+    )
 
     const changes = yield* PubSub.sliding<string>(1)
     const updates = yield* watcher.subscribe({ path: file, type: "file" })

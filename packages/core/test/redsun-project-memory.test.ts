@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, PubSub, Schema, Stream } from "effect"
 import fs from "fs/promises"
 import path from "path"
 import type { SystemPart } from "@opencode/ai"
@@ -24,15 +24,18 @@ import { host } from "./plugin/host"
 
 const it = testEffect(Layer.empty)
 
-type Options = { readonly project?: boolean; readonly load?: "outline" | "full" }
+type Load = "outline" | "full"
+/** A function stands in for config the test flips after startup. */
+type Options = { readonly project?: boolean; readonly load?: Load | (() => Load | undefined) }
 
 const memoryLayer = (input: { directory: string } & Options) => {
   const watcher = Watcher.testLayer
   const ref = Location.Ref.make({ directory: AbsolutePath.make(input.directory) })
-  const info = Schema.decodeUnknownSync(ConfigInfo)(input.load ? { project_memory: { load: input.load } } : {})
+  const load = () => (typeof input.load === "function" ? input.load() : input.load)
+  const info = () => Schema.decodeUnknownSync(ConfigInfo)(load() ? { project_memory: { load: load() } } : {})
   return Layer.mergeAll(
     Layer.mock(Config.Service)({
-      entries: () => Effect.succeed([new Document({ type: "document", info })]),
+      entries: () => Effect.sync(() => [new Document({ type: "document", info: info() })]),
     }),
     AppNodeBuilder.build(
       LayerNode.group([InstructionDiscovery.node, Bus.node, FSUtil.node, Global.node, Location.node, Watcher.node]),
@@ -50,7 +53,7 @@ const memoryLayer = (input: { directory: string } & Options) => {
 /** Collects the system parts the plugin's context hook contributes. */
 const systemParts: SystemPart[] = []
 
-const start = Effect.fnUntraced(function* () {
+const start = Effect.fnUntraced(function* (events?: Stream.Stream<{ readonly type: string }>) {
   systemParts.length = 0
   const hooks: Record<string, (event: never) => Effect.Effect<unknown, unknown, never>> = {}
   yield* RedsunProjectMemory.Plugin.effect(
@@ -61,6 +64,7 @@ const start = Effect.fnUntraced(function* () {
           return Effect.void
         }) as never,
       },
+      ...(events ? { event: { subscribe: () => events as never } } : {}),
     }),
   )
   return {
@@ -171,6 +175,25 @@ describe("RedsunProjectMemory.outline", () => {
     }),
   )
 
+  it.effect("cuts a top level that still does not fit at an entry boundary", () =>
+    Effect.sync(() => {
+      const many = [
+        "# Title",
+        ...Array.from({ length: 400 }, (_, index) => [`## Top heading number ${index}`, "body"]).flat(),
+      ].join("\n")
+      const result = outline(many, FILE)
+      const sections = result.slice(result.indexOf("Sections:\n") + "Sections:\n".length)
+      expect(sections.length).toBeLessThan(RedsunProjectMemory.OUTLINE_INDEX_MAX_CHARS + 200)
+      expect(sections).toMatch(
+        /\[index truncated: \d+ more sections\. List them with grep: \^#\{1,2\} \/repo\/\.redsun\/memory\.md\]$/,
+      )
+      const listed = sections.split("\n").filter((line) => line.startsWith("- ")).length
+      const dropped = Number(sections.match(/index truncated: (\d+)/)![1])
+      expect(listed + dropped).toBe(400)
+      expect(sections).not.toContain("- Top heading number 399")
+    }),
+  )
+
   it.effect("drops the nested level when the index is too large", () =>
     Effect.sync(() => {
       const many = [
@@ -191,9 +214,7 @@ describe("RedsunProjectMemory", () => {
         yield* Effect.promise(() => fs.writeFile(memory, "the compaction rework is load-bearing"))
         const { discovery } = yield* start()
 
-        expect((yield* readInitial(yield* discovery.load())).text).toContain(
-          "the compaction rework is load-bearing",
-        )
+        expect((yield* readInitial(yield* discovery.load())).text).toContain("the compaction rework is load-bearing")
       }),
     ),
   )
@@ -279,6 +300,42 @@ describe("RedsunProjectMemory", () => {
         }),
       { load: "full" },
     ),
+  )
+
+  it.live("re-projects memory when the load mode flips in config, without a memory edit", () =>
+    Effect.gen(function* () {
+      const live = { load: "outline" as Load }
+      yield* withProject(
+        ({ memory }) =>
+          Effect.gen(function* () {
+            yield* Effect.promise(() => fs.writeFile(memory, document))
+            const events = yield* PubSub.unbounded<{ readonly type: string }>()
+            const { discovery } = yield* start(Stream.fromPubSub(events))
+            expect((yield* readInitial(yield* discovery.load())).text).toContain("[redsun: outline of")
+
+            const bus = yield* Bus.Service
+            const updated = yield* Deferred.make<void>()
+            const fiber = yield* bus.subscribe(InstructionDiscovery.Event.Updated).pipe(
+              Stream.runForEach(() => Deferred.succeed(updated, undefined).pipe(Effect.asVoid)),
+              Effect.forkScoped,
+            )
+            yield* Effect.yieldNow
+            // An unrelated config edit changes nothing and must not reload instructions.
+            yield* PubSub.publish(events, { type: "config.updated" })
+            yield* Effect.sleep("50 millis")
+            expect(yield* Deferred.isDone(updated)).toBe(false)
+
+            live.load = "full"
+            yield* PubSub.publish(events, { type: "config.updated" })
+            yield* Deferred.await(updated).pipe(Effect.timeout("2 seconds"))
+            yield* Fiber.interrupt(fiber)
+            const text = (yield* readInitial(yield* discovery.load())).text
+            expect(text).toContain("detail 0")
+            expect(text).not.toContain("[redsun: outline of")
+          }),
+        { load: () => live.load },
+      )
+    }),
   )
 
   it.live("adds the maintenance policy only when memory exists", () =>

@@ -14709,6 +14709,16 @@
             },
             "additionalProperties": false
           },
+          "project_memory": {
+            "type": "object",
+            "properties": {
+              "load": {
+                "type": "string",
+                "enum": ["outline", "full"]
+              }
+            },
+            "additionalProperties": false
+          },
           "skills": {
             "type": "array",
             "items": {
