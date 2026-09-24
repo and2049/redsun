@@ -83,6 +83,10 @@ export class Tracker {
   }
 }
 
+/** Keep the epoch write and turn submission binding in one guarded synchronous step. */
+export const commitIfCurrent = <T>(current: () => boolean, commit: () => T): T | undefined =>
+  current() ? commit() : undefined
+
 /** SDK hook context is separate from the user's prompt and native transcript text. */
 export const submit = (current: () => ReturnType<Tracker["prepare"]> | undefined): HookCallback => {
   const submitted = new WeakSet<ReturnType<Tracker["prepare"]>>()
@@ -96,5 +100,42 @@ export const submit = (current: () => ReturnType<Tracker["prepare"]> | undefined
     return delivery.text
       ? { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: delivery.text } }
       : {}
+  }
+}
+
+/** Compaction starts a new native context epoch, including when it happens mid-turn. */
+export const compact =
+  (
+    prepare: () => Promise<ReturnType<Tracker["prepare"]> | undefined>,
+    acknowledged: () => void,
+    current: () => boolean = () => true,
+  ): HookCallback =>
+  async (event, _toolUseID, options) => {
+    if (event.hook_event_name !== "SessionStart" || event.source !== "compact" || options.signal.aborted || !current())
+      return {}
+    const delivery = await prepare()
+    if (options.signal.aborted || !current() || !delivery) return {}
+    delivery.delivered()
+    acknowledged()
+    return delivery.text
+      ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: delivery.text } }
+      : {}
+  }
+
+/** A process hook follows the live turn, but cannot write into a successor turn/process. */
+export const compactForTurn = <T extends { binding?: unknown }>(
+  owner: T | undefined,
+  runtime: () => T | undefined,
+  prepare: (current: () => boolean) => Promise<ReturnType<Tracker["prepare"]> | undefined>,
+  acknowledged: () => void,
+): HookCallback => {
+  let generation = 0
+  return (event, toolUseID, options) => {
+    if (event.hook_event_name !== "SessionStart" || event.source !== "compact") return Promise.resolve({})
+    const binding = owner?.binding
+    const token = ++generation
+    const current = () =>
+      !options.signal.aborted && !!binding && runtime() === owner && owner.binding === binding && generation === token
+    return compact(() => prepare(current), acknowledged, current)(event, toolUseID, options)
   }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { query } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeExecutable } from "@opencode/core/plugin/redsun/claude-code/executable"
+import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
 import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
 import { ClaudeCodePolicyHooks } from "@opencode/core/plugin/redsun/claude-code/policy-hooks"
 import fs from "node:fs"
@@ -10,9 +11,14 @@ import path from "node:path"
 // config directory and a fake key, and its sole API endpoint is loopback.
 const resolved = ClaudeCodeExecutable.resolveWith({ env: process.env, platform: process.platform })
 const executable = "path" in resolved ? fs.realpathSync(resolved.path) : undefined
+// Follow PATH's real target: the test runner replaces HOME, but keeps PATH.
+const pinned = executable && path.join(path.dirname(executable), "2.1.280")
+const pinnedAvailable = pinned !== undefined && fs.existsSync(pinned)
+const compactionExecutable = pinnedAvailable ? pinned : executable
+const compactionVersion = pinnedAvailable ? "2.1.280" : "resolved PATH CLI"
 const MODEL = "claude-sonnet-4-5"
 
-const events = (blocks: Record<string, unknown>[], stop: string, index: number) => [
+const events = (blocks: Record<string, unknown>[], stop: string, index: number, inputTokens = 10) => [
   {
     type: "message_start",
     message: {
@@ -23,7 +29,7 @@ const events = (blocks: Record<string, unknown>[], stop: string, index: number) 
       content: [],
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: 10, output_tokens: 1 },
+      usage: { input_tokens: inputTokens, output_tokens: 1 },
     },
   },
   ...blocks.flatMap((block, index) => [
@@ -46,7 +52,9 @@ const events = (blocks: Record<string, unknown>[], stop: string, index: number) 
   { type: "message_stop" },
 ]
 
-const fixture = (blocks: { block?: Record<string, unknown>; blocks?: Record<string, unknown>[]; stop: string }[]) => {
+const fixture = (
+  blocks: { block?: Record<string, unknown>; blocks?: Record<string, unknown>[]; stop: string; inputTokens?: number }[],
+) => {
   const seen: any[] = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -60,7 +68,7 @@ const fixture = (blocks: { block?: Record<string, unknown>; blocks?: Record<stri
       const script = blocks[seen.length - 1]
       if (!script) return Response.json({ error: { message: "unscripted request" } }, { status: 500 })
       return new Response(
-        events(script.blocks ?? [script.block!], script.stop, seen.length)
+        events(script.blocks ?? [script.block!], script.stop, seen.length, script.inputTokens)
           .map((item) => `event: ${item.type}\ndata: ${JSON.stringify(item)}\n\n`)
           .join(""),
         {
@@ -73,7 +81,7 @@ const fixture = (blocks: { block?: Record<string, unknown>; blocks?: Record<stri
 }
 
 const run = async (input: {
-  blocks: { block?: Record<string, unknown>; blocks?: Record<string, unknown>[]; stop: string }[]
+  blocks: { block?: Record<string, unknown>; blocks?: Record<string, unknown>[]; stop: string; inputTokens?: number }[]
   mcpServers?: Record<string, ReturnType<typeof ClaudeCodeHostTools.makeServer>>
   hooks?: Parameters<typeof query>[0]["options"] extends infer O
     ? NonNullable<O> extends { hooks?: infer H }
@@ -81,6 +89,9 @@ const run = async (input: {
       : never
     : never
   bypass?: boolean
+  turns?: string[]
+  binary?: string
+  env?: Record<string, string>
 }) => {
   const upstream = fixture(input.blocks)
   const root = fs.mkdtempSync("/tmp/redsun/claude-runtime-")
@@ -90,10 +101,21 @@ const run = async (input: {
   fs.mkdirSync(config)
   const controller = new AbortController()
   const messages: any[] = []
+  const turns = input.turns ?? ["Follow the fixture's tool request, then finish."]
+  let next: (() => void) | undefined
+  const prompt =
+    turns.length === 1
+      ? turns[0]!
+      : (async function* () {
+          for (const [index, text] of turns.entries()) {
+            if (index) await new Promise<void>((resolve) => (next = resolve))
+            yield { type: "user" as const, message: { role: "user" as const, content: text }, parent_tool_use_id: null }
+          }
+        })()
   const native = query({
-    prompt: "Follow the fixture's tool request, then finish.",
+    prompt,
     options: {
-      pathToClaudeCodeExecutable: executable!,
+      pathToClaudeCodeExecutable: input.binary ?? executable!,
       cwd,
       model: MODEL,
       maxTurns: 3,
@@ -107,6 +129,7 @@ const run = async (input: {
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
         DISABLE_TELEMETRY: "1",
         DISABLE_ERROR_REPORTING: "1",
+        ...input.env,
       },
       abortController: controller,
       permissionMode: input.bypass ? "bypassPermissions" : "default",
@@ -119,7 +142,11 @@ const run = async (input: {
   try {
     for await (const message of native) {
       messages.push(message)
-      if (message.type === "result") break
+      if (message.type === "result") {
+        if (messages.filter((item) => item.type === "result").length >= turns.length) break
+        next?.()
+        next = undefined
+      }
     }
     return { messages, seen: upstream.seen }
   } finally {
@@ -132,6 +159,88 @@ const run = async (input: {
 }
 
 describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upstream", () => {
+  it(`delivers SessionStart compact context before the first post-compact model request (${compactionVersion})`, async () => {
+    const sentinel = "HOST_RESTORED_AFTER_COMPACT_SENTINEL"
+    const seen: string[] = []
+    const tracker = new ClaudeCodeContext.Tracker()
+    const restore = ClaudeCodeContext.compact(
+      async () =>
+        tracker.prepare("ses", {
+          agent: { id: "review", system: "Review carefully." },
+          isWorker: false,
+          freshProcess: true,
+          files: [{ path: "/fixture/AGENTS.md", content: sentinel }],
+        }),
+      () => seen.push("compact"),
+    )
+    const result = await run({
+      binary: compactionExecutable,
+      turns: ["Reply briefly.", "/compact", "Reply after compaction."],
+      blocks: [
+        { block: { type: "text", text: "First reply." }, stop: "end_turn" },
+        { block: { type: "text", text: "Summary of the conversation." }, stop: "end_turn" },
+        { block: { type: "text", text: "Final reply." }, stop: "end_turn" },
+      ],
+      hooks: {
+        SessionStart: [{ matcher: "compact", hooks: [restore] }],
+      },
+    })
+    expect(seen).toEqual(["compact"])
+    expect(result.messages.some((item) => item.type === "system" && item.subtype === "compact_boundary")).toBe(true)
+    expect(result.seen).toHaveLength(3)
+    expect(JSON.stringify(result.seen[1])).not.toContain(sentinel) // the summary request precedes SessionStart
+    expect(JSON.stringify(result.seen[2])).toContain(sentinel) // first request after the compact boundary
+  }, 20_000)
+
+  it(`restores compact context before an automatic same-turn continuation (${compactionVersion})`, async () => {
+    const sentinel = "HOST_AUTO_COMPACT_SENTINEL"
+    const seen: string[] = []
+    const tracker = new ClaudeCodeContext.Tracker()
+    const restore = ClaudeCodeContext.compact(
+      async () =>
+        tracker.prepare("ses", {
+          agent: { id: "review", system: "Review carefully." },
+          isWorker: false,
+          freshProcess: true,
+          files: [{ path: "/fixture/AGENTS.md", content: sentinel }],
+        }),
+      () => seen.push("compact"),
+    )
+    const server = ClaudeCodeHostTools.makeServer({
+      definitions: [
+        {
+          type: "tool",
+          name: "skill",
+          description: "Load a skill",
+          inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        },
+      ],
+      execute: async () => ({ content: [{ type: "text", text: "tool result" }] }),
+    })
+    const result = await run({
+      binary: compactionExecutable,
+      env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "20000", CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "1" },
+      bypass: true,
+      mcpServers: { redsun: server },
+      blocks: [
+        {
+          block: { type: "tool_use", id: "toolu_compact_skill", name: "mcp__redsun__skill", input: { id: "test" } },
+          stop: "tool_use",
+          inputTokens: 199000,
+        },
+        { block: { type: "text", text: "Summary of the conversation." }, stop: "end_turn" },
+        { block: { type: "text", text: "Continued." }, stop: "end_turn" },
+      ],
+      hooks: { SessionStart: [{ matcher: "compact", hooks: [restore] }] },
+    })
+    expect(result.messages.at(-1)?.subtype).toBe("success")
+    expect(result.messages.some((item) => item.type === "system" && item.subtype === "compact_boundary")).toBe(true)
+    expect(seen).toEqual(["compact"])
+    expect(result.messages.filter((item) => item.type === "result")).toHaveLength(1)
+    expect(result.seen).toHaveLength(3)
+    expect(JSON.stringify(result.seen[1])).not.toContain(sentinel)
+    expect(JSON.stringify(result.seen[2])).toContain(sentinel)
+  }, 20_000)
   it("delivers host context through the native prompt-submit hook", async () => {
     let submitted = 0
     const context = "HOST_CONTEXT_HOOK_SENTINEL: the qualification skill is available."

@@ -369,6 +369,35 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
     expect(parts.filter((part) => part.type === "text-delta")).toHaveLength(1)
   })
 
+  it("keeps successfully restored context across settlement and falls back for a missing compact hook", async () => {
+    for (const restored of [0, 1, 2]) {
+      const { manager, calls } = fakeManager([
+        { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "auto" } },
+        { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual" } },
+        { type: "result", subtype: "success", usage: {} },
+      ])
+      const seen: string[] = []
+      let count = 0
+      const created = model({
+        modelID: "sonnet",
+        config,
+        manager,
+        createQuery: () => ({}) as never,
+        hooks: {
+          userPromptSubmit: () => async () => ({}),
+          sessionStart: () => async () => ({}),
+          compactRestored: () => count,
+          onCompacted: () => seen.push("invalidated"),
+        },
+      })
+      const { stream } = await created.doStream(call({ prompt: [user("work")] }))
+      expect(calls[0]!.options.options.hooks.SessionStart[0].matcher).toBe("compact")
+      count = restored
+      await collect(stream)
+      expect(seen).toEqual(restored === 2 ? [] : ["invalidated"])
+    }
+  })
+
   it("acknowledges legacy context fallback only after a successful, uncancelled result", async () => {
     const { manager } = fakeManager([{ type: "result", subtype: "error_during_execution", usage: {} }])
     let delivered = 0

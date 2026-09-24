@@ -124,6 +124,8 @@ export interface Hooks {
   readonly preToolUse?: (sessionID: string) => HookCallback | undefined
   readonly postToolUse?: (sessionID: string) => HookCallback | undefined
   readonly userPromptSubmit?: (sessionID: string) => HookCallback | undefined
+  readonly sessionStart?: (sessionID: string) => HookCallback | undefined
+  readonly compactRestored?: (sessionID: string) => number
   readonly hostResultMetadata?: (sessionID: string, nativeToolUseID: string) => Tool.Metadata | undefined
   readonly prepareTurn?: (
     sessionID: string,
@@ -278,10 +280,12 @@ export const make = (input: {
         hooks?.onModelSubstituted?.(sessionID, { requested: modelID, served })
     }
     let turn: AsyncIterable<SDKMessage>
-    let compacted = false
+    let compacted = 0
+    const restoredBefore = hooks?.compactRestored?.(sessionID) ?? 0
     const preToolUse = hooks?.preToolUse?.(sessionID)
     const postToolUse = hooks?.postToolUse?.(sessionID)
     const userPromptSubmit = hooks?.userPromptSubmit?.(sessionID)
+    const sessionStart = hooks?.sessionStart?.(sessionID)
     const canUseTool = hooks?.canUseTool?.(sessionID)
     try {
       turn = await manager.turn(sessionID, content, {
@@ -299,12 +303,13 @@ export const make = (input: {
           ...interactiveOptions(config),
           ...(resume ? { resume } : {}),
           ...(canUseTool ? { canUseTool } : {}),
-          ...(preToolUse || postToolUse || userPromptSubmit
+          ...(preToolUse || postToolUse || userPromptSubmit || sessionStart
             ? {
                 hooks: {
                   ...(preToolUse ? { PreToolUse: [{ hooks: [preToolUse] }] } : {}),
                   ...(postToolUse ? { PostToolUse: [{ hooks: [postToolUse] }] } : {}),
                   ...(userPromptSubmit ? { UserPromptSubmit: [{ hooks: [userPromptSubmit] }] } : {}),
+                  ...(sessionStart ? { SessionStart: [{ matcher: "compact", hooks: [sessionStart] }] } : {}),
                 },
               }
             : {}),
@@ -330,7 +335,7 @@ export const make = (input: {
         async (delivered) => {
           options.abortSignal?.removeEventListener("abort", onAbort)
           if (!userPromptSubmit && delivered && !options.abortSignal?.aborted) context?.delivered()
-          if (compacted) hooks?.onCompacted?.(sessionID)
+          if (compacted > (hooks?.compactRestored?.(sessionID) ?? 0) - restoredBefore) hooks?.onCompacted?.(sessionID)
           if (state.claudeSessionID) hooks?.onCursor?.(sessionID, state.claudeSessionID)
           try {
             await hooks?.onTurnEnd?.(sessionID)
@@ -341,7 +346,7 @@ export const make = (input: {
         },
         interrupt,
         (message) => {
-          if (message.type === "system" && message.subtype === "compact_boundary") compacted = true
+          if (message.type === "system" && message.subtype === "compact_boundary") compacted++
         },
       ),
       request: {},

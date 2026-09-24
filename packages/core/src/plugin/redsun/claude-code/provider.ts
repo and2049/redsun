@@ -105,6 +105,7 @@ export const Plugin = define({
     const agents = new Map<string, string>()
     const workers = new Set<string>()
     const context = new ClaudeCodeContext.Tracker()
+    const compactRestored = new Map<string, number>()
     const profiles = new Map<string, { mode?: string; system?: string }>()
     const pendingOneShot = new Set<string>()
     const substitutionsNotified = new Set<string>()
@@ -229,7 +230,7 @@ export const Plugin = define({
       }),
     )
 
-    const turnContext = async (sessionID: string, freshProcess: boolean) => {
+    const turnContext = async (sessionID: string, freshProcess: boolean, current: () => boolean = () => true) => {
       const agentID = agents.get(sessionID)
       if (!agentID) return { delivered: () => {} }
       const profile = profiles.get(agentID)
@@ -266,30 +267,39 @@ export const Plugin = define({
           : []
       // Discovery's unavailable result is not an observed removal: keep the last
       // successfully delivered project rules until the canonical source recovers.
-      const delivery = context.prepare(sessionID, {
-        agent: { id: agentID, mode: profile?.mode, system: profile?.system },
-        isWorker: workers.has(sessionID),
-        freshProcess,
-        ...(catalog === undefined ? {} : { skills: catalog }),
-        ...(Array.isArray(listed)
-          ? {
-              files: listed.map((file) => ({
-                path: file.path,
-                content:
-                  file.path === path.join(location.project.directory, RedsunProjectMemory.RELATIVE_PATH)
-                    ? `${RedsunProjectMemory.POLICY}\n\n${file.content}`
-                    : file.content,
-              })),
-            }
-          : {}),
+      return ClaudeCodeContext.commitIfCurrent(current, () => {
+        const delivery = context.prepare(sessionID, {
+          agent: { id: agentID, mode: profile?.mode, system: profile?.system },
+          isWorker: workers.has(sessionID),
+          freshProcess,
+          ...(catalog === undefined ? {} : { skills: catalog }),
+          ...(Array.isArray(listed)
+            ? {
+                files: listed.map((file) => ({
+                  path: file.path,
+                  content:
+                    file.path === path.join(location.project.directory, RedsunProjectMemory.RELATIVE_PATH)
+                      ? `${RedsunProjectMemory.POLICY}\n\n${file.content}`
+                      : file.content,
+                })),
+              }
+            : {}),
+        })
+        if (runtime) runtime.submission = delivery
+        return delivery
       })
-      if (runtime) runtime.submission = delivery
-      return delivery
     }
 
     // The callback is registered at process startup but reads the current turn's
     // captured delivery. Do not inspect or reinterpret the user prompt here.
     const userPromptSubmit = (sessionID: string) => ClaudeCodeContext.submit(() => runtimes.get(sessionID)?.submission)
+    const sessionStart = (sessionID: string) =>
+      ClaudeCodeContext.compactForTurn(
+        runtimes.get(sessionID),
+        () => runtimes.get(sessionID),
+        (current) => turnContext(sessionID, true, current),
+        () => compactRestored.set(sessionID, (compactRestored.get(sessionID) ?? 0) + 1),
+      )
 
     const permissionMode = async (sessionID: string) => {
       const agentID = agents.get(sessionID)
@@ -485,8 +495,10 @@ export const Plugin = define({
               mcpServers: { redsun: runtimes.get(sessionID)!.server },
             }),
             isOneShot: (sessionID) => pendingOneShot.delete(sessionID),
-            context: turnContext,
+            context: async (sessionID, freshProcess) => (await turnContext(sessionID, freshProcess))!,
             userPromptSubmit,
+            sessionStart,
+            compactRestored: (sessionID) => compactRestored.get(sessionID) ?? 0,
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
             observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
