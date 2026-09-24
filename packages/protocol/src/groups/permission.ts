@@ -53,7 +53,7 @@ export const makePermissionGroup = <
           identifier: "v2.permission.mode.set",
           summary: "Set permission mode",
           description:
-            "auto approves host asks; native_auto selects a delegated runtime's own approval mode (Claude Code's classifier) for models whose runtime declares one, while host asks remain manual. Explicit denies always deny.",
+            "auto approves every host ask; native_auto defers to a delegated runtime's own judgement-based approval (Claude Code's classifier) for sessions whose model's runtime declares one, approving host asks there and staying manual elsewhere. Explicit denies always deny.",
         }),
       ),
     )
