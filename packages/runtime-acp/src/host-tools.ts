@@ -28,9 +28,15 @@ const BOOKKEEPING = ["__tool_use_purpose"]
 /** Code Mode's tool; offered only with its catalog, which the host context delivers. */
 export const CODE_MODE = "execute"
 
-export const select = (binding: DelegatedToolBinding) =>
-  binding.definitions.filter(
-    (item) => NAMES.has(item.name) || binding.direct.has(item.name) || (item.name === CODE_MODE && !!binding.codeMode),
+/**
+ * The host tools an agent session gets: the host's extras beside the agent's native tools, or
+ * everything a native redsun agent has. Code Mode only ever comes with its catalog.
+ */
+export const select = (binding: DelegatedToolBinding, mode: "extras" | "all" = "extras") =>
+  binding.definitions.filter((item) =>
+    item.name === CODE_MODE
+      ? !!binding.codeMode
+      : mode === "all" || NAMES.has(item.name) || binding.direct.has(item.name),
   )
 
 /** The agent lists tools once per session; a different key needs a new session. */
@@ -62,12 +68,36 @@ interface Reported {
   readonly input: string
 }
 
+interface Waiting {
+  readonly name: string
+  readonly input: string
+  readonly resolve: (id: string) => void
+}
+
+/**
+ * How long an MCP call waits for the agent's report of it. Agents report a tool call and call the
+ * MCP server in either order (Kiro does both), so an unmatched call waits briefly for its report.
+ */
+export const REPORT_WAIT_MS = 1_000
+
+/** The best match for a call among reports or waiting calls: same name and input, else same name. */
+const match = <T extends { readonly name: string; readonly input: string }>(
+  items: readonly T[],
+  name: string,
+  input: string,
+) => {
+  const exact = items.findIndex((item) => item.name === name && item.input === input)
+  return exact >= 0 ? exact : items.findIndex((item) => item.name === name)
+}
+
 /** One agent session's view of the host tools. */
 export class Slot {
   readonly token = randomBytes(24).toString("base64url")
   private binding?: { readonly tools: DelegatedToolBinding; readonly messageID: string }
   /** Host tool calls the agent reported and has not yet executed, oldest first. */
   private readonly reported: Reported[] = []
+  /** MCP calls that arrived before the agent reported them, oldest first. */
+  private readonly waiting: Waiting[] = []
   /** Every host tool call id the agent reported, for permission requests. */
   private readonly known = new Set<string>()
   private readonly results = new Map<string, DelegatedToolResult>()
@@ -94,7 +124,10 @@ export class Slot {
     const name = identify(update._meta)
     if (!name) return undefined
     this.known.add(update.toolCallId)
-    this.reported.push({ id: update.toolCallId, name, input: JSON.stringify(cleanInput(update.rawInput ?? {})) })
+    const input = JSON.stringify(cleanInput(update.rawInput ?? {}))
+    const waiting = match(this.waiting, name, input)
+    if (waiting >= 0) this.waiting.splice(waiting, 1)[0]!.resolve(update.toolCallId)
+    else this.reported.push({ id: update.toolCallId, name, input })
     return name
   }
 
@@ -111,14 +144,33 @@ export class Slot {
 
   /**
    * Matches an MCP call to the agent's report of it, by name and input, so the host executes it
-   * under the agent's own call id. An unreported call gets an id of its own.
+   * under the agent's own call id. A call the agent has not reported yet waits for the report; one
+   * it never reports gets an id of its own.
    */
-  private claim(name: string, args: unknown, messageID: string) {
+  private claim(name: string, args: unknown, messageID: string, signal: AbortSignal): Promise<string> {
     const input = JSON.stringify(cleanInput(args))
-    const exact = this.reported.findIndex((item) => item.name === name && item.input === input)
-    const index = exact >= 0 ? exact : this.reported.findIndex((item) => item.name === name)
-    if (index < 0) return `acp-mcp-${messageID}-${++this.calls}`
-    return this.reported.splice(index, 1)[0]!.id
+    const index = match(this.reported, name, input)
+    if (index >= 0) return Promise.resolve(this.reported.splice(index, 1)[0]!.id)
+    const own = `acp-mcp-${messageID}-${++this.calls}`
+    return new Promise((resolve) => {
+      const giveUp = () => {
+        const at = this.waiting.indexOf(waiting)
+        if (at >= 0) this.waiting.splice(at, 1)
+        resolve(own)
+      }
+      const timer = setTimeout(giveUp, REPORT_WAIT_MS)
+      const waiting: Waiting = {
+        name,
+        input,
+        resolve: (id) => {
+          clearTimeout(timer)
+          signal.removeEventListener("abort", giveUp)
+          resolve(id)
+        },
+      }
+      this.waiting.push(waiting)
+      signal.addEventListener("abort", giveUp, { once: true })
+    })
   }
 
   async call(name: string, args: unknown, signal: AbortSignal) {
@@ -126,7 +178,7 @@ export class Slot {
     if (!bound) throw new Error("Host tools are not bound to an active turn.")
     if (!this.definitions.some((item) => item.name === name))
       throw new Error(`Tool is not available for this request: ${name}`)
-    const callID = this.claim(name, args, bound.messageID)
+    const callID = await this.claim(name, args, bound.messageID, signal)
     const result = await bound.tools.execute({
       name,
       args,

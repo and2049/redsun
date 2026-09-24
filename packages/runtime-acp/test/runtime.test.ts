@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { rmSync } from "node:fs"
 import path from "node:path"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import type { DelegatedPermissionCheck, DelegatedToolBinding, DelegatedTurn } from "@opencode/plugin/effect/delegate"
@@ -14,6 +15,7 @@ const agent = (extra: Partial<AcpOptions.Agent> = {}): AcpOptions.Agent => ({
   env: {},
   models: [{ id: "default", name: "Fake ACP" }],
   inheritedInstructions: [],
+  hostTools: "extras",
   ...extra,
 })
 
@@ -300,6 +302,47 @@ describe("ACP runtime against a scripted agent", () => {
         result: { output: "1 todo", metadata: { todos: [{ content: "ship it" }] } },
       })
     })
+  })
+
+  test("matches a host tool call that reaches the host before the agent reports it", async () => {
+    const bound = binding(["todowrite"])
+    await withRuntime({ host: { tools: () => bound.tools } }, async (runtime) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("hostlate")]))).stream)
+      expect(textOf(parts)).toBe("LATE DONE")
+      expect(bound.calls.map((item) => item.callID)).toEqual(["call_late"])
+      expect(parts.find((part) => part.type === "tool-result")).toMatchObject({
+        toolCallId: "call_late",
+        result: { output: "1 todo", metadata: { todos: [{ content: "ship it" }] } },
+      })
+    })
+  })
+
+  test("serves every host tool to an agent confined to them", async () => {
+    const bound = binding(["read", "shell", "todowrite", "execute"])
+    await withRuntime({ agent: { hostTools: "all" }, host: { tools: () => bound.tools } }, async (runtime) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("tools?")]))).stream)
+      // Code Mode still needs its catalog.
+      expect(textOf(parts)).toBe("TOOLS=read,shell,todowrite")
+    })
+  })
+
+  test("starts the agent in the home the host manages for it", async () => {
+    const dir = path.join(import.meta.dir, ".home-" + process.pid)
+    try {
+      await withRuntime(
+        {
+          agent: {
+            home: { env: "FAKE_ACP_HOME", path: dir, files: { "agents/redsun.json": '{"tools":["@redsun"]}\n' } },
+          },
+        },
+        async (runtime) => {
+          const parts = await collect((await runtime.turn(TURN, call([user("home?")]))).stream)
+          expect(textOf(parts)).toBe(`HOME=${dir} PROFILE={"tools":["@redsun"]}`)
+        },
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   test("relaunches the agent when the host's tool catalog changes, keeping the conversation", async () => {

@@ -1,6 +1,8 @@
 export * as AcpRuntime from "./runtime.js"
 
 import { spawn } from "node:child_process"
+import { mkdirSync, writeFileSync } from "node:fs"
+import path from "node:path"
 import { Readable, Writable } from "node:stream"
 import {
   ClientSideConnection,
@@ -67,10 +69,21 @@ export interface Process {
 
 export type Spawn = (agent: AcpOptions.Agent, cwd: string, extraArgs: readonly string[]) => Process
 
+/** Writes the files of the home the host manages for the agent; they are the host's, so overwritten. */
+export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
+  for (const [name, content] of Object.entries(home.files)) {
+    const target = path.resolve(home.path, name)
+    if (!target.startsWith(path.resolve(home.path) + path.sep))
+      throw new Error(`Home file ${name} is outside ${home.path}.`)
+    mkdirSync(path.dirname(target), { recursive: true })
+    writeFileSync(target, content)
+  }
+}
+
 export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
   const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
-    env: { ...process.env, ...agent.env },
+    env: { ...process.env, ...agent.env, ...(agent.home ? { [agent.home.env]: agent.home.path } : {}) },
     stdio: ["pipe", "pipe", "ignore"],
   })
   return {
@@ -215,6 +228,8 @@ export class Runtime {
    * Starts an agent process with a session: a new one, or `resume` loaded back when the agent
    * supports it. `resumed` says whether the agent still holds the conversation.
    */
+  private homeReady = false
+
   private async open(
     sessionID: string,
     input: {
@@ -223,6 +238,10 @@ export class Runtime {
       readonly tools?: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] }
     } = { trusted: false },
   ): Promise<{ readonly session: Session; readonly resumed: boolean }> {
+    if (this.agent.home && !this.homeReady) {
+      prepareHome(this.agent.home)
+      this.homeReady = true
+    }
     const process = this.spawn(this.agent, this.host.cwd, input.trusted ? (this.agent.nativeApprovalArgs ?? []) : [])
     let opened: Session | undefined
     let slot: AcpHostTools.Slot | undefined
@@ -396,7 +415,7 @@ export class Runtime {
     const native = !oneShot && AcpOptions.hasNativeApproval(this.agent) && (await this.host.mode()) === "native_auto"
     // Bound at the turn boundary: calls during the turn carry its attribution.
     const binding = oneShot ? undefined : await this.host.tools?.(turn)
-    const definitions = binding ? AcpHostTools.select(binding) : []
+    const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools) : []
     const { session, remembers } = oneShot
       ? { session: (await this.open(turn.sessionID)).session, remembers: false }
       : await this.acquire(

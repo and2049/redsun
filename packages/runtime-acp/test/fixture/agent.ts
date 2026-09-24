@@ -1,4 +1,5 @@
 // A scripted ACP agent over stdio. The prompt text picks the behaviour.
+import { readFileSync } from "node:fs"
 import { Readable, Writable } from "node:stream"
 import {
   AgentSideConnection,
@@ -212,6 +213,37 @@ new AgentSideConnection((connection) => {
         const listed = client ? (await client.listTools()).tools.map((tool) => tool.name).join(",") : "none"
         await client?.close()
         await say(sessionId, `TOOLS=${listed}`)
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("hostlate")) {
+        // As Kiro sometimes does: the MCP call reaches the host before the agent reports it.
+        const args = { todos: [{ content: "ship it", status: "pending" }] }
+        const client = await mcp(sessionId)
+        const pending = client?.callTool({ name: "todowrite", arguments: args })
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        await connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "call_late",
+            title: "Running: @redsun/todowrite",
+            rawInput: args,
+            _meta: { kiro: { toolName: "todowrite", mcpServerName: "redsun" } },
+          },
+        })
+        const result = await pending
+        await client?.close()
+        await connection.sessionUpdate({
+          sessionId,
+          update: { sessionUpdate: "tool_call_update", toolCallId: "call_late", status: "completed" },
+        })
+        await say(sessionId, result?.isError ? "LATE FAILED" : "LATE DONE")
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("home?")) {
+        const home = process.env.FAKE_ACP_HOME
+        const profile = home ? readFileSync(`${home}/agents/redsun.json`, "utf8").trim() : "none"
+        await say(sessionId, `HOME=${home} PROFILE=${profile}`)
         return { stopReason: "end_turn" }
       }
       if (text.includes("hostcall")) {

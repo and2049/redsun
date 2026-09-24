@@ -1,13 +1,19 @@
 export * as AcpOptions from "./options.js"
 
+import os from "node:os"
+import path from "node:path"
+
 /**
  * One external agent spoken to over ACP (Agent Client Protocol), from the plugin's config entry:
  *
  * ```jsonc
  * { "plugins": [{ "package": "/path/to/packages/runtime-acp", "options": { "agents": {
- *   "kiro": { "name": "Kiro-cli", "command": "kiro-cli", "args": ["acp"] }
+ *   "kiro": { "preset": "kiro" },
+ *   "other": { "name": "Other", "command": "other-agent", "args": ["--acp"] }
  * } } }] }
  * ```
+ *
+ * A `preset` supplies the settings a known agent needs; the entry's own keys override it.
  */
 export interface Agent {
   /** Provider id; also the runtime id and the storage prefix. */
@@ -42,6 +48,21 @@ export interface Agent {
    * relative to the working directory (Kiro reads `AGENTS.md` there).
    */
   readonly inheritedInstructions: readonly string[]
+  /**
+   * Which host tools the agent gets. `extras` adds the host's own tools (subagent, skill, todo,
+   * worker model and directly exposed MCP tools) to the agent's native ones; `all` serves the
+   * whole tool set a native redsun agent has, for agents confined to host tools (see `home`).
+   */
+  readonly hostTools: "extras" | "all"
+  /**
+   * A home directory the host manages for the agent: `env` names the variable that points the
+   * agent at it and `files` are written into it (JSON values as JSON) before the agent starts.
+   */
+  readonly home?: {
+    readonly env: string
+    readonly path: string
+    readonly files: Readonly<Record<string, string>>
+  }
   /** A prompt the agent understands as "compact your context" (e.g. `/compact`). */
   readonly compactCommand?: string
 }
@@ -51,8 +72,60 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 
 const string = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : undefined)
 
+/** Where the host keeps an agent's home unless the config names one: redsun's data directory. */
+export const defaultHome = (id: string) =>
+  path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "redsun", "runtime-acp", id)
+
+/**
+ * Kiro confined to redsun's tools: a `redsun` agent profile whose only tools come from the host's
+ * MCP server, in a Kiro home redsun owns (the user's ~/.kiro is left alone; Kiro's login lives in
+ * its data directory, not its home). File edits, shell commands and every other tool therefore run
+ * as redsun's own, with redsun's permissions, snapshots and rendering. Kiro's native approval
+ * flag is moot when none of its own tools run, so the preset offers no native approval mode.
+ */
+const KIRO_AGENT = {
+  name: "redsun",
+  description: "Kiro driven by redsun: every tool is redsun's.",
+  tools: ["@redsun"],
+  allowedTools: ["@redsun"],
+}
+
+export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
+  kiro: {
+    name: "Kiro-cli",
+    command: "kiro-cli",
+    args: ["acp", "--agent", KIRO_AGENT.name],
+    hostTools: "all",
+    compactCommand: "/compact",
+    home: { env: "KIRO_HOME", files: { [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT } },
+  },
+}
+
 /** Whether the agent has any real auto-approval to offer as `native_auto`. */
 export const hasNativeApproval = (agent: Agent) => Boolean(agent.nativeApprovalMode || agent.nativeApprovalArgs?.length)
+
+const home = (id: string, value: Record<string, unknown> | undefined, errors: string[]) => {
+  if (!value) return {}
+  const env = string(value.env)
+  if (!env) {
+    errors.push(`ACP agent "${id}" has a home without an env variable; ignoring it.`)
+    return {}
+  }
+  const configured = string(value.path)
+  const files = Object.fromEntries(
+    Object.entries(record(value.files) ?? {}).map(([name, content]) => [
+      name,
+      typeof content === "string" ? content : JSON.stringify(content, null, 2) + "\n",
+    ]),
+  )
+  return {
+    home: {
+      env,
+      path: configured ? path.resolve(configured.replace(/^~(?=$|\/)/, os.homedir())) : defaultHome(id),
+      files,
+    },
+  }
+}
 
 /** Parses `ctx.options`; malformed agents are reported, not thrown. */
 export const parse = (options: unknown): { readonly agents: Agent[]; readonly errors: string[] } => {
@@ -60,7 +133,19 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
   const errors: string[] = []
   const configured = record(record(options)?.agents) ?? {}
   for (const [id, raw] of Object.entries(configured)) {
-    const entry = record(raw)
+    const own = record(raw)
+    const presetName = string(own?.preset)
+    const preset = presetName ? PRESETS[presetName] : undefined
+    if (presetName && !preset) {
+      errors.push(`ACP agent "${id}" names an unknown preset "${presetName}".`)
+      continue
+    }
+    const entry: Record<string, unknown> | undefined = own && {
+      ...preset,
+      ...own,
+      env: { ...record(preset?.env), ...record(own.env) },
+      ...(preset?.home || own.home ? { home: { ...record(preset?.home), ...record(own.home) } } : {}),
+    }
     const command = string(entry?.command)
     if (!entry || !command) {
       errors.push(`ACP agent "${id}" needs a command.`)
@@ -94,6 +179,8 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       ...(nativeApprovalArgs.length ? { nativeApprovalArgs } : {}),
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),
       ...(string(entry.compactCommand) ? { compactCommand: string(entry.compactCommand) } : {}),
+      hostTools: entry.hostTools === "all" ? "all" : "extras",
+      ...home(id, record(entry.home), errors),
     })
   }
   return { agents, errors }
