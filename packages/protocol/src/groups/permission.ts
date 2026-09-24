@@ -40,7 +40,7 @@ export const makePermissionGroup = <
         OpenApi.annotations({
           identifier: "v2.permission.mode.get",
           summary: "Get permission mode",
-          description: "Retrieve manual, approve-all, or Claude Code native classifier mode.",
+          description: "Retrieve manual, approve-all, or the delegated runtime's native approval mode.",
         }),
       ),
     )
@@ -53,9 +53,25 @@ export const makePermissionGroup = <
           identifier: "v2.permission.mode.set",
           summary: "Set permission mode",
           description:
-            "Auto approves host asks; claude_auto selects the native Claude Code classifier for primary Claude sessions while host asks remain manual. Explicit denies always deny.",
+            "auto approves every host ask; native_auto defers to a delegated runtime's own judgement-based approval (Claude Code's classifier) for sessions whose model's runtime declares one, approving host asks there and staying manual elsewhere. Explicit denies always deny.",
         }),
       ),
+    )
+    .add(
+      // REDSUN: which approval modes the model offers; native_auto only where its runtime has one.
+      HttpApiEndpoint.get("permission.mode.options", "/api/permission/mode/options", {
+        query: Schema.Struct({ ...LocationQuery.fields, providerID: Schema.String, modelID: Schema.String }),
+        success: Schema.Struct({ data: Schema.Struct({ native: Schema.Boolean }) }),
+      })
+        .annotateMerge(locationQueryOpenApi)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.permission.mode.options",
+            summary: "Get permission mode options",
+            description:
+              "Whether the model's delegated runtime has a native auto-approval mode, which enables native_auto.",
+          }),
+        ),
     )
     .add(
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {

@@ -126,6 +126,7 @@ import { useArgs } from "../../context/args"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import { createSingleFlight } from "../../util/single-flight"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
+import { Delegate } from "@opencode/schema/delegate"
 import { createDelayedPresence } from "../../util/delayed-presence"
 import { SessionLocationMissing } from "./location-missing"
 import { isRecord } from "../../util/record"
@@ -154,9 +155,6 @@ const TRANSCRIPT_BACKFILL_CHUNK = 60
 
 // Message-metadata key stamped on advisor asides (core/src/plugin/redsun/advisor.ts).
 const ADVISOR_METADATA_KEY = "redsun.advisor"
-// Message-metadata key stamped when the Claude Code CLI silently substitutes a
-// requested model (core/src/plugin/redsun/claude-code/models.ts).
-const MODEL_SUBSTITUTED_METADATA_KEY = "redsun.claude-code.model-substituted"
 
 export { TRANSCRIPT_GUTTER } from "./render-context"
 import { NAVIGATION_TINT } from "./render-context"
@@ -2350,7 +2348,10 @@ function SessionNoticeMessageV2(props: { message: SessionMessageInfo }) {
     return theme.text.feedback.info.default
   }
   const advisorNote = () => metadata()?.[ADVISOR_METADATA_KEY] as { severity?: string } | undefined
-  const modelSubstituted = () => metadata()?.[MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
+  // A delegated runtime answered with a different model than requested (older rows: legacy key).
+  const modelSubstituted = () =>
+    metadata()?.[Delegate.MODEL_SUBSTITUTED_METADATA_KEY] !== undefined ||
+    metadata()?.[Delegate.LEGACY_MODEL_SUBSTITUTED_METADATA_KEY] !== undefined
   const noticeLabel = () =>
     advisorNote()
       ? language.t("session.advisor")

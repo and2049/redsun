@@ -192,6 +192,8 @@ import type {
   PermissionModeGetOutput,
   PermissionModeSetInput,
   PermissionModeSetOutput,
+  PermissionModeOptionsInput,
+  PermissionModeOptionsOutput,
   PermissionSavedListInput,
   PermissionSavedListOutput,
   PermissionSavedRemoveInput,
@@ -1751,6 +1753,18 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ),
+        options: (input: PermissionModeOptionsInput, requestOptions?: RequestOptions) =>
+          request<{ readonly data: PermissionModeOptionsOutput }>(
+            {
+              method: "GET",
+              path: `/api/permission/mode/options`,
+              query: { location: input["location"], providerID: input["providerID"], modelID: input["modelID"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ).then((value) => value.data),
       },
       saved: {
         list: (input?: PermissionSavedListInput, requestOptions?: RequestOptions) =>

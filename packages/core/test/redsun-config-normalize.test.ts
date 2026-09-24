@@ -66,3 +66,27 @@ describe("config normalization of claude_code", () => {
     expect(result["claude_code"]).toEqual({ permission_mode: "plan" })
   })
 })
+
+// REDSUN: `acp` rides the same passthrough list.
+const acp = {
+  agents: {
+    kiro: { preset: "kiro", host_tools: "all", auto_approval_args: ["--trust-all-tools"], env: { A: "1" } },
+    other: { command: "other-agent", args: ["--acp"], native_approval_mode: "smart", models: ["fast"] },
+  },
+}
+
+describe("config normalization of acp", () => {
+  test("carries every field through normalization and the decode that follows", () => {
+    expect(normalized({ acp })["acp"]).toEqual(acp)
+    expect(decoded({ acp }).acp).toMatchObject(acp)
+  })
+
+  test("carries an empty section rather than dropping the key", () => {
+    expect(normalized({ acp: {} })["acp"]).toEqual({})
+    expect(normalized({ acp: { agents: {} } })["acp"]).toEqual({ agents: {} })
+  })
+
+  test("leaves the key absent when the user did not set it", () => {
+    expect(normalized({})).not.toHaveProperty("acp")
+  })
+})

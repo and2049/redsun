@@ -1,9 +1,10 @@
 export * as Permission from "./permission.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Context, Deferred, Effect, Layer, Schema } from "effect"
+import { Context, Deferred, Effect, Layer, Option, Schema } from "effect"
 import { Permission } from "@opencode/schema/permission"
 import { Bus } from "./bus.js"
+import { DelegatedRuntime } from "./delegate.js"
 import { KV } from "./kv.js"
 import { Location } from "./location.js"
 import { Agent } from "./agent.js"
@@ -106,6 +107,10 @@ export type Mode = typeof Mode.Type
 
 const MODE_KEY = "permission.mode"
 
+/** REDSUN: `claude_auto` is the pre-rename spelling of `native_auto`; a stored selection survives. */
+export const storedMode = (value: unknown): Mode =>
+  value === "auto" ? "auto" : value === "native_auto" || value === "claude_auto" ? "native_auto" : "normal"
+
 export interface Interface {
   readonly close: Effect.Effect<void>
   /** Evaluate effective host policy without registering an approval request. */
@@ -140,10 +145,23 @@ const layer = Layer.effect(
     const saved = yield* PermissionSaved.Service
     const kv = yield* KV.Service
     const hooks = yield* PluginHooks.Service
+    // REDSUN: optional so the service stays constructible in harnesses without the registry.
+    const delegates = Option.getOrUndefined(yield* Effect.serviceOption(DelegatedRuntime.Service))
     const pending = new Map<ID, Pending>()
 
     const stored = yield* kv.get(MODE_KEY)
-    let currentMode: Mode = stored === "auto" ? "auto" : stored === "claude_auto" ? "claude_auto" : "normal"
+    let currentMode: Mode = storedMode(stored)
+
+    // REDSUN: `auto` approves every host ask. `native_auto` defers to the runtime's own
+    // judgement-based approval (Claude Code's classifier): in a session whose model's runtime
+    // declares one the host adds no prompts of its own, elsewhere it is Manual.
+    const approvesAll = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      if (currentMode === "auto") return true
+      if (currentMode !== "native_auto" || !delegates) return false
+      const model = (yield* sessions.get(sessionID))?.model
+      if (!model) return false
+      return yield* delegates.nativeApproval({ providerID: model.providerID, id: model.id })
+    })
 
     let closed = false
 
@@ -202,7 +220,7 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      if (currentMode === "auto" && event.effect === "ask")
+      if (event.effect === "ask" && (yield* approvesAll(input.sessionID)))
         return { effect: "allow" as const, message: event.message, rules: all }
       return { effect: event.effect, message: event.message, rules: all }
     })
@@ -365,14 +383,14 @@ const layer = Layer.effect(
       if (currentMode === next) return
       currentMode = next
       yield* kv.set(MODE_KEY, next)
-      // Claude's classifier is native-only. Host asks (including already pending
-      // requests and non-Claude clients) remain manual in this mode.
-      if (next !== "auto") return
+      // A dialog raised under the old mode would contradict the one the user just chose.
+      if (next === "normal") return
       for (const [id, item] of [...pending]) {
         const rules = yield* configured(item.request.sessionID, item.agent).pipe(
           Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
         )
         if (!rules || denied({ ...item.request }, rules)) continue
+        if (!(yield* approvesAll(item.request.sessionID))) continue
         yield* bus.publish(Permission.Event.Replied, {
           sessionID: item.request.sessionID,
           requestID: item.request.id,
@@ -390,5 +408,14 @@ const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node, KV.node, Location.node, Agent.node, SessionStore.node, PermissionSaved.node, PluginHooks.node],
+  deps: [
+    Bus.node,
+    KV.node,
+    Location.node,
+    Agent.node,
+    SessionStore.node,
+    PermissionSaved.node,
+    PluginHooks.node,
+    DelegatedRuntime.node,
+  ],
 })

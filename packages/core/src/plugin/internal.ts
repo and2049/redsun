@@ -74,7 +74,8 @@ import { RedsunAttribution } from "./redsun/attribution.js"
 import { RedsunTodo } from "./redsun/todo.js"
 import { RedsunMultiedit } from "./redsun/multiedit.js"
 import { RedsunWorkerModelTool } from "./redsun/worker-model-tool.js"
-import { ClaudeCodeProviderPlugin } from "./redsun/claude-code/provider.js"
+import { ClaudeCodeProviderPlugin } from "@redsun/runtime-claude-code"
+import AcpRuntimePlugin from "@redsun/runtime-acp"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
 import { GrepTool } from "../tool/plugin/grep.js"
@@ -223,6 +224,7 @@ const pre = [
   VcsHgPlugin.Plugin,
   ModelsDevPlugin,
   ClaudeCodeProviderPlugin.Plugin,
+  AcpRuntimePlugin,
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,

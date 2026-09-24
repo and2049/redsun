@@ -10,6 +10,8 @@ import { Effect, Schema, Stream } from "effect"
 import { Agent } from "../agent.js"
 import { AISDK } from "../aisdk.js"
 import { Command } from "../command.js"
+import { DelegatedRuntime } from "../delegate.js"
+import { DelegateHost } from "../delegate-host.js"
 import { Credential } from "../credential.js"
 import { Bus } from "../bus.js"
 import { Integration } from "../integration.js"
@@ -54,6 +56,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const providers = yield* Provider.Service
   const models = yield* Model.Service
   const commands = yield* Command.Service
+  const delegate = yield* DelegateHost.make
   const bus = yield* Bus.Service
   const integration = yield* Integration.Service
   const kv = yield* KV.Service
@@ -154,6 +157,8 @@ export const make = Effect.fn("PluginHost.make")(function* (
           })
         }),
     },
+    // REDSUN: delegated agent runtimes.
+    delegate,
     aisdk: {
       hook: (name, callback, options) => {
         if (name === "sdk") {
@@ -559,6 +564,8 @@ export const requirements = LayerNode.group([
   Provider.node,
   Model.node,
   Command.node,
+  DelegatedRuntime.node,
+  DelegateHost.requirements,
   Bus.node,
   Integration.node,
   KV.node,

@@ -82,6 +82,7 @@
     }
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@ai-sdk/openai-compatible": "2.0.41",
     "@effect/platform-node": "catalog:",
     "@effect/sql-sqlite-bun": "catalog:",
@@ -102,7 +103,6 @@
     "drizzle-kit": "catalog:"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@ai-sdk/cohere": "3.0.27",
     "@ai-sdk/gateway": "3.0.104",
     "@ai-sdk/perplexity": "3.0.26",
@@ -114,13 +114,14 @@
     "@lydell/node-pty": "catalog:",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/core": "2.0.0",
-    "@modelcontextprotocol/sdk": "1.29.0",
     "@opencode-ai/pty": "0.1.13",
     "@opencode/ai": "workspace:*",
     "@opencode/codemode": "workspace:*",
     "@opencode/plugin": "workspace:*",
     "@opencode/schema": "workspace:*",
     "@opencode/util": "workspace:*",
+    "@redsun/runtime-acp": "workspace:*",
+    "@redsun/runtime-claude-code": "workspace:*",
     "@parcel/watcher": "2.5.1",
     "@silvia-odwyer/photon-node": "0.3.4",
     "@standard-schema/spec": "catalog:",

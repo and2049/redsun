@@ -198,6 +198,8 @@ import type {
   PermissionModeGetOutput,
   PermissionModeSetInput,
   PermissionModeSetOutput,
+  PermissionModeOptionsInput,
+  PermissionModeOptionsOutput,
   PermissionSavedListInput,
   PermissionSavedListOutput,
   PermissionSavedRemoveInput,
@@ -1252,6 +1254,16 @@ const EndpointPermissionModeSet = (raw: RawClient["server.permission"]) => (inpu
     raw["permission.mode.set"]({ payload: { mode: input["mode"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointPermissionModeOptions = (raw: RawClient["server.permission"]) => (input: PermissionModeOptionsInput) =>
+  preserveEffect<PermissionModeOptionsOutput>()(
+    raw["permission.mode.options"]({
+      query: { location: input["location"], providerID: input["providerID"], modelID: input["modelID"] },
+    }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
 const EndpointPermissionSavedList = (raw: RawClient["server.permission"]) => (input?: PermissionSavedListInput) =>
   preserveEffect<PermissionSavedListOutput>()(
     raw["permission.saved.list"]({ query: { projectID: input?.["projectID"] } }).pipe(
@@ -1310,7 +1322,11 @@ const EndpointPermissionReply = (raw: RawClient["server.permission"]) => (input:
 
 const adaptGroupPermission = (raw: RawClient["server.permission"]) => ({
   request: { list: EndpointPermissionRequestList(raw) },
-  mode: { get: EndpointPermissionModeGet(raw), set: EndpointPermissionModeSet(raw) },
+  mode: {
+    get: EndpointPermissionModeGet(raw),
+    set: EndpointPermissionModeSet(raw),
+    options: EndpointPermissionModeOptions(raw),
+  },
   saved: { list: EndpointPermissionSavedList(raw), remove: EndpointPermissionSavedRemove(raw) },
   create: EndpointPermissionCreate(raw),
   list: EndpointPermissionList(raw),

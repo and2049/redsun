@@ -28,6 +28,33 @@ export function host(overrides: Overrides = {}): Plugin.Context {
         },
       }),
     options: {},
+    delegate: overrides.delegate ?? {
+      register: () => Effect.die("unused delegate.register"),
+      owns: () => Effect.succeed(false),
+      config: () => Effect.die("unused delegate.config"),
+      storage: () => ({
+        get: () => Effect.die("unused delegate.storage.get"),
+        set: () => Effect.die("unused delegate.storage.set"),
+        remove: () => Effect.die("unused delegate.storage.remove"),
+      }),
+      permission: {
+        inspect: () => Effect.die("unused delegate.permission.inspect"),
+        assert: () => Effect.die("unused delegate.permission.assert"),
+        mode: () => Effect.die("unused delegate.permission.mode"),
+      },
+      form: { ask: () => Effect.die("unused delegate.form.ask") },
+      tools: { bind: () => Effect.die("unused delegate.tools.bind") },
+      transcript: {
+        messageID: () => "msg_unused",
+        createChild: () => Effect.die("unused delegate.transcript.createChild"),
+        record: () => Effect.die("unused delegate.transcript.record"),
+        notice: () => Effect.die("unused delegate.transcript.notice"),
+      },
+      context: {
+        instructions: () => Effect.die("unused delegate.context.instructions"),
+        skills: () => Effect.die("unused delegate.context.skills"),
+      },
+    },
     rpc:
       overrides.rpc ??
       Object.assign(
@@ -226,13 +253,15 @@ export function providerHost(providers: Provider.Interface): Plugin.Context["pro
   return {
     list: () => providers.available().pipe(Effect.map(located)),
     get: (input) =>
-      providers.get(Provider.ID.make(input.providerID)).pipe(
-        Effect.flatMap((provider) =>
-          provider === undefined
-            ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
-            : Effect.succeed(located(provider)),
+      providers
+        .get(Provider.ID.make(input.providerID))
+        .pipe(
+          Effect.flatMap((provider) =>
+            provider === undefined
+              ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
+              : Effect.succeed(located(provider)),
+          ),
         ),
-      ),
     reload: providers.reload,
     transform: (callback) =>
       providers.transform((editor) =>

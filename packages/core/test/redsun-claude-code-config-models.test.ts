@@ -8,7 +8,7 @@ import { ModelResolver } from "@opencode/core/model-resolver"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { Provider } from "@opencode/core/provider"
-import { ClaudeCodeModels } from "@opencode/core/plugin/redsun/claude-code/models"
+import { ClaudeCodeModels } from "@redsun/runtime-claude-code/models"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
 

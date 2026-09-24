@@ -1,0 +1,78 @@
+import { describe, expect, test } from "bun:test"
+import { AcpOptions } from "../src/options.js"
+
+describe("ACP agent options", () => {
+  test("the kiro preset confines Kiro to redsun's tools in a home redsun owns", () => {
+    const { agents, errors } = AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } })
+    expect(errors).toEqual([])
+    const [kiro] = agents
+    expect(kiro).toMatchObject({
+      id: "kiro",
+      name: "Kiro-cli",
+      command: "kiro-cli",
+      args: ["acp", "--agent", "redsun"],
+      hostTools: "all",
+      compactCommand: "/compact",
+      inheritedInstructions: [],
+    })
+    expect(AcpOptions.hasNativeApproval(kiro!)).toBe(false)
+    // No judgement-based mode of its own; the host's Auto-approve relaunches it trusted.
+    expect(kiro!.autoApprovalArgs).toEqual(["--trust-all-tools"])
+    expect(AcpOptions.launchArgs(kiro!, "auto")).toEqual(["--trust-all-tools"])
+    expect(AcpOptions.launchArgs(kiro!, "native_auto")).toEqual([])
+    expect(AcpOptions.launchArgs(kiro!, "normal")).toEqual([])
+    expect(kiro!.home?.env).toBe("KIRO_HOME")
+    expect(kiro!.home?.path).toBe(AcpOptions.defaultHome("kiro"))
+    expect(JSON.parse(kiro!.home!.files["agents/redsun.json"]!)).toMatchObject({
+      name: "redsun",
+      tools: ["@redsun"],
+      allowedTools: ["@redsun"],
+    })
+  })
+
+  test("an entry's own keys override its preset; env and home merge", () => {
+    const { agents } = AcpOptions.parse({
+      agents: {
+        kiro: { preset: "kiro", name: "Kiro", env: { XDG_DATA_HOME: "/data" }, home: { path: "~/kiro-home" } },
+      },
+    })
+    expect(agents[0]).toMatchObject({ name: "Kiro", command: "kiro-cli", env: { XDG_DATA_HOME: "/data" } })
+    expect(agents[0]!.home?.env).toBe("KIRO_HOME")
+    expect(agents[0]!.home?.path).toEndWith("/kiro-home")
+    expect(agents[0]!.home?.path.startsWith("~")).toBe(false)
+  })
+
+  test("reports an unknown preset and an agent without a command", () => {
+    const { agents, errors } = AcpOptions.parse({ agents: { a: { preset: "nope" }, b: {} } })
+    expect(agents).toEqual([])
+    expect(errors).toEqual(['ACP agent "a" names an unknown preset "nope".', 'ACP agent "b" needs a command.'])
+  })
+
+  test("offers built-in agents whose command is installed, and lets config adjust or disable them", () => {
+    expect(AcpOptions.withBuiltins({}, () => true)).toEqual({ kiro: { preset: "kiro" } })
+    expect(AcpOptions.withBuiltins({}, () => false)).toEqual({})
+    const adjusted = AcpOptions.parse({
+      agents: AcpOptions.withBuiltins({ kiro: { host_tools: "extras", env: { A: "1" } } }, () => false),
+    })
+    expect(adjusted.agents[0]).toMatchObject({ id: "kiro", command: "kiro-cli", hostTools: "extras", env: { A: "1" } })
+    expect(adjusted.agents[0]!.integration).toMatchObject({ name: "Kiro", whoami: ["whoami", "--format", "json"] })
+    expect(
+      AcpOptions.parse({ agents: AcpOptions.withBuiltins({ kiro: { enabled: false } }, () => true) }).agents,
+    ).toEqual([])
+  })
+
+  test("offers native_auto only for a judgement-based mode on an agent with tools of its own", () => {
+    const parse = (entry: Record<string, unknown>) =>
+      AcpOptions.parse({ agents: { a: { command: "agent", ...entry } } }).agents[0]!
+    expect(AcpOptions.hasNativeApproval(parse({}))).toBe(false)
+    expect(AcpOptions.hasNativeApproval(parse({ native_approval_mode: "smart" }))).toBe(true)
+    expect(AcpOptions.hasNativeApproval(parse({ native_approval_args: ["--smart"] }))).toBe(true)
+    expect(AcpOptions.hasNativeApproval(parse({ native_approval_mode: "smart", host_tools: "all" }))).toBe(false)
+    expect(AcpOptions.hasNativeApproval(parse({ auto_approval_mode: "yolo" }))).toBe(false)
+    const both = parse({ native_approval_mode: "smart", auto_approval_mode: "yolo", auto_approval_args: ["-y"] })
+    expect(AcpOptions.sessionMode(both, "native_auto")).toBe("smart")
+    expect(AcpOptions.sessionMode(both, "auto")).toBe("yolo")
+    expect(AcpOptions.sessionMode(both, "normal")).toBeUndefined()
+    expect(AcpOptions.launchArgs(both, "auto")).toEqual(["-y"])
+  })
+})

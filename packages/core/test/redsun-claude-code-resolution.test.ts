@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { Effect, Exit } from "effect"
-import { ClaudeCodeModels } from "@opencode/core/plugin/redsun/claude-code/models"
+import { ClaudeCodeModels } from "@redsun/runtime-claude-code/models"
 import { ModelResolver } from "@opencode/core/model-resolver"
 
 /**

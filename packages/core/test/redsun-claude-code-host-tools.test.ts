@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
+import { ClaudeCodeHostTools } from "@redsun/runtime-claude-code/host-tools"
+import { hostFromSnapshot } from "./lib/claude-code"
+import { DelegateHost } from "@opencode/core/delegate-host"
 import { Effect } from "effect"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Location } from "@opencode/core/location"
@@ -51,7 +53,7 @@ describe("Claude Code canonical host MCP bridge", () => {
           })
         })
         const snapshot = yield* tools.snapshot()
-        const direct = ClaudeCodeHostTools.directNames([
+        const direct = DelegateHost.directNames([
           { server: "my.server", name: "ping", codemode: false },
           { server: "hidden", name: "other", codemode: true },
         ] as never)
@@ -59,7 +61,7 @@ describe("Claude Code canonical host MCP bridge", () => {
         const definitions = ClaudeCodeHostTools.select({ definitions: snapshot.definitions, available, direct })
         expect(definitions.map((item) => item.name)).toEqual(["my_server_ping", "execute"])
         const allowed = new Set(definitions.map((item) => item.name))
-        const host = ClaudeCodeHostTools.fromSnapshot({
+        const host = hostFromSnapshot({
           snapshot,
           sessionID: "ses_test" as never,
           agent: "build" as never,
@@ -192,7 +194,7 @@ describe("Claude Code canonical host MCP bridge", () => {
           return { content: [{ type: "text" as const, text: "chosen" }] }
         }),
     }
-    const host = ClaudeCodeHostTools.fromSnapshot({
+    const host = hostFromSnapshot({
       snapshot: snapshot as never,
       sessionID: "ses_parent" as never,
       agent: "build" as never,
@@ -266,7 +268,7 @@ describe("Claude Code canonical host MCP bridge", () => {
       started = resolve
     })
     const results: unknown[] = []
-    const host = ClaudeCodeHostTools.fromSnapshot({
+    const host = hostFromSnapshot({
       snapshot: {
         definitions: [{ type: "tool", name: "worker_model", description: "choose", inputSchema: { type: "object" } }],
         execute: () =>

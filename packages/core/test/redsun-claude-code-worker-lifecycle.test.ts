@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test"
 import { query } from "@anthropic-ai/claude-agent-sdk"
-import { ClaudeCodeExecutable } from "@opencode/core/plugin/redsun/claude-code/executable"
-import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
+import { ClaudeCodeExecutable } from "@redsun/runtime-claude-code/executable"
+import { ClaudeCodeHostTools } from "@redsun/runtime-claude-code/host-tools"
+import { hostFromSnapshot } from "./lib/claude-code"
 import { Effect } from "effect"
 import fs from "node:fs"
 import path from "node:path"
@@ -72,7 +73,7 @@ describe.skipIf(!executable)("Claude Code worker lifecycle through the installed
         messageID: string
       }[] = []
       const reported: unknown[] = []
-      const host = ClaudeCodeHostTools.fromSnapshot({
+      const host = hostFromSnapshot({
         snapshot: {
           definitions: [
             {

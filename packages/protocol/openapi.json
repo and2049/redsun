@@ -8940,7 +8940,7 @@
             }
           }
         },
-        "description": "Retrieve manual, approve-all, or Claude Code native classifier mode.",
+        "description": "Retrieve manual, approve-all, or the delegated runtime's native approval mode.",
         "summary": "Get permission mode"
       },
       "put": {
@@ -8973,7 +8973,7 @@
             }
           }
         },
-        "description": "Auto approves host asks; claude_auto selects the native Claude Code classifier for primary Claude sessions while host asks remain manual. Explicit denies always deny.",
+        "description": "auto approves every host ask; native_auto defers to a delegated runtime's own judgement-based approval (Claude Code's classifier) for sessions whose model's runtime declares one, approving host asks there and staying manual elsewhere. Explicit denies always deny.",
         "summary": "Set permission mode",
         "requestBody": {
           "content": {
@@ -8992,6 +8992,109 @@
           },
           "required": true
         }
+      }
+    },
+    "/api/permission/mode/options": {
+      "get": {
+        "tags": ["permission"],
+        "operationId": "v2.permission.mode.options",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "providerID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "modelID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "native": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["native"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Whether the model's delegated runtime has a native auto-approval mode, which enables native_auto.",
+        "summary": "Get permission mode options"
       }
     },
     "/api/permission/saved": {
@@ -14890,6 +14993,18 @@
               }
             },
             "additionalProperties": false
+          },
+          "acp": {
+            "type": "object",
+            "properties": {
+              "agents": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ConfigAcp.AgentEncoded"
+                }
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -15195,6 +15310,105 @@
           }
         },
         "required": ["directory"],
+        "additionalProperties": false
+      },
+      "ConfigAcp.AgentEncoded": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "host_tools": {
+            "type": "string",
+            "enum": ["extras", "all"]
+          },
+          "inherited_instructions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "native_approval_mode": {
+            "type": "string"
+          },
+          "native_approval_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "auto_approval_mode": {
+            "type": "string"
+          },
+          "auto_approval_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_mode": {
+            "type": "string"
+          },
+          "compact_command": {
+            "type": "string"
+          },
+          "home": {
+            "type": "object",
+            "properties": {
+              "env": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "additionalProperties": false
       },
       "ConfigShell.Option": {
@@ -17341,7 +17555,7 @@
       },
       "Permission.Mode": {
         "type": "string",
-        "enum": ["normal", "auto", "claude_auto"]
+        "enum": ["normal", "auto", "native_auto"]
       },
       "Permission.Reply": {
         "type": "string",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeExecutable } from "@opencode/core/plugin/redsun/claude-code/executable"
-import { ClaudeCodeModels } from "@opencode/core/plugin/redsun/claude-code/models"
+import { ClaudeCodeExecutable } from "@redsun/runtime-claude-code/executable"
+import { ClaudeCodeModels } from "@redsun/runtime-claude-code/models"
 import { Provider } from "@opencode/core/provider"
 
 const fs = (files: readonly string[]) => ({ isFile: (p: string) => files.includes(p) })
