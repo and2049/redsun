@@ -35,8 +35,8 @@ export function WorkspaceStatus() {
                 </span>
               }
             >
-              <span style={{ fg: theme.text.feedback.success.default }}>
-                {compact() ? language.t("permission.claudeAuto.compact") : language.t("permission.claudeAuto.enabled")}
+              <span style={{ fg: theme.text.feedback.info.default }}>
+                {`⏵⏵ ${compact() ? language.t("permission.claudeAuto.compact") : language.t("permission.claudeAuto.enabled")}`}
               </span>
               <Show when={!compact()}>
                 <span style={{ fg: theme.text.subdued }}>(Shift+Tab)</span>

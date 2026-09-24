@@ -93,7 +93,7 @@ test.each([44, 100])("remote indicator survives Home/session navigation at width
     },
   })
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("/RC") && frame.includes("Auto-approve"))
+  await setup.waitForFrame((frame) => frame.includes("/RC") && frame.includes("Manual"))
   const connectedFg = rcIndicator(setup)?.fg
   expect(connectedFg).toBeDefined()
   status = { ...status, state: "unavailable" }

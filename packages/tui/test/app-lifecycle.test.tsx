@@ -1194,24 +1194,24 @@ test("Claude Code cycles manual, approve-for-me, auto-approve via the app bindin
     },
   })
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("Build · Sonnet") && frame.includes("Auto-approve all disabled"))
+  await setup.waitForFrame((frame) => frame.includes("Build · Sonnet") && frame.includes("Manual"))
   setup.mockInput.pressKey("F7")
-  await setup.waitForFrame((frame) => frame.includes("Approve for me"))
+  await setup.waitForFrame((frame) => frame.includes("⏵⏵ Approve for me"))
   setup.mockInput.pressKey("F7")
   await setup.waitForFrame((frame) => frame.includes("Auto-approve all enabled"))
   setup.mockInput.pressKey("F7")
-  await setup.waitForFrame((frame) => frame.includes("Auto-approve all disabled"))
+  await setup.waitForFrame((frame) => frame.includes("Manual"))
   await setup.waitFor(() => modes.length === 3)
   expect(modes).toEqual(["claude_auto", "auto", "normal"])
 })
 
 test.each([
-  { auto: undefined, expected: "Auto-approve all disabled (Shift+Tab)" },
+  { auto: undefined, expected: "Manual (Shift+Tab)" },
   { auto: true, expected: "Auto-approve all enabled" },
 ])("home reports the auto-approve mode before a session exists (auto: $auto)", async ({ auto, expected }) => {
   await using setup = await createAppFixture({ args: auto ? { auto } : {} })
   await setup.ready
-  const frame = await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+  const frame = await setup.waitForFrame((frame) => frame.includes(expected))
   expect(frame).toContain(expected)
 })
 
@@ -1304,7 +1304,7 @@ test.each(["manual", "select"] as const)("selection copy and dismissal respect %
     )
 
     await ready.promise
-    await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+    await setup.waitForFrame((frame) => frame.includes("Manual"))
     await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     setup.renderer.currentFocusedEditor?.focus()
     await setup.renderOnce()
@@ -1355,7 +1355,7 @@ test.each([100, 44])(
       },
     })
     await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("Auto-approve"))
+    await setup.waitForFrame((frame) => frame.includes("Manual"))
     await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     setup.mockInput.pressKey("u", { ctrl: true })
     await setup.mockInput.typeText("Keep this draft")

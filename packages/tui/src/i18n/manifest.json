@@ -1440,7 +1440,7 @@
       "legacy": ["Next"]
     },
     "permission.autoApprove.off": {
-      "message": "Auto-approve: off",
+      "message": "Manual",
       "context": "session",
       "legacy": ["Auto-approve: off"]
     },
@@ -1450,7 +1450,7 @@
       "legacy": ["Auto-approve: on"]
     },
     "permission.autoApprove.disabled": {
-      "message": "Auto-approve all disabled (Shift+Tab)",
+      "message": "Manual (Shift+Tab)",
       "context": "session",
       "legacy": ["Auto-approve all disabled (Shift+Tab)"]
     },
