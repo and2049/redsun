@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test"
 import { query } from "@anthropic-ai/claude-agent-sdk"
-import { ClaudeCodeExecutable } from "@opencode/core/plugin/redsun/claude-code/executable"
-import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
-import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
-import { ClaudeCodePolicyHooks } from "@opencode/core/plugin/redsun/claude-code/policy-hooks"
+import { ClaudeCodeExecutable } from "../src/executable.js"
+import { ClaudeCodeContext } from "../src/context.js"
+import { ClaudeCodeHostTools } from "../src/host-tools.js"
+import { ClaudeCodePolicyHooks } from "../src/policy-hooks.js"
 import fs from "node:fs"
 import path from "node:path"
 

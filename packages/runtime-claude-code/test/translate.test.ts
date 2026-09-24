@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import { ClaudeCodeTranslate } from "@opencode/core/plugin/redsun/claude-code/translate"
+import { ClaudeCodeTranslate } from "../src/translate.js"
 
 const msg = (input: unknown) => input as SDKMessage
 

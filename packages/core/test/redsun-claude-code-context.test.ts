@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
+import { ClaudeCodeContext } from "@redsun/runtime-claude-code/context"
 import { DelegateHost } from "@opencode/core/delegate-host"
 
 const agent = { id: "review", system: "Review carefully." }

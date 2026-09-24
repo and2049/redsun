@@ -163,13 +163,11 @@
         "@ai-sdk/provider": "3.0.8",
         "@ai-sdk/provider-utils": "4.0.23",
         "@ai-sdk/vercel": "2.0.39",
-        "@anthropic-ai/claude-agent-sdk": "catalog:",
         "@ff-labs/fff-bun": "0.10.5",
         "@ff-labs/fff-node": "0.10.5",
         "@lydell/node-pty": "catalog:",
         "@modelcontextprotocol/client": "2.0.0",
         "@modelcontextprotocol/core": "2.0.0",
-        "@modelcontextprotocol/sdk": "1.29.0",
         "@opencode-ai/pty": "0.1.13",
         "@opencode/ai": "workspace:*",
         "@opencode/codemode": "workspace:*",
@@ -177,6 +175,7 @@
         "@opencode/schema": "workspace:*",
         "@opencode/util": "workspace:*",
         "@parcel/watcher": "2.5.1",
+        "@redsun/runtime-claude-code": "workspace:*",
         "@silvia-odwyer/photon-node": "0.3.4",
         "@standard-schema/spec": "catalog:",
         "bun-pty": "0.4.8",
@@ -203,6 +202,7 @@
       },
       "devDependencies": {
         "@ai-sdk/openai-compatible": "2.0.41",
+        "@anthropic-ai/claude-agent-sdk": "catalog:",
         "@effect/platform-node": "catalog:",
         "@effect/sql-sqlite-bun": "catalog:",
         "@modelcontextprotocol/server": "2.0.0",
@@ -347,6 +347,27 @@
         "@opencode/plugin": "workspace:*",
         "@opencode/schema": "workspace:*",
         "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/runtime-claude-code": {
+      "name": "@redsun/runtime-claude-code",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ai-sdk/provider": "3.0.8",
+        "@anthropic-ai/claude-agent-sdk": "catalog:",
+        "@modelcontextprotocol/sdk": "1.29.0",
+        "@opencode/ai": "workspace:*",
+        "@opencode/plugin": "workspace:*",
+        "@opencode/schema": "workspace:*",
+        "diff": "catalog:",
+        "effect": "catalog:",
+        "zod": "catalog:",
       },
       "devDependencies": {
         "@tsconfig/bun": "catalog:",
@@ -1247,6 +1268,8 @@
     "@redis/time-series": ["@redis/time-series@6.2.1", "", { "peerDependencies": { "@redis/client": "^6.2.1" } }, "sha512-kiYniph04dJOole+L359B6C9E+jYS2uDP7hca6Onj0xF38ZIpyxARO0Iq0W4ZRn1e8Q6vqW00QFZVSMRA/2Ijw=="],
 
     "@redsun/runtime-acp": ["@redsun/runtime-acp@workspace:packages/runtime-acp"],
+
+    "@redsun/runtime-claude-code": ["@redsun/runtime-claude-code@workspace:packages/runtime-claude-code"],
 
     "@rollup/rollup-android-arm-eabi": ["@rollup/rollup-android-arm-eabi@4.62.4", "", { "os": "android", "cpu": "arm" }, "sha512-RrPokAb7dmbxFoeO3TloqHyOjgye8RkBhSqmp4aJMIex4c9r46ZstPnleDQOq1t46VOVjwIuwNogIqbodV1Vvg=="],
 

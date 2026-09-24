@@ -15,7 +15,7 @@ import { SessionMessage } from "@opencode/core/session/message"
 import { SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { SessionProjector } from "@opencode/core/session/projector"
 import { DelegateTranscript } from "@opencode/core/delegate-transcript"
-import type { ClaudeCodeSubagents } from "@opencode/core/plugin/redsun/claude-code/subagents"
+import type { ClaudeCodeSubagents } from "@redsun/runtime-claude-code/subagents"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(

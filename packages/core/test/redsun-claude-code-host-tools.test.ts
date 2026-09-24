@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
+import { ClaudeCodeHostTools } from "@redsun/runtime-claude-code/host-tools"
 import { hostFromSnapshot } from "./lib/claude-code"
 import { DelegateHost } from "@opencode/core/delegate-host"
 import { Effect } from "effect"

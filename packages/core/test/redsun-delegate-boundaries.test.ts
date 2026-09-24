@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
 
-// Delegated agent runtimes (Claude Code today) must reach core only through plugin hooks.
+// Delegated agent runtimes are their own packages and reach core only through plugin hooks.
 // These lists are a ratchet: each stage of .redsun/plans/delegated-runtime-hooks.md removes
 // entries, and a new reference outside the plugin fails until it is justified here.
 
 const packages = path.resolve(import.meta.dir, "../..")
-const PLUGIN_DIR = "core/src/plugin/redsun/claude-code/"
+const RUNTIMES = ["runtime-acp", "runtime-claude-code"]
 
 const scan = async (pattern: RegExp) => {
   const hits: string[] = []
   const glob = new Bun.Glob("{core,tui,schema,protocol,server,cli}/src/**/*.{ts,tsx}")
   for await (const file of glob.scan({ cwd: packages })) {
-    if (file.startsWith(PLUGIN_DIR) || file.includes("/generated/")) continue
+    if (file.includes("/generated/")) continue
     if (pattern.test(await Bun.file(path.join(packages, file)).text())) hits.push(file)
   }
   return hits.sort()
@@ -36,24 +36,17 @@ const PENDING: string[] = []
 const PERMISSION_MODE_COMPAT = ["core/src/permission.ts"]
 
 describe("delegated runtime boundaries", () => {
-  test("the Claude Code plugin reaches core only through ctx", async () => {
+  test.each(RUNTIMES)("%s imports nothing from core and stays inside its package", async (runtime) => {
     const hits: string[] = []
-    const glob = new Bun.Glob("*.ts")
-    for await (const file of glob.scan({ cwd: path.join(packages, PLUGIN_DIR) })) {
-      const source = await Bun.file(path.join(packages, PLUGIN_DIR, file)).text()
-      for (const [, specifier] of source.matchAll(/(?:from|import\()\s*"([^"]+)"/g))
-        if (specifier!.startsWith("../") || specifier!.startsWith("@opencode/core")) hits.push(`${file}: ${specifier}`)
-    }
-    expect(hits).toEqual([])
-  })
-
-  test("the ACP runtime package imports nothing from core", async () => {
-    const hits: string[] = []
-    const root = path.join(packages, "runtime-acp")
+    const root = path.join(packages, runtime)
     for await (const file of new Bun.Glob("src/**/*.ts").scan({ cwd: root })) {
       const source = await Bun.file(path.join(root, file)).text()
-      for (const [, specifier] of source.matchAll(/(?:from|import\()\s*"([^"]+)"/g))
-        if (specifier!.startsWith("@opencode/core") || specifier!.startsWith("../")) hits.push(`${file}: ${specifier}`)
+      for (const [, specifier] of source.matchAll(/(?:from|import\()\s*"([^"]+)"/g)) {
+        const escapes =
+          specifier!.startsWith(".") &&
+          !path.resolve(root, path.dirname(file), specifier!).startsWith(path.join(root, "src") + path.sep)
+        if (specifier!.startsWith("@opencode/core") || escapes) hits.push(`${file}: ${specifier}`)
+      }
     }
     expect(hits).toEqual([])
   })

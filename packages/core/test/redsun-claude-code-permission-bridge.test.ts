@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { Form } from "@opencode/core/form"
-import { ClaudeCodePermissionBridge } from "@opencode/core/plugin/redsun/claude-code/permission-bridge"
-import { ClaudeCodePermissions } from "@opencode/core/plugin/redsun/claude-code/permissions"
+import { ClaudeCodePermissionBridge } from "@redsun/runtime-claude-code/permission-bridge"
+import { ClaudeCodePermissions } from "@redsun/runtime-claude-code/permissions"
 
 const harness = (input?: {
   readonly deny?: readonly string[]

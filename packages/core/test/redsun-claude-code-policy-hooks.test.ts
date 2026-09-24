@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodePolicyHooks } from "@opencode/core/plugin/redsun/claude-code/policy-hooks"
-import { ClaudeCodePermissions } from "@opencode/core/plugin/redsun/claude-code/permissions"
+import { ClaudeCodePolicyHooks } from "@redsun/runtime-claude-code/policy-hooks"
+import { ClaudeCodePermissions } from "@redsun/runtime-claude-code/permissions"
 import type { Form } from "@opencode/core/form"
 
 const event = (tool_name: string, tool_input: unknown, tool_use_id = "call-1") =>

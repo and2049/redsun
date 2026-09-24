@@ -2,11 +2,11 @@ import { describe, expect, it } from "bun:test"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { DelegatedTurn } from "@opencode/plugin/effect/delegate"
-import { ClaudeCodeLanguageModel } from "@opencode/core/plugin/redsun/claude-code/language-model"
-import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
-import { ClaudeCodePermissions } from "@opencode/core/plugin/redsun/claude-code/permissions"
-import { ClaudeCodeQuery } from "@opencode/core/plugin/redsun/claude-code/query"
-import { ClaudeCodeSessions } from "@opencode/core/plugin/redsun/claude-code/sessions"
+import { ClaudeCodeLanguageModel } from "../src/language-model.js"
+import { ClaudeCodeContext } from "../src/context.js"
+import { ClaudeCodePermissions } from "../src/permissions.js"
+import { ClaudeCodeQuery } from "../src/query.js"
+import { ClaudeCodeSessions } from "../src/sessions.js"
 
 const user = (text: string) => ({ role: "user" as const, content: [{ type: "text" as const, text }] })
 const assistant = (text: string) => ({ role: "assistant" as const, content: [{ type: "text" as const, text }] })

@@ -1,5 +1,5 @@
 import { DelegateHost } from "@opencode/core/delegate-host"
-import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
+import { ClaudeCodeHostTools } from "@redsun/runtime-claude-code/host-tools"
 import type { Tool } from "@opencode/core/tool"
 
 /** A Claude Code host execution over a real core tool snapshot, as `ctx.delegate.tools.bind` builds it. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeNativeTools } from "@opencode/core/plugin/redsun/claude-code/native-tools"
+import { ClaudeCodeNativeTools } from "../src/native-tools.js"
 
 const { toolName, toolInput, resultMetadata, SUBAGENT_TOOLS } = ClaudeCodeNativeTools
 
