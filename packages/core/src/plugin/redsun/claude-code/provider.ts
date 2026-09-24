@@ -67,18 +67,61 @@ export const Plugin = define({
     }
 
     const kv = yield* KV.Service
+    const location = yield* Location.Service
 
     // The registry keeps itself fresh through two KV-backed inputs re-applied
     // on every catalog reload: pinned ids the CLI was observed substituting
     // (hidden until config resurrects them) and the CLI's own picker rows
-    // (probed per spawned session, since no API enumerates what a
-    // subscription can reach ahead of time).
+    // (probed at startup and refreshed on spawned sessions).
     const retired = ClaudeCodeModels.parseRetired(
       yield* kv.get(RETIRED_KEY).pipe(Effect.orElseSucceed(() => undefined)),
     )
     let discovered = ClaudeCodeModels.parseDiscovered(
       yield* kv.get(DISCOVERED_KEY).pipe(Effect.orElseSucceed(() => undefined)),
     )
+    const hadCache = discovered.length > 0
+
+    // The idle SDK query initializes the picker without a model request, but
+    // would otherwise fire SessionStart, launch inherited MCP, and persist a
+    // native session. Keep the real setting sources/cwd for model resolution.
+    const probeOptions = ClaudeCodeModels.metadataOptions({
+      cwd: location.directory,
+      pathToClaudeCodeExecutable: resolution.path,
+      ...(settings?.config_dir || settings?.env
+        ? {
+            env: {
+              ...process.env,
+              ...settings?.env,
+              ...(settings?.config_dir ? { CLAUDE_CONFIG_DIR: settings.config_dir } : {}),
+            },
+          }
+        : {}),
+      ...(settings?.extra_args
+        ? {
+            extraArgs: Array.isArray(settings.extra_args)
+              ? Object.fromEntries(settings.extra_args.map((flag) => [flag, null]))
+              : settings.extra_args,
+          }
+        : {}),
+    })
+    const probe = (signal: AbortSignal) =>
+      ClaudeCodeModels.probe(ClaudeCodeQuery.defaultCreateQuery, probeOptions, 5_000, signal)
+    // No cache: wait briefly for an accurate first picker. With cached rows,
+    // register immediately and refresh in a scope-bound background fiber.
+    if (!discovered.length) {
+      const initial = yield* Effect.tryPromise(probe).pipe(
+        Effect.orElseSucceed(() => [] as ClaudeCodeModels.Discovered[]),
+      )
+      if (initial.length) {
+        discovered = initial
+        yield* kv
+          .set(
+            DISCOVERED_KEY,
+            initial.map((entry) => ({ ...entry })),
+          )
+          .pipe(Effect.catch(() => Effect.void))
+      }
+    }
 
     yield* ctx.provider.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
 
@@ -94,7 +137,6 @@ export const Plugin = define({
       )
     })
 
-    const location = yield* Location.Service
     const permission = yield* Permission.Service
     const forms = yield* Form.Service
     const tools = yield* Tool.Service
@@ -127,11 +169,13 @@ export const Plugin = define({
     >()
 
     let discoveredSnapshot = JSON.stringify(discovered)
+    let discoveryEpoch = 0
     const onDiscovered = (value: unknown) => {
       const models = ClaudeCodeModels.parseDiscovered(value)
       if (!models.length) return
       const snapshot = JSON.stringify(models)
       if (snapshot === discoveredSnapshot) return
+      discoveryEpoch++
       discoveredSnapshot = snapshot
       discovered = models
       Effect.runFork(
@@ -144,6 +188,18 @@ export const Plugin = define({
             Effect.andThen(ctx.provider.reload()),
             Effect.catch(() => Effect.void),
           ),
+      )
+    }
+    if (hadCache) {
+      const epoch = discoveryEpoch
+      yield* Effect.tryPromise(probe).pipe(
+        Effect.tap((rows) =>
+          Effect.sync(() => {
+            if (discoveryEpoch === epoch) onDiscovered(rows)
+          }),
+        ),
+        Effect.catch(() => Effect.void),
+        Effect.forkScoped({ startImmediately: true }),
       )
     }
 

@@ -142,7 +142,7 @@ describe("Claude Code config-declared models", () => {
       const after = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("claude-opus-4-8"))
       expect(after?.enabled).toBe(false)
       const alias = yield* models.get(ClaudeCodeModels.PROVIDER_ID, Model.ID.make("sonnet"))
-      expect(alias?.name).toBe("Claude Sonnet 5")
+      expect(alias?.name).toBe("Claude Sonnet 5 (latest)")
     }),
   )
 
