@@ -21,6 +21,7 @@ describe("Core test environment", () => {
     expect(Global.Path.state).toBe(path.join(home, ".local", "state", "redsun"))
     expect(os.tmpdir()).toBe(path.join(home, "tmp"))
     expect(process.env.OPENCODE_CONFIG_DIR).toBe(Global.Path.config)
+    expect(process.env.CLAUDE_CONFIG_DIR).toBe(path.join(home, "claude-cli"))
     expect(process.env.OPENCODE_CONFIG).toBeUndefined()
     expect(process.env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
     expect(process.env.AWS_REGION).toBeUndefined()

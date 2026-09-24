@@ -23,6 +23,9 @@ const environment = {
   ),
   HOME: home,
   OPENCODE_TEST_HOME: home,
+  // Incidental Claude Code startup probes must not create ~/.claude in the
+  // suite HOME: config discovery tests intentionally inspect that directory.
+  CLAUDE_CONFIG_DIR: path.join(home, "claude-cli"),
   XDG_CONFIG_HOME: path.join(home, ".config"),
   XDG_DATA_HOME: path.join(home, ".local", "share"),
   XDG_CACHE_HOME: path.join(home, ".cache"),
