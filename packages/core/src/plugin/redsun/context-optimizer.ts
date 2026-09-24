@@ -89,6 +89,10 @@ export const boundInstruction = (filepath: string, text: string, maxChars = INST
   return `${header}${kept}${marker(keptLines)}`
 }
 
+/** {@link boundInstruction} without the header, for hosts that render the header themselves. */
+export const boundInstructionContent = (filepath: string, text: string, maxChars = INSTRUCTION_MAX_CHARS) =>
+  boundInstruction(filepath, text, maxChars).slice(`${INSTRUCTION_HEADER}${filepath}\n`.length)
+
 /**
  * Bound every `Instructions from:` block inside a text value. Blocks that were already
  * truncated stay under the cap, so a second pass is a no-op.
@@ -110,7 +114,7 @@ export const boundInstructionText = (text: string, maxChars = INSTRUCTION_MAX_CH
     .join("")
 }
 
-const instructionMaxChars = (entries: readonly Entry[]) =>
+export const instructionMaxChars = (entries: readonly Entry[]) =>
   entries
     .filter((entry): entry is Document => entry.type === "document")
     .flatMap((entry) => (entry.info.instruction_max_chars !== undefined ? [entry.info.instruction_max_chars] : []))

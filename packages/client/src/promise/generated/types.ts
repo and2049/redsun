@@ -2199,6 +2199,7 @@ export type ConfigEntry =
           cooldown_turns?: number
           guidance?: string
         }
+        project_memory?: { load?: "outline" | "full" }
         skills?: Array<string>
         commands?: {
           [x: string]: {

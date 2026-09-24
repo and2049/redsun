@@ -33,6 +33,7 @@ import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeContext } from "./context.js"
 import { CodeModeCatalog } from "../../../codemode/catalog.js"
 import { InstructionDiscovery } from "../../../instruction-discovery.js"
+import { RedsunContextOptimizer } from "../context-optimizer.js"
 import { RedsunProjectMemory } from "../project-memory.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 
@@ -57,7 +58,9 @@ export const Plugin = define({
   id: "redsun.provider.claude-code",
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
-    const settings = Config.latest(yield* config.entries(), "claude_code")
+    const entries = yield* config.entries()
+    const settings = Config.latest(entries, "claude_code")
+    const instructionMaxChars = RedsunContextOptimizer.instructionMaxChars(entries)
     if (settings?.enabled === false) return
 
     const resolution = ClaudeCodeExecutable.resolve(settings?.binary_path)
@@ -338,13 +341,20 @@ export const Plugin = define({
           ...(codeMode === undefined ? {} : { codeMode }),
           ...(Array.isArray(listed)
             ? {
-                files: listed.map((file) => ({
-                  path: file.path,
-                  content:
-                    file.path === path.join(location.project.directory, RedsunProjectMemory.RELATIVE_PATH)
-                      ? `${RedsunProjectMemory.POLICY}\n\n${file.content}`
-                      : file.content,
-                })),
+                files: listed.map((file) => {
+                  const content = RedsunContextOptimizer.boundInstructionContent(
+                    file.path,
+                    file.content,
+                    instructionMaxChars,
+                  )
+                  return {
+                    path: file.path,
+                    content:
+                      file.path === path.join(location.project.directory, RedsunProjectMemory.RELATIVE_PATH)
+                        ? `${RedsunProjectMemory.POLICY}\n\n${content}`
+                        : content,
+                  }
+                }),
               }
             : {}),
         })

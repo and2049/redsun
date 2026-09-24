@@ -1,8 +1,10 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import fs from "fs/promises"
 import path from "path"
 import type { SystemPart } from "@opencode/ai"
+import { Document, Info as ConfigInfo } from "@opencode/schema/config"
+import { Config } from "@opencode/core/config"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Bus } from "@opencode/core/bus"
 import { Watcher } from "@opencode/core/filesystem/watcher"
@@ -22,10 +24,16 @@ import { host } from "./plugin/host"
 
 const it = testEffect(Layer.empty)
 
-const memoryLayer = (input: { directory: string; project?: boolean }) => {
+type Options = { readonly project?: boolean; readonly load?: "outline" | "full" }
+
+const memoryLayer = (input: { directory: string } & Options) => {
   const watcher = Watcher.testLayer
   const ref = Location.Ref.make({ directory: AbsolutePath.make(input.directory) })
+  const info = Schema.decodeUnknownSync(ConfigInfo)(input.load ? { project_memory: { load: input.load } } : {})
   return Layer.mergeAll(
+    Layer.mock(Config.Service)({
+      entries: () => Effect.succeed([new Document({ type: "document", info })]),
+    }),
     AppNodeBuilder.build(
       LayerNode.group([InstructionDiscovery.node, Bus.node, FSUtil.node, Global.node, Location.node, Watcher.node]),
       [
@@ -69,7 +77,7 @@ const start = Effect.fnUntraced(function* () {
 
 const withProject = <A, E, R>(
   body: (paths: { readonly directory: string; readonly memory: string }) => Effect.Effect<A, E, R>,
-  options?: { readonly project?: boolean },
+  options?: Options,
 ) =>
   Effect.gen(function* () {
     const tmp = yield* Effect.acquireRelease(
@@ -98,6 +106,83 @@ function emitAndWait(update: Watcher.Update) {
     yield* Fiber.interrupt(fiber)
   })
 }
+
+const { outline } = RedsunProjectMemory
+const FILE = "/repo/.redsun/memory.md"
+const filler = (lines: number) => Array.from({ length: lines }, (_, index) => `detail ${index} ${"x".repeat(80)}`)
+const document = [
+  "# Project Memory",
+  "",
+  "Release with: git push origin dev:latest",
+  "",
+  "## Architecture",
+  ...filler(40),
+  "",
+  "## Features",
+  "",
+  "### Compaction",
+  ...filler(30),
+  "```md",
+  "## Not a heading",
+  "```",
+  "",
+  "### Plan mode",
+  ...filler(20),
+  "",
+  "## Known gaps",
+  ...filler(10),
+  "",
+].join("\n")
+
+describe("RedsunProjectMemory.outline", () => {
+  const lines = document.split("\n")
+  const at = (text: string) => lines.indexOf(text) + 1
+
+  it.effect("indexes the top two heading levels with section line ranges", () =>
+    Effect.sync(() => {
+      const result = outline(document, FILE)
+      expect(result).toContain(`[redsun: outline of ${FILE} (${lines.length - 1} lines).`)
+      expect(result).toContain("Release with: git push origin dev:latest")
+      expect(result).toContain(`- Architecture (lines ${at("## Architecture")}-${at("## Features") - 2})`)
+      expect(result).toContain(`- Features (lines ${at("## Features")}-${at("## Known gaps") - 2})`)
+      expect(result).toContain(`  - Compaction (lines ${at("### Compaction")}-${at("### Plan mode") - 2})`)
+      expect(result).toContain(`- Known gaps (lines ${at("## Known gaps")}-${lines.length - 1})`)
+      expect(result).not.toContain("Not a heading")
+      expect(result).not.toContain("detail 0")
+      expect(result.length).toBeLessThan(document.length / 5)
+    }),
+  )
+
+  it.effect("returns small or heading-less documents unchanged", () =>
+    Effect.sync(() => {
+      expect(outline("## Only\nshort", FILE)).toBe("## Only\nshort")
+      const flat = filler(200).join("\n")
+      expect(outline(flat, FILE)).toBe(flat)
+    }),
+  )
+
+  it.effect("truncates a long preamble with a pointer to its lines", () =>
+    Effect.sync(() => {
+      const long = [...filler(40), "## Section", ...filler(200)].join("\n")
+      const result = outline(long, FILE)
+      expect(result).toContain("[preamble truncated; read lines 1-40]")
+      expect(result).toContain("- Section (lines 41-241)")
+      expect(result.length).toBeLessThan(RedsunProjectMemory.OUTLINE_PREAMBLE_MAX_CHARS + 500)
+    }),
+  )
+
+  it.effect("drops the nested level when the index is too large", () =>
+    Effect.sync(() => {
+      const many = [
+        "## Top",
+        ...Array.from({ length: 400 }, (_, index) => [`### Nested heading number ${index}`, "body"]).flat(),
+      ].join("\n")
+      const result = outline(many, FILE)
+      expect(result).toContain("- Top (lines 1-")
+      expect(result).not.toContain("Nested heading number")
+    }),
+  )
+})
 
 describe("RedsunProjectMemory", () => {
   it.live("loads .redsun/memory.md from the project root", () =>
@@ -166,6 +251,33 @@ describe("RedsunProjectMemory", () => {
 
         expect((yield* readInitial(yield* discovery.load())).text).toContain("written later")
       }),
+    ),
+  )
+
+  it.live("loads large memory as an outline by default", () =>
+    withProject(({ memory }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => fs.writeFile(memory, document))
+        const { discovery } = yield* start()
+        const text = (yield* readInitial(yield* discovery.load())).text
+        expect(text).toContain(`[redsun: outline of ${memory}`)
+        expect(text).toContain("  - Plan mode (lines")
+        expect(text).not.toContain("detail 0")
+      }),
+    ),
+  )
+
+  it.live("loads large memory in full when configured", () =>
+    withProject(
+      ({ memory }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() => fs.writeFile(memory, document))
+          const { discovery } = yield* start()
+          const text = (yield* readInitial(yield* discovery.load())).text
+          expect(text).toContain("detail 0")
+          expect(text).not.toContain("[redsun: outline of")
+        }),
+      { load: "full" },
     ),
   )
 

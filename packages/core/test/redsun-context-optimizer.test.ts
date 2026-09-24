@@ -5,6 +5,7 @@ import { Config } from "@opencode/core/config"
 import {
   RedsunContextOptimizer,
   boundInstruction,
+  boundInstructionContent,
   boundInstructionText,
   dedupeStaleReads,
 } from "@opencode/core/plugin/redsun/context-optimizer"
@@ -106,6 +107,16 @@ test("boundInstructionText bounds each block and leaves other text alone", () =>
   expect(boundInstructionText("no instructions here", 1_000)).toBe("no instructions here")
   // Second pass is a no-op.
   expect(boundInstructionText(bounded, 1_000)).toBe(bounded)
+})
+
+test("boundInstructionContent bounds like boundInstruction without the header", () => {
+  const text = Array.from({ length: 200 }, (_, index) => `line ${index}`).join("\n")
+  const content = boundInstructionContent("memory.md", text, 500)
+  expect(`Instructions from: memory.md\n${content}`).toBe(boundInstruction("memory.md", text, 500))
+  expect(content.startsWith("line 0\n")).toBe(true)
+  expect(content).toContain("Read the remainder with the read tool: memory.md offset=")
+  expect(boundInstructionContent("memory.md", "short", 500)).toBe("short")
+  expect(RedsunContextOptimizer.instructionMaxChars([])).toBe(24_000)
 })
 
 for (const kind of ["context", "compaction", "generate"] as const)
