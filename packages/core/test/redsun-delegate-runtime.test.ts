@@ -187,6 +187,21 @@ describe("delegated runtime registration", () => {
     }),
   )
 
+  it.effect("rejects a request that carries no turn identity instead of guessing", () =>
+    Effect.gen(function* () {
+      yield* register(runtime([]))
+      const aisdk = yield* AISDK.Service
+      const language = yield* aisdk.language(catalogModel(OWNED))
+      const outcome = yield* Effect.promise(() =>
+        language.doStream({ prompt: [], headers: { "x-opencode-client": "redsun" } }).then(
+          () => "streamed",
+          (error: Error) => error.message,
+        ),
+      )
+      expect(outcome).toContain("requires a session request; this request carried no turn identity")
+    }),
+  )
+
   it.effect("offers native approval only where the runtime declares it", () =>
     Effect.gen(function* () {
       const delegates = yield* DelegatedRuntime.Service
