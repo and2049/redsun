@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { DelegatedTurn } from "@opencode/plugin/effect/delegate"
 import { ClaudeCodeLanguageModel } from "@opencode/core/plugin/redsun/claude-code/language-model"
 import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
 import { ClaudeCodePermissions } from "@opencode/core/plugin/redsun/claude-code/permissions"
@@ -43,7 +44,9 @@ const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
 }
 
 const call = (input: Partial<LanguageModelV3CallOptions>): LanguageModelV3CallOptions =>
-  ({ prompt: [], headers: { "x-opencode-session": "ses_1" }, ...input }) as LanguageModelV3CallOptions
+  ({ prompt: [], ...input }) as LanguageModelV3CallOptions
+
+const TURN: DelegatedTurn = { sessionID: "ses_1", agent: "build", kind: "primary", modelID: "sonnet" }
 
 const config = { executablePath: "/usr/bin/claude", cwd: "/repo" }
 
@@ -107,18 +110,16 @@ describe("ClaudeCodeLanguageModel.promptDelta", () => {
   })
 })
 
-describe("ClaudeCodeLanguageModel.sessionIDFrom", () => {
-  it("reads the session header case-insensitively", () => {
-    expect(ClaudeCodeLanguageModel.sessionIDFrom({ "X-OpenCode-Session": "ses_9" })).toBe("ses_9")
-    expect(ClaudeCodeLanguageModel.sessionIDFrom({})).toBeUndefined()
-    expect(ClaudeCodeLanguageModel.sessionIDFrom(undefined)).toBeUndefined()
-  })
-})
+describe("ClaudeCodeLanguageModel.stream", () => {
+  const model = (input: Parameters<typeof ClaudeCodeLanguageModel.make>[0]) => {
+    const created = ClaudeCodeLanguageModel.make(input)
+    return {
+      doStream: (options: LanguageModelV3CallOptions, turn: Partial<DelegatedTurn> = {}) =>
+        created.stream({ ...TURN, modelID: input.modelID, ...turn }, options),
+    }
+  }
 
-describe("ClaudeCodeLanguageModel.doStream", () => {
-  const model = (input: Parameters<typeof ClaudeCodeLanguageModel.make>[0]) => ClaudeCodeLanguageModel.make(input)
-
-  it("streams a turn through the session manager keyed on the session header", async () => {
+  it("streams a turn through the session manager keyed on the turn's session", async () => {
     const { manager, calls } = fakeManager([
       { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text" } } },
       {
@@ -332,9 +333,9 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
         await created.doStream(
           call({
             prompt: [user("work")],
-            headers: { "x-opencode-session": "ses_1", "x-opencode-message": "msg_actual" },
             tools: [{ type: "function", name: "subagent", inputSchema: { type: "object" } }],
           }),
+          { assistantMessageID: "msg_actual" },
         )
       ).stream,
     )
@@ -443,10 +444,9 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
     expect(delivered).toBe(1)
   })
 
-  it("treats a request marked internal as one-shot without being told", async () => {
-    // Title generation has its own path and never fires the session context
-    // hook, so before the header it ran through the live CLI process --
-    // delivering "generate a title" into the user's Claude Code conversation.
+  it("runs a non-primary request kind one-shot without being told", async () => {
+    // Title generation has its own path; run through the live CLI process it
+    // would deliver "generate a title" into the user's Claude Code conversation.
     const { manager, calls } = fakeManager([])
     const oneShot: any[] = []
     const created = model({
@@ -459,14 +459,7 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
       },
     })
     await collect(
-      (
-        await created.doStream(
-          call({
-            prompt: [user("name this")],
-            headers: { "x-opencode-session": "ses_1", "x-opencode-internal": "1" },
-          }),
-        )
-      ).stream,
+      (await created.doStream(call({ prompt: [user("name this")] }), { kind: "title", agent: "title" })).stream,
     )
     expect(calls).toHaveLength(0)
     expect(oneShot[0].options).toMatchObject({ maxTurns: 1, allowedTools: [], persistSession: false })
@@ -544,14 +537,6 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
     })
     await collect((await created.doStream(call({ prompt: [user("go")] }))).stream)
     expect(calls[0]!.options.options.extraArgs).toEqual({ "--verbose": null })
-  })
-
-  it("errors instead of guessing when the request carries no session", async () => {
-    const { manager } = fakeManager([])
-    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
-    const { stream } = await created.doStream(call({ prompt: [user("hi")], headers: {} }))
-    const parts = await collect(stream)
-    expect(parts.at(-1)).toMatchObject({ type: "error" })
   })
 
   it("passes the resume cursor and records the one Claude Code reports back", async () => {

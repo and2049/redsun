@@ -35,6 +35,7 @@ import { ProviderShared } from "@opencode/ai/protocols/shared"
 import { Cause, Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
 import { makeParser } from "effect/unstable/encoding/Sse"
 import type { ID, Info } from "./model.js"
+import { DelegatedRuntime } from "./delegate.js"
 import { Provider } from "./provider.js"
 import { State } from "./state.js"
 
@@ -192,6 +193,8 @@ export const locationLayer = Layer.effect(
     let sdkHooks: ((event: SDKEvent) => Effect.Effect<void> | void)[] = []
     let languageHooks: ((event: LanguageEvent) => Effect.Effect<void> | void)[] = []
     const languages = new Map<string, LanguageModelV3>()
+    // REDSUN: optional so AISDK stays constructible on its own (standalone layers, tests).
+    const delegates = Option.getOrUndefined(yield* Effect.serviceOption(DelegatedRuntime.Service))
     const sdks = new Map<string, SDK>()
     const functionIDs = new WeakMap<object, number>()
     let nextFunctionID = 0
@@ -260,6 +263,16 @@ export const locationLayer = Layer.effect(
         })
         const existing = languages.get(key)
         if (existing) return existing
+        // REDSUN: a delegated runtime supplies the model ahead of any SDK hook, so its package is
+        // never npm-installed however late the runtime's plugin registers.
+        if (delegates && (yield* delegates.owns(model))) {
+          const language = DelegatedRuntime.language(
+            { providerID: model.providerID, modelID: model.modelID ?? model.id },
+            delegates.lookup,
+          )
+          languages.set(key, language)
+          return language
+        }
         if (!Provider.isAISDK(model.package))
           return yield* new InitError({
             providerID: model.providerID,
@@ -952,4 +965,4 @@ function providerErrorMessage(error: APICallError) {
   return error.message.trim() !== "" ? error.message : (message ?? (code === undefined ? prefix : `${prefix}: ${code}`))
 }
 
-export const node = makeLocationNode({ service: Service, layer: locationLayer, deps: [] })
+export const node = makeLocationNode({ service: Service, layer: locationLayer, deps: [DelegatedRuntime.node] })

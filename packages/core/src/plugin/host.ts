@@ -158,7 +158,14 @@ export const make = Effect.fn("PluginHost.make")(function* (
     },
     // REDSUN: delegated agent runtimes.
     delegate: {
-      register: (runtime) => delegates.transform((editor) => editor.add(runtime)),
+      register: (runtime) =>
+        Effect.gen(function* () {
+          const registered = yield* delegates.transform((editor) => editor.add(runtime))
+          const tagged = yield* hooks.register("session", "model.request", DelegatedRuntime.tagRequest, {
+            providerID: runtime.providerID,
+          })
+          return { dispose: Effect.andThen(tagged.dispose, registered.dispose) }
+        }),
       owns: delegates.owns,
     },
     aisdk: {

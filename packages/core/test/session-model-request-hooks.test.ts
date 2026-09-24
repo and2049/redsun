@@ -9,7 +9,6 @@ import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Project } from "@opencode/core/project"
 import { AbsolutePath } from "@opencode/core/schema"
 import { SessionModelRequest } from "@opencode/core/session/model-request"
-import { SessionModelHeaders } from "@opencode/core/session/model-headers"
 import { SessionModelTransport } from "@opencode/core/session/model-transport"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { DateTime, Effect, Stream } from "effect"
@@ -73,7 +72,6 @@ describe("SessionModelRequest HTTP hooks", () => {
           messages: [],
         })
         const http = prepared.options.http
-        expect(SessionModelHeaders.isInternal(prepared.request.http?.headers)).toBe(kind === "title")
         if (!http) throw new Error(`Expected HTTP middleware for ${kind}`)
         yield* http(HttpClientRequest.post("https://example.test/v1/chat/completions"), (request) =>
           Effect.succeed(HttpClientResponse.fromWeb(request, new Response("{}", { status: 200 }))),

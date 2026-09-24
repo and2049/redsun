@@ -30,7 +30,6 @@ import { Permission } from "../permission.js"
 import { PluginHooks } from "../plugin/hooks.js"
 import { QuestionTool } from "../tool/plugin/question.js"
 import { Tool } from "../tool.js"
-import { SessionModelHeaders } from "./model-headers.js"
 import { SessionModelTransport } from "./model-transport.js"
 import { SessionProviderContext } from "./provider-context.js"
 import { SessionRunnerModel } from "./runner/model.js"
@@ -242,7 +241,6 @@ export const layer = Layer.effect(
             "x-opencode-project": session.projectID,
             "x-opencode-session": session.id,
             "x-opencode-client": app.name,
-            ...(kind === "title" ? SessionModelHeaders.internal : {}),
           },
         },
         // TODO: Persist cache lineage so nested forks reuse the root session's cache key.

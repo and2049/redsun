@@ -136,7 +136,13 @@ const registerDelegatedRuntime = (compaction?: DelegatedRuntime.Runtime["compact
   Effect.gen(function* () {
     const { delegates } = yield* RunnerState
     yield* delegates.transform((editor) =>
-      editor.add({ id: "delegated-agent", providerID: "delegated-agent", ...(compaction ? { compaction } : {}) }),
+      editor.add({
+        id: "delegated-agent",
+        providerID: "delegated-agent",
+        // The runner test drives TestLLM directly, so the AI SDK bridge never calls the runtime.
+        turn: () => Promise.reject(new Error("unused")),
+        ...(compaction ? { compaction } : {}),
+      }),
     )
   })
 const recoveryModel = testModel("recovery", { context: 200_000, output: 1_000 })

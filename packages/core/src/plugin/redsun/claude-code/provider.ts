@@ -35,8 +35,13 @@ import { InstructionDiscovery } from "../../../instruction-discovery.js"
 import { RedsunContextOptimizer } from "../context-optimizer.js"
 import { ClaudeCodeHostFiles } from "./host-files.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
+import type { DelegatedTurn } from "@opencode/plugin/effect/delegate"
 
 const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
+
+// Every non-primary request kind is one-shot already; these agents also run one-shot when a
+// plugin sends them as a primary request.
+const isOneShot = (turn: DelegatedTurn) => turn.kind !== "primary" || ONE_SHOT_AGENTS.has(turn.agent)
 
 const cursorKey = (sessionID: string) => `redsun.claude-code-session/${sessionID}`
 
@@ -65,15 +70,6 @@ export const Plugin = define({
       yield* Effect.logDebug("claude code provider unavailable", { reason: resolution.error })
       return
     }
-
-    yield* ctx.delegate.register({
-      id: "claude-code",
-      providerID: ClaudeCodeModels.PROVIDER_ID,
-      compaction: {
-        notice: "Claude Code compacts its own session; running /compact in the CLI instead.",
-        command: "/compact",
-      },
-    })
 
     const kv = yield* KV.Service
     const location = yield* Location.Service
@@ -162,7 +158,6 @@ export const Plugin = define({
     const context = new ClaudeCodeContext.Tracker()
     const compactRestored = new Map<string, number>()
     const profiles = new Map<string, { mode?: string; system?: string }>()
-    const pendingOneShot = new Set<string>()
     const substitutionsNotified = new Set<string>()
     const runtimes = new Map<
       string,
@@ -283,22 +278,21 @@ export const Plugin = define({
       return mirror
     }
 
-    yield* ctx.session.hook(
-      "context",
-      Effect.fn(function* (event) {
-        if (ONE_SHOT_AGENTS.has(event.agent)) {
-          pendingOneShot.add(event.sessionID)
-        } else {
-          agents.set(event.sessionID, event.agent)
-          const info = yield* agentRegistry.resolve(event.agent).pipe(Effect.orElseSucceed(() => undefined))
-          profiles.set(event.agent, { mode: info?.mode, system: info?.system })
-          const session = yield* sessions.get(event.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-          if (session?.parentID) workers.add(event.sessionID)
-        }
-        const stored = yield* kv.get(cursorKey(event.sessionID))
-        if (typeof stored === "string" && stored) cursors.set(event.sessionID, stored)
-      }),
-    )
+    // Turn identity arrives typed from core; capture what the SDK callbacks read per session.
+    const beginTurn = async (turn: DelegatedTurn) => {
+      if (!isOneShot(turn)) {
+        agents.set(turn.sessionID, turn.agent)
+        const info = await Effect.runPromise(
+          agentRegistry.resolve(turn.agent).pipe(Effect.orElseSucceed(() => undefined)),
+        )
+        profiles.set(turn.agent, { mode: info?.mode, system: info?.system })
+        if (turn.parentID) workers.add(turn.sessionID)
+      }
+      const stored = await Effect.runPromise(
+        kv.get(cursorKey(turn.sessionID)).pipe(Effect.orElseSucceed(() => undefined)),
+      )
+      if (typeof stored === "string" && stored) cursors.set(turn.sessionID, stored)
+    }
 
     const turnContext = async (sessionID: string, freshProcess: boolean, current: () => boolean = () => true) => {
       const agentID = agents.get(sessionID)
@@ -528,78 +522,76 @@ export const Plugin = define({
       }
     }
 
-    yield* ctx.aisdk.hook(
-      "sdk",
-      Effect.fn(function* (event) {
-        if (event.model.providerID !== ClaudeCodeModels.PROVIDER_ID) return
-        event.sdk = {
-          languageModel: () => {
-            throw new Error(`${ClaudeCodeModels.SENTINEL_NAME} has no SDK model; the language hook must supply it.`)
+    const models = new Map<string, ClaudeCodeLanguageModel.Model>()
+    const modelFor = (modelID: string) => {
+      const existing = models.get(modelID)
+      if (existing) return existing
+      const modelRef = Model.Ref.make({ providerID: ClaudeCodeModels.PROVIDER_ID, id: Model.ID.make(modelID) })
+      const created = ClaudeCodeLanguageModel.make({
+        modelID,
+        config: {
+          executablePath: resolution.path,
+          cwd: location.directory,
+          permissionMode: settings?.permission_mode,
+          configDir: settings?.config_dir,
+          extraArgs: settings?.extra_args,
+          env: settings?.env,
+          behavior: settings?.behavior,
+        },
+        manager,
+        createQuery: ClaudeCodeQuery.defaultCreateQuery,
+        hooks: {
+          prepareTurn,
+          canUseTool: (sessionID) => runtimes.get(sessionID)?.policy.canUseTool,
+          preToolUse: (sessionID) => runtimes.get(sessionID)?.policy.preToolUse,
+          postToolUse: (sessionID) => runtimes.get(sessionID)?.policy.postToolUse,
+          isDirectHostTool: (sessionID, name) => runtimes.get(sessionID)?.binding?.directNames.has(name) === true,
+          hostResultMetadata: (sessionID, id) => {
+            const result = runtimes.get(sessionID)?.results.get(id)
+            runtimes.get(sessionID)?.results.delete(id)
+            return result
           },
-        }
-      }),
-    )
+          turnOptions: (sessionID) => ({
+            mcpServers: { redsun: runtimes.get(sessionID)!.server },
+          }),
+          isOneShot,
+          context: async (sessionID, freshProcess) => (await turnContext(sessionID, freshProcess))!,
+          userPromptSubmit,
+          sessionStart,
+          compactRestored: (sessionID) => compactRestored.get(sessionID) ?? 0,
+          taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
+          observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
+          turnPending: (sessionID) => mirrors.get(sessionID)?.continuation() ?? "none",
+          onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
+          onCompacted: (sessionID) => context.clear(sessionID),
+          onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
+          onModelSubstituted: notifySubstitution,
+          resolvedModel: (id) => discovered.find((entry) => entry.value === id)?.resolvedModel,
+          permissionMode,
+          resumeCursor: (sessionID) => cursors.get(sessionID),
+          onCursor: (sessionID, claudeSessionID) => {
+            if (cursors.get(sessionID) === claudeSessionID) return
+            cursors.set(sessionID, claudeSessionID)
+            Effect.runFork(kv.set(cursorKey(sessionID), claudeSessionID))
+          },
+        },
+      })
+      models.set(modelID, created)
+      return created
+    }
 
-    yield* ctx.aisdk.hook(
-      "language",
-      Effect.fn(function* (event) {
-        if (event.model.providerID !== ClaudeCodeModels.PROVIDER_ID) return
-        const modelID = event.model.modelID ?? event.model.id
-        const modelRef = Model.Ref.make({
-          providerID: ClaudeCodeModels.PROVIDER_ID,
-          id: Model.ID.make(modelID),
-        })
-        event.language = ClaudeCodeLanguageModel.make({
-          modelID,
-          config: {
-            executablePath: resolution.path,
-            cwd: location.directory,
-            permissionMode: settings?.permission_mode,
-            configDir: settings?.config_dir,
-            extraArgs: settings?.extra_args,
-            env: settings?.env,
-            behavior: settings?.behavior,
-          },
-          manager,
-          createQuery: ClaudeCodeQuery.defaultCreateQuery,
-          hooks: {
-            prepareTurn,
-            canUseTool: (sessionID) => runtimes.get(sessionID)?.policy.canUseTool,
-            preToolUse: (sessionID) => runtimes.get(sessionID)?.policy.preToolUse,
-            postToolUse: (sessionID) => runtimes.get(sessionID)?.policy.postToolUse,
-            isDirectHostTool: (sessionID, name) => runtimes.get(sessionID)?.binding?.directNames.has(name) === true,
-            hostResultMetadata: (sessionID, id) => {
-              const result = runtimes.get(sessionID)?.results.get(id)
-              runtimes.get(sessionID)?.results.delete(id)
-              return result
-            },
-            turnOptions: (sessionID) => ({
-              mcpServers: { redsun: runtimes.get(sessionID)!.server },
-            }),
-            isOneShot: (sessionID) => pendingOneShot.delete(sessionID),
-            context: async (sessionID, freshProcess) => (await turnContext(sessionID, freshProcess))!,
-            userPromptSubmit,
-            sessionStart,
-            compactRestored: (sessionID) => compactRestored.get(sessionID) ?? 0,
-            taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
-            observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
-            turnPending: (sessionID) => mirrors.get(sessionID)?.continuation() ?? "none",
-            onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
-            onCompacted: (sessionID) => context.clear(sessionID),
-            onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
-            onModelSubstituted: notifySubstitution,
-            resolvedModel: (id) => discovered.find((entry) => entry.value === id)?.resolvedModel,
-            permissionMode,
-            resumeCursor: (sessionID) => cursors.get(sessionID),
-            onCursor: (sessionID, claudeSessionID) => {
-              if (cursors.get(sessionID) === claudeSessionID) return
-              cursors.set(sessionID, claudeSessionID)
-              Effect.runFork(kv.set(cursorKey(sessionID), claudeSessionID))
-            },
-          },
-        })
-      }),
-    )
+    yield* ctx.delegate.register({
+      id: "claude-code",
+      providerID: ClaudeCodeModels.PROVIDER_ID,
+      turn: async (turn, options) => {
+        await beginTurn(turn)
+        return modelFor(turn.modelID).stream(turn, options)
+      },
+      compaction: {
+        notice: "Claude Code compacts its own session; running /compact in the CLI instead.",
+        command: "/compact",
+      },
+    })
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {

@@ -15,6 +15,7 @@ import type { Agent } from "@opencode/schema/agent"
 import { Cause, Clock, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { SessionError } from "@opencode/schema/session-error"
 import { Bus } from "../../bus.js"
+import { DelegatedRuntime } from "../../delegate.js"
 import { Permission } from "../../permission.js"
 import { Snapshot } from "../../snapshot.js"
 import { Tool } from "../../tool.js"
@@ -112,7 +113,10 @@ export const make = Effect.gen(function* () {
           http: new HttpOptions({
             body: input.prepared.request.http?.body,
             query: input.prepared.request.http?.query,
-            headers: { ...input.prepared.request.http?.headers, "x-opencode-message": input.assistantMessageID },
+            headers: {
+              ...input.prepared.request.http?.headers,
+              [DelegatedRuntime.Headers.message]: input.assistantMessageID,
+            },
           }),
         })
       : input.prepared.request

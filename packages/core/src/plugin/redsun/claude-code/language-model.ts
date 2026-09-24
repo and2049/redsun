@@ -1,11 +1,7 @@
 export * as ClaudeCodeLanguageModel from "./language-model.js"
 
-import type {
-  LanguageModelV3,
-  LanguageModelV3CallOptions,
-  LanguageModelV3Prompt,
-  LanguageModelV3StreamPart,
-} from "@ai-sdk/provider"
+import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import type { DelegatedStreamResult, DelegatedTurn } from "@opencode/plugin/effect/delegate"
 import type {
   CanUseTool,
   HookCallback,
@@ -14,7 +10,6 @@ import type {
   PermissionResult,
   SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk"
-import { SessionModelHeaders } from "../../../session/model-headers.js"
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import type { Tool } from "../../../tool.js"
@@ -22,15 +17,6 @@ import { ClaudeCodeTranslate } from "./translate.js"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
 import PLAN_WORKFLOW from "./prompt/plan-workflow.txt" with { type: "text" }
 import BEHAVIOR from "./prompt/behavior.txt" with { type: "text" }
-
-export const SESSION_HEADER = "x-opencode-session"
-export const MESSAGE_HEADER = "x-opencode-message"
-
-export const sessionIDFrom = (headers: Record<string, string | undefined> | undefined) => {
-  if (!headers) return undefined
-  for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === SESSION_HEADER && value) return value
-  return undefined
-}
 
 const partText = (content: unknown): string => {
   if (typeof content === "string") return content
@@ -142,7 +128,8 @@ export interface Hooks {
   readonly observer?: (sessionID: string, message: SDKMessage, inTurn: boolean) => Promise<void> | void
   readonly resumeCursor?: (sessionID: string) => string | undefined
   readonly onCursor?: (sessionID: string, claudeSessionID: string) => void
-  readonly isOneShot?: (sessionID: string) => boolean
+  /** Extra one-shot policy; every non-primary request kind is already one-shot. */
+  readonly isOneShot?: (turn: DelegatedTurn) => boolean
   readonly turnBrief?: (sessionID: string) => string | undefined
   readonly context?: (sessionID: string, freshProcess: boolean) => Promise<{ text?: string; delivered: () => void }>
   readonly onTurnEnd?: (sessionID: string) => Promise<void> | void
@@ -205,25 +192,23 @@ const errorStream = (message: string): ReadableStream<LanguageModelV3StreamPart>
     },
   })
 
+export interface Model {
+  readonly modelID: string
+  readonly stream: (turn: DelegatedTurn, options: LanguageModelV3CallOptions) => Promise<DelegatedStreamResult>
+}
+
 export const make = (input: {
   readonly modelID: string
   readonly config: Config
   readonly manager: ClaudeCodeSessions.SessionManager
   readonly createQuery: ClaudeCodeSessions.CreateQuery
   readonly hooks?: Hooks
-}): LanguageModelV3 => {
+}): Model => {
   const { modelID, config, manager, createQuery, hooks } = input
 
-  const doStream = async (options: LanguageModelV3CallOptions) => {
-    const sessionID = sessionIDFrom(options.headers)
-    if (!sessionID)
-      return {
-        stream: errorStream("Claude Code requires a session; this request carried no session id."),
-        request: {},
-        response: {},
-      }
-
-    const oneShot = SessionModelHeaders.isInternal(options.headers) || hooks?.isOneShot?.(sessionID) === true
+  const stream = async (turn: DelegatedTurn, options: LanguageModelV3CallOptions): Promise<DelegatedStreamResult> => {
+    const sessionID = turn.sessionID
+    const oneShot = turn.kind !== "primary" || hooks?.isOneShot?.(turn) === true
     const delta = oneShot ? { text: flattenTranscript(options.prompt), blocks: [] } : promptDelta(options.prompt)
     const text = delta.text
     if (!text && delta.blocks.length === 0)
@@ -256,7 +241,7 @@ export const make = (input: {
       (await hooks?.permissionMode?.(sessionID)) ?? ((config.permissionMode ?? "default") as PermissionMode)
     const release = await hooks?.prepareTurn?.(
       sessionID,
-      options.headers?.[MESSAGE_HEADER] ?? "",
+      turn.assistantMessageID ?? "",
       options.abortSignal ?? new AbortController().signal,
       permissionMode,
       options.toolChoice?.type === "none"
@@ -286,7 +271,7 @@ export const make = (input: {
       if (served && ClaudeCodeModels.isSubstituted(modelID, served, hooks?.resolvedModel?.(modelID)))
         hooks?.onModelSubstituted?.(sessionID, { requested: modelID, served })
     }
-    let turn: AsyncIterable<SDKMessage>
+    let native: AsyncIterable<SDKMessage>
     let compacted = 0
     const restoredBefore = hooks?.compactRestored?.(sessionID) ?? 0
     const preToolUse = hooks?.preToolUse?.(sessionID)
@@ -295,7 +280,7 @@ export const make = (input: {
     const sessionStart = hooks?.sessionStart?.(sessionID)
     const canUseTool = hooks?.canUseTool?.(sessionID)
     try {
-      turn = await manager.turn(sessionID, content, {
+      native = await manager.turn(sessionID, content, {
         model: ClaudeCodeModels.cliModel(modelID),
         permissionMode,
         observer:
@@ -338,7 +323,7 @@ export const make = (input: {
 
     return {
       stream: toStream(
-        turn,
+        native,
         state,
         async (delivered) => {
           options.abortSignal?.removeEventListener("abort", onAbort)
@@ -362,16 +347,7 @@ export const make = (input: {
     }
   }
 
-  return {
-    specificationVersion: "v3",
-    provider: ClaudeCodeModels.PROVIDER_ID,
-    modelId: modelID,
-    supportedUrls: {},
-    doStream,
-    doGenerate: async () => {
-      throw new Error("Claude Code models do not support non-streaming generation")
-    },
-  } satisfies LanguageModelV3
+  return { modelID, stream }
 }
 
 const toStream = (
