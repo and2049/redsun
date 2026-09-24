@@ -4,20 +4,10 @@ import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk"
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { ToolDefinition } from "@opencode/ai"
-import { Effect } from "effect"
-import type { Agent } from "../../../agent.js"
-import type { SessionMessage } from "../../../session/message.js"
-import type { SessionSchema } from "../../../session/schema.js"
-import type { Tool } from "../../../tool.js"
-import { McpTool } from "../../../tool/mcp.js"
-import type { Mcp } from "../../../mcp/index.js"
+import type { DelegatedToolBinding, DelegatedToolResult } from "@opencode/plugin/effect/delegate"
 
 export const NAMES = ["subagent", "skill", "todowrite", "worker_model", "execute"] as const
 export const MCP_NAMES = NAMES.map((name) => `mcp__redsun__${name}`)
-
-/** Exact effective names of connected direct MCP registrations, not a name-prefix heuristic. */
-export const directNames = (discovered: readonly Mcp.Tool[]): ReadonlySet<string> =>
-  new Set(discovered.filter((tool) => tool.codemode === false).map((tool) => McpTool.name(tool.server, tool.name)))
 
 /** Keep selection at the canonical request boundary; neither arbitrary host nor Code Mode leaf tools are direct. */
 export const select = (input: {
@@ -45,10 +35,9 @@ export const discoveryKey = (definitions: HostExecution["definitions"]) =>
   )
 
 /**
- * A turn captures one canonical Tool.Snapshot and its attribution. The caller
- * must resolve session/agent/message IDs at the turn boundary, not by querying
- * the latest session message during an asynchronous MCP callback. Execute via
- * snapshot.execute with a stable call ID and run the Effect with signal-based
+ * A turn captures one host tool binding (`ctx.delegate.tools.bind`) with its attribution. The
+ * caller must bind at the turn boundary, not by querying the latest session message during an
+ * asynchronous MCP callback. Execute through the binding with a stable call ID and signal-based
  * interruption. Never call the underlying tool registration directly.
  */
 export interface HostExecution {
@@ -61,7 +50,7 @@ export interface HostExecution {
     /** CLI-provided native tool-use ID, when available (not the MCP request ID). */
     readonly nativeToolUseID?: string
     readonly signal: AbortSignal
-  }) => Promise<Tool.NormalizedResult>
+  }) => Promise<DelegatedToolResult>
   /**
    * Called before a result is returned to Claude. Correlate by nativeToolUseID
    * (scoped to the native session), never by requestId or argument equality.
@@ -72,45 +61,28 @@ export interface HostExecution {
     name: string
     requestId: string
     nativeToolUseID?: string
-    result: Tool.NormalizedResult
+    result: DelegatedToolResult
   }) => void
 }
 
-export const fromSnapshot = (input: {
-  readonly snapshot: Tool.Snapshot
-  readonly sessionID: SessionSchema.ID
-  readonly agent: Agent.ID
-  readonly messageID: SessionMessage.ID
+export const fromBinding = (input: {
+  readonly binding: DelegatedToolBinding
+  /** Attribution fallback when the CLI supplies no native tool-use ID. */
+  readonly messageID: string
   readonly onResult?: HostExecution["onResult"]
   readonly allowed?: ReadonlySet<string>
 }): HostExecution => ({
-  definitions: input.snapshot.definitions,
+  definitions: input.binding.definitions,
   allowed: input.allowed,
   onResult: input.onResult,
   execute: ({ name, args, requestId, nativeToolUseID, signal }) =>
-    Effect.runPromise(
-      input.snapshot.execute({
-        sessionID: input.sessionID,
-        agent: input.agent,
-        messageID: input.messageID,
-        call: {
-          type: "tool-call",
-          id: nativeToolUseID ?? `claude-code-mcp-${input.messageID}-${requestId}`,
-          name,
-          input: args,
-        } as never,
-        ...(input.allowed === undefined
-          ? {}
-          : {
-              definitions: new Map(
-                input.snapshot.definitions
-                  .filter((item) => input.allowed?.has(item.name))
-                  .map((item) => [item.name, item]),
-              ),
-            }),
-      }),
-      { signal },
-    ),
+    input.binding.execute({
+      name,
+      args,
+      callID: nativeToolUseID ?? `claude-code-mcp-${input.messageID}-${requestId}`,
+      ...(input.allowed === undefined ? {} : { allowed: input.allowed }),
+      signal,
+    }),
 })
 
 const errorResult = (error: unknown) => ({

@@ -1,6 +1,8 @@
 import type { LanguageModelV3, LanguageModelV3CallOptions } from "@ai-sdk/provider"
+import type { ToolDefinition } from "@opencode/ai"
 import type { Form } from "@opencode/schema/form"
 import type { Permission } from "@opencode/schema/permission"
+import type { Tool } from "@opencode/schema/tool"
 import type { Effect, Schema, Scope } from "effect"
 import type { Registration } from "./registration.js"
 import type { SessionRequestKind } from "./session.js"
@@ -73,6 +75,41 @@ export interface DelegatedStorage {
   readonly remove: (key: string) => Effect.Effect<void>
 }
 
+export interface DelegatedToolResult extends Tool.Result {
+  readonly content: ReadonlyArray<Tool.Content>
+}
+
+/**
+ * Code Mode's catalog as the host renders it. `summary` is opaque but JSON-comparable: keep the
+ * last delivered one and pass it back to `update` for a differential notice.
+ */
+export interface DelegatedCodeMode {
+  readonly summary: unknown
+  readonly render: () => string
+  readonly update: (previous: unknown) => string
+}
+
+/**
+ * One turn's host tools: the snapshot the agent and session permissions allow, bound to the
+ * turn's attribution. Execute through it only; results carry the metadata tool rows render.
+ */
+export interface DelegatedToolBinding {
+  readonly definitions: ReadonlyArray<ToolDefinition>
+  /** Connected MCP tools exposed directly rather than through Code Mode, by registered name. */
+  readonly direct: ReadonlySet<string>
+  /** Present when the snapshot carries Code Mode's catalog. */
+  readonly codeMode?: DelegatedCodeMode
+  readonly execute: (input: {
+    readonly name: string
+    readonly args: unknown
+    /** A stable id for the call; prefer the runtime's native tool-use id. */
+    readonly callID: string
+    /** Restricts execution to these advertised names. */
+    readonly allowed?: ReadonlySet<string>
+    readonly signal: AbortSignal
+  }) => Promise<DelegatedToolResult>
+}
+
 export interface DelegateDomain {
   readonly register: (runtime: DelegatedRuntime) => Effect.Effect<Registration, never, Scope.Scope>
   /** Whether a registered runtime owns this model's agent loop. */
@@ -91,6 +128,14 @@ export interface DelegateDomain {
     ) => Effect.Effect<DelegatedApproval>
     /** The session-wide approval mode the user selected. */
     readonly mode: () => Effect.Effect<Permission.Mode>
+  }
+  readonly tools: {
+    /** Fails when the session or agent no longer exists. */
+    readonly bind: (input: {
+      readonly sessionID: string
+      readonly agent: string
+      readonly messageID: string
+    }) => Effect.Effect<DelegatedToolBinding, Error>
   }
   readonly form: {
     /** Shows a form in the session and waits for it to settle. */

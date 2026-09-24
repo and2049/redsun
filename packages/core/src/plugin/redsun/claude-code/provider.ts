@@ -5,14 +5,13 @@ import { Effect } from "effect"
 import { Model } from "@opencode/schema/model"
 import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
-import { Mcp } from "../../../mcp/index.js"
 import { Permission } from "../../../permission.js"
 import type { ConfigClaudeCode } from "@opencode/schema/config/claude-code"
 import { Session } from "../../../session.js"
 import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"
 import { Skill } from "../../../skill.js"
-import { Tool } from "../../../tool.js"
+import type { Tool as ToolSchema } from "@opencode/schema/tool"
 import { ClaudeCodeAuth } from "./auth.js"
 import { ClaudeCodeExecutable } from "./executable.js"
 import { ClaudeCodeLanguageModel } from "./language-model.js"
@@ -27,12 +26,11 @@ import { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeContext } from "./context.js"
-import { CodeModeCatalog } from "../../../codemode/catalog.js"
 import { InstructionDiscovery } from "../../../instruction-discovery.js"
 import { RedsunContextOptimizer } from "../context-optimizer.js"
 import { ClaudeCodeHostFiles } from "./host-files.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
-import type { DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import type { DelegatedCodeMode, DelegatedTurn } from "@opencode/plugin/effect/delegate"
 
 const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
 
@@ -136,8 +134,6 @@ export const Plugin = define({
     })
 
     const permission = ctx.delegate.permission
-    const tools = yield* Tool.Service
-    const mcp = yield* Mcp.Service
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
     const agentRegistry = yield* Agent.Service
@@ -156,10 +152,10 @@ export const Plugin = define({
       {
         policy: ReturnType<typeof ClaudeCodePolicyHooks.make>
         server: ReturnType<typeof ClaudeCodeMcp.makeHostServer>
-        binding?: ReturnType<typeof ClaudeCodeMcp.fromSnapshot> & { directNames: ReadonlySet<string> }
-        codeMode?: CodeModeCatalog.Summary | null
+        binding?: ReturnType<typeof ClaudeCodeMcp.fromBinding> & { directNames: ReadonlySet<string> }
+        codeMode?: DelegatedCodeMode | null
         catalog: string
-        results: Map<string, Tool.Metadata>
+        results: Map<string, ToolSchema.Metadata>
         submission?: ReturnType<ClaudeCodeContext.Tracker["prepare"]>
       }
     >()
@@ -431,31 +427,23 @@ export const Plugin = define({
     ) => {
       if (!messageID) throw new Error("Claude Code turn is missing its assistant message ID for host tool attribution.")
       if (signal.aborted) throw new Error("Claude Code turn was cancelled before host tools were bound.")
-      const session = await Effect.runPromise(sessions.get(sessionID as never), { signal })
       const agentID = agents.get(sessionID)
-      if (!session || !agentID) throw new Error("Claude Code turn has no active session or agent.")
+      if (!agentID) throw new Error("Claude Code turn has no active session or agent.")
       if (manager.busy(sessionID)) throw new Error("Claude Code session is already processing a turn")
-      const agent = Agent.ID.make(agentID)
-      const info = await Effect.runPromise(agentRegistry.resolve(agentID), { signal })
-      if (!info) throw new Error(`Claude Code agent is no longer available: ${agentID}`)
-      const snapshot = await Effect.runPromise(
-        tools.snapshot(Permission.merge(info.permissions, session.permissions ?? [])),
-        { signal },
-      )
-      const connected = await Effect.runPromise(mcp.tools(), { signal })
+      const bound = await Effect.runPromise(ctx.delegate.tools.bind({ sessionID, agent: agentID, messageID }), {
+        signal,
+      })
       if (signal.aborted) throw new Error("Claude Code turn was cancelled before host tools were bound.")
       const definitions = ClaudeCodeHostTools.select({
-        definitions: snapshot.definitions,
+        definitions: bound.definitions,
         available: availableTools,
-        direct: ClaudeCodeHostTools.directNames(connected),
+        direct: bound.direct,
         behavior: settings?.behavior,
       })
       const allowed = new Set(definitions.map((item) => item.name))
-      const captured = ClaudeCodeMcp.fromSnapshot({
-        snapshot,
-        sessionID: session.id,
-        agent,
-        messageID: SessionMessage.ID.make(messageID),
+      const captured = ClaudeCodeMcp.fromBinding({
+        binding: bound,
+        messageID,
         allowed,
         onResult: ({ nativeToolUseID, result }) => {
           const active = runtimes.get(sessionID)
@@ -467,9 +455,7 @@ export const Plugin = define({
         ...captured,
         definitions,
         directNames: new Set(
-          [...ClaudeCodeHostTools.directNames(connected)]
-            .filter((name) => allowed.has(name))
-            .map((name) => `mcp__redsun__${name}`),
+          [...bound.direct].filter((name) => allowed.has(name)).map((name) => `mcp__redsun__${name}`),
         ),
       }
       const catalog = ClaudeCodeHostTools.discoveryKey(definitions)
@@ -487,9 +473,9 @@ export const Plugin = define({
           policy,
           server: undefined as unknown as ReturnType<typeof ClaudeCodeMcp.makeHostServer>,
           binding: undefined as typeof binding | undefined,
-          codeMode: undefined as CodeModeCatalog.Summary | null | undefined,
+          codeMode: undefined as DelegatedCodeMode | null | undefined,
           catalog,
-          results: new Map<string, Tool.Metadata>(),
+          results: new Map<string, ToolSchema.Metadata>(),
           submission: undefined as ReturnType<ClaudeCodeContext.Tracker["prepare"]> | undefined,
         }
         next.server = ClaudeCodeMcp.makeHostServer(() => next.binding)
@@ -497,8 +483,7 @@ export const Plugin = define({
         runtimes.set(sessionID, runtime)
       }
       runtime.binding = binding // Bind before the CLI's initial tools/list.
-      runtime.codeMode =
-        allowed.has("execute") && snapshot.codeModeCatalog ? CodeModeCatalog.summarize(snapshot.codeModeCatalog) : null
+      runtime.codeMode = allowed.has("execute") && bound.codeMode ? bound.codeMode : null
       return () => {
         if (runtime.binding === binding) runtime.binding = undefined
         runtime.results.clear()

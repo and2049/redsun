@@ -7,7 +7,7 @@ import { ClaudeCodeHostTools } from "./host-tools.js"
 
 /** Canonical host bridge; the legacy delegate-only server remains compatible. */
 export const makeHostServer = ClaudeCodeHostTools.makeServer
-export const fromSnapshot = ClaudeCodeHostTools.fromSnapshot
+export const fromBinding = ClaudeCodeHostTools.fromBinding
 export const HOST_TOOL_NAMES = ClaudeCodeHostTools.NAMES
 export const HOST_MCP_NAMES = ClaudeCodeHostTools.MCP_NAMES
 

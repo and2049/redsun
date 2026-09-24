@@ -237,6 +237,21 @@ describe("delegated runtime host capabilities", () => {
     }),
   )
 
+  it.effect("binds tools only for a live session and agent", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const missingSession = yield* Effect.flip(
+        host.delegate.tools.bind({ sessionID: "ses_missing", agent: "build", messageID: "msg_1" }),
+      )
+      expect(missingSession.message).toContain("Session not found")
+      const session = yield* host.session.create({ title: "bind" })
+      const missingAgent = yield* Effect.flip(
+        host.delegate.tools.bind({ sessionID: session.id, agent: "no-such-agent", messageID: "msg_1" }),
+      )
+      expect(missingAgent.message).toContain("Agent is no longer available")
+    }),
+  )
+
   it.effect("inspects without prompting and forwards the typed check", () =>
     Effect.gen(function* () {
       const seen: unknown[] = []

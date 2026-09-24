@@ -3,8 +3,7 @@ export * as ClaudeCodeContext from "./context.js"
 import { createHash } from "node:crypto"
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
-import { CodeModeCatalog } from "../../../codemode/catalog.js"
-import { CodeModeInstructions } from "../../../codemode/instructions.js"
+import type { DelegatedCodeMode } from "@opencode/plugin/effect/delegate"
 
 export interface File {
   readonly path: string
@@ -24,7 +23,7 @@ export interface Input {
   /** Omitted when the host skill loader is unavailable in this turn. */
   readonly skills?: readonly SkillSummary[]
   /** null means execute was removed; omitted means this source was not inspected. */
-  readonly codeMode?: CodeModeCatalog.Summary | null
+  readonly codeMode?: DelegatedCodeMode | null
   readonly freshProcess: boolean
 }
 
@@ -32,7 +31,8 @@ type Snapshot = {
   agent: string
   files: ReadonlyMap<string, string>
   skills?: string
-  codeMode?: CodeModeCatalog.Summary
+  /** The last delivered Code Mode summary (opaque, JSON-comparable). */
+  codeMode?: unknown
 }
 
 const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
@@ -76,14 +76,14 @@ export class Tracker {
           : "No redsun skills are currently available through the host skill loader; previous redsun skill lists no longer apply.",
       )
     }
-    const codeMode = input.codeMode === undefined ? previous?.codeMode : (input.codeMode ?? undefined)
+    const codeMode = input.codeMode === undefined ? previous?.codeMode : input.codeMode?.summary
     if (input.codeMode !== undefined && JSON.stringify(codeMode) !== JSON.stringify(previous?.codeMode)) {
       parts.push(
-        codeMode === undefined
+        !input.codeMode
           ? "Code Mode tools are no longer available. Do not use any previously listed Code Mode tools."
           : previous?.codeMode === undefined
-            ? CodeModeInstructions.render(codeMode)
-            : CodeModeInstructions.update(previous.codeMode, codeMode),
+            ? input.codeMode.render()
+            : input.codeMode.update(previous.codeMode),
       )
     }
     const next = {

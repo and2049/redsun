@@ -8,6 +8,8 @@ import { CodeModeCatalog } from "@opencode/core/codemode/catalog"
 import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
 import { ClaudeCodeExecutable } from "@opencode/core/plugin/redsun/claude-code/executable"
 import { ClaudeCodeHostTools } from "@opencode/core/plugin/redsun/claude-code/host-tools"
+import { hostFromSnapshot } from "./lib/claude-code"
+import { DelegateHost } from "@opencode/core/delegate-host"
 import { Effect, Schema } from "effect"
 import fs from "node:fs"
 import path from "node:path"
@@ -132,14 +134,12 @@ describe.skipIf(!executable)("Claude Code installed CLI / canonical MCP and Code
           const definitions = ClaudeCodeHostTools.select({
             definitions: snapshot.definitions,
             available: snapshot.definitions.map((item) => item.name),
-            direct: ClaudeCodeHostTools.directNames([
-              { server: "fixture.mcp", name: "echo", codemode: false },
-            ] as never),
+            direct: DelegateHost.directNames([{ server: "fixture.mcp", name: "echo", codemode: false }] as never),
           })
           expect(definitions.map((item) => item.name)).toEqual(["fixture_mcp_echo", "execute"])
           const calls: Array<{ name: string; nativeToolUseID?: string; metadata?: Tool.Metadata }> = []
           const allowed = new Set(definitions.map((item) => item.name))
-          const host = ClaudeCodeHostTools.fromSnapshot({
+          const host = hostFromSnapshot({
             snapshot,
             sessionID: "ses_fixture" as never,
             agent: "build" as never,
@@ -154,7 +154,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / canonical MCP and Code
             agent: { id: "build" },
             isWorker: false,
             freshProcess: true,
-            codeMode: CodeModeCatalog.summarize(snapshot.codeModeCatalog!),
+            codeMode: DelegateHost.codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog!)),
           })
           native = query({
             prompt: "Follow the fixture's tool requests and return the results.",

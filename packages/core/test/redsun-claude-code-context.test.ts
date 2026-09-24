@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { ClaudeCodeContext } from "@opencode/core/plugin/redsun/claude-code/context"
+import { DelegateHost } from "@opencode/core/delegate-host"
 
 const agent = { id: "review", system: "Review carefully." }
 const files = [
@@ -82,13 +83,14 @@ describe("ClaudeCodeContext.Tracker", () => {
 
   it("delivers Code Mode discovery changes, removals and a fresh compact epoch without restarting for catalog text", () => {
     const tracker = new ClaudeCodeContext.Tracker()
-    const codeMode = {
+    const summary = {
       total: 1,
       shown: 1,
       namespaces: [
         { name: "tools", count: 1, entries: [{ path: "tools.echo", line: "  - tools.echo(input): Promise<string>" }] },
       ],
     }
+    const codeMode = DelegateHost.codeMode(summary)
     const input = { agent, isWorker: false, freshProcess: false, codeMode }
     const initial = tracker.prepare("one", input)
     expect(initial.text).toContain("The Code Mode tool catalog below")
@@ -96,12 +98,10 @@ describe("ClaudeCodeContext.Tracker", () => {
     expect(tracker.prepare("one", input).text).toBeUndefined()
     const updated = {
       ...input,
-      codeMode: {
-        ...codeMode,
-        namespaces: [
-          { ...codeMode.namespaces[0]!, entries: [{ path: "tools.echo", line: "  - tools.echo(changed)" }] },
-        ],
-      },
+      codeMode: DelegateHost.codeMode({
+        ...summary,
+        namespaces: [{ ...summary.namespaces[0]!, entries: [{ path: "tools.echo", line: "  - tools.echo(changed)" }] }],
+      }),
     }
     const changed = tracker.prepare("one", updated)
     expect(changed.text).toContain("tools.echo(changed)")

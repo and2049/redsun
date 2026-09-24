@@ -47,9 +47,7 @@ const PERMISSION_MODE_PENDING = [
 
 // Plugin files that still reach into core instead of `ctx`; stage 3 of the plan empties this.
 const PLUGIN_CORE_IMPORTS_PENDING = [
-  "context.ts", // 3d: Code Mode catalog rendering
   "host-files.ts", // 3d: instruction bounding, project memory policy
-  "host-tools.ts", // 3c: tool snapshot binding
   "provider.ts", // 3b-3e: core services
   "subagent-events.ts", // 3e: child transcript events
 ]
