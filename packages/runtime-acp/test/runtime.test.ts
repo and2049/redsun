@@ -22,6 +22,7 @@ const host = (
     approve?: boolean
     tools?: () => DelegatedToolBinding | undefined
     cursors?: Map<string, string>
+    reported?: string[][]
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -35,6 +36,7 @@ const host = (
         return input.approve ?? true
       },
       tools: async () => input.tools?.(),
+      onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
       ...(input.cursors
         ? {
             cursor: {
@@ -369,6 +371,33 @@ describe("ACP runtime against a scripted agent", () => {
       expect(textOf(parts)).toStartWith("SESSION=acp_1 TURNS=1 PROMPT=user: hello")
     })
     expect(cursors.get("ses_1")).toBe("acp_1")
+  })
+
+  for (const style of ["config", "legacy"] as const)
+    test(`reports the agent's models and switches to the selected one (${style})`, async () => {
+      const reported: string[][] = []
+      await withRuntime({ agent: { env: { FAKE_ACP_MODELS: style } }, host: { reported } }, async (runtime) => {
+        const ask = async (modelID: string) =>
+          textOf(await collect((await runtime.turn({ ...TURN, modelID }, call([user("model?")]))).stream))
+        expect(await ask("fast")).toBe("MODEL=fast")
+        expect(reported).toEqual([["auto", "fast"]])
+        // `default` is the model the agent started the session with.
+        expect(await ask("default")).toBe("MODEL=auto")
+      })
+    })
+
+  test("leaves the model alone when the agent reports no selector", () =>
+    withRuntime({}, async (runtime) => {
+      const parts = await collect((await runtime.turn({ ...TURN, modelID: "fast" }, call([user("model?")]))).stream)
+      expect(textOf(parts)).toBe("MODEL=auto")
+    }))
+
+  test("discovers the agent's models with a throwaway session", async () => {
+    const reported: string[][] = []
+    await withRuntime({ agent: { env: { FAKE_ACP_MODELS: "legacy" } }, host: { reported } }, async (runtime) => {
+      await runtime.discover()
+      expect(reported).toEqual([["auto", "fast"]])
+    })
   })
 
   test("reports an agent that dies mid-turn as its own error, and starts fresh next turn", () =>

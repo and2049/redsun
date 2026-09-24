@@ -51,6 +51,28 @@ const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
 }
 
 describe("ACP runtime plugin through the real host", () => {
+  it.effect("lists the models the agent reports once it has discovered them", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      yield* AcpPlugin.effect({
+        ...host,
+        options: {
+          agents: {
+            fake: { command: process.execPath, args: [fixture], env: { FAKE_ACP_MODELS: "legacy" } },
+          },
+        },
+      })
+      const models = yield* Model.Service
+      let fast = yield* models.get("fake" as never, "fast" as never)
+      for (let waited = 0; !fast && waited < 10_000; waited += 50) {
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)))
+        fast = yield* models.get("fake" as never, "fast" as never)
+      }
+      expect(fast?.name).toBe("Fast")
+      expect((yield* models.get("fake" as never, "default" as never))?.name).toBe("fake")
+    }),
+  )
+
   it.effect("registers its agent as a delegated provider and answers a tagged request", () =>
     Effect.gen(function* () {
       const host = yield* PluginHost.make(yield* Plugin.Service)

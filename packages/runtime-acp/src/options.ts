@@ -17,6 +17,10 @@ export interface Agent {
   readonly command: string
   readonly args: readonly string[]
   readonly env: Readonly<Record<string, string>>
+  /**
+   * Models to list, when configured. Otherwise the provider lists `default` (the agent's own
+   * choice) plus the model list the agent reports.
+   */
   readonly models: ReadonlyArray<{ readonly id: string; readonly name: string }>
   /**
    * The agent's own ACP session mode that auto-approves (e.g. a "trust all tools" mode). Only when
@@ -77,7 +81,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       command,
       args,
       env,
-      models: models.length ? models : [{ id: "default", name }],
+      models,
       ...(string(entry.nativeApprovalMode) ? { nativeApprovalMode: string(entry.nativeApprovalMode) } : {}),
       ...(nativeApprovalArgs.length ? { nativeApprovalArgs } : {}),
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),

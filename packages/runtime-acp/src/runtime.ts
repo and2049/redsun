@@ -18,6 +18,7 @@ import type {
   DelegatedTurn,
 } from "@opencode/plugin/effect/delegate"
 import { AcpHostTools } from "./host-tools.js"
+import { AcpModels } from "./models.js"
 import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
@@ -35,6 +36,8 @@ export interface Host {
     readonly get: (sessionID: string) => Promise<string | undefined>
     readonly set: (sessionID: string, acpSessionID: string) => Promise<void>
   }
+  /** The agent's own model list, as each new agent session reports it. */
+  readonly onModels?: (models: readonly AcpModels.Discovered[]) => void
 }
 
 export interface Process {
@@ -111,6 +114,8 @@ interface Session {
   readonly modes: ReadonlySet<string>
   readonly initialMode?: string
   currentMode?: string
+  /** How to switch the session's model, when the agent reports a selector. */
+  readonly model?: { readonly control: AcpModels.Control; readonly initial?: string; current?: string }
   agent?: string
   listener?: (update: SessionUpdate) => void
 }
@@ -120,6 +125,8 @@ export class Runtime {
   /** Every open agent process, including one-shot ones. */
   private readonly live = new Set<Session>()
   private readonly endpoint = new AcpHostTools.Endpoint()
+  /** The model a new agent session starts with; a loaded session reports the one it last used. */
+  private defaultModel?: string
 
   constructor(
     private readonly agent: AcpOptions.Agent,
@@ -138,6 +145,10 @@ export class Runtime {
         if (!session || notification.sessionId !== session.acpSessionID) return
         if (notification.update.sessionUpdate === "current_mode_update")
           session.currentMode = notification.update.currentModeId
+        if (notification.update.sessionUpdate === "config_option_update" && session.model?.control.kind === "config") {
+          const current = AcpModels.fromConfig(notification.update.configOptions)?.current
+          if (current) session.model.current = current
+        }
         session.listener?.(notification.update)
       },
       requestPermission: async (request) => {
@@ -189,10 +200,13 @@ export class Runtime {
         input.resume && loadable
           ? await connection
               .loadSession({ sessionId: input.resume, cwd: this.host.cwd, mcpServers })
-              .then((response) => ({ sessionId: input.resume!, modes: response.modes }))
+              .then((response) => ({ ...response, sessionId: input.resume! }))
               .catch(() => undefined)
           : undefined
       const created = loaded ?? (await connection.newSession({ cwd: this.host.cwd, mcpServers }))
+      const models = AcpModels.read(created)
+      if (models?.models.length) this.host.onModels?.(models.models)
+      if (!loaded && models?.current) this.defaultModel ??= models.current
       const session: Session = {
         sessionID,
         exited: false,
@@ -206,6 +220,14 @@ export class Runtime {
         modes: new Set(created.modes?.availableModes.map((mode) => mode.id) ?? []),
         ...(created.modes
           ? { initialMode: created.modes.currentModeId, currentMode: created.modes.currentModeId }
+          : {}),
+        ...(models?.control
+          ? {
+              model: {
+                control: models.control,
+                ...(models.current ? { initial: models.current, current: models.current } : {}),
+              },
+            }
           : {}),
       }
       opened = session
@@ -260,6 +282,32 @@ export class Runtime {
   }
 
   /**
+   * Serves the host's model selection. `default` is the model the agent gives a new session (a
+   * loaded session reports the one it last used). The agent validates the id when it prompts.
+   */
+  private async applyModel(session: Session, modelID: string) {
+    const model = session.model
+    if (!model) return
+    const wanted = modelID === "default" ? (this.defaultModel ?? model.initial) : modelID
+    if (!wanted || wanted === model.current) return
+    if (model.control.kind === "config")
+      await session.connection.setSessionConfigOption({
+        sessionId: session.acpSessionID,
+        configId: model.control.configId,
+        value: wanted,
+      })
+    else
+      await session.connection.request(AcpModels.LEGACY_SET_MODEL, { sessionId: session.acpSessionID, modelId: wanted })
+    model.current = wanted
+  }
+
+  /** Starts a throwaway agent session to learn its model list (reported through `onModels`). */
+  async discover() {
+    const { session } = await this.open("discover")
+    this.close(session)
+  }
+
+  /**
    * The live session for a turn. The approval selection is read once per turn, so switching modes
    * costs nothing until the next prompt, and switching back before then costs nothing at all. An
    * agent whose auto-approval is a launch flag is restarted only when the selection differs from
@@ -311,6 +359,11 @@ export class Runtime {
     const prompt = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     session.agent = turn.agent
     if (!oneShot) await this.applyMode(session, native)
+    await this.applyModel(session, turn.modelID).catch((error) => {
+      session.slot?.unbind()
+      if (oneShot) this.close(session)
+      throw this.failure(session, error)
+    })
 
     const state = AcpTranslate.make(session.slot)
     const cancel = () => void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})

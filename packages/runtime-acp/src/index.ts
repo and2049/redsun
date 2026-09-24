@@ -2,6 +2,7 @@ import { define } from "@opencode/plugin/effect/plugin"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
 import { Effect } from "effect"
+import type { AcpModels } from "./models.js"
 import { AcpOptions } from "./options.js"
 import { AcpRuntime } from "./runtime.js"
 
@@ -14,6 +15,18 @@ export const PACKAGE = "aisdk:@redsun/runtime-acp"
 
 /** The agent session a host session last used, under the runtime's storage prefix. */
 const cursorKey = (sessionID: string) => `-session/${sessionID}`
+
+/** The model list the agent last reported. */
+const MODELS_KEY = ".models"
+
+const discovered = (value: unknown): AcpModels.Discovered[] =>
+  Array.isArray(value)
+    ? value.flatMap((item) =>
+        typeof item?.id === "string" && item.id
+          ? [{ id: item.id, name: typeof item.name === "string" && item.name ? item.name : item.id }]
+          : [],
+      )
+    : []
 
 const LIMIT = { context: 200_000, output: 32_000 }
 
@@ -41,8 +54,16 @@ export default define({
 
     for (const agent of agents) {
       const storage = ctx.delegate.storage(agent.id)
+      let reported = discovered(yield* storage.get(MODELS_KEY))
+      const onModels = (models: readonly AcpModels.Discovered[]) => {
+        const next = models.map((model) => ({ id: model.id, name: model.name }))
+        if (JSON.stringify(next) === JSON.stringify(reported)) return
+        reported = next
+        Effect.runFork(storage.set(MODELS_KEY, next).pipe(Effect.andThen(ctx.provider.reload())))
+      }
       const host: AcpRuntime.Host = {
         ...shared,
+        onModels,
         cursor: {
           get: (sessionID) =>
             Effect.runPromise(storage.get(cursorKey(sessionID))).then((value) =>
@@ -57,7 +78,10 @@ export default define({
           provider.activation = "enabled"
           provider.package = PACKAGE
         })
-        for (const model of agent.models)
+        const models = agent.models.length
+          ? agent.models
+          : [{ id: "default", name: agent.name }, ...reported.filter((model) => model.id !== "default")]
+        for (const model of models)
           editor.models.update(agent.id, model.id, (draft) => {
             Object.assign(draft, {
               ...Model.Info.default(Provider.ID.make(agent.id), Model.ID.make(model.id)),
@@ -71,6 +95,8 @@ export default define({
 
       const runtime = new AcpRuntime.Runtime(agent, host)
       yield* Effect.addFinalizer(() => Effect.sync(() => runtime.stop()))
+      // Learn the model list once, in the background; later sessions keep it current.
+      if (!agent.models.length && !reported.length) void runtime.discover().catch(() => {})
       yield* ctx.delegate.register({
         id: agent.id,
         providerID: agent.id,

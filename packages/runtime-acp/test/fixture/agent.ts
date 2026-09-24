@@ -20,6 +20,38 @@ const modes = new Map<string, string>()
 const cancelled = new Set<string>()
 const received: string[] = []
 const servers = new Map<string, McpServer[]>()
+// FAKE_ACP_MODELS picks how the agent reports its models: the standard config option or the
+// unstable `models` field with `session/set_model`.
+const modelStyle = process.env.FAKE_ACP_MODELS
+const MODEL_LIST = [
+  { id: "auto", name: "Auto" },
+  { id: "fast", name: "Fast" },
+]
+const models = new Map<string, string>()
+const modelFields = (sessionId: string) => {
+  const current = models.get(sessionId) ?? "auto"
+  if (modelStyle === "legacy")
+    return {
+      models: {
+        currentModelId: current,
+        availableModels: MODEL_LIST.map((model) => ({ modelId: model.id, name: model.name })),
+      },
+    }
+  if (modelStyle === "config")
+    return {
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select" as const,
+          currentValue: current,
+          options: MODEL_LIST.map((model) => ({ value: model.id, name: model.name })),
+        },
+      ],
+    }
+  return {}
+}
 
 /** Connects to the session's host MCP server the way an agent would. */
 const mcp = async (sessionId: string) => {
@@ -59,7 +91,7 @@ new AgentSideConnection((connection) => {
       const sessionId = `acp_${++sessions}`
       modes.set(sessionId, "default")
       servers.set(sessionId, params.mcpServers)
-      return { sessionId, modes: MODES }
+      return { sessionId, modes: MODES, ...modelFields(sessionId) }
     },
     ...(loadable
       ? {
@@ -68,11 +100,19 @@ new AgentSideConnection((connection) => {
             servers.set(params.sessionId, params.mcpServers)
             // A real agent replays the loaded conversation; the client must not forward it.
             await say(params.sessionId, "REPLAYED HISTORY")
-            return { modes: MODES }
+            return { modes: MODES, ...modelFields(params.sessionId) }
           },
         }
       : {}),
     authenticate: async () => ({}),
+    setSessionConfigOption: async (params) => {
+      if (params.configId === "model" && typeof params.value === "string") models.set(params.sessionId, params.value)
+      return modelFields(params.sessionId) as { configOptions: [] }
+    },
+    extMethod: async (method, params) => {
+      if (method === "session/set_model") models.set(String(params.sessionId), String(params.modelId))
+      return {}
+    },
     setSessionMode: async (params) => {
       modes.set(params.sessionId, params.modeId)
       return {}
@@ -143,6 +183,10 @@ new AgentSideConnection((connection) => {
       }
       if (text.includes("mode?")) {
         await say(sessionId, `MODE=${modes.get(sessionId)}`)
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("model?")) {
+        await say(sessionId, `MODEL=${models.get(sessionId) ?? "auto"}`)
         return { stopReason: "end_turn" }
       }
       if (text.includes("tools?")) {
