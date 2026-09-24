@@ -12,7 +12,7 @@ import {
 } from "@agentclientprotocol/sdk"
 import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import type { DelegatedPermissionCheck, DelegatedStreamResult, DelegatedTurn } from "@opencode/plugin/effect/delegate"
-import type { AcpOptions } from "./options.js"
+import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
 
@@ -31,10 +31,10 @@ export interface Process {
   readonly exited: Promise<unknown>
 }
 
-export type Spawn = (agent: AcpOptions.Agent, cwd: string) => Process
+export type Spawn = (agent: AcpOptions.Agent, cwd: string, extraArgs: readonly string[]) => Process
 
-export const spawnProcess: Spawn = (agent, cwd) => {
-  const child = spawn(agent.command, [...agent.args], {
+export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
+  const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
     env: { ...process.env, ...agent.env },
     stdio: ["pipe", "pipe", "ignore"],
@@ -87,6 +87,10 @@ interface Session {
   readonly process: Process
   readonly connection: ClientSideConnection
   readonly acpSessionID: string
+  /** Launched with the agent's auto-approval flags (`nativeApprovalArgs`). */
+  readonly trusted: boolean
+  /** The agent can reload this session into a new process (`session/load`). */
+  readonly loadable: boolean
   readonly modes: ReadonlySet<string>
   readonly initialMode?: string
   currentMode?: string
@@ -127,26 +131,45 @@ export class Runtime {
     }
   }
 
-  private async open(sessionID: string): Promise<Session> {
-    const process = this.spawn(this.agent, this.host.cwd)
+  /**
+   * Starts an agent process with a session: a new one, or `resume` loaded back when the agent
+   * supports it. `resumed` says whether the agent still holds the conversation.
+   */
+  private async open(
+    sessionID: string,
+    input: { readonly trusted: boolean; readonly resume?: string } = { trusted: false },
+  ): Promise<{ readonly session: Session; readonly resumed: boolean }> {
+    const process = this.spawn(this.agent, this.host.cwd, input.trusted ? (this.agent.nativeApprovalArgs ?? []) : [])
     let opened: Session | undefined
     const connection = new ClientSideConnection(
       () => this.client(() => opened),
       ndJsonStream(process.stdin, process.stdout),
     )
     try {
-      await connection.initialize({
+      const initialized = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
         // The agent keeps its own file and terminal tools (decision D6 is still open).
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       })
-      const created = await connection.newSession({ cwd: this.host.cwd, mcpServers: [] })
+      const loadable = initialized.agentCapabilities?.loadSession === true
+      // The agent replays a loaded conversation as session updates; they arrive before `opened` is
+      // set and are dropped, since the host already holds that transcript.
+      const loaded =
+        input.resume && loadable
+          ? await connection
+              .loadSession({ sessionId: input.resume, cwd: this.host.cwd, mcpServers: [] })
+              .then((response) => ({ sessionId: input.resume!, modes: response.modes }))
+              .catch(() => undefined)
+          : undefined
+      const created = loaded ?? (await connection.newSession({ cwd: this.host.cwd, mcpServers: [] }))
       const session: Session = {
         sessionID,
         exited: false,
         process,
         connection,
         acpSessionID: created.sessionId,
+        trusted: input.trusted,
+        loadable,
         modes: new Set(created.modes?.availableModes.map((mode) => mode.id) ?? []),
         ...(created.modes
           ? { initialMode: created.modes.currentModeId, currentMode: created.modes.currentModeId }
@@ -158,7 +181,7 @@ export class Runtime {
         session.exited = true
         this.forget(session)
       })
-      return session
+      return { session, resumed: loaded !== undefined }
     } catch (error) {
       process.kill()
       throw new Error(
@@ -191,24 +214,50 @@ export class Runtime {
   }
 
   /** The agent's own approval mode follows the host's native_auto selection. */
-  private async applyMode(session: Session) {
-    const selected = this.agent.nativeApprovalMode && (await this.host.mode()) === "native_auto"
-    const wanted = selected ? this.agent.nativeApprovalMode : (this.agent.defaultMode ?? session.initialMode)
+  private async applyMode(session: Session, native: boolean) {
+    const wanted =
+      native && this.agent.nativeApprovalMode
+        ? this.agent.nativeApprovalMode
+        : (this.agent.defaultMode ?? session.initialMode)
     if (!wanted || wanted === session.currentMode || !session.modes.has(wanted)) return
     await session.connection.setSessionMode({ sessionId: session.acpSessionID, modeId: wanted })
     session.currentMode = wanted
   }
 
+  /**
+   * The live session for a turn. The approval selection is read once per turn, so switching modes
+   * costs nothing until the next prompt, and switching back before then costs nothing at all. An
+   * agent whose auto-approval is a launch flag is restarted only when the selection differs from
+   * how its process was launched; the conversation is loaded back into the new process.
+   */
+  private async acquire(turn: DelegatedTurn, native: boolean) {
+    const trusted = native && Boolean(this.agent.nativeApprovalArgs?.length)
+    const existing = this.sessions.get(turn.sessionID)
+    if (existing?.listener) throw new Error(`${this.agent.name} session is already processing a turn.`)
+    if (existing && existing.trusted === trusted) return { session: existing, remembers: true }
+    if (existing) this.close(existing)
+    const opened = await this.open(turn.sessionID, {
+      trusted,
+      ...(existing ? { resume: existing.acpSessionID } : {}),
+    })
+    this.sessions.set(turn.sessionID, opened.session)
+    // A relaunched agent that could not load the conversation is sent the whole transcript. (A
+    // session new to this runtime is sent only the new prompt, as before; see the open resume item.)
+    return { session: opened.session, remembers: existing ? opened.resumed : true }
+  }
+
   async turn(turn: DelegatedTurn, options: LanguageModelV3CallOptions): Promise<DelegatedStreamResult> {
     const oneShot = turn.kind !== "primary"
-    const prompt = oneShot ? flatten(options.prompt) : promptDelta(options.prompt)
-    if (!prompt) throw new Error(`No user prompt to deliver to ${this.agent.name}.`)
-    const existing = oneShot ? undefined : this.sessions.get(turn.sessionID)
-    if (existing?.listener) throw new Error(`${this.agent.name} session is already processing a turn.`)
-    const session = existing ?? (await this.open(turn.sessionID))
-    if (!oneShot) this.sessions.set(turn.sessionID, session)
+    if (!(oneShot ? flatten(options.prompt) : promptDelta(options.prompt)))
+      throw new Error(`No user prompt to deliver to ${this.agent.name}.`)
+    // One-shots (titles, generation) run untrusted in a throwaway process.
+    const native = !oneShot && AcpOptions.hasNativeApproval(this.agent) && (await this.host.mode()) === "native_auto"
+    const { session, remembers } = oneShot
+      ? { session: (await this.open(turn.sessionID)).session, remembers: false }
+      : await this.acquire(turn, native)
+    const prompt = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     session.agent = turn.agent
-    if (!oneShot) await this.applyMode(session)
+    if (!oneShot) await this.applyMode(session, native)
 
     const state = AcpTranslate.make()
     const cancel = () => void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})

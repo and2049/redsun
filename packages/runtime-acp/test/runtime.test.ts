@@ -164,6 +164,62 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  test("relaunches with the agent's approval flags at the next turn, and loads the conversation back", async () => {
+    const selection: { mode: "normal" | "auto" | "native_auto" } = { mode: "normal" }
+    await withRuntime({ agent: { nativeApprovalArgs: ["--trust-all-tools"] }, host: selection }, async (runtime) => {
+      const ask = async (history: LanguageModelV3CallOptions["prompt"]) =>
+        textOf(await collect((await runtime.turn(TURN, call([...history, user("trust?")]))).stream))
+      expect(await ask([])).toBe("TRUSTED=false SESSION=acp_1 TURNS=1")
+      // A new process (its first prompt) holding the same agent session; the replay is not forwarded.
+      selection.mode = "native_auto"
+      expect(await ask([user("trust?"), assistant("…")])).toBe("TRUSTED=true SESSION=acp_1 TURNS=1")
+      selection.mode = "normal"
+      expect(await ask([user("trust?"), assistant("…")])).toBe("TRUSTED=false SESSION=acp_1 TURNS=1")
+    })
+  })
+
+  test("does not relaunch when the selection is switched away and back between turns", async () => {
+    const selection: { mode: "normal" | "auto" | "native_auto" } = { mode: "normal" }
+    await withRuntime({ agent: { nativeApprovalArgs: ["--trust-all-tools"] }, host: selection }, async (runtime) => {
+      await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
+      selection.mode = "native_auto"
+      selection.mode = "auto"
+      const parts = await collect(
+        (await runtime.turn(TURN, call([user("hello"), assistant("Hello from the fake agent"), user("trust?")])))
+          .stream,
+      )
+      expect(textOf(parts)).toBe("TRUSTED=false SESSION=acp_1 TURNS=2")
+    })
+  })
+
+  test("sends the whole transcript to a relaunched agent that cannot load sessions", async () => {
+    const selection: { mode: "normal" | "auto" | "native_auto" } = { mode: "normal" }
+    await withRuntime(
+      { agent: { nativeApprovalArgs: ["--trust-all-tools"], env: { FAKE_ACP_NO_LOAD: "1" } }, host: selection },
+      async (runtime) => {
+        await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
+        selection.mode = "native_auto"
+        const parts = await collect(
+          (await runtime.turn(TURN, call([user("hello"), assistant("Hello from the fake agent"), user("echo")])))
+            .stream,
+        )
+        expect(textOf(parts)).toBe(
+          "SESSION=acp_1 TURNS=1 PROMPT=user: hello\n\nassistant: Hello from the fake agent\n\nuser: echo",
+        )
+      },
+    )
+  })
+
+  test("runs one-shot requests without the approval flags", async () => {
+    await withRuntime(
+      { agent: { nativeApprovalArgs: ["--trust-all-tools"] }, host: { mode: "native_auto" } },
+      async (runtime) => {
+        const parts = await collect((await runtime.turn({ ...TURN, kind: "title" }, call([user("trust?")]))).stream)
+        expect(textOf(parts)).toStartWith("TRUSTED=false")
+      },
+    )
+  })
+
   test("reports an agent that dies mid-turn as its own error, and starts fresh next turn", () =>
     withRuntime({}, async (runtime) => {
       const parts = await collect((await runtime.turn(TURN, call([user("crash")]))).stream)

@@ -58,7 +58,7 @@ export default define({
             }
           : { notice: `${agent.name} manages its own context.` },
         // Only an agent with a real auto-approval mode gets the third permission mode.
-        ...(agent.nativeApprovalMode ? { nativeApproval: () => true } : {}),
+        ...(AcpOptions.hasNativeApproval(agent) ? { nativeApproval: () => true } : {}),
       })
     }
   }),

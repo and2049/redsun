@@ -11,6 +11,16 @@ let sessions = 0
 const modes = new Map<string, string>()
 const cancelled = new Set<string>()
 const received: string[] = []
+// Launched with the trust flag, the agent approves its own tools; FAKE_ACP_NO_LOAD hides session/load.
+const trusted = process.argv.includes("--trust-all-tools")
+const loadable = process.env.FAKE_ACP_NO_LOAD !== "1"
+const MODES = {
+  currentModeId: "default",
+  availableModes: [
+    { id: "default", name: "Default" },
+    { id: "trust", name: "Trust all tools" },
+  ],
+}
 
 new AgentSideConnection((connection) => {
   const say = (sessionId: string, text: string) =>
@@ -19,21 +29,22 @@ new AgentSideConnection((connection) => {
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
     })
   const agent: Agent = {
-    initialize: async () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }),
+    initialize: async () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: loadable } }),
     newSession: async () => {
       const sessionId = `acp_${++sessions}`
       modes.set(sessionId, "default")
-      return {
-        sessionId,
-        modes: {
-          currentModeId: "default",
-          availableModes: [
-            { id: "default", name: "Default" },
-            { id: "trust", name: "Trust all tools" },
-          ],
-        },
-      }
+      return { sessionId, modes: MODES }
     },
+    ...(loadable
+      ? {
+          loadSession: async (params: { sessionId: string }) => {
+            modes.set(params.sessionId, "default")
+            // A real agent replays the loaded conversation; the client must not forward it.
+            await say(params.sessionId, "REPLAYED HISTORY")
+            return { modes: MODES }
+          },
+        }
+      : {}),
     authenticate: async () => ({}),
     setSessionMode: async (params) => {
       modes.set(params.sessionId, params.modeId)
@@ -105,6 +116,10 @@ new AgentSideConnection((connection) => {
       }
       if (text.includes("mode?")) {
         await say(sessionId, `MODE=${modes.get(sessionId)}`)
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("trust?")) {
+        await say(sessionId, `TRUSTED=${trusted} SESSION=${sessionId} TURNS=${received.length}`)
         return { stopReason: "end_turn" }
       }
       if (text.includes("echo")) {

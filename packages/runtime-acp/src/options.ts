@@ -24,6 +24,13 @@ export interface Agent {
    * nothing is guessed from mode names.
    */
   readonly nativeApprovalMode?: string
+  /**
+   * Launch flags that make the agent auto-approve, for an agent whose auto-approval is a process
+   * flag rather than a session mode (Kiro's `--trust-all-tools`). Only when set does the host offer
+   * `native_auto`; switching into or out of it restarts the agent at the start of the next turn and
+   * reloads the conversation (`session/load`) where the agent supports it.
+   */
+  readonly nativeApprovalArgs?: readonly string[]
   /** The mode to restore when `native_auto` is not selected. Defaults to the session's initial mode. */
   readonly defaultMode?: string
   /** A prompt the agent understands as "compact your context" (e.g. `/compact`). */
@@ -34,6 +41,9 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
 const string = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : undefined)
+
+/** Whether the agent has any real auto-approval to offer as `native_auto`. */
+export const hasNativeApproval = (agent: Agent) => Boolean(agent.nativeApprovalMode || agent.nativeApprovalArgs?.length)
 
 /** Parses `ctx.options`; malformed agents are reported, not thrown. */
 export const parse = (options: unknown): { readonly agents: Agent[]; readonly errors: string[] } => {
@@ -52,6 +62,9 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
     const env = Object.fromEntries(
       Object.entries(record(entry.env) ?? {}).filter((pair): pair is [string, string] => typeof pair[1] === "string"),
     )
+    const nativeApprovalArgs = Array.isArray(entry.nativeApprovalArgs)
+      ? entry.nativeApprovalArgs.filter((item): item is string => typeof item === "string" && item.length > 0)
+      : []
     const models = (Array.isArray(entry.models) ? entry.models : [])
       .map((item) => (typeof item === "string" ? { id: item } : record(item)))
       .flatMap((item) => {
@@ -66,6 +79,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       env,
       models: models.length ? models : [{ id: "default", name }],
       ...(string(entry.nativeApprovalMode) ? { nativeApprovalMode: string(entry.nativeApprovalMode) } : {}),
+      ...(nativeApprovalArgs.length ? { nativeApprovalArgs } : {}),
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),
       ...(string(entry.compactCommand) ? { compactCommand: string(entry.compactCommand) } : {}),
     })
