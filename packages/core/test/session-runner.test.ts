@@ -27,6 +27,7 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNodePlatform } from "@opencode/core/effect/app-node-platform"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
+import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Event } from "@opencode/schema/event"
 import { App } from "@opencode/core/app"
 import { Permission } from "@opencode/core/permission"
@@ -125,12 +126,19 @@ const compactModel = testModel("compact", { context: 4_000, output: 50 })
 const fullOutputModel = testModel("full-output", { context: 262_144, output: 262_144 })
 const unknownContextModel = testModel("unknown-context", { context: 0, output: 32_000 })
 const undersizedContextModel = testModel("undersized-context", { context: 1, output: 1_000 })
-// REDSUN: same tiny limits as compactModel, but delegated. Claude Code owns its
-// own context window, so the runner must not compact it.
+// REDSUN: same tiny limits as compactModel, but owned by a delegated runtime, which
+// manages its own context window, so the runner must not compact it.
 const delegatedCompactModel = (() => {
   modelLimits.set("sonnet", { context: 4_000, output: 50 })
-  return LanguageModel.make({ id: "sonnet", provider: "claude-code", route: OpenAIChat.route })
+  return LanguageModel.make({ id: "sonnet", provider: "delegated-agent", route: OpenAIChat.route })
 })()
+const registerDelegatedRuntime = (compaction?: DelegatedRuntime.Runtime["compaction"]) =>
+  Effect.gen(function* () {
+    const { delegates } = yield* RunnerState
+    yield* delegates.transform((editor) =>
+      editor.add({ id: "delegated-agent", providerID: "delegated-agent", ...(compaction ? { compaction } : {}) }),
+    )
+  })
 const recoveryModel = testModel("recovery", { context: 200_000, output: 1_000 })
 
 test("calculates step cost using the matching context tier", () => {
@@ -220,6 +228,7 @@ const makeRunnerState = (compaction?: SessionRunnerModel.Resolved["compaction"])
     authorizations: new Array<Tool.Context>(),
     executions: new Array<string>(),
     closedTransports: new Array<Session.ID>(),
+    delegates: DelegatedRuntime.make(),
     blockTools: (count = 1) =>
       Effect.acquireRelease(
         Effect.all({ started: Deferred.make<void>(), release: Deferred.make<void>() }).pipe(
@@ -406,6 +415,7 @@ const layer = Layer.unwrap(
       small: () => Effect.undefined,
     })
     const replacements: LayerNode.Replacements = [
+      DelegatedRuntime.node.replace(Layer.succeed(DelegatedRuntime.Service, state.delegates)),
       Snapshot.node.replace(Snapshot.noopLayer),
       LayerNodePlatform.llmClient.replace(TestLLM.clientLayer.pipe(Layer.provide(testLLM))),
       SessionRunnerModel.node.replace(models),
@@ -2868,13 +2878,14 @@ describe("SessionRunnerLLM", () => {
     })
   })
 
-  scenario("never auto-compacts a delegated Claude Code session", function* (s) {
+  scenario("never auto-compacts a session on a delegated runtime", function* (s) {
+    yield* registerDelegatedRuntime()
     yield* s.llm.push(TestLLM.textWithUsage("Earlier answer", "text-delegated-first", 3_950))
     yield* s.runPrompt("Earlier question ".repeat(180))
 
     // Identical limits and usage to "automatically compacts into a completed
-    // summary", which spends an extra request on the summary. Claude Code
-    // auto-compacts inside the CLI, so a v2-side summary would replace a
+    // summary", which spends an extra request on the summary. The runtime
+    // compacts its own transcript, so a host-side summary would replace a
     // transcript this model never reads.
     s.currentModel = delegatedCompactModel
     s.requests.length = 0
@@ -2885,11 +2896,12 @@ describe("SessionRunnerLLM", () => {
     expect(yield* s.context).not.toContainEqual(expect.objectContaining({ type: "compaction" }))
   })
 
-  scenario("forwards a manual compaction to the Claude Code CLI", function* (s) {
+  scenario("forwards a manual compaction to the delegated runtime's command", function* (s) {
+    yield* registerDelegatedRuntime({ notice: "The agent compacts itself.", command: "/compact" })
     s.currentModel = delegatedCompactModel
     yield* s.session.switchModel({
       sessionID,
-      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("claude-code") },
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
     })
     yield* s.llm.push(TestLLM.text("Earlier answer", "text-delegated-manual-first"))
     yield* s.runPrompt("Earlier question")
@@ -2899,7 +2911,7 @@ describe("SessionRunnerLLM", () => {
     const compaction = yield* s.session.compact({ sessionID })
     yield* s.resume
 
-    // One request, and it is the CLI's own /compact command rather than a
+    // One request, and it is the runtime's own /compact command rather than a
     // summary prompt: a one-shot summary process does not own the interactive
     // session's history, so it could not compact anything.
     expect(s.requests).toHaveLength(1)
@@ -2908,7 +2920,30 @@ describe("SessionRunnerLLM", () => {
       type: "compaction",
       status: "failed",
       reason: "manual",
-      error: { type: "compaction.delegated" },
+      error: { type: "compaction.delegated", message: "The agent compacts itself." },
+    })
+  })
+
+  scenario("fails a manual compaction when the delegated runtime has no command", function* (s) {
+    yield* registerDelegatedRuntime()
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Earlier answer", "text-delegated-nocommand-first"))
+    yield* s.runPrompt("Earlier question")
+
+    s.requests.length = 0
+    const compaction = yield* s.session.compact({ sessionID })
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(0)
+    expect((yield* s.messages).find((message) => message.id === compaction.id)).toMatchObject({
+      type: "compaction",
+      status: "failed",
+      reason: "manual",
+      error: { type: "compaction.delegated", message: DelegatedRuntime.DEFAULT_COMPACTION_NOTICE },
     })
   })
 

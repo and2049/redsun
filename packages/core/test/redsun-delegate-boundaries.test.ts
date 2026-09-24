@@ -30,9 +30,6 @@ const PERMANENT = [
 
 // Pending removal by the stage named beside each entry.
 const PENDING = [
-  "core/src/plugin/redsun/advisor.ts", // stage 1
-  "core/src/session/runner/llm.ts", // stage 1
-  "core/src/session/runner/step.ts", // stage 1
   "tui/src/app.tsx", // stage 4
   "tui/src/context/permission.tsx", // stage 4
   "tui/src/routes/session/index.tsx", // stage 4

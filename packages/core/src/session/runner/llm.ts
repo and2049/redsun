@@ -5,7 +5,7 @@ import { and, desc, eq, sql } from "drizzle-orm"
 import { Cause, Effect, Exit, FiberMap, Layer } from "effect"
 import { Database } from "../../database/database.js"
 import { Bus } from "../../bus.js"
-import { ClaudeCodeModels } from "../../plugin/redsun/claude-code/models.js"
+import { DelegatedRuntime } from "../../delegate.js"
 import { LocationLifecycle } from "../../location-lifecycle.js"
 import { InstructionState } from "../instruction-state.js"
 import { SessionCompaction } from "../compaction.js"
@@ -48,6 +48,7 @@ const layer = Layer.effect(
     const plugins = yield* Plugin.Service
     const title = yield* SessionTitle.Service
     const inbox = yield* SessionInbox.Service
+    const delegates = yield* DelegatedRuntime.Service
     const steps = yield* SessionStep.make
     // Title generation starts once input is visible and must not delay model execution.
     const titles = yield* FiberMap.make<SessionSchema.ID, void, never>()
@@ -113,24 +114,27 @@ const layer = Layer.effect(
               if (pending?.type === "compaction") {
                 const session = yield* store.get(sessionID)
                 if (!session) return yield* Effect.die(new Error(`Session not found: ${sessionID}`))
-                // REDSUN: Claude Code compacts its own session; forward /compact to the CLI.
-                if (session.model && ClaudeCodeModels.isDelegated(session.model)) {
+                // REDSUN: a delegated runtime compacts its own context; forward its command.
+                const delegated = session.model ? yield* delegates.get(session.model) : undefined
+                if (delegated) {
                   yield* bus.publish(SessionEvent.Compaction.Failed, {
                     sessionID,
                     reason: "manual",
                     inputID: pending.id,
                     error: {
                       type: "compaction.delegated",
-                      message: "Claude Code compacts its own session; running /compact in the CLI instead.",
+                      message: delegated.compaction?.notice ?? DelegatedRuntime.DEFAULT_COMPACTION_NOTICE,
                     },
                   })
-                  yield* inbox
-                    .admit({
-                      id: SessionMessage.ID.create(),
-                      sessionID,
-                      item: { type: "user", payload: { text: "/compact" }, delivery: "steer" },
-                    })
-                    .pipe(Effect.orDie)
+                  const command = delegated.compaction?.command
+                  if (command)
+                    yield* inbox
+                      .admit({
+                        id: SessionMessage.ID.create(),
+                        sessionID,
+                        item: { type: "user", payload: { text: command }, delivery: "steer" },
+                      })
+                      .pipe(Effect.orDie)
                   force = false
                   continue
                 }
@@ -240,12 +244,9 @@ const layer = Layer.effect(
           context: loaded,
           prepare: context.request.compaction,
         }
-        // REDSUN: a delegated Claude Code session never reaches redsun compaction — the CLI
-        // manages its own context window.
-        if (
-          !ClaudeCodeModels.isDelegated(loaded.model.ref) &&
-          compaction.required({ messages: loaded.messages, resolved: loaded.model, context: loaded })
-        ) {
+        // REDSUN: a delegated runtime manages its own context window.
+        const delegated = yield* delegates.owns(loaded.model.ref)
+        if (!delegated && compaction.required({ messages: loaded.messages, resolved: loaded.model, context: loaded })) {
           const result = yield* compaction.compact(compactionInput)
           if (result.status !== "completed") return yield* new StepFailedError({ error: result.error })
           if (result.recoveredOverflow) recoverOverflow = false
@@ -279,6 +280,7 @@ const layer = Layer.effect(
           assistantMessageID,
           agent: loaded.agent.id,
           model: loaded.model,
+          delegated,
           prepared,
           retry: (cause, error, proposed) =>
             retry.decide({
@@ -403,5 +405,6 @@ export const node = makeLocationNode({
     ToolOutput.node,
     Database.node,
     SessionInbox.node,
+    DelegatedRuntime.node,
   ],
 })

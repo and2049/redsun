@@ -49,6 +49,7 @@ type Setup = {
   readonly generate?: string | Error
   readonly files?: Record<string, string>
   readonly directory?: string
+  readonly delegated?: readonly string[]
 }
 
 type GenerateInput = {
@@ -81,6 +82,7 @@ const setup = (input: Setup) => {
         readFiles.push(filepath)
         return input.files?.[filepath.replaceAll("\\", "/")]
       }),
+    delegated: (model) => Effect.succeed(input.delegated?.includes(model.providerID) === true),
   }
   const prompts: { text: string; delivery?: string }[] = []
   const synthetics: { text: string; description?: string; metadata?: Record<string, unknown>; resume?: boolean }[] = []
@@ -229,11 +231,12 @@ it.effect("an advisory arms the cooldown; quiet turns burn it down", () =>
   }),
 )
 
-it.effect("delegated Claude Code sessions are never reviewed", () =>
+it.effect("sessions on a delegated runtime are never reviewed", () =>
   Effect.gen(function* () {
     const { services, session, generateCalls } = setup({
       config: { enabled: true },
-      model: { providerID: "claude-code", id: "sonnet" },
+      model: { providerID: "acp-agent", id: "default" },
+      delegated: ["acp-agent"],
       generate: '{"severity":"aside","note":"unused"}',
     })
     yield* review(session, services, makeState(), sessionID)

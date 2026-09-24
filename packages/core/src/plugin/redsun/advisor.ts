@@ -9,7 +9,6 @@ import { Effect, Exit, Queue, Schema, Stream } from "effect"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Config } from "../../config.js"
 import { SessionStore } from "../../session/store.js"
-import { ClaudeCodeModels } from "./claude-code/models.js"
 
 /**
  * Watchdog advisor (oh-my-pi inspired, ported from v1). A second model reviews each
@@ -82,6 +81,8 @@ export interface Services {
   readonly store: SessionStore.Interface
   readonly entries: () => Effect.Effect<readonly Entry[], unknown>
   readonly readFile: (filepath: string) => Effect.Effect<string | undefined, unknown>
+  /** Whether a delegated runtime owns the model's agent loop. */
+  readonly delegated: (model: { readonly providerID: string }) => Effect.Effect<boolean>
 }
 
 export interface State {
@@ -148,8 +149,8 @@ export const review = Effect.fn("RedsunAdvisor.review")(function* (
 ) {
   const info = yield* services.store.get(sessionID)
   if (!info) return
-  // Claude Code runs its own loop over a mirrored transcript; never advise on top of it.
-  if (info.model && ClaudeCodeModels.isDelegated(info.model)) return
+  // A delegated runtime runs its own loop over a mirrored transcript; never advise on top of it.
+  if (info.model && (yield* services.delegated(info.model))) return
 
   // Self-trigger guard: a drain settled by this advisor's own steering prompt must not
   // spawn another review (and must not consume cooldown). The succeeded event carries no
@@ -228,6 +229,7 @@ export const Plugin = define({
       store,
       entries: () => config.entries(),
       readFile: (filepath) => fs.readFileStringSafe(filepath),
+      delegated: ctx.delegate.owns,
     }
     const state = makeState()
 

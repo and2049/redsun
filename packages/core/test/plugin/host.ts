@@ -28,6 +28,10 @@ export function host(overrides: Overrides = {}): Plugin.Context {
         },
       }),
     options: {},
+    delegate: overrides.delegate ?? {
+      register: () => Effect.die("unused delegate.register"),
+      owns: () => Effect.succeed(false),
+    },
     rpc:
       overrides.rpc ??
       Object.assign(

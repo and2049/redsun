@@ -24,6 +24,7 @@ import { Session } from "@opencode/core/session"
 import { PersistentPty } from "@opencode/core/persistent-pty"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Permission } from "@opencode/core/permission"
 import { Reference } from "@opencode/core/reference"
 import { Rpc } from "@opencode/core/rpc"
@@ -77,6 +78,7 @@ export const PluginTestLayer = AppNodeBuilder.build(
     Npm.node,
     Credential.node,
     Bus.node,
+    DelegatedRuntime.node,
     Form.node,
     Generate.node,
     LayerNodePlatform.httpClient,

@@ -30,7 +30,6 @@ import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
-import { ClaudeCodeModels } from "../../plugin/redsun/claude-code/models.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -50,6 +49,8 @@ interface Input {
   readonly assistantMessageID: SessionMessage.ID
   readonly agent: Agent.ID
   readonly model: SessionRunnerModel.Resolved
+  /** REDSUN: a delegated runtime owns this model's agent loop. */
+  readonly delegated?: boolean
   readonly prepared: Omit<SessionModelRequest.Prepared, "event">
   readonly retry: (
     cause: AIError,
@@ -106,7 +107,7 @@ export const make = Effect.gen(function* () {
     // Read to the end, not just the finish event, so the next request can reuse this response.
     // The delegated runtime needs the actual Step's assistant ID to attribute
     // in-process MCP tools; looking up the latest persisted message races the stream.
-    const request = ClaudeCodeModels.isDelegated(input.model.ref)
+    const request = input.delegated
       ? LLMRequest.update(input.prepared.request, {
           http: new HttpOptions({
             body: input.prepared.request.http?.body,

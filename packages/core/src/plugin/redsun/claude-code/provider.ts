@@ -66,6 +66,15 @@ export const Plugin = define({
       return
     }
 
+    yield* ctx.delegate.register({
+      id: "claude-code",
+      providerID: ClaudeCodeModels.PROVIDER_ID,
+      compaction: {
+        notice: "Claude Code compacts its own session; running /compact in the CLI instead.",
+        command: "/compact",
+      },
+    })
+
     const kv = yield* KV.Service
     const location = yield* Location.Service
 
