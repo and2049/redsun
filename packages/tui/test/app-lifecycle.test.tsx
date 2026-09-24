@@ -1172,6 +1172,7 @@ test("configured app bindings execute settings and permission commands", async (
 
 test("Claude Code cycles manual, approve-for-me, auto-approve via the app binding", async () => {
   const modes: string[] = []
+  let optionsServed = false
   await using setup = await createAppFixture({
     args: { model: "claude-code/sonnet" },
     config: { animations: false, keybinds: { "permission.mode": "f7" } },
@@ -1186,7 +1187,10 @@ test("Claude Code cycles manual, approve-for-me, auto-approve via the app bindin
           location: { directory, project: { id: "proj_test", directory } },
           data: [{ id: "sonnet", providerID: "claude-code", name: "Sonnet", variants: [] }],
         })
-      if (url.pathname === "/api/permission/mode/options") return json({ data: { native: true } })
+      if (url.pathname === "/api/permission/mode/options") {
+        optionsServed = true
+        return json({ data: { native: true } })
+      }
       if (url.pathname === "/api/permission/mode") {
         if (request.method === "GET") return json({ data: { mode: "normal" } })
         modes.push(((await request.json()) as { mode: string }).mode)
@@ -1196,6 +1200,9 @@ test("Claude Code cycles manual, approve-for-me, auto-approve via the app bindin
   })
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("Build · Sonnet") && frame.includes("Manual"))
+  // The native mode is looked up lazily; under load the first press could beat the answer.
+  for (let waited = 0; !optionsServed && waited < 5_000; waited += 10) await Bun.sleep(10)
+  await Bun.sleep(20)
   setup.mockInput.pressKey("F7")
   await setup.waitForFrame((frame) => frame.includes("⏵⏵ Approve for me"))
   setup.mockInput.pressKey("F7")
