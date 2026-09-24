@@ -14993,6 +14993,18 @@
               }
             },
             "additionalProperties": false
+          },
+          "acp": {
+            "type": "object",
+            "properties": {
+              "agents": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ConfigAcp.AgentEncoded"
+                }
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -15298,6 +15310,96 @@
           }
         },
         "required": ["directory"],
+        "additionalProperties": false
+      },
+      "ConfigAcp.AgentEncoded": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "host_tools": {
+            "type": "string",
+            "enum": ["extras", "all"]
+          },
+          "inherited_instructions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "native_approval_mode": {
+            "type": "string"
+          },
+          "native_approval_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_mode": {
+            "type": "string"
+          },
+          "compact_command": {
+            "type": "string"
+          },
+          "home": {
+            "type": "object",
+            "properties": {
+              "env": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "additionalProperties": false
       },
       "ConfigShell.Option": {

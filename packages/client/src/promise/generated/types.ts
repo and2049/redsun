@@ -2288,6 +2288,26 @@ export type ConfigEntry =
           extra_args?: Array<string> | { [x: string]: string | null }
           env?: { [x: string]: string }
         }
+        acp?: {
+          agents?: {
+            [x: string]: {
+              enabled?: boolean
+              preset?: string
+              name?: string
+              command?: string
+              args?: Array<string>
+              env?: { [x: string]: string }
+              models?: Array<string | { id: string; name?: string }>
+              host_tools?: "extras" | "all"
+              inherited_instructions?: Array<string>
+              native_approval_mode?: string
+              native_approval_args?: Array<string>
+              default_mode?: string
+              compact_command?: string
+              home?: { env?: string; path?: string }
+            }
+          }
+        }
       }
     }
   | { type: "directory"; path: string }
