@@ -9,6 +9,7 @@ import { Session } from "@opencode/schema/session"
 import AcpPlugin from "../../runtime-acp/src/index"
 import { AISDK } from "@opencode/core/aisdk"
 import { DelegatedRuntime } from "@opencode/core/delegate"
+import { Integration } from "@opencode/core/integration"
 import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
 import { Plugin } from "@opencode/core/plugin"
@@ -40,6 +41,25 @@ const session = Session.Info.make({
   location: Location.Ref.make({ directory: AbsolutePath.make("/project") }),
 })
 
+const sleep = (ms: number) => Effect.promise(() => new Promise((resolve) => setTimeout(resolve, ms)))
+
+/** Connects the agent's integration as the user would; its sign-in check starts an ACP session. */
+const connect = (integrationID: string) =>
+  Effect.gen(function* () {
+    const integrations = yield* Integration.Service
+    const id = Integration.ID.make(integrationID)
+    const attempt = yield* integrations.oauth.connect({
+      integrationID: id,
+      methodID: Integration.MethodID.make("acp-cli-login"),
+    })
+    for (let waited = 0; waited < 10_000; waited += 50) {
+      const status = yield* integrations.oauth.status({ integrationID: id, attemptID: attempt.attemptID })
+      if (status.status !== "pending") return status
+      yield* sleep(50)
+    }
+    throw new Error("the connection did not settle")
+  })
+
 const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
   const parts: LanguageModelV3StreamPart[] = []
   const reader = stream.getReader()
@@ -62,10 +82,11 @@ describe("ACP runtime plugin through the real host", () => {
           },
         },
       })
+      yield* connect("fake")
       const models = yield* Model.Service
       let fast = yield* models.get("fake" as never, "fast" as never)
       for (let waited = 0; !fast && waited < 10_000; waited += 50) {
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 50)))
+        yield* sleep(50)
         fast = yield* models.get("fake" as never, "fast" as never)
       }
       expect(fast?.name).toBe("Fast")
@@ -89,7 +110,12 @@ describe("ACP runtime plugin through the real host", () => {
       expect(yield* delegates.owns({ providerID: "fake" })).toBe(true)
       expect(yield* delegates.nativeApproval({ providerID: "fake", id: "default" })).toBe(true)
 
+      // The agent is an integration to connect, like Claude Code; its models follow the connection.
+      const integration = yield* (yield* Integration.Service).get(Integration.ID.make("fake"))
+      expect(integration?.name).toBe("Fake-acp")
       const models = yield* Model.Service
+      expect(yield* models.get("fake" as never, "default" as never)).toBeUndefined()
+      expect((yield* connect("fake")).status).toBe("complete")
       const info = yield* models.get("fake" as never, "default" as never)
       expect(info?.name).toBe("Fake-acp")
 

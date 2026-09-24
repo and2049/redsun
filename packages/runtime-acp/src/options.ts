@@ -63,6 +63,17 @@ export interface Agent {
     readonly path: string
     readonly files: Readonly<Record<string, string>>
   }
+  /**
+   * The integration the user connects to reach the agent's models. `whoami` runs the agent's
+   * command with these arguments to check its own sign-in (JSON output names the account);
+   * without it, connecting checks that the agent starts an ACP session.
+   */
+  readonly integration: {
+    readonly name: string
+    readonly url: string
+    readonly whoami?: readonly string[]
+    readonly signIn?: string
+  }
   /** A prompt the agent understands as "compact your context" (e.g. `/compact`). */
   readonly compactCommand?: string
 }
@@ -94,6 +105,12 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
   kiro: {
     name: "Kiro-cli",
     command: "kiro-cli",
+    integration: {
+      name: "Kiro",
+      url: "https://kiro.dev/",
+      whoami: ["whoami", "--format", "json"],
+      signIn: "Run `kiro-cli login` in a terminal, then connect again.",
+    },
     args: ["acp", "--agent", KIRO_AGENT.name],
     hostTools: "all",
     compactCommand: "/compact",
@@ -101,8 +118,52 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
   },
 }
 
+/**
+ * Agents redsun offers without configuration when their command is installed. A configured entry
+ * with the same id adjusts the built-in one.
+ */
+export const BUILTIN: Readonly<Record<string, { readonly preset: string; readonly command: string }>> = {
+  kiro: { preset: "kiro", command: "kiro-cli" },
+}
+
+/** Config entries with the built-in agents added: those whose command is installed, or configured. */
+export const withBuiltins = (
+  configured: Readonly<Record<string, unknown>>,
+  installed: (command: string) => boolean,
+): Record<string, unknown> => {
+  const agents: Record<string, unknown> = {}
+  for (const [id, builtin] of Object.entries(BUILTIN)) {
+    const own = record(configured[id])
+    if (own) agents[id] = { preset: builtin.preset, ...own }
+    else if (installed(builtin.command)) agents[id] = { preset: builtin.preset }
+  }
+  for (const [id, entry] of Object.entries(configured)) if (!(id in agents)) agents[id] = entry
+  return agents
+}
+
+/** Config keys are snake_case (`host_tools`); plugin options are camelCase. Both are accepted. */
+const camel = (entry: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(entry).map(([key, value]) => [
+      key.replace(/_([a-z])/g, (_, char: string) => char.toUpperCase()),
+      value,
+    ]),
+  )
+
 /** Whether the agent has any real auto-approval to offer as `native_auto`. */
 export const hasNativeApproval = (agent: Agent) => Boolean(agent.nativeApprovalMode || agent.nativeApprovalArgs?.length)
+
+const integration = (name: string, value: Record<string, unknown> | undefined): Agent["integration"] => {
+  const whoami = Array.isArray(value?.whoami)
+    ? value.whoami.filter((item): item is string => typeof item === "string")
+    : undefined
+  return {
+    name: string(value?.name) ?? name,
+    url: string(value?.url) ?? "",
+    ...(whoami?.length ? { whoami } : {}),
+    ...(string(value?.signIn) ? { signIn: string(value?.signIn) } : {}),
+  }
+}
 
 const home = (id: string, value: Record<string, unknown> | undefined, errors: string[]) => {
   if (!value) return {}
@@ -133,7 +194,8 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
   const errors: string[] = []
   const configured = record(record(options)?.agents) ?? {}
   for (const [id, raw] of Object.entries(configured)) {
-    const own = record(raw)
+    const own = record(raw) && camel(record(raw)!)
+    if (own?.enabled === false) continue
     const presetName = string(own?.preset)
     const preset = presetName ? PRESETS[presetName] : undefined
     if (presetName && !preset) {
@@ -145,6 +207,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       ...own,
       env: { ...record(preset?.env), ...record(own.env) },
       ...(preset?.home || own.home ? { home: { ...record(preset?.home), ...record(own.home) } } : {}),
+      integration: { ...record(preset?.integration), ...record(own.integration) },
     }
     const command = string(entry?.command)
     if (!entry || !command) {
@@ -180,6 +243,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),
       ...(string(entry.compactCommand) ? { compactCommand: string(entry.compactCommand) } : {}),
       hostTools: entry.hostTools === "all" ? "all" : "extras",
+      integration: integration(name, record(entry.integration)),
       ...home(id, record(entry.home), errors),
     })
   }

@@ -12,6 +12,7 @@ import { ConfigProjectMemory } from "./config/project-memory.js"
 import { ConfigCompaction } from "./config/compaction.js"
 import { ConfigCommand } from "./config/command.js"
 import { ConfigClaudeCode } from "./config/claude-code.js"
+import { ConfigAcp } from "./config/acp.js"
 import { ConfigExperimental } from "./config/experimental.js"
 import { ConfigFormatter } from "./config/formatter.js"
 import { ConfigLSP } from "./config/lsp.js"
@@ -130,6 +131,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   experimental: ConfigExperimental.Info.pipe(optional),
   claude_code: ConfigClaudeCode.Info.pipe(optional).annotate({
     description: "Delegated Claude Code provider settings",
+  }),
+  acp: ConfigAcp.Info.pipe(optional).annotate({
+    description: "Delegated agents spoken to over ACP (Kiro is built in when kiro-cli is installed)",
   }),
 }) {}
 

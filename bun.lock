@@ -175,6 +175,7 @@
         "@opencode/schema": "workspace:*",
         "@opencode/util": "workspace:*",
         "@parcel/watcher": "2.5.1",
+        "@redsun/runtime-acp": "workspace:*",
         "@redsun/runtime-claude-code": "workspace:*",
         "@silvia-odwyer/photon-node": "0.3.4",
         "@standard-schema/spec": "catalog:",

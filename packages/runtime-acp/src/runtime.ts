@@ -1,6 +1,6 @@
 export * as AcpRuntime from "./runtime.js"
 
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Readable, Writable } from "node:stream"
@@ -80,10 +80,30 @@ export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
   }
 }
 
+/** The agent process environment: the host's, the configured additions, and the managed home. */
+const environment = (agent: AcpOptions.Agent) => ({
+  ...process.env,
+  ...agent.env,
+  ...(agent.home ? { [agent.home.env]: agent.home.path } : {}),
+})
+
+/** Account details from a `whoami` command's JSON output: its string fields. */
+export const account = (stdout: string): Record<string, string> => {
+  try {
+    const value = JSON.parse(stdout)
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
+    return Object.fromEntries(
+      Object.entries(value).filter((pair): pair is [string, string] => typeof pair[1] === "string" && !!pair[1]),
+    )
+  } catch {
+    return {}
+  }
+}
+
 export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
   const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
-    env: { ...process.env, ...agent.env, ...(agent.home ? { [agent.home.env]: agent.home.path } : {}) },
+    env: environment(agent),
     stdio: ["pipe", "pipe", "ignore"],
   })
   return {
@@ -368,6 +388,30 @@ export class Runtime {
     else
       await session.connection.request(AcpModels.LEGACY_SET_MODEL, { sessionId: session.acpSessionID, modelId: wanted })
     model.current = wanted
+  }
+
+  /**
+   * Whether the agent is signed in, and as whom: its `whoami` command when it has one, otherwise a
+   * throwaway ACP session that must start. Rejects with the agent's sign-in hint.
+   */
+  async signedIn(): Promise<Record<string, string>> {
+    const hint = this.agent.integration.signIn ?? `Check that ${this.agent.name} is installed and signed in.`
+    const whoami = this.agent.integration.whoami
+    if (!whoami) {
+      await this.discover().catch((error) => {
+        throw new Error(`${this.agent.name} did not start: ${error instanceof Error ? error.message : error}. ${hint}`)
+      })
+      return {}
+    }
+    return new Promise((resolve, reject) =>
+      execFile(
+        this.agent.command,
+        [...whoami],
+        { cwd: this.host.cwd, env: environment(this.agent), timeout: 20_000 },
+        (error, stdout) =>
+          error ? reject(new Error(`${this.agent.name} is not signed in. ${hint}`)) : resolve(account(stdout)),
+      ),
+    )
   }
 
   /** Starts a throwaway agent session to learn its model list (reported through `onModels`). */

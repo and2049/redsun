@@ -120,6 +120,7 @@
     "@opencode/plugin": "workspace:*",
     "@opencode/schema": "workspace:*",
     "@opencode/util": "workspace:*",
+    "@redsun/runtime-acp": "workspace:*",
     "@redsun/runtime-claude-code": "workspace:*",
     "@parcel/watcher": "2.5.1",
     "@silvia-odwyer/photon-node": "0.3.4",

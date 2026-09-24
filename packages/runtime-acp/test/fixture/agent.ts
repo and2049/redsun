@@ -11,6 +11,16 @@ import {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
+// `agent.ts whoami` answers a sign-in check the way `kiro-cli whoami --format json` does.
+if (process.argv.includes("whoami")) {
+  if (process.env.FAKE_ACP_SIGNED_OUT === "1") {
+    console.error("not logged in")
+    process.exit(1)
+  }
+  console.log(JSON.stringify({ accountType: "BuilderId", email: "dev@example.com", region: 7 }))
+  process.exit(0)
+}
+
 const stream = ndJsonStream(
   Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
   Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>,

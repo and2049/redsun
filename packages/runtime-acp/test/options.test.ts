@@ -42,4 +42,17 @@ describe("ACP agent options", () => {
     expect(agents).toEqual([])
     expect(errors).toEqual(['ACP agent "a" names an unknown preset "nope".', 'ACP agent "b" needs a command.'])
   })
+
+  test("offers built-in agents whose command is installed, and lets config adjust or disable them", () => {
+    expect(AcpOptions.withBuiltins({}, () => true)).toEqual({ kiro: { preset: "kiro" } })
+    expect(AcpOptions.withBuiltins({}, () => false)).toEqual({})
+    const adjusted = AcpOptions.parse({
+      agents: AcpOptions.withBuiltins({ kiro: { host_tools: "extras", env: { A: "1" } } }, () => false),
+    })
+    expect(adjusted.agents[0]).toMatchObject({ id: "kiro", command: "kiro-cli", hostTools: "extras", env: { A: "1" } })
+    expect(adjusted.agents[0]!.integration).toMatchObject({ name: "Kiro", whoami: ["whoami", "--format", "json"] })
+    expect(
+      AcpOptions.parse({ agents: AcpOptions.withBuiltins({ kiro: { enabled: false } }, () => true) }).agents,
+    ).toEqual([])
+  })
 })

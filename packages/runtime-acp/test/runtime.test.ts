@@ -16,6 +16,7 @@ const agent = (extra: Partial<AcpOptions.Agent> = {}): AcpOptions.Agent => ({
   models: [{ id: "default", name: "Fake ACP" }],
   inheritedInstructions: [],
   hostTools: "extras",
+  integration: { name: "Fake ACP", url: "" },
   ...extra,
 })
 
@@ -593,6 +594,25 @@ describe("ACP runtime against a scripted agent", () => {
       const next = await collect((await runtime.turn(TURN, call([user("echo")]))).stream)
       expect(textOf(next)).toBe("SESSION=acp_1 TURNS=1 PROMPT=echo")
     }))
+
+  test("checks the agent's own sign-in for its integration", async () => {
+    const whoami = {
+      name: "Fake",
+      url: "",
+      whoami: [path.join(import.meta.dir, "fixture/agent.ts"), "whoami"],
+      signIn: "Run `fake login`.",
+    }
+    await withRuntime({ agent: { integration: whoami } }, async (runtime) => {
+      expect(await runtime.signedIn()).toEqual({ accountType: "BuilderId", email: "dev@example.com" })
+    })
+    await withRuntime({ agent: { integration: whoami, env: { FAKE_ACP_SIGNED_OUT: "1" } } }, async (runtime) => {
+      await expect(runtime.signedIn()).rejects.toThrow("Fake ACP is not signed in. Run `fake login`.")
+    })
+    // Without a whoami command, a session that starts is the check.
+    await withRuntime({}, async (runtime) => {
+      expect(await runtime.signedIn()).toEqual({})
+    })
+  })
 
   test("fails clearly when the agent cannot start", async () => {
     const runtime = new AcpRuntime.Runtime(agent({ command: "/nonexistent/acp-agent", args: [] }), host().host)
