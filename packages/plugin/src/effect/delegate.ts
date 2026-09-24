@@ -110,6 +110,17 @@ export interface DelegatedToolBinding {
   }) => Promise<DelegatedToolResult>
 }
 
+export interface DelegatedInstructionFile {
+  readonly path: string
+  readonly content: string
+}
+
+export interface DelegatedSkillSummary {
+  readonly id: string
+  readonly name: string
+  readonly description: string
+}
+
 export interface DelegateDomain {
   readonly register: (runtime: DelegatedRuntime) => Effect.Effect<Registration, never, Scope.Scope>
   /** Whether a registered runtime owns this model's agent loop. */
@@ -136,6 +147,22 @@ export interface DelegateDomain {
       readonly agent: string
       readonly messageID: string
     }) => Effect.Effect<DelegatedToolBinding, Error>
+  }
+  readonly context: {
+    /**
+     * The location's discovered instruction files (AGENTS.md chain, project memory), each bounded
+     * to `instruction_max_chars`; project memory carries its maintenance policy. Undefined while
+     * discovery is unavailable, which is not a removal: keep what was last delivered.
+     */
+    readonly instructions: () => Effect.Effect<readonly DelegatedInstructionFile[] | undefined>
+    /**
+     * Skills the agent may load in this session: described, auto-invokable, and not denied by the
+     * agent's rules or the session's effective policy. Contents still load through the host tool.
+     */
+    readonly skills: (input: {
+      readonly sessionID: string
+      readonly agent: string
+    }) => Effect.Effect<readonly DelegatedSkillSummary[]>
   }
   readonly form: {
     /** Shows a form in the session and waits for it to settle. */

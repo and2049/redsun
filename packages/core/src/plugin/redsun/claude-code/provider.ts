@@ -10,7 +10,6 @@ import type { ConfigClaudeCode } from "@opencode/schema/config/claude-code"
 import { Session } from "../../../session.js"
 import { SessionEvent } from "../../../session/event.js"
 import { SessionMessage } from "../../../session/message.js"
-import { Skill } from "../../../skill.js"
 import type { Tool as ToolSchema } from "@opencode/schema/tool"
 import { ClaudeCodeAuth } from "./auth.js"
 import { ClaudeCodeExecutable } from "./executable.js"
@@ -26,9 +25,6 @@ import { ClaudeCodeSessions } from "./sessions.js"
 import { ClaudeCodeSubagentEvents } from "./subagent-events.js"
 import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeContext } from "./context.js"
-import { InstructionDiscovery } from "../../../instruction-discovery.js"
-import { RedsunContextOptimizer } from "../context-optimizer.js"
-import { ClaudeCodeHostFiles } from "./host-files.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 import type { DelegatedCodeMode, DelegatedTurn } from "@opencode/plugin/effect/delegate"
 
@@ -137,8 +133,6 @@ export const Plugin = define({
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
     const agentRegistry = yield* Agent.Service
-    const discovery = yield* InstructionDiscovery.Service
-    const skills = yield* Skill.Service
 
     const cursors = new Map<string, string>()
     const agents = new Map<string, string>()
@@ -284,37 +278,13 @@ export const Plugin = define({
       const agentID = agents.get(sessionID)
       if (!agentID) return { delivered: () => {} }
       const profile = profiles.get(agentID)
-      const listed = settings?.behavior === "native" ? undefined : await Effect.runPromise(discovery.list())
-      // Read at delivery time so an instruction_max_chars edit applies to the next turn.
-      const configured = await Effect.runPromise(ctx.delegate.config("instruction_max_chars"))
-      const maxChars = typeof configured === "number" ? configured : RedsunContextOptimizer.INSTRUCTION_MAX_CHARS
+      const files =
+        settings?.behavior === "native" ? undefined : await Effect.runPromise(ctx.delegate.context.instructions())
       const runtime = runtimes.get(sessionID)
       const hasSkillTool =
         settings?.behavior !== "native" && runtime?.binding?.definitions.some((item) => item.name === "skill")
       const catalog = hasSkillTool
-        ? await (async () => {
-            const agent = await Effect.runPromise(agentRegistry.resolve(agentID))
-            if (!agent) return []
-            const candidates = Skill.available(await Effect.runPromise(skills.list()), agent).filter(
-              (skill) => skill.description !== undefined && skill.autoinvoke !== false,
-            )
-            const allowed = await Promise.all(
-              candidates.map(async (skill) => ({
-                skill,
-                result: await Effect.runPromise(
-                  permission.inspect({
-                    action: "skill",
-                    resources: [skill.id],
-                    sessionID,
-                    agent: agentID,
-                  }),
-                ),
-              })),
-            )
-            return allowed
-              .filter(({ result }) => result.effect !== "deny")
-              .map(({ skill }) => ({ id: skill.id, name: skill.name, description: skill.description! }))
-          })()
+        ? await Effect.runPromise(ctx.delegate.context.skills({ sessionID, agent: agentID }))
         : settings?.behavior === "native"
           ? undefined
           : []
@@ -328,9 +298,7 @@ export const Plugin = define({
           freshProcess,
           ...(catalog === undefined ? {} : { skills: catalog }),
           ...(codeMode === undefined ? {} : { codeMode }),
-          ...(Array.isArray(listed)
-            ? { files: ClaudeCodeHostFiles.deliver(listed, { project: location.project.directory, maxChars }) }
-            : {}),
+          ...(files === undefined ? {} : { files }),
         })
         if (runtime) runtime.submission = delivery
         return delivery

@@ -47,7 +47,6 @@ const PERMISSION_MODE_PENDING = [
 
 // Plugin files that still reach into core instead of `ctx`; stage 3 of the plan empties this.
 const PLUGIN_CORE_IMPORTS_PENDING = [
-  "host-files.ts", // 3d: instruction bounding, project memory policy
   "provider.ts", // 3b-3e: core services
   "subagent-events.ts", // 3e: child transcript events
 ]

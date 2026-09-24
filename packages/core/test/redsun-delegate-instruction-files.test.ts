@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test"
-import { ClaudeCodeHostFiles } from "@opencode/core/plugin/redsun/claude-code/host-files"
+import { DelegateHost } from "@opencode/core/delegate-host"
 import { RedsunProjectMemory } from "@opencode/core/plugin/redsun/project-memory"
 
 const project = "/repo"
 const long = Array.from({ length: 400 }, (_, index) => `rule ${index}`).join("\n")
 
-describe("ClaudeCodeHostFiles.deliver", () => {
+describe("DelegateHost.instructionFiles", () => {
   it("bounds every delivered file to the configured size with a read pointer", () => {
-    const [agents] = ClaudeCodeHostFiles.deliver([{ path: "/repo/AGENTS.md", content: long }], {
+    const [agents] = DelegateHost.instructionFiles([{ path: "/repo/AGENTS.md", content: long }], {
       project,
       maxChars: 600,
     })
@@ -20,13 +20,13 @@ describe("ClaudeCodeHostFiles.deliver", () => {
 
   it("leaves a file within the limit untouched", () => {
     expect(
-      ClaudeCodeHostFiles.deliver([{ path: "/repo/AGENTS.md", content: "short" }], { project, maxChars: 600 }),
+      DelegateHost.instructionFiles([{ path: "/repo/AGENTS.md", content: "short" }], { project, maxChars: 600 }),
     ).toEqual([{ path: "/repo/AGENTS.md", content: "short" }])
   })
 
   it("prefixes the maintenance policy to project memory only, after bounding", () => {
     const memory = `${project}/${RedsunProjectMemory.RELATIVE_PATH}`
-    const files = ClaudeCodeHostFiles.deliver(
+    const files = DelegateHost.instructionFiles(
       [
         { path: memory, content: long },
         { path: "/other/.redsun/memory.md", content: "elsewhere" },

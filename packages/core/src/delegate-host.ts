@@ -3,7 +3,13 @@ export * as DelegateHost from "./delegate-host.js"
 // REDSUN: the `ctx.delegate` plugin domain. Host capabilities a delegated runtime needs, exposed
 // so a runtime plugin never imports core services.
 
-import type { DelegateDomain, DelegatedCodeMode, DelegatedToolBinding } from "@opencode/plugin/effect/delegate"
+import type {
+  DelegateDomain,
+  DelegatedCodeMode,
+  DelegatedInstructionFile,
+  DelegatedToolBinding,
+} from "@opencode/plugin/effect/delegate"
+import path from "node:path"
 import { Cause, Effect, Exit, Option } from "effect"
 import { Agent } from "./agent.js"
 import { CodeModeCatalog } from "./codemode/catalog.js"
@@ -11,13 +17,18 @@ import { CodeModeInstructions } from "./codemode/instructions.js"
 import { Config } from "./config.js"
 import { DelegatedRuntime } from "./delegate.js"
 import { Form } from "./form.js"
+import { InstructionDiscovery } from "./instruction-discovery.js"
 import { KV } from "./kv.js"
+import { Location } from "./location.js"
 import { Mcp } from "./mcp/index.js"
 import { Permission } from "./permission.js"
 import { PluginHooks } from "./plugin/hooks.js"
+import { RedsunContextOptimizer } from "./plugin/redsun/context-optimizer.js"
+import { RedsunProjectMemory } from "./plugin/redsun/project-memory.js"
 import { Session } from "./session.js"
 import { SessionMessage } from "./session/message.js"
 import { SessionSchema } from "./session/schema.js"
+import { Skill } from "./skill.js"
 import { Tool } from "./tool.js"
 import { McpTool } from "./tool/mcp.js"
 
@@ -75,6 +86,21 @@ export const bindSnapshot = (
     ),
 })
 
+/**
+ * Instruction files as a delegated runtime receives them: each bounded to the configured size,
+ * and project memory carrying its maintenance policy, which the API path adds as a system part.
+ */
+export const instructionFiles = (
+  files: readonly DelegatedInstructionFile[],
+  input: { readonly project: string; readonly maxChars: number },
+): DelegatedInstructionFile[] => {
+  const memory = path.join(input.project, RedsunProjectMemory.RELATIVE_PATH)
+  return files.map((file) => {
+    const content = RedsunContextOptimizer.boundInstructionContent(file.path, file.content, input.maxChars)
+    return { path: file.path, content: file.path === memory ? `${RedsunProjectMemory.POLICY}\n\n${content}` : content }
+  })
+}
+
 export const make = Effect.gen(function* () {
   const delegates = yield* DelegatedRuntime.Service
   const hooks = yield* PluginHooks.Service
@@ -88,6 +114,9 @@ export const make = Effect.gen(function* () {
   // instance graph always provides both.
   const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
   const forms = Option.getOrUndefined(yield* Effect.serviceOption(Form.Service))
+  const discovery = Option.getOrUndefined(yield* Effect.serviceOption(InstructionDiscovery.Service))
+  const location = yield* Location.Service
+  const skills = yield* Skill.Service
   const missing = (name: string) => Effect.die(new Error(`${name} is not available to this plugin host.`))
 
   const check = (input: Parameters<DelegateDomain["permission"]["inspect"]>[0]) => ({
@@ -149,6 +178,43 @@ export const make = Effect.gen(function* () {
             messageID: SessionMessage.ID.make(input.messageID),
             direct: directNames(yield* mcp.tools()),
           })
+        }),
+    },
+    context: {
+      instructions: () =>
+        Effect.gen(function* () {
+          if (!discovery) return yield* missing("InstructionDiscovery")
+          const listed = yield* discovery.list()
+          if (!Array.isArray(listed)) return undefined
+          const entries = config ? yield* config.entries() : []
+          return instructionFiles(listed, {
+            project: location.project.directory,
+            maxChars: RedsunContextOptimizer.instructionMaxChars(entries),
+          })
+        }),
+      skills: (input) =>
+        Effect.gen(function* () {
+          const agent = yield* agents.get(Agent.ID.make(input.agent))
+          if (!agent) return []
+          const candidates = Skill.available(yield* skills.list(), agent).filter(
+            (skill) => skill.description !== undefined && skill.autoinvoke !== false,
+          )
+          const decisions = yield* Effect.forEach(candidates, (skill) =>
+            permission
+              .inspect({
+                action: "skill",
+                resources: [skill.id],
+                sessionID: SessionSchema.ID.make(input.sessionID),
+                agent: agent.id,
+              })
+              .pipe(
+                Effect.orDie,
+                Effect.map((result) => ({ skill, result })),
+              ),
+          )
+          return decisions
+            .filter(({ result }) => result.effect !== "deny")
+            .map(({ skill }) => ({ id: skill.id, name: skill.name, description: skill.description! }))
         }),
     },
     form: {

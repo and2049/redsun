@@ -6,8 +6,10 @@ import type { DelegatedRuntime as Runtime, DelegatedTurn } from "@opencode/plugi
 import { Agent } from "@opencode/schema/agent"
 import { Money } from "@opencode/schema/money"
 import { Session } from "@opencode/schema/session"
+import { Agent as AgentService } from "@opencode/core/agent"
 import { AISDK } from "@opencode/core/aisdk"
 import { KV } from "@opencode/core/kv"
+import { Skill } from "@opencode/core/skill"
 import { Permission } from "@opencode/core/permission"
 import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Location } from "@opencode/core/location"
@@ -249,6 +251,36 @@ describe("delegated runtime host capabilities", () => {
         host.delegate.tools.bind({ sessionID: session.id, agent: "no-such-agent", messageID: "msg_1" }),
       )
       expect(missingAgent.message).toContain("Agent is no longer available")
+    }),
+  )
+
+  it.effect("lists only described, auto-invokable skills that neither the agent nor the session denies", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentService.Service
+      yield* agents.transform((editor) =>
+        editor.update("delegate-test" as never, (agent) => {
+          agent.permissions.push({ action: "skill", resource: "agent-denied", effect: "deny" })
+        }),
+      )
+      const skills = yield* Skill.Service
+      const skill = (id: string, extra: Partial<Skill.Info> = {}) =>
+        ({ id, name: id, description: `${id} skill`, path: `/skills/${id}/SKILL.md`, content: "", ...extra }) as never
+      yield* skills.transform((editor) => {
+        editor.add(skill("offered"))
+        editor.add(skill("undescribed", { description: undefined }))
+        editor.add(skill("manual", { autoinvoke: false }))
+        editor.add(skill("agent-denied"))
+        editor.add(skill("session-denied"))
+      })
+      const host = yield* hostWith({
+        inspect: (input) =>
+          Effect.succeed({
+            effect: input.resources.includes("session-denied") ? ("deny" as const) : ("allow" as const),
+          }),
+      })
+      const listed = yield* host.delegate.context.skills({ sessionID: "ses_1", agent: "delegate-test" })
+      expect(listed).toEqual([{ id: "offered", name: "offered", description: "offered skill" }])
+      expect(yield* host.delegate.context.skills({ sessionID: "ses_1", agent: "no-such-agent" })).toEqual([])
     }),
   )
 

@@ -44,6 +44,10 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       },
       form: { ask: () => Effect.die("unused delegate.form.ask") },
       tools: { bind: () => Effect.die("unused delegate.tools.bind") },
+      context: {
+        instructions: () => Effect.die("unused delegate.context.instructions"),
+        skills: () => Effect.die("unused delegate.context.skills"),
+      },
     },
     rpc:
       overrides.rpc ??
