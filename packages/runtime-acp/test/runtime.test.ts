@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { DelegatedPermissionCheck, DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import type { DelegatedPermissionCheck, DelegatedToolBinding, DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import { AcpHostTools } from "../src/host-tools.js"
 import type { AcpOptions } from "../src/options.js"
 import { AcpRuntime } from "../src/runtime.js"
 
@@ -15,7 +16,13 @@ const agent = (extra: Partial<AcpOptions.Agent> = {}): AcpOptions.Agent => ({
   ...extra,
 })
 
-const host = (input: { mode?: "normal" | "auto" | "native_auto"; approve?: boolean } = {}) => {
+const host = (
+  input: {
+    mode?: "normal" | "auto" | "native_auto"
+    approve?: boolean
+    tools?: () => DelegatedToolBinding | undefined
+  } = {},
+) => {
   const checks: DelegatedPermissionCheck[] = []
   return {
     checks,
@@ -26,6 +33,7 @@ const host = (input: { mode?: "normal" | "auto" | "native_auto"; approve?: boole
         checks.push(check)
         return input.approve ?? true
       },
+      tools: async () => input.tools?.(),
     } satisfies AcpRuntime.Host,
   }
 }
@@ -218,6 +226,104 @@ describe("ACP runtime against a scripted agent", () => {
         expect(textOf(parts)).toStartWith("TRUSTED=false")
       },
     )
+  })
+
+  const definition = (name: string) => ({
+    name,
+    description: `The ${name} tool`,
+    inputSchema: { type: "object", properties: {} },
+  })
+
+  const binding = (names: readonly string[], direct: readonly string[] = []) => {
+    const calls: Array<{ name: string; args: unknown; callID: string }> = []
+    const tools: DelegatedToolBinding = {
+      definitions: names.map(definition) as never,
+      direct: new Set(direct),
+      execute: async ({ name, args, callID }) => {
+        calls.push({ name, args, callID })
+        return { content: [{ type: "text", text: "1 todo" }], metadata: { todos: [{ content: "ship it" }] } }
+      },
+    }
+    return { calls, tools }
+  }
+
+  const HOSTED: DelegatedTurn = { ...TURN, assistantMessageID: "msg_1" }
+
+  test("serves the host's tools to the agent, filtered to what the host offers", async () => {
+    const bound = binding(["todowrite", "bash", "mcp_docs", "mcp_hidden"], ["mcp_docs"])
+    await withRuntime({ host: { tools: () => bound.tools } }, async (runtime) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("tools?")]))).stream)
+      expect(textOf(parts)).toBe("TOOLS=todowrite,mcp_docs")
+    })
+  })
+
+  test("runs a host tool under the agent's call id, without asking twice, and renders the host's result", async () => {
+    const bound = binding(["todowrite"])
+    await withRuntime({ host: { tools: () => bound.tools } }, async (runtime, checks) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("hostcall")]))).stream)
+      expect(textOf(parts)).toBe("HOST TOOL DONE")
+      // The host tool applies the host's policy itself; the agent's permission request is not a second prompt.
+      expect(checks).toEqual([])
+      expect(bound.calls).toEqual([
+        { name: "todowrite", args: { todos: [{ content: "ship it", status: "pending" }] }, callID: "call_host" },
+      ])
+      expect(parts.find((part) => part.type === "tool-call")).toMatchObject({
+        toolCallId: "call_host",
+        toolName: "todowrite",
+        input: JSON.stringify({ todos: [{ content: "ship it", status: "pending" }] }),
+      })
+      expect(parts.find((part) => part.type === "tool-result")).toMatchObject({
+        toolCallId: "call_host",
+        toolName: "todowrite",
+        result: { output: "1 todo", metadata: { todos: [{ content: "ship it" }] } },
+      })
+    })
+  })
+
+  test("relaunches the agent when the host's tool catalog changes, keeping the conversation", async () => {
+    let names = ["todowrite"]
+    await withRuntime({ host: { tools: () => binding(names).tools } }, async (runtime) => {
+      expect(textOf(await collect((await runtime.turn(HOSTED, call([user("tools?")]))).stream))).toBe("TOOLS=todowrite")
+      names = ["todowrite", "skill"]
+      const parts = await collect(
+        (await runtime.turn(HOSTED, call([user("tools?"), assistant("…"), user("tools? echo")]))).stream,
+      )
+      expect(textOf(parts)).toBe("TOOLS=todowrite,skill")
+      const next = await collect(
+        (await runtime.turn(HOSTED, call([user("tools?"), assistant("…"), user("echo")]))).stream,
+      )
+      // Loaded back into a new process (its first prompt was the catalog check), same agent session.
+      expect(textOf(next)).toBe("SESSION=acp_1 TURNS=2 PROMPT=echo")
+    })
+  })
+
+  test("offers no host tools to an agent without HTTP MCP support", async () => {
+    await withRuntime(
+      { agent: { env: { FAKE_ACP_NO_HTTP: "1" } }, host: { tools: () => binding(["todowrite"]).tools } },
+      async (runtime) => {
+        expect(textOf(await collect((await runtime.turn(HOSTED, call([user("tools?")]))).stream))).toBe("TOOLS=none")
+      },
+    )
+  })
+
+  test("rejects host tool requests without the session's token", async () => {
+    const endpoint = new AcpHostTools.Endpoint()
+    const slot = new AcpHostTools.Slot("[]", [])
+    endpoint.attach(slot)
+    try {
+      const entry = await endpoint.entry(slot)
+      const post = (headers: Record<string, string>) =>
+        fetch(entry.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+        })
+      expect((await post({})).status).toBe(401)
+      expect((await post({ authorization: "Bearer wrong" })).status).toBe(401)
+      expect((await post({ authorization: `Bearer ${slot.token}` })).status).toBe(200)
+    } finally {
+      endpoint.stop()
+    }
   })
 
   test("reports an agent that dies mid-turn as its own error, and starts fresh next turn", () =>

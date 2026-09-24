@@ -1,6 +1,14 @@
 // A scripted ACP agent over stdio. The prompt text picks the behaviour.
 import { Readable, Writable } from "node:stream"
-import { AgentSideConnection, ndJsonStream, PROTOCOL_VERSION, type Agent } from "@agentclientprotocol/sdk"
+import {
+  AgentSideConnection,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  type Agent,
+  type McpServer,
+} from "@agentclientprotocol/sdk"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
 const stream = ndJsonStream(
   Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
@@ -11,6 +19,20 @@ let sessions = 0
 const modes = new Map<string, string>()
 const cancelled = new Set<string>()
 const received: string[] = []
+const servers = new Map<string, McpServer[]>()
+
+/** Connects to the session's host MCP server the way an agent would. */
+const mcp = async (sessionId: string) => {
+  const server = servers.get(sessionId)?.find((item) => "url" in item && item.name === "redsun")
+  if (!server || !("url" in server)) return undefined
+  const client = new Client({ name: "fake-acp", version: "1" })
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: Object.fromEntries(server.headers.map((header) => [header.name, header.value])) },
+    }),
+  )
+  return client
+}
 // Launched with the trust flag, the agent approves its own tools; FAKE_ACP_NO_LOAD hides session/load.
 const trusted = process.argv.includes("--trust-all-tools")
 const loadable = process.env.FAKE_ACP_NO_LOAD !== "1"
@@ -29,16 +51,21 @@ new AgentSideConnection((connection) => {
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
     })
   const agent: Agent = {
-    initialize: async () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: { loadSession: loadable } }),
-    newSession: async () => {
+    initialize: async () => ({
+      protocolVersion: PROTOCOL_VERSION,
+      agentCapabilities: { loadSession: loadable, mcpCapabilities: { http: process.env.FAKE_ACP_NO_HTTP !== "1" } },
+    }),
+    newSession: async (params) => {
       const sessionId = `acp_${++sessions}`
       modes.set(sessionId, "default")
+      servers.set(sessionId, params.mcpServers)
       return { sessionId, modes: MODES }
     },
     ...(loadable
       ? {
-          loadSession: async (params: { sessionId: string }) => {
+          loadSession: async (params: { sessionId: string; mcpServers: McpServer[] }) => {
             modes.set(params.sessionId, "default")
+            servers.set(params.sessionId, params.mcpServers)
             // A real agent replays the loaded conversation; the client must not forward it.
             await say(params.sessionId, "REPLAYED HISTORY")
             return { modes: MODES }
@@ -116,6 +143,52 @@ new AgentSideConnection((connection) => {
       }
       if (text.includes("mode?")) {
         await say(sessionId, `MODE=${modes.get(sessionId)}`)
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("tools?")) {
+        const client = await mcp(sessionId)
+        const listed = client ? (await client.listTools()).tools.map((tool) => tool.name).join(",") : "none"
+        await client?.close()
+        await say(sessionId, `TOOLS=${listed}`)
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("hostcall")) {
+        // As Kiro reports an MCP tool: identity in _meta, a bookkeeping field in the input.
+        const args = { todos: [{ content: "ship it", status: "pending" }] }
+        const toolCallId = "call_host"
+        const report = {
+          toolCallId,
+          title: "Running: @redsun/todowrite",
+          rawInput: { __tool_use_purpose: "Track the work.", ...args },
+          _meta: { kiro: { toolName: "todowrite", mcpServerName: "redsun" } },
+        }
+        await connection.sessionUpdate({ sessionId, update: { sessionUpdate: "tool_call", ...report } })
+        const answer = await connection.requestPermission({
+          sessionId,
+          toolCall: report,
+          options: [
+            { optionId: "yes", name: "Allow", kind: "allow_once" },
+            { optionId: "no", name: "Reject", kind: "reject_once" },
+          ],
+        })
+        if (answer.outcome.outcome !== "selected" || answer.outcome.optionId !== "yes") {
+          await say(sessionId, "HOST TOOL DENIED")
+          return { stopReason: "end_turn" }
+        }
+        const client = await mcp(sessionId)
+        const result = client ? await client.callTool({ name: "todowrite", arguments: args }) : undefined
+        await client?.close()
+        await connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            kind: "other",
+            status: result?.isError ? "failed" : "completed",
+            rawOutput: { items: [{ Json: result ?? null }] },
+          },
+        })
+        await say(sessionId, "HOST TOOL DONE")
         return { stopReason: "end_turn" }
       }
       if (text.includes("trust?")) {

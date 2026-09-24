@@ -2,6 +2,7 @@ export * as AcpTranslate from "./translate.js"
 
 import type { SessionUpdate, StopReason, ToolCallContent, ToolKind } from "@agentclientprotocol/sdk"
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import { AcpHostTools } from "./host-tools.js"
 
 // ACP `session/update` notifications become AI SDK V3 stream parts. The agent runs its own tools,
 // so every tool call is `providerExecuted` and settles with a tool-result from the agent itself.
@@ -11,9 +12,11 @@ export interface State {
   blocks: number
   readonly tools: Map<string, { readonly name: string; settled: boolean }>
   usage?: { readonly used: number; readonly size: number }
+  /** The session's host tools: their calls render as the host's own tool rows. */
+  readonly host?: AcpHostTools.Slot
 }
 
-export const make = (): State => ({ blocks: 0, tools: new Map() })
+export const make = (host?: AcpHostTools.Slot): State => ({ blocks: 0, tools: new Map(), ...(host ? { host } : {}) })
 
 const close = (state: State): LanguageModelV3StreamPart[] => {
   const open = state.open
@@ -71,6 +74,19 @@ const settle = (
   const call = state.tools.get(id)
   if (!call || call.settled || (status !== "completed" && status !== "failed")) return []
   call.settled = true
+  // The host's own result, recorded when it executed the call: its metadata renders the tool row.
+  const hosted = state.host?.take(id)
+  if (hosted && status === "completed") {
+    const output = AcpHostTools.resultText(hosted)
+    return [
+      {
+        type: "tool-result",
+        toolCallId: id,
+        toolName: call.name,
+        result: hosted.metadata === undefined ? output : { output, metadata: hosted.metadata },
+      } as LanguageModelV3StreamPart,
+    ]
+  }
   const text = contentText(content) || (rawOutput === undefined ? "" : JSON.stringify(rawOutput))
   return [
     {
@@ -100,13 +116,16 @@ export const update = (state: State, update: SessionUpdate): LanguageModelV3Stre
     case "tool_call": {
       if (state.tools.has(update.toolCallId)) return []
       const parts = close(state)
-      const name = toolName(update.kind, update.title)
+      const hosted = state.host?.report(update)
+      const name = hosted ?? toolName(update.kind, update.title)
       state.tools.set(update.toolCallId, { name, settled: false })
       parts.push({
         type: "tool-call",
         toolCallId: update.toolCallId,
         toolName: name,
-        input: JSON.stringify(update.rawInput ?? { title: update.title }),
+        input: JSON.stringify(
+          hosted ? AcpHostTools.cleanInput(update.rawInput ?? {}) : (update.rawInput ?? { title: update.title }),
+        ),
         providerExecuted: true,
       })
       parts.push(...settle(state, update.toolCallId, update.status, update.content, update.rawOutput))

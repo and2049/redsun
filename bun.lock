@@ -343,6 +343,7 @@
       "dependencies": {
         "@agentclientprotocol/sdk": "1.2.1",
         "@ai-sdk/provider": "3.0.8",
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@opencode/plugin": "workspace:*",
         "@opencode/schema": "workspace:*",
         "effect": "catalog:",

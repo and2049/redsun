@@ -11,7 +11,13 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk"
 import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { DelegatedPermissionCheck, DelegatedStreamResult, DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import type {
+  DelegatedPermissionCheck,
+  DelegatedStreamResult,
+  DelegatedToolBinding,
+  DelegatedTurn,
+} from "@opencode/plugin/effect/delegate"
+import { AcpHostTools } from "./host-tools.js"
 import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
@@ -22,6 +28,8 @@ export interface Host {
   readonly mode: () => Promise<"normal" | "auto" | "native_auto">
   /** Asks the host policy (prompting when it asks); resolves false on decline. */
   readonly approve: (check: DelegatedPermissionCheck) => Promise<boolean>
+  /** The host tools a primary turn may use, bound to its attribution; absent when it has none. */
+  readonly tools?: (turn: DelegatedTurn) => Promise<DelegatedToolBinding | undefined>
 }
 
 export interface Process {
@@ -91,6 +99,10 @@ interface Session {
   readonly trusted: boolean
   /** The agent can reload this session into a new process (`session/load`). */
   readonly loadable: boolean
+  /** The host tool catalog the agent session was started with. */
+  readonly catalog: string
+  /** Host tools served to this session; absent when there are none or the agent takes no HTTP MCP servers. */
+  readonly slot?: AcpHostTools.Slot
   readonly modes: ReadonlySet<string>
   readonly initialMode?: string
   currentMode?: string
@@ -102,6 +114,7 @@ export class Runtime {
   private readonly sessions = new Map<string, Session>()
   /** Every open agent process, including one-shot ones. */
   private readonly live = new Set<Session>()
+  private readonly endpoint = new AcpHostTools.Endpoint()
 
   constructor(
     private readonly agent: AcpOptions.Agent,
@@ -125,6 +138,8 @@ export class Runtime {
       requestPermission: async (request) => {
         const session = current()
         if (!session || request.sessionId !== session.acpSessionID) return { outcome: { outcome: "cancelled" } }
+        // The host's own tools apply the host's permission policy when they execute.
+        if (session.slot?.owns(request.toolCall.toolCallId)) return AcpPermissions.respond(request, true)
         const check = AcpPermissions.check(request, { sessionID: session.sessionID, agent: session.agent })
         return AcpPermissions.respond(request, await this.host.approve(check).catch(() => false))
       },
@@ -137,10 +152,15 @@ export class Runtime {
    */
   private async open(
     sessionID: string,
-    input: { readonly trusted: boolean; readonly resume?: string } = { trusted: false },
+    input: {
+      readonly trusted: boolean
+      readonly resume?: string
+      readonly tools?: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] }
+    } = { trusted: false },
   ): Promise<{ readonly session: Session; readonly resumed: boolean }> {
     const process = this.spawn(this.agent, this.host.cwd, input.trusted ? (this.agent.nativeApprovalArgs ?? []) : [])
     let opened: Session | undefined
+    let slot: AcpHostTools.Slot | undefined
     const connection = new ClientSideConnection(
       () => this.client(() => opened),
       ndJsonStream(process.stdin, process.stdout),
@@ -152,16 +172,22 @@ export class Runtime {
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       })
       const loadable = initialized.agentCapabilities?.loadSession === true
+      slot =
+        input.tools?.definitions.length && initialized.agentCapabilities?.mcpCapabilities?.http
+          ? new AcpHostTools.Slot(input.tools.catalog, input.tools.definitions)
+          : undefined
+      const mcpServers = slot ? [await this.endpoint.entry(slot)] : []
+      if (slot) this.endpoint.attach(slot)
       // The agent replays a loaded conversation as session updates; they arrive before `opened` is
       // set and are dropped, since the host already holds that transcript.
       const loaded =
         input.resume && loadable
           ? await connection
-              .loadSession({ sessionId: input.resume, cwd: this.host.cwd, mcpServers: [] })
+              .loadSession({ sessionId: input.resume, cwd: this.host.cwd, mcpServers })
               .then((response) => ({ sessionId: input.resume!, modes: response.modes }))
               .catch(() => undefined)
           : undefined
-      const created = loaded ?? (await connection.newSession({ cwd: this.host.cwd, mcpServers: [] }))
+      const created = loaded ?? (await connection.newSession({ cwd: this.host.cwd, mcpServers }))
       const session: Session = {
         sessionID,
         exited: false,
@@ -170,6 +196,8 @@ export class Runtime {
         acpSessionID: created.sessionId,
         trusted: input.trusted,
         loadable,
+        catalog: input.tools?.catalog ?? "",
+        ...(slot ? { slot } : {}),
         modes: new Set(created.modes?.availableModes.map((mode) => mode.id) ?? []),
         ...(created.modes
           ? { initialMode: created.modes.currentModeId, currentMode: created.modes.currentModeId }
@@ -183,6 +211,7 @@ export class Runtime {
       })
       return { session, resumed: loaded !== undefined }
     } catch (error) {
+      if (slot) this.endpoint.detach(slot)
       process.kill()
       throw new Error(
         `${this.agent.name} did not start an ACP session: ${error instanceof Error ? error.message : String(error)}`,
@@ -191,6 +220,7 @@ export class Runtime {
   }
 
   private forget(session: Session) {
+    if (session.slot) this.endpoint.detach(session.slot)
     this.live.delete(session)
     if (this.sessions.get(session.sessionID) === session) this.sessions.delete(session.sessionID)
   }
@@ -230,14 +260,21 @@ export class Runtime {
    * agent whose auto-approval is a launch flag is restarted only when the selection differs from
    * how its process was launched; the conversation is loaded back into the new process.
    */
-  private async acquire(turn: DelegatedTurn, native: boolean) {
+  private async acquire(
+    turn: DelegatedTurn,
+    native: boolean,
+    tools: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] },
+  ) {
     const trusted = native && Boolean(this.agent.nativeApprovalArgs?.length)
     const existing = this.sessions.get(turn.sessionID)
     if (existing?.listener) throw new Error(`${this.agent.name} session is already processing a turn.`)
-    if (existing && existing.trusted === trusted) return { session: existing, remembers: true }
+    // The agent lists host tools once per session, so a changed catalog also needs a relaunch.
+    if (existing && existing.trusted === trusted && existing.catalog === tools.catalog)
+      return { session: existing, remembers: true }
     if (existing) this.close(existing)
     const opened = await this.open(turn.sessionID, {
       trusted,
+      tools,
       ...(existing ? { resume: existing.acpSessionID } : {}),
     })
     this.sessions.set(turn.sessionID, opened.session)
@@ -252,14 +289,18 @@ export class Runtime {
       throw new Error(`No user prompt to deliver to ${this.agent.name}.`)
     // One-shots (titles, generation) run untrusted in a throwaway process.
     const native = !oneShot && AcpOptions.hasNativeApproval(this.agent) && (await this.host.mode()) === "native_auto"
+    // Bound at the turn boundary: calls during the turn carry its attribution.
+    const binding = oneShot ? undefined : await this.host.tools?.(turn)
+    const definitions = binding ? AcpHostTools.select(binding) : []
     const { session, remembers } = oneShot
       ? { session: (await this.open(turn.sessionID)).session, remembers: false }
-      : await this.acquire(turn, native)
+      : await this.acquire(turn, native, { catalog: AcpHostTools.catalogKey(definitions), definitions })
+    if (binding && turn.assistantMessageID) session.slot?.bind(binding, turn.assistantMessageID)
     const prompt = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     session.agent = turn.agent
     if (!oneShot) await this.applyMode(session, native)
 
-    const state = AcpTranslate.make()
+    const state = AcpTranslate.make(session.slot)
     const cancel = () => void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})
     return {
       stream: new ReadableStream<LanguageModelV3StreamPart>({
@@ -291,6 +332,7 @@ export class Runtime {
             emit([{ type: "error", error: this.failure(session, error) }])
           } finally {
             session.listener = undefined
+            session.slot?.unbind()
             options.abortSignal?.removeEventListener("abort", cancel)
             if (oneShot) this.close(session)
             if (!closed)
@@ -306,5 +348,6 @@ export class Runtime {
 
   stop() {
     for (const session of [...this.live]) this.close(session)
+    this.endpoint.stop()
   }
 }

@@ -24,6 +24,16 @@ export default define({
       cwd: ctx.location.directory,
       mode: () => Effect.runPromise(ctx.delegate.permission.mode()),
       approve: (check) => Effect.runPromise(ctx.delegate.permission.assert(check)).then((result) => result.ok),
+      tools: (turn) =>
+        turn.assistantMessageID
+          ? Effect.runPromise(
+              ctx.delegate.tools.bind({
+                sessionID: turn.sessionID,
+                agent: turn.agent,
+                messageID: turn.assistantMessageID,
+              }),
+            )
+          : Promise.resolve(undefined),
     }
 
     for (const agent of agents) {
