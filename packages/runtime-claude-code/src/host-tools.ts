@@ -5,6 +5,7 @@ import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { ToolDefinition } from "@opencode/ai"
 import type { DelegatedToolBinding, DelegatedToolResult } from "@opencode/plugin/effect/delegate"
+import { DelegateTools } from "@opencode/plugin/effect/delegate-tools"
 
 export const NAMES = ["subagent", "skill", "todowrite", "worker_model", "execute"] as const
 export const MCP_NAMES = NAMES.map((name) => `mcp__redsun__${name}`)
@@ -27,12 +28,7 @@ export const select = (input: {
 }
 
 /** The CLI caches tools/list; direct tool descriptions and schemas require rediscovery. */
-export const discoveryKey = (definitions: HostExecution["definitions"]) =>
-  JSON.stringify(
-    definitions
-      .map((item) => [item.name, item.inputSchema, item.description])
-      .sort(([a], [b]) => String(a).localeCompare(String(b))),
-  )
+export const discoveryKey = DelegateTools.catalogKey
 
 /**
  * A turn captures one host tool binding (`ctx.delegate.tools.bind`) with its attribution. The
@@ -143,17 +139,7 @@ export const makeServer = (
       if (extra.signal.aborted) throw new Error("Host tool call was cancelled.")
       host.onResult?.({ name, requestId: String(extra.requestId), nativeToolUseID: nativeID, result })
       return {
-        content: result.content.map((part) =>
-          part.type === "text"
-            ? { type: "text" as const, text: part.text }
-            : part.type === "file" && part.mime.startsWith("image/") && part.uri.startsWith(`data:${part.mime};base64,`)
-              ? {
-                  type: "image" as const,
-                  data: part.uri.slice(`data:${part.mime};base64,`.length),
-                  mimeType: part.mime,
-                }
-              : { type: "text" as const, text: JSON.stringify(part) },
-        ),
+        content: DelegateTools.mcpContent(result),
         // Do not set structuredContent: the SDK treats text content as a
         // duplicate when it is present, dropping canonical skill instructions.
         ...(result.metadata === undefined ? {} : { _meta: { "redsun/metadata": result.metadata } }),

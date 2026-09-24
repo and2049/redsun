@@ -7,6 +7,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { DelegatedToolBinding, DelegatedToolResult } from "@opencode/plugin/effect/delegate"
+import { DelegateTools } from "@opencode/plugin/effect/delegate-tools"
 
 // The host's own tools, served to an ACP agent as an MCP server on loopback. ACP agents take MCP
 // servers by URL at session start, so one server per runtime serves every session, each through
@@ -33,12 +34,7 @@ export const select = (binding: DelegatedToolBinding) =>
   )
 
 /** The agent lists tools once per session; a different key needs a new session. */
-export const catalogKey = (definitions: ReadonlyArray<ToolDefinition>) =>
-  JSON.stringify(
-    definitions
-      .map((item) => [item.name, item.inputSchema, item.description] as const)
-      .sort(([a], [b]) => a.localeCompare(b)),
-  )
+export const catalogKey = DelegateTools.catalogKey
 
 export const cleanInput = (input: unknown) => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return input
@@ -146,15 +142,6 @@ export class Slot {
 export const resultText = (result: DelegatedToolResult) =>
   result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
 
-const content = (result: DelegatedToolResult) =>
-  result.content.map((part) =>
-    part.type === "text"
-      ? { type: "text" as const, text: part.text }
-      : part.type === "file" && part.mime.startsWith("image/") && part.uri.startsWith(`data:${part.mime};base64,`)
-        ? { type: "image" as const, data: part.uri.slice(`data:${part.mime};base64,`.length), mimeType: part.mime }
-        : { type: "text" as const, text: JSON.stringify(part) },
-  )
-
 const failure = (error: unknown) => ({
   content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }],
   isError: true,
@@ -221,7 +208,7 @@ export class Endpoint {
       try {
         const result = await slot.call(call.params.name, call.params.arguments ?? {}, extra.signal)
         if (extra.signal.aborted) throw new Error("Host tool call was cancelled.")
-        return { content: content(result) }
+        return { content: DelegateTools.mcpContent(result) }
       } catch (error) {
         if (extra.signal.aborted) throw error
         return failure(error)
