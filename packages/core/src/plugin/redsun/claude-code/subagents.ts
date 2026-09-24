@@ -73,9 +73,21 @@ const resultText = (content: unknown): string => {
     .join("\n")
 }
 
+/**
+ * What the native session still owes the host turn once a result frame lands.
+ * - active: a main-thread turn is streaming (frames since the last result).
+ * - children: idle, but a background subagent has not settled; its
+ *   task_notification will queue a continuation turn.
+ * - queued: idle, nothing running, but a task notification arrived that no
+ *   turn has consumed yet; the CLI starts that turn on its own, promptly.
+ * - none: idle with nothing pending.
+ */
+export type Continuation = "active" | "children" | "queued" | "none"
+
 export interface Mirror {
   observe(message: SDKMessage, inTurn?: boolean): Promise<void>
   children(): ReadonlyMap<string, { sessionID: string; parentSessionID: string; description: string }>
+  continuation(): Continuation
   sweep(): Promise<void>
   finalize(): Promise<void>
 }
@@ -84,6 +96,11 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
   const { parentSessionID, ops } = input
   const entries = new Map<string, Entry>()
   const byTask = new Map<string, string>()
+  // Main-thread phase: frames since the last result mean a turn is streaming.
+  let active = false
+  // A non-ambient task settled and the CLI has yet to start the turn that
+  // reads its notification. Cleared when the next main-thread turn begins.
+  let notified = false
 
   const closeOpen = (entry: Entry, events: ChildEvent[]) => {
     if (!entry.open) return
@@ -91,14 +108,26 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
     entry.open = undefined
   }
 
+  // Only spawned subagents get a child session. Background Bash, MCP tasks,
+  // workflows and monitors also arrive as task_started with a tool_use_id, but
+  // no frame ever carries their id as parent_tool_use_id: mirroring them mints
+  // an empty session titled after a shell command.
+  const isSubagentTask = (message: Record<string, unknown>) => {
+    const type = message["task_type"]
+    if (type === "local_agent") return true
+    return type === undefined && typeof message["subagent_type"] === "string"
+  }
+
   const started = async (message: Record<string, unknown>) => {
     if (message["skip_transcript"] === true) return
+    if (!isSubagentTask(message)) return
     const toolUseID = message["tool_use_id"]
     if (typeof toolUseID !== "string" || !toolUseID) return
     if (entries.has(toolUseID)) return
 
     const description = typeof message["description"] === "string" ? message["description"] : "subagent"
-    const agent = typeof message["subagent_type"] === "string" && message["subagent_type"] ? message["subagent_type"] : "general"
+    const agent =
+      typeof message["subagent_type"] === "string" && message["subagent_type"] ? message["subagent_type"] : "general"
     const sessionID = await ops.createChild({ title: `${description} (@${agent} subagent)`, agent })
     if (!sessionID) return
 
@@ -108,6 +137,9 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
       description,
       agent,
       settled: false,
+      // The CLI says up front whether the spawning tool call blocks on the
+      // agent; the launching tool_result repeats it as status async_launched.
+      ...(message["is_backgrounded"] === true ? { resolution: "async" as const } : {}),
       seen: new Set(),
       tools: new Map(),
     }
@@ -121,7 +153,8 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
     await ops.publish(events)
   }
 
-  const notified = async (message: Record<string, unknown>) => {
+  const notification = async (message: Record<string, unknown>) => {
+    if (message["ambient"] !== true && message["skip_transcript"] !== true) notified = true
     const toolUseID =
       typeof message["tool_use_id"] === "string"
         ? message["tool_use_id"]
@@ -135,6 +168,17 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
     closeOpen(entry, events)
     events.push({ kind: "execution-succeeded", sessionID: entry.sessionID })
     await ops.publish(events)
+  }
+
+  // A foreground agent moved to the background (Ctrl+B or the control
+  // request) keeps running past the parent's result like an async launch.
+  const updated = (message: Record<string, unknown>) => {
+    const patch = record(message["patch"])
+    if (patch["is_backgrounded"] !== true) return
+    const taskID = message["task_id"]
+    const toolUseID = typeof taskID === "string" ? byTask.get(taskID) : undefined
+    const entry = toolUseID ? entries.get(toolUseID) : undefined
+    if (entry && !entry.settled) entry.resolution = "async"
   }
 
   const assistant = async (entry: Entry, message: Record<string, unknown>) => {
@@ -247,16 +291,31 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
     if (events.length) await ops.publish(events)
   }
 
+  const beginTurn = () => {
+    if (active) return
+    active = true
+    notified = false
+  }
+
   return {
     observe: async (message) => {
       const raw = message as unknown as Record<string, unknown>
+      if (raw["type"] === "result") {
+        active = false
+        return
+      }
       if (raw["type"] === "system") {
         if (raw["subtype"] === "task_started") return started(raw)
-        if (raw["subtype"] === "task_notification") return notified(raw)
+        if (raw["subtype"] === "task_notification") return notification(raw)
+        if (raw["subtype"] === "task_updated") return updated(raw)
+        // The CLI re-announces init at the start of every turn it opens on
+        // its own (task notifications, auto-continuation).
+        if (raw["subtype"] === "init") beginTurn()
         return
       }
       const parent = raw["parent_tool_use_id"]
       if (typeof parent !== "string" || !parent) {
+        if (raw["type"] === "assistant" || raw["type"] === "stream_event" || raw["type"] === "user") beginTurn()
         if (raw["type"] === "user") resolved(raw)
         return
       }
@@ -266,6 +325,11 @@ export const make = (input: { readonly parentSessionID: string; readonly ops: Op
       if (raw["type"] === "user") return user(entry, raw)
     },
     children: () => entries,
+    continuation: () => {
+      if (active) return "active"
+      for (const entry of entries.values()) if (entry.resolution === "async" && !entry.settled) return "children"
+      return notified ? "queued" : "none"
+    },
     // Turn end: async-launched children are still running and keep their
     // entries; everything else is settled but never deleted — late lookups and
     // the live children() map depend on the entries surviving.

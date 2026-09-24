@@ -151,3 +151,155 @@ describe("ClaudeCodeSessions.SessionManager onExit", () => {
     expect(exits).toBe(1)
   })
 })
+
+describe("ClaudeCodeSessions.SessionManager held turns", () => {
+  const frame = (type: string, extra: Record<string, unknown> = {}) =>
+    ({ type, parent_tool_use_id: null, session_id: "claude_1", ...extra }) as unknown as SDKMessage
+
+  const held = (manager: ClaudeCodeSessions.SessionManager, holdTurn: () => ClaudeCodeSessions.HoldReason) =>
+    manager.turn("ses_1", prompt, { model: "sonnet", permissionMode: "default", holdTurn, options: {} } as never)
+
+  const collect = (turn: AsyncIterable<SDKMessage>) => {
+    const messages: SDKMessage[] = []
+    let ended = false
+    const done = (async () => {
+      for await (const message of turn) messages.push(message)
+      ended = true
+    })()
+    return { messages, ended: () => ended, done }
+  }
+
+  it("withholds the result while background agents run and ends on the continuation's result", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery)
+    let reason: ClaudeCodeSessions.HoldReason = "active"
+    const out = collect(await held(manager, () => reason))
+
+    reason = "children"
+    h.feed.push(result())
+    await sleep(5)
+    expect(out.ended()).toBe(false)
+    expect(manager.busy("ses_1")).toBe(true)
+    expect(out.messages).toHaveLength(0)
+
+    // The agent reports, the CLI opens the continuation turn, it answers.
+    reason = "active"
+    h.feed.push(frame("assistant", { message: { content: [{ type: "text", text: "done" }] } }))
+    await sleep(5)
+    expect(out.messages.map((message) => message.type)).toEqual(["assistant"])
+    reason = "none"
+    const final = result()
+    h.feed.push(final)
+    await out.done
+    expect(out.messages.map((message) => message.type)).toEqual(["assistant", "result"])
+    expect(out.messages[1]).toBe(final)
+    expect(manager.busy("ses_1")).toBe(false)
+    manager.stopAll()
+  })
+
+  it("delivers the withheld result when nothing is pending any more", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery)
+    let reason: ClaudeCodeSessions.HoldReason = "children"
+    const out = collect(await held(manager, () => reason))
+    const first = result()
+    h.feed.push(first)
+    await sleep(5)
+    expect(out.ended()).toBe(false)
+
+    // A stop notification settles the last agent without queueing a turn.
+    reason = "none"
+    h.feed.push(frame("system", { subtype: "task_notification", status: "stopped" }))
+    await out.done
+    expect(out.messages.map((message) => message.type)).toEqual(["system", "result"])
+    expect(out.messages[1]).toBe(first)
+    manager.stopAll()
+  })
+
+  it("bounds a wait for a queued continuation that never starts", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery, { continuationGraceMs: 20 })
+    const out = collect(await held(manager, () => "queued"))
+    const first = result()
+    h.feed.push(first)
+    await sleep(5)
+    expect(out.ended()).toBe(false)
+    await sleep(60)
+    expect(out.ended()).toBe(true)
+    expect(out.messages).toEqual([first])
+    expect(manager.busy("ses_1")).toBe(false)
+    expect(h.state.closed).toBe(0)
+    manager.stopAll()
+  })
+
+  it("keeps waiting while the queued turn is announced within the grace", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery, { continuationGraceMs: 20 })
+    let reason: ClaudeCodeSessions.HoldReason = "queued"
+    const out = collect(await held(manager, () => reason))
+    h.feed.push(result())
+    await sleep(5)
+    reason = "active"
+    h.feed.push(frame("system", { subtype: "init" }))
+    await sleep(60)
+    expect(out.ended()).toBe(false)
+    reason = "none"
+    h.feed.push(result())
+    await out.done
+    expect(out.messages.map((message) => message.type)).toEqual(["system", "result"])
+    manager.stopAll()
+  })
+
+  it("releases a held idle turn on interrupt without killing the process", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery, { interruptGraceMs: 20 })
+    const out = collect(await held(manager, () => "children"))
+    const first = result()
+    h.feed.push(first)
+    await sleep(5)
+
+    await manager.interrupt("ses_1")
+    await out.done
+    expect(out.messages).toEqual([first])
+    expect(h.state.interrupts).toBe(1)
+    await sleep(40)
+    expect(h.state.closed).toBe(0)
+    expect(manager.busy("ses_1")).toBe(false)
+    manager.stopAll()
+  })
+
+  it("never holds again once the turn was interrupted", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery, { interruptGraceMs: 5_000 })
+    let reason: ClaudeCodeSessions.HoldReason = "active"
+    const out = collect(await held(manager, () => reason))
+    await manager.interrupt("ses_1")
+    // The CLI kills the background agents; their entries have not settled yet.
+    reason = "children"
+    h.feed.push(result())
+    await out.done
+    expect(out.messages).toHaveLength(1)
+    manager.stopAll()
+  })
+
+  it("never holds an unsuccessful result", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery)
+    const out = collect(await held(manager, () => "children"))
+    h.feed.push({ type: "result", subtype: "error_max_turns", session_id: "claude_1" } as unknown as SDKMessage)
+    await out.done
+    expect(out.messages).toHaveLength(1)
+    manager.stopAll()
+  })
+
+  it("fails a held turn when the process dies", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery)
+    const out = collect(await held(manager, () => "children"))
+    h.feed.push(result())
+    await sleep(5)
+    h.feed.end()
+    await expect(out.done).rejects.toThrow("exited before the turn completed")
+    expect(manager.busy("ses_1")).toBe(false)
+  })
+})

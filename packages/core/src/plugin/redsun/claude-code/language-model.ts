@@ -137,6 +137,8 @@ export interface Hooks {
   ) => Promise<() => void>
   readonly turnOptions?: (sessionID: string) => Partial<Options>
   readonly taskChildren?: (sessionID: string) => ReadonlyMap<string, ClaudeCodeTranslate.TaskChild> | undefined
+  /** What the native session still owes once a result lands; see ClaudeCodeSessions.HoldReason. */
+  readonly turnPending?: (sessionID: string) => ClaudeCodeSessions.HoldReason
   readonly observer?: (sessionID: string, message: SDKMessage, inTurn: boolean) => Promise<void> | void
   readonly resumeCursor?: (sessionID: string) => string | undefined
   readonly onCursor?: (sessionID: string, claudeSessionID: string) => void
@@ -303,6 +305,7 @@ export const make = (input: {
                 return hooks?.observer?.(sessionID, message, inTurn)
               }
             : undefined,
+        holdTurn: hooks?.turnPending ? () => hooks.turnPending!(sessionID) : undefined,
         onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
         options: {
           ...interactiveOptions(config),

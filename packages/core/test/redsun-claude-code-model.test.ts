@@ -136,6 +136,27 @@ describe("ClaudeCodeLanguageModel.doStream", () => {
     expect(parts.map((part) => part.type)).toEqual(["stream-start", "text-start", "text-delta", "finish"])
   })
 
+  it("lets the manager hold the turn open on what the session still owes", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const asked: string[] = []
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        turnPending: (sessionID) => {
+          asked.push(sessionID)
+          return "children"
+        },
+      },
+    })
+    const { stream } = await created.doStream(call({ prompt: [user("hello")] }))
+    await collect(stream)
+    expect(calls[0]!.options.holdTurn()).toBe("children")
+    expect(asked).toEqual(["ses_1"])
+  })
+
   it("reports a silent CLI model substitution from main-thread assistant frames", async () => {
     const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
     const seen: unknown[] = []

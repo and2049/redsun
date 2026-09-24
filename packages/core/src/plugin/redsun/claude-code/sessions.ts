@@ -58,10 +58,21 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   }
 }
 
+/** See ClaudeCodeSubagents.Continuation: what the CLI still owes after a result. */
+export type HoldReason = "active" | "children" | "queued" | "none"
+
 export interface SessionOptions {
   readonly model: string
   readonly permissionMode: PermissionMode
   readonly observer?: (message: SDKMessage, inTurn: boolean) => Promise<void> | void
+  /**
+   * Consulted when a successful result lands and again on every later frame
+   * while the turn is held. "children" and "queued" withhold the result: the
+   * CLI will open a continuation turn by itself once its background agents
+   * report, and that turn's frames belong to this host turn rather than to
+   * nothing. A "queued" hold is bounded, "children" waits for the agents.
+   */
+  readonly holdTurn?: () => HoldReason
   readonly onExit?: () => Promise<void> | void
   readonly options: Omit<
     Options,
@@ -76,7 +87,11 @@ interface LiveSession {
   bypassAllowed: boolean
   prompt: AsyncQueue<SDKUserMessage>
   turn?: AsyncQueue<SDKMessage>
+  /** The withheld result of the current turn, pushed when the hold releases without a newer one. */
+  held?: { turn: AsyncQueue<SDKMessage>; result: SDKMessage; watchdog?: ReturnType<typeof setTimeout> }
+  interrupted: boolean
   observer?: SessionOptions["observer"]
+  holdTurn?: SessionOptions["holdTurn"]
   onExit?: SessionOptions["onExit"]
   exited: boolean
   dead: boolean
@@ -85,18 +100,60 @@ interface LiveSession {
 
 const MAX_LIVE_SESSIONS = 4
 const INTERRUPT_GRACE_MS = 15_000
+// The CLI announces a queued continuation turn (system init) as soon as the
+// previous result goes out, so a hold that only waits for that announcement
+// needs seconds, not the minutes an agent may run.
+const CONTINUATION_GRACE_MS = 15_000
 
 export class SessionManager {
   private sessions = new Map<string, LiveSession>()
   private interruptGraceMs: number
+  private continuationGraceMs: number
   private onStart?: (query: QueryLike) => void
 
   constructor(
     private createQuery: CreateQuery,
-    options?: { interruptGraceMs?: number; onStart?: (query: QueryLike) => void },
+    options?: { interruptGraceMs?: number; continuationGraceMs?: number; onStart?: (query: QueryLike) => void },
   ) {
     this.interruptGraceMs = options?.interruptGraceMs ?? INTERRUPT_GRACE_MS
+    this.continuationGraceMs = options?.continuationGraceMs ?? CONTINUATION_GRACE_MS
     this.onStart = options?.onStart
+  }
+
+  /** Ends the turn. A withheld result stands in when no newer one arrived. */
+  private end(session: LiveSession, turn: AsyncQueue<SDKMessage>, result?: SDKMessage) {
+    const held = session.held?.turn === turn ? session.held : undefined
+    if (held) {
+      clearTimeout(held.watchdog)
+      session.held = undefined
+    }
+    const final = result ?? held?.result
+    if (final) turn.push(final)
+    turn.end()
+    if (session.turn === turn) session.turn = undefined
+  }
+
+  private clearHold(session: LiveSession) {
+    if (!session.held) return
+    clearTimeout(session.held.watchdog)
+    session.held = undefined
+  }
+
+  // Re-read what the CLI still owes. Waiting for agents is open-ended; waiting
+  // for the turn a delivered notification queues is bounded, because a CLI
+  // that folded the notification into the finished turn never opens one.
+  private rearm(session: LiveSession, turn: AsyncQueue<SDKMessage>) {
+    const held = session.held
+    if (!held || held.turn !== turn) return
+    clearTimeout(held.watchdog)
+    held.watchdog = undefined
+    const reason = session.holdTurn?.() ?? "none"
+    if (reason === "none") return this.end(session, turn)
+    if (reason !== "queued") return
+    held.watchdog = setTimeout(() => {
+      if (session.held === held && session.turn === turn && !session.dead) this.end(session, turn)
+    }, this.continuationGraceMs)
+    held.watchdog.unref?.()
   }
 
   private async exit(session: LiveSession) {
@@ -126,7 +183,9 @@ export class SessionManager {
       permissionMode: input.permissionMode,
       bypassAllowed: input.permissionMode === "bypassPermissions",
       prompt,
+      interrupted: false,
       observer: input.observer,
+      holdTurn: input.holdTurn,
       onExit: input.onExit,
       exited: false,
       dead: false,
@@ -141,18 +200,30 @@ export class SessionManager {
               await session.observer(message, turn !== undefined)
             } catch {}
           }
-          turn?.push(message)
+          if (!turn) continue
           if (message.type === "result") {
-            turn?.end()
-            if (session.turn === turn) session.turn = undefined
+            const reason =
+              message.subtype === "success" && !session.interrupted ? (session.holdTurn?.() ?? "none") : "none"
+            if (reason === "children" || reason === "queued") {
+              this.clearHold(session)
+              session.held = { turn, result: message }
+              this.rearm(session, turn)
+              continue
+            }
+            this.end(session, turn, message)
+            continue
           }
+          turn.push(message)
+          if (session.held?.turn === turn) this.rearm(session, turn)
         }
         session.dead = true
+        this.clearHold(session)
         session.turn?.fail(new Error("Claude Code process exited before the turn completed"))
         session.turn = undefined
         await this.exit(session)
       } catch (error) {
         session.dead = true
+        this.clearHold(session)
         session.turn?.fail(error)
         session.turn = undefined
         await this.exit(session)
@@ -205,6 +276,7 @@ export class SessionManager {
       this.sessions.delete(sessionID)
       this.sessions.set(sessionID, session)
       session.observer = input.observer
+      session.holdTurn = input.holdTurn
       session.onExit = input.onExit
       if (session.model !== input.model) {
         await session.query.setModel(input.model)
@@ -218,6 +290,7 @@ export class SessionManager {
 
     const turn = new AsyncQueue<SDKMessage>()
     session.turn = turn
+    session.interrupted = false
     session.prompt.push({
       type: "user",
       message: { role: "user", content: prompt },
@@ -230,16 +303,25 @@ export class SessionManager {
     const session = this.sessions.get(sessionID)
     if (!session || session.dead) return
     const turn = session.turn
+    // Never re-hold after an interrupt: the CLI kills background tasks, and
+    // their stop notifications must not keep the host turn waiting.
+    session.interrupted = true
     try {
       await session.query.interrupt()
     } catch {
       this.stop(sessionID)
       return
     }
+    if (turn === undefined || session.turn !== turn) return
+    // A held turn whose CLI side is idle gets no result frame for the
+    // interrupt; release it with the result it already produced.
+    if (session.held?.turn === turn && session.holdTurn?.() !== "active") {
+      this.end(session, turn)
+      return
+    }
     // The CLI acknowledges an interrupt by ending the turn with a result frame.
     // If that never arrives the turn queue stays open and busy() is true until
     // process death — bound it by killing the process after a grace period.
-    if (turn === undefined || session.turn !== turn) return
     const timer = setTimeout(() => {
       if (!session.dead && session.turn === turn && this.sessions.get(sessionID) === session) this.stop(sessionID)
     }, this.interruptGraceMs)
@@ -251,6 +333,7 @@ export class SessionManager {
     if (!session) return
     this.sessions.delete(sessionID)
     session.dead = true
+    this.clearHold(session)
     session.prompt.end()
     session.turn?.fail(new Error("Claude Code session was closed"))
     session.turn = undefined

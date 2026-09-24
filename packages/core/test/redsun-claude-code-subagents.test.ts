@@ -69,6 +69,38 @@ describe("ClaudeCodeSubagents", () => {
     })
   })
 
+  it("mints a child for a local_agent task the CLI types explicitly", async () => {
+    const h = harness()
+    await h.mirror.observe(msg(taskStarted({ task_type: "local_agent", subagent_type: undefined })))
+    expect(h.created).toEqual([{ title: "audit the config loader (@general subagent)", agent: "general" }])
+  })
+
+  it("ignores a background Bash task, which no subagent frame ever references", async () => {
+    const h = harness()
+    // CLI 2.1.281: task_started for Bash run_in_background carries the Bash
+    // tool_use_id and the command as description, but no subagent_type.
+    await h.mirror.observe(
+      msg(
+        taskStarted({
+          task_type: "local_bash",
+          subagent_type: undefined,
+          description: "sleep 3; echo hi",
+          is_backgrounded: true,
+        }),
+      ),
+    )
+    expect(h.created).toHaveLength(0)
+    expect(h.events).toHaveLength(0)
+    expect(h.mirror.children().size).toBe(0)
+  })
+
+  it("ignores workflow, MCP and monitor tasks the same way", async () => {
+    const h = harness()
+    for (const task_type of ["local_workflow", "mcp_task", "monitor", "remote_agent"])
+      await h.mirror.observe(msg(taskStarted({ task_type, subagent_type: undefined, task_id: task_type })))
+    expect(h.created).toHaveLength(0)
+  })
+
   it("ignores a repeated task_started for the same tool call", async () => {
     const h = harness()
     await h.mirror.observe(msg(taskStarted()))
@@ -196,14 +228,7 @@ describe("ClaudeCodeSubagents", () => {
     await h.mirror.observe(msg(childAssistant([{ type: "text", text: "one" }], "api_1")))
     await h.mirror.observe(msg(childAssistant([{ type: "text", text: "two" }], "api_2")))
 
-    expect(h.kinds()).toEqual([
-      "execution-started",
-      "step-started",
-      "text",
-      "step-ended",
-      "step-started",
-      "text",
-    ])
+    expect(h.kinds()).toEqual(["execution-started", "step-started", "text", "step-ended", "step-started", "text"])
   })
 
   it("mirrors a repeated api message id only once", async () => {
@@ -271,6 +296,25 @@ describe("ClaudeCodeSubagents", () => {
     expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
   })
 
+  it("treats is_backgrounded on task_started as an async launch before any tool_result", async () => {
+    const h = harness()
+    await h.mirror.observe(msg(taskStarted({ task_type: "local_agent", is_backgrounded: true })))
+    await h.mirror.sweep()
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(0)
+    await h.mirror.observe(msg(taskNotification()), false)
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(1)
+  })
+
+  it("keeps a foreground child that was moved to the background", async () => {
+    const h = harness()
+    await h.mirror.observe(msg(taskStarted({ is_backgrounded: false })))
+    await h.mirror.observe(
+      msg({ type: "system", subtype: "task_updated", task_id: "task_1", patch: { is_backgrounded: true } }),
+    )
+    await h.mirror.sweep()
+    expect(h.kinds().filter((kind) => kind === "execution-succeeded")).toHaveLength(0)
+  })
+
   it("sweeps a foreground child whose tool_result already returned", async () => {
     const h = harness()
     await h.mirror.observe(msg(taskStarted()))
@@ -313,5 +357,90 @@ describe("ClaudeCodeSubagents", () => {
     expect(captured.size).toBe(0)
     await h.mirror.observe(msg(taskStarted()))
     expect(captured.get("toolu_1")?.sessionID).toBe("ses_child_1")
+  })
+
+  describe("continuation", () => {
+    const mainAssistant = () =>
+      msg({
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: { id: "api_main", content: [{ type: "text", text: "hi" }] },
+      })
+    const result = () => msg({ type: "result", subtype: "success" })
+    const init = () => msg({ type: "system", subtype: "init" })
+
+    it("is none for an idle session and active while the main thread streams", async () => {
+      const h = harness()
+      expect(h.mirror.continuation()).toBe("none")
+      await h.mirror.observe(mainAssistant())
+      expect(h.mirror.continuation()).toBe("active")
+      await h.mirror.observe(result())
+      expect(h.mirror.continuation()).toBe("none")
+    })
+
+    it("waits for a background agent, then for the turn its notification queues", async () => {
+      const h = harness()
+      await h.mirror.observe(mainAssistant())
+      await h.mirror.observe(msg(taskStarted({ task_type: "local_agent", is_backgrounded: true })))
+      await h.mirror.observe(result())
+      expect(h.mirror.continuation()).toBe("children")
+
+      await h.mirror.observe(msg(taskNotification()), true)
+      expect(h.mirror.continuation()).toBe("queued")
+
+      // The CLI opens the continuation turn on its own, announcing it with init.
+      await h.mirror.observe(init(), true)
+      expect(h.mirror.continuation()).toBe("active")
+      await h.mirror.observe(mainAssistant(), true)
+      await h.mirror.observe(result(), true)
+      expect(h.mirror.continuation()).toBe("none")
+    })
+
+    it("holds for a notification that landed mid-turn, since the CLI answers it in a fresh turn", async () => {
+      const h = harness()
+      await h.mirror.observe(msg(taskStarted({ task_type: "local_agent", is_backgrounded: true })))
+      await h.mirror.observe(mainAssistant())
+      await h.mirror.observe(msg(taskNotification()))
+      expect(h.mirror.continuation()).toBe("active")
+      await h.mirror.observe(result())
+      expect(h.mirror.continuation()).toBe("queued")
+      await h.mirror.observe(mainAssistant())
+      expect(h.mirror.continuation()).toBe("active")
+      await h.mirror.observe(result())
+      expect(h.mirror.continuation()).toBe("none")
+    })
+
+    it("counts a background Bash notification, which also wakes the model", async () => {
+      const h = harness()
+      await h.mirror.observe(mainAssistant())
+      await h.mirror.observe(result())
+      await h.mirror.observe(msg(taskNotification({ task_id: "bash_1", tool_use_id: "toolu_bash" })))
+      expect(h.mirror.continuation()).toBe("queued")
+    })
+
+    it("does not wait on ambient housekeeping tasks", async () => {
+      const h = harness()
+      await h.mirror.observe(msg(taskNotification({ task_id: "watch", tool_use_id: undefined, ambient: true })))
+      await h.mirror.observe(
+        msg(taskNotification({ task_id: "hidden", tool_use_id: undefined, skip_transcript: true })),
+      )
+      expect(h.mirror.continuation()).toBe("none")
+    })
+
+    it("does not wait on a foreground agent, whose result returned inside the turn", async () => {
+      const h = harness()
+      await h.mirror.observe(msg(taskStarted({ task_type: "local_agent", is_backgrounded: false })))
+      await h.mirror.observe(msg(taskNotification()))
+      await h.mirror.observe(
+        msg({
+          type: "user",
+          parent_tool_use_id: null,
+          message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "summary" }] },
+          tool_use_result: { status: "completed" },
+        }),
+      )
+      await h.mirror.observe(result())
+      expect(h.mirror.continuation()).toBe("none")
+    })
   })
 })

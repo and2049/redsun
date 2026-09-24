@@ -580,6 +580,7 @@ export const Plugin = define({
             compactRestored: (sessionID) => compactRestored.get(sessionID) ?? 0,
             taskChildren: (sessionID) => mirrorFor(sessionID, modelRef).children(),
             observer: (sessionID, message, inTurn) => mirrorFor(sessionID, modelRef).observe(message, inTurn),
+            turnPending: (sessionID) => mirrors.get(sessionID)?.continuation() ?? "none",
             onTurnEnd: (sessionID) => mirrors.get(sessionID)?.sweep(),
             onCompacted: (sessionID) => context.clear(sessionID),
             onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
