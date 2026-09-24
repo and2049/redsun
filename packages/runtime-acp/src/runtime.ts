@@ -15,6 +15,7 @@ import {
 import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import { DelegateContext } from "@opencode/plugin/effect/delegate-context"
 import type {
+  DelegatedApproval,
   DelegatedInstructionFile,
   DelegatedSkillSummary,
   DelegatedPermissionCheck,
@@ -30,12 +31,14 @@ import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
 
+export type Selection = "normal" | "auto" | "native_auto"
+
 /** What the runtime needs from the host, as plain async calls (the plugin binds them to `ctx`). */
 export interface Host {
   readonly cwd: string
-  readonly mode: () => Promise<"normal" | "auto" | "native_auto">
-  /** Asks the host policy (prompting when it asks); resolves false on decline. */
-  readonly approve: (check: DelegatedPermissionCheck) => Promise<boolean>
+  readonly mode: () => Promise<Selection>
+  /** Asks the host policy (prompting when it asks); a decline may carry the user's correction. */
+  readonly approve: (check: DelegatedPermissionCheck) => Promise<DelegatedApproval>
   /** The host tools a primary turn may use, bound to its attribution; absent when it has none. */
   readonly tools?: (turn: DelegatedTurn) => Promise<DelegatedToolBinding | undefined>
   /** The agent session a host session last used, kept across host restarts. */
@@ -65,7 +68,15 @@ export interface Process {
   readonly stdout: ReadableStream<Uint8Array>
   readonly kill: () => void
   readonly exited: Promise<unknown>
+  /** What the agent wrote to stderr, most recent last; for failure messages. */
+  readonly stderr?: () => string
 }
+
+/** How much of the agent's stderr is kept for failure messages. */
+const STDERR_TAIL = 4_000
+
+/** How long a cancelled turn waits for the agent to stop on its own before its process is killed. */
+export const INTERRUPT_GRACE_MS = 5_000
 
 export type Spawn = (agent: AcpOptions.Agent, cwd: string, extraArgs: readonly string[]) => Process
 
@@ -104,7 +115,11 @@ export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
   const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
     env: environment(agent),
-    stdio: ["pipe", "pipe", "ignore"],
+    stdio: ["pipe", "pipe", "pipe"],
+  })
+  let stderr = ""
+  child.stderr.on("data", (chunk: Buffer | string) => {
+    stderr = (stderr + String(chunk)).slice(-STDERR_TAIL)
   })
   return {
     stdin: Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
@@ -114,8 +129,18 @@ export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
       child.once("exit", resolve)
       child.once("error", resolve)
     }),
+    stderr: () => stderr.trim(),
   }
 }
+
+/** The agent's stderr as a failure message suffix. */
+const said = (process: Process) => {
+  const tail = process.stderr?.()
+  return tail ? `\nThe agent said:\n${tail}` : ""
+}
+
+const sameArgs = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((item, index) => item === right[index])
 
 const text = (content: unknown): string =>
   typeof content === "string"
@@ -154,8 +179,8 @@ interface Session {
   readonly process: Process
   readonly connection: ClientSideConnection
   readonly acpSessionID: string
-  /** Launched with the agent's auto-approval flags (`nativeApprovalArgs`). */
-  readonly trusted: boolean
+  /** The approval flags the process was launched with (`nativeApprovalArgs` or `autoApprovalArgs`). */
+  readonly launch: readonly string[]
   /** The agent can reload this session into a new process (`session/load`). */
   readonly loadable: boolean
   /** The host tool catalog the agent session was started with. */
@@ -171,6 +196,13 @@ interface Session {
   readonly plans: AcpPlan.Plans
   agent?: string
   listener?: (update: SessionUpdate) => void
+  /** Corrections the user typed into declines; ACP has no channel for them but the next prompt. */
+  readonly corrections: string[]
+}
+
+export interface Options {
+  readonly spawn?: Spawn
+  readonly interruptGraceMs?: number
 }
 
 export class Runtime {
@@ -181,12 +213,18 @@ export class Runtime {
   /** The model a new agent session starts with; a loaded session reports the one it last used. */
   private defaultModel?: string
   private readonly context: DelegateContext.Tracker
+  /** Host sessions with a primary turn in flight, from acquisition to the end of its stream. */
+  private readonly turns = new Set<string>()
+  private readonly spawn: Spawn
+  private readonly interruptGraceMs: number
 
   constructor(
     private readonly agent: AcpOptions.Agent,
     private readonly host: Host,
-    private readonly spawn: Spawn = spawnProcess,
+    options: Options = {},
   ) {
+    this.spawn = options.spawn ?? spawnProcess
+    this.interruptGraceMs = options.interruptGraceMs ?? INTERRUPT_GRACE_MS
     this.context = new DelegateContext.Tracker({
       inherited: AcpContext.inherited(host.cwd, agent.inheritedInstructions),
       skillTool: AcpContext.SKILL_TOOL,
@@ -239,7 +277,10 @@ export class Runtime {
         // The host's own tools apply the host's permission policy when they execute.
         if (session.slot?.owns(request.toolCall.toolCallId)) return AcpPermissions.respond(request, true)
         const check = AcpPermissions.check(request, { sessionID: session.sessionID, agent: session.agent })
-        return AcpPermissions.respond(request, await this.host.approve(check).catch(() => false))
+        const approval = await this.host.approve(check).catch((): DelegatedApproval => ({ ok: false }))
+        if (!approval.ok && approval.feedback)
+          session.corrections.push(AcpPermissions.correction(request.toolCall, approval.feedback))
+        return AcpPermissions.respond(request, approval.ok)
       },
     }
   }
@@ -253,16 +294,16 @@ export class Runtime {
   private async open(
     sessionID: string,
     input: {
-      readonly trusted: boolean
+      readonly launch: readonly string[]
       readonly resume?: string
       readonly tools?: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] }
-    } = { trusted: false },
+    } = { launch: [] },
   ): Promise<{ readonly session: Session; readonly resumed: boolean }> {
     if (this.agent.home && !this.homeReady) {
       prepareHome(this.agent.home)
       this.homeReady = true
     }
-    const process = this.spawn(this.agent, this.host.cwd, input.trusted ? (this.agent.nativeApprovalArgs ?? []) : [])
+    const process = this.spawn(this.agent, this.host.cwd, input.launch)
     let opened: Session | undefined
     let slot: AcpHostTools.Slot | undefined
     const connection = new ClientSideConnection(
@@ -301,10 +342,11 @@ export class Runtime {
         process,
         connection,
         acpSessionID: created.sessionId,
-        trusted: input.trusted,
+        launch: input.launch,
         loadable,
         catalog: input.tools?.catalog ?? "",
         plans: new Map(),
+        corrections: [],
         ...(slot ? { slot } : {}),
         modes: new Set(created.modes?.availableModes.map((mode) => mode.id) ?? []),
         ...(created.modes
@@ -329,8 +371,10 @@ export class Runtime {
     } catch (error) {
       if (slot) this.endpoint.detach(slot)
       process.kill()
+      // The agent's own reason lands on stderr after the connection drops; give it a moment.
+      await Promise.race([process.exited, new Promise((resolve) => setTimeout(resolve, 200))])
       throw new Error(
-        `${this.agent.name} did not start an ACP session: ${error instanceof Error ? error.message : String(error)}`,
+        `${this.agent.name} did not start an ACP session: ${error instanceof Error ? error.message : String(error)}${said(process)}`,
       )
     }
   }
@@ -346,6 +390,12 @@ export class Runtime {
     session.process.kill()
   }
 
+  /** The host session is gone: its agent process goes too (its cursor is the plugin's to remove). */
+  drop(sessionID: string) {
+    const session = this.sessions.get(sessionID)
+    if (session) this.close(session)
+  }
+
   /**
    * A failure as this agent's own error. Connection errors carry network-style codes (EPIPE when the
    * process is gone) that the host would otherwise report as a bare transport failure.
@@ -353,18 +403,15 @@ export class Runtime {
   private failure(session: Session, error: unknown) {
     const detail = error instanceof Error ? error.message : String(error)
     return new Error(
-      session.exited
+      (session.exited
         ? `${this.agent.name} exited during the turn${detail ? ` (${detail})` : ""}.`
-        : `${this.agent.name} failed: ${detail || "unknown error"}`,
+        : `${this.agent.name} failed: ${detail || "unknown error"}`) + said(session.process),
     )
   }
 
-  /** The agent's own approval mode follows the host's native_auto selection. */
-  private async applyMode(session: Session, native: boolean) {
-    const wanted =
-      native && this.agent.nativeApprovalMode
-        ? this.agent.nativeApprovalMode
-        : (this.agent.defaultMode ?? session.initialMode)
+  /** The agent's own session mode follows the host's selection, where it has one for it. */
+  private async applyMode(session: Session, selection: Selection) {
+    const wanted = AcpOptions.sessionMode(this.agent, selection) ?? this.agent.defaultMode ?? session.initialMode
     if (!wanted || wanted === session.currentMode || !session.modes.has(wanted)) return
     await session.connection.setSessionMode({ sessionId: session.acpSessionID, modeId: wanted })
     session.currentMode = wanted
@@ -423,7 +470,7 @@ export class Runtime {
   /**
    * The live session for a turn. The approval selection is read once per turn, so switching modes
    * costs nothing until the next prompt, and switching back before then costs nothing at all. An
-   * agent whose auto-approval is a launch flag is restarted only when the selection differs from
+   * agent whose approval is a launch flag is restarted only when the selection's flags differ from
    * how its process was launched; the conversation is loaded back into the new process. A host
    * session this process has not run yet resumes the agent session it last used.
    *
@@ -432,19 +479,18 @@ export class Runtime {
    */
   private async acquire(
     turn: DelegatedTurn,
-    native: boolean,
+    selection: Selection,
     tools: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] },
     history: boolean,
   ) {
-    const trusted = native && Boolean(this.agent.nativeApprovalArgs?.length)
+    const launch = AcpOptions.launchArgs(this.agent, selection)
     const existing = this.sessions.get(turn.sessionID)
-    if (existing?.listener) throw new Error(`${this.agent.name} session is already processing a turn.`)
     // The agent lists host tools once per session, so a changed catalog also needs a relaunch.
-    if (existing && existing.trusted === trusted && existing.catalog === tools.catalog)
+    if (existing && sameArgs(existing.launch, launch) && existing.catalog === tools.catalog)
       return { session: existing, remembers: true }
     if (existing) this.close(existing)
     const resume = existing?.acpSessionID ?? (await this.host.cursor?.get(turn.sessionID).catch(() => undefined))
-    const opened = await this.open(turn.sessionID, { trusted, tools, ...(resume ? { resume } : {}) })
+    const opened = await this.open(turn.sessionID, { launch, tools, ...(resume ? { resume } : {}) })
     this.sessions.set(turn.sessionID, opened.session)
     if (opened.session.acpSessionID !== resume)
       await this.host.cursor?.set(turn.sessionID, opened.session.acpSessionID).catch(() => {})
@@ -455,8 +501,29 @@ export class Runtime {
     const oneShot = turn.kind !== "primary"
     if (!(oneShot ? flatten(options.prompt) : promptDelta(options.prompt)))
       throw new Error(`No user prompt to deliver to ${this.agent.name}.`)
-    // One-shots (titles, generation) run untrusted in a throwaway process.
-    const native = !oneShot && AcpOptions.hasNativeApproval(this.agent) && (await this.host.mode()) === "native_auto"
+    if (!oneShot && this.turns.has(turn.sessionID))
+      throw new Error(`${this.agent.name} session is already processing a turn.`)
+    if (!oneShot) this.turns.add(turn.sessionID)
+    const release = () => void (oneShot || this.turns.delete(turn.sessionID))
+    try {
+      return await this.start(turn, options, oneShot, release)
+    } catch (error) {
+      release()
+      throw error
+    }
+  }
+
+  private async start(
+    turn: DelegatedTurn,
+    options: LanguageModelV3CallOptions,
+    oneShot: boolean,
+    release: () => void,
+  ): Promise<DelegatedStreamResult> {
+    // One-shots (titles, generation) run under Manual in a throwaway process. `native_auto` on an
+    // agent without a judgement-based mode of its own is Manual here, as the host treats it.
+    const selected = oneShot ? "normal" : await this.host.mode()
+    const selection: Selection =
+      selected === "native_auto" && !AcpOptions.hasNativeApproval(this.agent) ? "normal" : selected
     // Bound at the turn boundary: calls during the turn carry its attribution.
     const binding = oneShot ? undefined : await this.host.tools?.(turn)
     const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools) : []
@@ -464,19 +531,18 @@ export class Runtime {
       ? { session: (await this.open(turn.sessionID)).session, remembers: false }
       : await this.acquire(
           turn,
-          native,
+          selection,
           { catalog: AcpHostTools.catalogKey(definitions), definitions },
           options.prompt.some((message) => message.role === "assistant"),
         )
-    if (binding && turn.assistantMessageID) session.slot?.bind(binding, turn.assistantMessageID)
     const delta = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     const compacting = !oneShot && !!this.agent.compactCommand && delta.trim() === this.agent.compactCommand
     const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, !remembers)
-    const prompt = AcpContext.wrap(delivery?.text, delta)
+    const corrections = oneShot || compacting ? [] : session.corrections.splice(0)
+    const prompt = AcpContext.wrap(delivery?.text, AcpContext.corrected(corrections, delta))
     session.agent = turn.agent
-    if (!oneShot) await this.applyMode(session, native)
+    if (!oneShot) await this.applyMode(session, selection)
     await this.applyModel(session, turn.modelID).catch((error) => {
-      session.slot?.unbind()
       if (oneShot) this.close(session)
       throw this.failure(session, error)
     })
@@ -488,7 +554,16 @@ export class Runtime {
       binding?.definitions.some((item) => item.name === AcpPlan.TOOL) && turn.assistantMessageID ? binding : undefined
     const recording: Promise<void>[] = []
     let plans = 0
-    const cancel = () => void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})
+    let settled = false
+    let grace: ReturnType<typeof setTimeout> | undefined
+    // Cancel is a notification the agent may ignore; a turn that does not end in time is ended
+    // by killing the process, which rejects the pending prompt.
+    const cancel = () => {
+      void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})
+      grace ??= setTimeout(() => {
+        if (!settled) this.close(session)
+      }, this.interruptGraceMs)
+    }
     return {
       stream: new ReadableStream<LanguageModelV3StreamPart>({
         start: async (controller) => {
@@ -543,6 +618,12 @@ export class Runtime {
                 ),
             )
           }
+          // Host tool calls the agent never reports still ran: they render from the host's side.
+          if (binding && turn.assistantMessageID)
+            session.slot?.bind(binding, turn.assistantMessageID, {
+              called: (id, name, args) => emit(AcpTranslate.hostCall(state, id, name, args)),
+              settled: (id, error) => emit(AcpTranslate.hostResult(state, id, error)),
+            })
           session.listener = (update) => {
             const todos = todowrite ? AcpPlan.apply(session.plans, update) : undefined
             if (todos) record(todos)
@@ -555,20 +636,27 @@ export class Runtime {
               sessionId: session.acpSessionID,
               prompt: [{ type: "text", text: prompt }],
             })
+            settled = true
             await Promise.all(recording)
             if (compacting) this.context.clear(turn.sessionID)
             else if (response.stopReason !== "cancelled") delivery?.delivered()
             emit(AcpTranslate.finish(state, response.stopReason))
           } catch (error) {
+            settled = true
             // Let an exit notification land first so the message can say the process is gone.
             await Promise.race([session.process.exited, new Promise((resolve) => setTimeout(resolve, 50))])
             await Promise.all(recording)
-            emit([{ type: "error", error: this.failure(session, error) }])
+            // A turn the host cancelled ended as asked, however the agent went.
+            if (options.abortSignal?.aborted) emit(AcpTranslate.finish(state, "cancelled"))
+            else emit([{ type: "error", error: this.failure(session, error) }])
           } finally {
+            settled = true
+            if (grace !== undefined) clearTimeout(grace)
             session.listener = undefined
             session.slot?.unbind()
             options.abortSignal?.removeEventListener("abort", cancel)
             if (oneShot) this.close(session)
+            release()
             if (!closed)
               try {
                 controller.close()

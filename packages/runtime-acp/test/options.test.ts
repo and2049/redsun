@@ -16,6 +16,11 @@ describe("ACP agent options", () => {
       inheritedInstructions: [],
     })
     expect(AcpOptions.hasNativeApproval(kiro!)).toBe(false)
+    // No judgement-based mode of its own; the host's Auto-approve relaunches it trusted.
+    expect(kiro!.autoApprovalArgs).toEqual(["--trust-all-tools"])
+    expect(AcpOptions.launchArgs(kiro!, "auto")).toEqual(["--trust-all-tools"])
+    expect(AcpOptions.launchArgs(kiro!, "native_auto")).toEqual([])
+    expect(AcpOptions.launchArgs(kiro!, "normal")).toEqual([])
     expect(kiro!.home?.env).toBe("KIRO_HOME")
     expect(kiro!.home?.path).toBe(AcpOptions.defaultHome("kiro"))
     expect(JSON.parse(kiro!.home!.files["agents/redsun.json"]!)).toMatchObject({
@@ -54,5 +59,20 @@ describe("ACP agent options", () => {
     expect(
       AcpOptions.parse({ agents: AcpOptions.withBuiltins({ kiro: { enabled: false } }, () => true) }).agents,
     ).toEqual([])
+  })
+
+  test("offers native_auto only for a judgement-based mode on an agent with tools of its own", () => {
+    const parse = (entry: Record<string, unknown>) =>
+      AcpOptions.parse({ agents: { a: { command: "agent", ...entry } } }).agents[0]!
+    expect(AcpOptions.hasNativeApproval(parse({}))).toBe(false)
+    expect(AcpOptions.hasNativeApproval(parse({ native_approval_mode: "smart" }))).toBe(true)
+    expect(AcpOptions.hasNativeApproval(parse({ native_approval_args: ["--smart"] }))).toBe(true)
+    expect(AcpOptions.hasNativeApproval(parse({ native_approval_mode: "smart", host_tools: "all" }))).toBe(false)
+    expect(AcpOptions.hasNativeApproval(parse({ auto_approval_mode: "yolo" }))).toBe(false)
+    const both = parse({ native_approval_mode: "smart", auto_approval_mode: "yolo", auto_approval_args: ["-y"] })
+    expect(AcpOptions.sessionMode(both, "native_auto")).toBe("smart")
+    expect(AcpOptions.sessionMode(both, "auto")).toBe("yolo")
+    expect(AcpOptions.sessionMode(both, "normal")).toBeUndefined()
+    expect(AcpOptions.launchArgs(both, "auto")).toEqual(["-y"])
   })
 })

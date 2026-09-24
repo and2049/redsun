@@ -6,7 +6,7 @@ import { Credential } from "@opencode/schema/credential"
 import { Integration } from "@opencode/schema/integration"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import type { AcpModels } from "./models.js"
 import { AcpOptions } from "./options.js"
 import { AcpRuntime } from "./runtime.js"
@@ -78,7 +78,7 @@ export default define({
     const shared: AcpRuntime.Host = {
       cwd: ctx.location.directory,
       mode: () => Effect.runPromise(ctx.delegate.permission.mode()),
-      approve: (check) => Effect.runPromise(ctx.delegate.permission.assert(check)).then((result) => result.ok),
+      approve: (check) => Effect.runPromise(ctx.delegate.permission.assert(check)),
       tools: (turn) =>
         turn.assistantMessageID
           ? Effect.runPromise(
@@ -154,6 +154,17 @@ export default define({
 
       const runtime = new AcpRuntime.Runtime(agent, host)
       yield* Effect.addFinalizer(() => Effect.sync(() => runtime.stop()))
+      // A deleted host session releases its agent process and the agent session it remembered.
+      yield* ctx.event.subscribe().pipe(
+        Stream.filter((event) => event.type === "session.deleted"),
+        Stream.runForEach((event) => {
+          const sessionID = (event.data as { sessionID?: unknown }).sessionID
+          if (typeof sessionID !== "string") return Effect.void
+          runtime.drop(sessionID)
+          return storage.remove(cursorKey(sessionID))
+        }),
+        Effect.forkScoped({ startImmediately: true }),
+      )
 
       const label = `${agent.integration.name} CLI (existing sign-in)`
       yield* ctx.integration.transform((draft) => {

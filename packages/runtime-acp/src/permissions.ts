@@ -23,21 +23,50 @@ export const action = (kind: string | null | undefined) => {
   }
 }
 
-/** What the host is asked: the tool's locations when it names files, otherwise its title. */
+const field = (input: unknown, names: readonly string[]) => {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
+  for (const name of names) {
+    const value = (input as Record<string, unknown>)[name]
+    if (typeof value === "string" && value.trim()) return value
+  }
+  return undefined
+}
+
+/**
+ * What a host rule matches against: the tool's locations when it names files; the command for a
+ * shell call and the URL for a fetch, read from the agent's raw input (ACP names no fields, so the
+ * common spellings are tried); otherwise the title.
+ */
+export const resources = (call: RequestPermissionRequest["toolCall"]): string[] => {
+  const paths = (call.locations ?? []).map((location) => location.path).filter(Boolean)
+  if (paths.length) return paths
+  const raw =
+    call.kind === "execute"
+      ? field(call.rawInput, ["command", "cmd", "commandLine", "script"])
+      : call.kind === "fetch"
+        ? field(call.rawInput, ["url", "uri"])
+        : field(call.rawInput, ["path", "file_path", "filePath", "file"])
+  return [raw ?? call.title ?? call.toolCallId]
+}
+
+/** What the host is asked for an agent's own tool call. */
 export const check = (
   request: RequestPermissionRequest,
   input: { readonly sessionID: string; readonly agent?: string },
 ): DelegatedPermissionCheck => {
   const call = request.toolCall
-  const paths = (call.locations ?? []).map((location) => location.path).filter(Boolean)
   return {
     sessionID: input.sessionID,
     ...(input.agent ? { agent: input.agent } : {}),
     action: action(call.kind),
-    resources: paths.length ? paths : [call.title ?? call.toolCallId],
+    resources: resources(call),
     metadata: { source: "acp", toolCallId: call.toolCallId, ...(call.title ? { title: call.title } : {}) },
   }
 }
+
+/** The user's correction on a decline, as the agent reads it with its next prompt. */
+export const correction = (call: RequestPermissionRequest["toolCall"], feedback: string) =>
+  `The user declined ${call.title ? `"${call.title}"` : "a tool call"} and said: ${feedback}`
 
 const pick = (options: readonly PermissionOption[], kinds: readonly PermissionOption["kind"][]) => {
   for (const kind of kinds) {

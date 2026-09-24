@@ -164,6 +164,24 @@ new AgentSideConnection((connection) => {
           },
         })
       }
+      if (text.includes("shell?")) {
+        const answer = await connection.requestPermission({
+          sessionId,
+          toolCall: {
+            toolCallId: "call_shell",
+            title: "Run command",
+            kind: "execute",
+            rawInput: { command: "rm -rf build" },
+          },
+          options: [
+            { optionId: "yes", name: "Allow", kind: "allow_once" },
+            { optionId: "no", name: "Reject", kind: "reject_once" },
+          ],
+        })
+        const allowed = answer.outcome.outcome === "selected" && answer.outcome.optionId === "yes"
+        await say(sessionId, allowed ? "RAN" : "DENIED")
+        return { stopReason: "end_turn" }
+      }
       if (text.includes("permission")) {
         const answer = await connection.requestPermission({
           sessionId,
@@ -184,7 +202,14 @@ new AgentSideConnection((connection) => {
       }
       if (text.includes("crash")) {
         await say(sessionId, "about to fail")
+        process.stderr.write("fake agent: out of credits\n")
         process.exit(3)
+      }
+      if (text.includes("stubborn")) {
+        // An agent that ignores session/cancel and keeps the prompt open.
+        await say(sessionId, "working")
+        await new Promise((resolve) => setTimeout(resolve, 3_000))
+        return { stopReason: "end_turn" }
       }
       if (text.includes("slow")) {
         await say(sessionId, "working")
@@ -248,6 +273,14 @@ new AgentSideConnection((connection) => {
           update: { sessionUpdate: "tool_call_update", toolCallId: "call_late", status: "completed" },
         })
         await say(sessionId, result?.isError ? "LATE FAILED" : "LATE DONE")
+        return { stopReason: "end_turn" }
+      }
+      if (text.includes("hostquiet")) {
+        // A host tool the agent calls without ever reporting it as a tool call.
+        const client = await mcp(sessionId)
+        const result = client ? await client.callTool({ name: "todowrite", arguments: { todos: [] } }) : undefined
+        await client?.close()
+        await say(sessionId, result?.isError ? "QUIET FAILED" : "QUIET DONE")
         return { stopReason: "end_turn" }
       }
       if (text.includes("home?")) {

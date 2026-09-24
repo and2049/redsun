@@ -99,6 +99,27 @@ const settle = (
   ]
 }
 
+/** A host tool call the agent never reported: rendered from the host's side alone. */
+export const hostCall = (state: State, id: string, name: string, args: unknown): LanguageModelV3StreamPart[] => {
+  if (state.tools.has(id)) return []
+  const parts = close(state)
+  state.tools.set(id, { name, settled: false })
+  parts.push({
+    type: "tool-call",
+    toolCallId: id,
+    toolName: name,
+    input: JSON.stringify(AcpHostTools.cleanInput(args) ?? {}),
+    providerExecuted: true,
+  })
+  return parts
+}
+
+/** The host's result for such a call; the slot holds it, so only the status is needed. */
+export const hostResult = (state: State, id: string, error?: unknown): LanguageModelV3StreamPart[] =>
+  error === undefined
+    ? settle(state, id, "completed", undefined, undefined)
+    : settle(state, id, "failed", undefined, error instanceof Error ? error.message : String(error))
+
 export const update = (state: State, update: SessionUpdate): LanguageModelV3StreamPart[] => {
   switch (update.sessionUpdate) {
     case "agent_message_chunk":
@@ -156,6 +177,7 @@ export const finish = (state: State, stopReason: StopReason): LanguageModelV3Str
   for (const [id, call] of state.tools)
     if (!call.settled) {
       call.settled = true
+      state.host?.take(id)
       parts.push({
         type: "tool-result",
         toolCallId: id,

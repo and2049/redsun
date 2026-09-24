@@ -80,20 +80,39 @@ interface Waiting {
  */
 export const REPORT_WAIT_MS = 1_000
 
-/** The best match for a call among reports or waiting calls: same name and input, else same name. */
+/**
+ * The best match for a call among reports or waiting calls: same name and input, else the only
+ * one with that name. With several same-name candidates and no exact input match there is no
+ * telling them apart, so none is claimed.
+ */
 const match = <T extends { readonly name: string; readonly input: string }>(
   items: readonly T[],
   name: string,
   input: string,
 ) => {
   const exact = items.findIndex((item) => item.name === name && item.input === input)
-  return exact >= 0 ? exact : items.findIndex((item) => item.name === name)
+  if (exact >= 0) return exact
+  const named = items.flatMap((item, index) => (item.name === name ? [index] : []))
+  return named.length === 1 ? named[0]! : -1
 }
+
+/** Where a turn hears about host tool calls the agent never reported, so they still render. */
+export interface Unreported {
+  readonly called: (id: string, name: string, args: unknown) => void
+  readonly settled: (id: string, error?: unknown) => void
+}
+
+/** Ids the slot gives calls the agent never reported. */
+export const OWN_PREFIX = "acp-mcp-"
 
 /** One agent session's view of the host tools. */
 export class Slot {
   readonly token = randomBytes(24).toString("base64url")
-  private binding?: { readonly tools: DelegatedToolBinding; readonly messageID: string }
+  private binding?: {
+    readonly tools: DelegatedToolBinding
+    readonly messageID: string
+    readonly unreported?: Unreported
+  }
   /** Host tool calls the agent reported and has not yet executed, oldest first. */
   private readonly reported: Reported[] = []
   /** MCP calls that arrived before the agent reported them, oldest first. */
@@ -109,8 +128,8 @@ export class Slot {
     readonly definitions: ReadonlyArray<ToolDefinition>,
   ) {}
 
-  bind(tools: DelegatedToolBinding, messageID: string) {
-    this.binding = { tools, messageID }
+  bind(tools: DelegatedToolBinding, messageID: string, unreported?: Unreported) {
+    this.binding = { tools, messageID, ...(unreported ? { unreported } : {}) }
   }
 
   unbind() {
@@ -151,7 +170,7 @@ export class Slot {
     const input = JSON.stringify(cleanInput(args))
     const index = match(this.reported, name, input)
     if (index >= 0) return Promise.resolve(this.reported.splice(index, 1)[0]!.id)
-    const own = `acp-mcp-${messageID}-${++this.calls}`
+    const own = `${OWN_PREFIX}${messageID}-${++this.calls}`
     return new Promise((resolve) => {
       const giveUp = () => {
         const at = this.waiting.indexOf(waiting)
@@ -179,15 +198,23 @@ export class Slot {
     if (!this.definitions.some((item) => item.name === name))
       throw new Error(`Tool is not available for this request: ${name}`)
     const callID = await this.claim(name, args, bound.messageID, signal)
-    const result = await bound.tools.execute({
-      name,
-      args,
-      callID,
-      allowed: new Set(this.definitions.map((item) => item.name)),
-      signal,
-    })
-    this.results.set(callID, result)
-    return result
+    const own = callID.startsWith(OWN_PREFIX)
+    if (own) bound.unreported?.called(callID, name, args)
+    try {
+      const result = await bound.tools.execute({
+        name,
+        args,
+        callID,
+        allowed: new Set(this.definitions.map((item) => item.name)),
+        signal,
+      })
+      this.results.set(callID, result)
+      if (own) bound.unreported?.settled(callID)
+      return result
+    } catch (error) {
+      if (own) bound.unreported?.settled(callID, error)
+      throw error
+    }
   }
 }
 
@@ -230,7 +257,7 @@ export class Endpoint {
   }
 
   private start() {
-    this.started ??= new Promise((resolve, reject) => {
+    const started = (this.started ??= new Promise((resolve, reject) => {
       const server = createServer((request, response) => void this.handle(request, response))
       server.once("error", reject)
       server.listen(0, "127.0.0.1", () => {
@@ -238,8 +265,12 @@ export class Endpoint {
         if (!address || typeof address === "string") return reject(new Error("Host tool server has no port."))
         resolve({ server, url: `http://127.0.0.1:${address.port}/mcp` })
       })
+    }))
+    // A failed listen is not kept: the next session tries again.
+    started.catch(() => {
+      if (this.started === started) this.started = undefined
     })
-    return this.started
+    return started
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse) {

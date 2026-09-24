@@ -32,6 +32,10 @@ export const SKILL_TOOL = 'the `skill` tool of the "redsun" MCP server'
 export const OPEN = "<redsun-context>"
 export const CLOSE = "</redsun-context>"
 
+/** Corrections the user typed into declines during the last turn, ahead of the prompt. */
+export const corrected = (corrections: readonly string[], prompt: string) =>
+  corrections.length ? [...corrections.map((item) => `[redsun] ${item}`), "", prompt].join("\n") : prompt
+
 /** Puts host context ahead of the prompt, marked as the host's and not the user's. */
 export const wrap = (context: string | undefined, prompt: string) =>
   context

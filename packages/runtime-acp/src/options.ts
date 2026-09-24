@@ -29,19 +29,30 @@ export interface Agent {
    */
   readonly models: ReadonlyArray<{ readonly id: string; readonly name: string }>
   /**
-   * The agent's own ACP session mode that auto-approves (e.g. a "trust all tools" mode). Only when
-   * set does the host offer `native_auto`, mapped onto this mode. Name the agent's real mode id;
-   * nothing is guessed from mode names.
+   * The agent's own judgement-based approval mode (Claude Code's classifier is the model). Only
+   * when set does the host offer `native_auto` ("Approve for me"), mapped onto this mode. Name the
+   * agent's real mode id; nothing is guessed from mode names. Not offered to an agent confined to
+   * host tools (`hostTools: "all"`): with no native tools, the mode would approve nothing.
    */
   readonly nativeApprovalMode?: string
   /**
-   * Launch flags that make the agent auto-approve, for an agent whose auto-approval is a process
-   * flag rather than a session mode (Kiro's `--trust-all-tools`). Only when set does the host offer
-   * `native_auto`; switching into or out of it restarts the agent at the start of the next turn and
-   * reloads the conversation (`session/load`) where the agent supports it.
+   * Launch flags for the same, for an agent whose judgement-based approval is a process flag
+   * rather than a session mode. Switching into or out of `native_auto` restarts the agent at the
+   * start of the next turn and reloads the conversation (`session/load`) where the agent supports it.
    */
   readonly nativeApprovalArgs?: readonly string[]
-  /** The mode to restore when `native_auto` is not selected. Defaults to the session's initial mode. */
+  /**
+   * The agent's own mode that approves everything, selected under the host's Auto-approve mode so
+   * the agent stops asking (the host approves every ask anyway). Optional: without it the agent
+   * keeps asking and the host answers yes.
+   */
+  readonly autoApprovalMode?: string
+  /**
+   * Launch flags that make the agent approve everything (Kiro's `--trust-all-tools`), for an agent
+   * without mode switching; applied like `autoApprovalMode`, by relaunching at the next turn.
+   */
+  readonly autoApprovalArgs?: readonly string[]
+  /** The mode to restore under Manual. Defaults to the session's initial mode. */
   readonly defaultMode?: string
   /**
    * Instruction files the agent loads itself, so the host does not send them again. Paths are
@@ -91,8 +102,9 @@ export const defaultHome = (id: string) =>
  * Kiro confined to redsun's tools: a `redsun` agent profile whose only tools come from the host's
  * MCP server, in a Kiro home redsun owns (the user's ~/.kiro is left alone; Kiro's login lives in
  * its data directory, not its home). File edits, shell commands and every other tool therefore run
- * as redsun's own, with redsun's permissions, snapshots and rendering. Kiro's native approval
- * flag is moot when none of its own tools run, so the preset offers no native approval mode.
+ * as redsun's own, with redsun's permissions, snapshots and rendering. Kiro has no judgement-based
+ * approval mode, so the preset offers no `native_auto`; under Auto-approve it is relaunched with
+ * its trust flag so it stops asking for the tools the host approves anyway.
  */
 const KIRO_AGENT = {
   name: "redsun",
@@ -113,6 +125,7 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
     },
     args: ["acp", "--agent", KIRO_AGENT.name],
     hostTools: "all",
+    autoApprovalArgs: ["--trust-all-tools"],
     compactCommand: "/compact",
     home: { env: "KIRO_HOME", files: { [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT } },
   },
@@ -150,8 +163,24 @@ const camel = (entry: Record<string, unknown>) =>
     ]),
   )
 
-/** Whether the agent has any real auto-approval to offer as `native_auto`. */
-export const hasNativeApproval = (agent: Agent) => Boolean(agent.nativeApprovalMode || agent.nativeApprovalArgs?.length)
+/**
+ * Whether the agent has a judgement-based approval of its own to offer as `native_auto`. An agent
+ * confined to host tools has nothing for it to judge: the host's Auto-approve already covers it.
+ */
+export const hasNativeApproval = (agent: Agent) =>
+  agent.hostTools !== "all" && Boolean(agent.nativeApprovalMode || agent.nativeApprovalArgs?.length)
+
+/** The launch flags a selection needs; an agent without them is switched by session mode instead. */
+export const launchArgs = (agent: Agent, selection: "normal" | "auto" | "native_auto"): readonly string[] =>
+  selection === "native_auto"
+    ? (agent.nativeApprovalArgs ?? [])
+    : selection === "auto"
+      ? (agent.autoApprovalArgs ?? [])
+      : []
+
+/** The session mode a selection wants, when the agent has one for it. */
+export const sessionMode = (agent: Agent, selection: "normal" | "auto" | "native_auto") =>
+  selection === "native_auto" ? agent.nativeApprovalMode : selection === "auto" ? agent.autoApprovalMode : undefined
 
 const integration = (name: string, value: Record<string, unknown> | undefined): Agent["integration"] => {
   const whoami = Array.isArray(value?.whoami)
@@ -219,9 +248,10 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
     const env = Object.fromEntries(
       Object.entries(record(entry.env) ?? {}).filter((pair): pair is [string, string] => typeof pair[1] === "string"),
     )
-    const nativeApprovalArgs = Array.isArray(entry.nativeApprovalArgs)
-      ? entry.nativeApprovalArgs.filter((item): item is string => typeof item === "string" && item.length > 0)
-      : []
+    const flags = (value: unknown) =>
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : []
+    const nativeApprovalArgs = flags(entry.nativeApprovalArgs)
+    const autoApprovalArgs = flags(entry.autoApprovalArgs)
     const models = (Array.isArray(entry.models) ? entry.models : [])
       .map((item) => (typeof item === "string" ? { id: item } : record(item)))
       .flatMap((item) => {
@@ -240,6 +270,8 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
         : [],
       ...(string(entry.nativeApprovalMode) ? { nativeApprovalMode: string(entry.nativeApprovalMode) } : {}),
       ...(nativeApprovalArgs.length ? { nativeApprovalArgs } : {}),
+      ...(string(entry.autoApprovalMode) ? { autoApprovalMode: string(entry.autoApprovalMode) } : {}),
+      ...(autoApprovalArgs.length ? { autoApprovalArgs } : {}),
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),
       ...(string(entry.compactCommand) ? { compactCommand: string(entry.compactCommand) } : {}),
       hostTools: entry.hostTools === "all" ? "all" : "extras",

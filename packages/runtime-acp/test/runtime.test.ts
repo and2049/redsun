@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { rmSync } from "node:fs"
 import path from "node:path"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { DelegatedPermissionCheck, DelegatedToolBinding, DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import type {
+  DelegatedApproval,
+  DelegatedPermissionCheck,
+  DelegatedToolBinding,
+  DelegatedTurn,
+} from "@opencode/plugin/effect/delegate"
 import { AcpHostTools } from "../src/host-tools.js"
 import type { AcpOptions } from "../src/options.js"
 import { AcpRuntime } from "../src/runtime.js"
@@ -24,6 +29,7 @@ const host = (
   input: {
     mode?: "normal" | "auto" | "native_auto"
     approve?: boolean
+    feedback?: string
     tools?: () => DelegatedToolBinding | undefined
     cursors?: Map<string, string>
     reported?: string[][]
@@ -37,9 +43,10 @@ const host = (
     host: {
       cwd: import.meta.dir,
       mode: async () => input.mode ?? "normal",
-      approve: async (check: DelegatedPermissionCheck) => {
+      approve: async (check: DelegatedPermissionCheck): Promise<DelegatedApproval> => {
         checks.push(check)
-        return input.approve ?? true
+        if (input.approve ?? true) return { ok: true }
+        return input.feedback ? { ok: false, feedback: input.feedback } : { ok: false }
       },
       tools: async () => input.tools?.(),
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
@@ -85,11 +92,11 @@ const textOf = (parts: readonly LanguageModelV3StreamPart[]) =>
   parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : [])).join("")
 
 const withRuntime = async (
-  input: { agent?: Partial<AcpOptions.Agent>; host?: Parameters<typeof host>[0] },
+  input: { agent?: Partial<AcpOptions.Agent>; host?: Parameters<typeof host>[0]; options?: AcpRuntime.Options },
   body: (runtime: AcpRuntime.Runtime, checks: DelegatedPermissionCheck[]) => Promise<void>,
 ) => {
   const made = host(input.host)
-  const runtime = new AcpRuntime.Runtime(agent(input.agent), made.host)
+  const runtime = new AcpRuntime.Runtime(agent(input.agent), made.host, input.options)
   try {
     await body(runtime, made.checks)
   } finally {
@@ -147,6 +154,38 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  test("hands the user's correction on a decline to the agent with its next prompt", async () => {
+    await withRuntime({ host: { approve: false, feedback: "use the b file instead" } }, async (runtime) => {
+      expect(textOf(await collect((await runtime.turn(TURN, call([user("permission please")]))).stream))).toBe("DENIED")
+      const parts = await collect(
+        (await runtime.turn(TURN, call([user("permission please"), assistant("DENIED"), user("echo")]))).stream,
+      )
+      expect(textOf(parts)).toBe(
+        'SESSION=acp_1 TURNS=2 PROMPT=[redsun] The user declined "Edit src/a.ts" and said: use the b file instead\n\necho',
+      )
+      // Delivered once.
+      const again = await collect(
+        (await runtime.turn(TURN, call([user("permission please"), assistant("DENIED"), user("echo")]))).stream,
+      )
+      expect(textOf(again)).toBe("SESSION=acp_1 TURNS=3 PROMPT=echo")
+    })
+  })
+
+  test("asks about a shell command by its command line, not the agent's title", async () => {
+    await withRuntime({}, async (runtime, checks) => {
+      expect(textOf(await collect((await runtime.turn(TURN, call([user("shell?")]))).stream))).toBe("RAN")
+      expect(checks).toEqual([
+        {
+          sessionID: "ses_1",
+          agent: "build",
+          action: "shell",
+          resources: ["rm -rf build"],
+          metadata: { source: "acp", toolCallId: "call_shell", title: "Run command" },
+        },
+      ])
+    })
+  })
+
   test("keeps one agent session per host session and sends only the new prompt", () =>
     withRuntime({}, async (runtime) => {
       await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
@@ -184,6 +223,44 @@ describe("ACP runtime against a scripted agent", () => {
       expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "other", raw: "cancelled" } })
     }))
 
+  test("ends a cancelled turn the agent will not stop by killing it, and starts fresh next turn", () =>
+    withRuntime({ options: { interruptGraceMs: 100 }, host: { cursors: new Map() } }, async (runtime) => {
+      const controller = new AbortController()
+      const started = Date.now()
+      const { stream } = await runtime.turn(TURN, call([user("stubborn")], { abortSignal: controller.signal }))
+      const reader = stream.getReader()
+      const parts: LanguageModelV3StreamPart[] = []
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        parts.push(value)
+        if (value.type === "text-delta") controller.abort()
+      }
+      expect(Date.now() - started).toBeLessThan(2_500)
+      expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "other", raw: "cancelled" } })
+      expect(parts.some((part) => part.type === "error")).toBe(false)
+      // A new process loads the agent session back and gets only the new prompt.
+      const next = await collect(
+        (await runtime.turn(TURN, call([user("stubborn"), assistant("…"), user("echo")]))).stream,
+      )
+      expect(textOf(next)).toBe("SESSION=acp_1 TURNS=1 PROMPT=echo")
+    }))
+
+  test("refuses a second primary turn while one is in flight for the session", () =>
+    withRuntime({}, async (runtime) => {
+      const controller = new AbortController()
+      const { stream } = await runtime.turn(TURN, call([user("slow")], { abortSignal: controller.signal }))
+      const reader = stream.getReader()
+      await reader.read()
+      await expect(runtime.turn(TURN, call([user("hello")]))).rejects.toThrow("already processing a turn")
+      controller.abort()
+      for (;;) if ((await reader.read()).done) break
+      // Released with the stream.
+      expect(
+        textOf(await collect((await runtime.turn(TURN, call([user("hello"), assistant("…"), user("echo")]))).stream)),
+      ).toContain("PROMPT=echo")
+    }))
+
   test("maps native_auto onto the agent's configured mode, and back", async () => {
     await withRuntime({ agent: { nativeApprovalMode: "trust" }, host: { mode: "native_auto" } }, async (runtime) => {
       expect(textOf(await collect((await runtime.turn(TURN, call([user("mode?")]))).stream))).toBe("MODE=trust")
@@ -194,6 +271,30 @@ describe("ACP runtime against a scripted agent", () => {
     // Without a configured native mode, native_auto never switches the agent's mode.
     await withRuntime({ host: { mode: "native_auto" } }, async (runtime) => {
       expect(textOf(await collect((await runtime.turn(TURN, call([user("mode?")]))).stream))).toBe("MODE=default")
+    })
+    // Nor for an agent confined to host tools: its own mode would have nothing to judge.
+    await withRuntime(
+      { agent: { nativeApprovalMode: "trust", hostTools: "all" }, host: { mode: "native_auto" } },
+      async (runtime) => {
+        expect(textOf(await collect((await runtime.turn(TURN, call([user("mode?")]))).stream))).toBe("MODE=default")
+      },
+    )
+  })
+
+  test("maps the host's Auto-approve onto the agent's approve-everything mode or flags", async () => {
+    await withRuntime({ agent: { autoApprovalMode: "trust" }, host: { mode: "auto" } }, async (runtime) => {
+      expect(textOf(await collect((await runtime.turn(TURN, call([user("mode?")]))).stream))).toBe("MODE=trust")
+    })
+    const selection: { mode: "normal" | "auto" | "native_auto" } = { mode: "auto" }
+    await withRuntime({ agent: { autoApprovalArgs: ["--trust-all-tools"] }, host: selection }, async (runtime) => {
+      const ask = async (history: LanguageModelV3CallOptions["prompt"]) =>
+        textOf(await collect((await runtime.turn(TURN, call([...history, user("trust?")]))).stream))
+      expect(await ask([])).toBe("TRUSTED=true SESSION=acp_1 TURNS=1")
+      selection.mode = "normal"
+      expect(await ask([user("trust?"), assistant("…")])).toBe("TRUSTED=false SESSION=acp_1 TURNS=1")
+      // Without a judgement-based mode of its own, native_auto is Manual for this agent.
+      selection.mode = "native_auto"
+      expect(await ask([user("trust?"), assistant("…")])).toBe("TRUSTED=false SESSION=acp_1 TURNS=2")
     })
   })
 
@@ -313,6 +414,27 @@ describe("ACP runtime against a scripted agent", () => {
       expect(bound.calls.map((item) => item.callID)).toEqual(["call_late"])
       expect(parts.find((part) => part.type === "tool-result")).toMatchObject({
         toolCallId: "call_late",
+        result: { output: "1 todo", metadata: { todos: [{ content: "ship it" }] } },
+      })
+    })
+  })
+
+  test("renders a host tool call the agent never reported", async () => {
+    const bound = binding(["todowrite"])
+    await withRuntime({ host: { tools: () => bound.tools } }, async (runtime) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("hostquiet")]))).stream)
+      expect(textOf(parts)).toBe("QUIET DONE")
+      expect(bound.calls.map((item) => item.name)).toEqual(["todowrite"])
+      const id = bound.calls[0]!.callID
+      expect(id).toStartWith("acp-mcp-msg_1-")
+      expect(parts.find((part) => part.type === "tool-call")).toMatchObject({
+        toolCallId: id,
+        toolName: "todowrite",
+        input: JSON.stringify({ todos: [] }),
+        providerExecuted: true,
+      })
+      expect(parts.find((part) => part.type === "tool-result")).toMatchObject({
+        toolCallId: id,
         result: { output: "1 todo", metadata: { todos: [{ content: "ship it" }] } },
       })
     })
@@ -590,6 +712,7 @@ describe("ACP runtime against a scripted agent", () => {
       const parts = await collect((await runtime.turn(TURN, call([user("crash")]))).stream)
       const error = parts.find((part) => part.type === "error") as { error: Error } | undefined
       expect(error?.error.message).toStartWith("Fake ACP exited during the turn")
+      expect(error?.error.message).toEndWith("The agent said:\nfake agent: out of credits")
       expect((error?.error as { code?: unknown }).code).toBeUndefined()
       const next = await collect((await runtime.turn(TURN, call([user("echo")]))).stream)
       expect(textOf(next)).toBe("SESSION=acp_1 TURNS=1 PROMPT=echo")

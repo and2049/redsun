@@ -31,12 +31,20 @@ export class Agent extends Schema.Class<Agent>("ConfigAcp.Agent")({
     description: "Instruction files the agent loads itself, relative to the working directory.",
   }),
   native_approval_mode: Schema.String.pipe(optional).annotate({
-    description: "The agent's own auto-approve session mode, offered as a third permission mode.",
+    description:
+      'The agent\'s own judgement-based approval mode, offered as the "Approve for me" permission mode. Not offered with host_tools "all".',
   }),
   native_approval_args: Strings.pipe(optional).annotate({
-    description: "Launch flags that make the agent auto-approve, offered as a third permission mode.",
+    description:
+      'Launch flags for the agent\'s judgement-based approval, offered as the "Approve for me" permission mode.',
   }),
-  default_mode: Schema.String.pipe(optional).annotate({ description: "The session mode outside native approval." }),
+  auto_approval_mode: Schema.String.pipe(optional).annotate({
+    description: "The agent's own approve-everything session mode, selected under the host's Auto-approve mode.",
+  }),
+  auto_approval_args: Strings.pipe(optional).annotate({
+    description: "Launch flags that make the agent approve everything, applied under the host's Auto-approve mode.",
+  }),
+  default_mode: Schema.String.pipe(optional).annotate({ description: "The session mode under Manual." }),
   compact_command: Schema.String.pipe(optional).annotate({
     description: 'A prompt the agent treats as "compact your context".',
   }),
