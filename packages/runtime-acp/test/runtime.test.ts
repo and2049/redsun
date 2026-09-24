@@ -400,6 +400,43 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  test("records the agent's plan as the host's todo list through the host's todowrite", async () => {
+    const bound = binding(["todowrite"])
+    await withRuntime({ host: { tools: () => bound.tools } }, async (runtime) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("plan!")]))).stream)
+      expect(textOf(parts)).toBe("PLANNED")
+      expect(bound.calls.map((item) => item.args)).toEqual([
+        {
+          todos: [
+            { content: "write tests", status: "in_progress", priority: "high" },
+            { content: "ship", status: "pending", priority: "low" },
+          ],
+        },
+        {
+          todos: [
+            { content: "write tests", status: "completed", priority: "high" },
+            { content: "ship", status: "pending", priority: "low" },
+          ],
+        },
+      ])
+      expect(bound.calls.map((item) => item.callID)).toEqual(["acp-plan-msg_1-1", "acp-plan-msg_1-2"])
+      const results = parts.filter((part) => part.type === "tool-result")
+      expect(results).toHaveLength(2)
+      expect(results[0]).toMatchObject({ toolName: "todowrite", result: { output: "1 todo" } })
+      // Every recorded plan settles before the turn finishes.
+      expect(parts.at(-1)).toMatchObject({ type: "finish" })
+    })
+  })
+
+  test("leaves the todo list alone when the turn may not use todowrite", async () => {
+    const bound = binding(["skill"])
+    await withRuntime({ host: { tools: () => bound.tools } }, async (runtime) => {
+      const parts = await collect((await runtime.turn(HOSTED, call([user("plan!")]))).stream)
+      expect(bound.calls).toEqual([])
+      expect(parts.some((part) => part.type === "tool-call")).toBe(false)
+    })
+  })
+
   test("reports an agent that dies mid-turn as its own error, and starts fresh next turn", () =>
     withRuntime({}, async (runtime) => {
       const parts = await collect((await runtime.turn(TURN, call([user("crash")]))).stream)

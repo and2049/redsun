@@ -19,6 +19,7 @@ import type {
 } from "@opencode/plugin/effect/delegate"
 import { AcpHostTools } from "./host-tools.js"
 import { AcpModels } from "./models.js"
+import { AcpPlan } from "./plan.js"
 import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
@@ -116,6 +117,8 @@ interface Session {
   currentMode?: string
   /** How to switch the session's model, when the agent reports a selector. */
   readonly model?: { readonly control: AcpModels.Control; readonly initial?: string; current?: string }
+  /** The agent's plans, mirrored into the host's todo list. */
+  readonly plans: AcpPlan.Plans
   agent?: string
   listener?: (update: SessionUpdate) => void
 }
@@ -216,6 +219,7 @@ export class Runtime {
         trusted: input.trusted,
         loadable,
         catalog: input.tools?.catalog ?? "",
+        plans: new Map(),
         ...(slot ? { slot } : {}),
         modes: new Set(created.modes?.availableModes.map((mode) => mode.id) ?? []),
         ...(created.modes
@@ -366,6 +370,12 @@ export class Runtime {
     })
 
     const state = AcpTranslate.make(session.slot)
+    // The agent's plan becomes the host's todo list through the host's own todowrite, so it is
+    // stored and rendered as if the agent had called it. Only when the turn may use todowrite.
+    const todowrite =
+      binding?.definitions.some((item) => item.name === AcpPlan.TOOL) && turn.assistantMessageID ? binding : undefined
+    const recording: Promise<void>[] = []
+    let plans = 0
     const cancel = () => void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})
     return {
       stream: new ReadableStream<LanguageModelV3StreamPart>({
@@ -382,7 +392,50 @@ export class Runtime {
             }
           }
           emit([{ type: "stream-start", warnings: [] }])
-          session.listener = (update) => emit(AcpTranslate.update(state, update))
+          const record = (todos: readonly AcpPlan.Todo[]) => {
+            const toolCallId = `acp-plan-${turn.assistantMessageID}-${++plans}`
+            const input = { todos }
+            emit([
+              {
+                type: "tool-call",
+                toolCallId,
+                toolName: AcpPlan.TOOL,
+                input: JSON.stringify(input),
+                providerExecuted: true,
+              },
+            ])
+            const settle = (result: unknown, isError?: boolean) =>
+              emit([
+                {
+                  type: "tool-result",
+                  toolCallId,
+                  toolName: AcpPlan.TOOL,
+                  result,
+                  ...(isError ? { isError } : {}),
+                } as LanguageModelV3StreamPart,
+              ])
+            recording.push(
+              todowrite!
+                .execute({
+                  name: AcpPlan.TOOL,
+                  args: input,
+                  callID: toolCallId,
+                  signal: options.abortSignal ?? new AbortController().signal,
+                })
+                .then(
+                  (result) => {
+                    const output = AcpHostTools.resultText(result)
+                    settle(result.metadata === undefined ? output : { output, metadata: result.metadata })
+                  },
+                  (error) => settle(error instanceof Error ? error.message : String(error), true),
+                ),
+            )
+          }
+          session.listener = (update) => {
+            const todos = todowrite ? AcpPlan.apply(session.plans, update) : undefined
+            if (todos) record(todos)
+            emit(AcpTranslate.update(state, update))
+          }
           options.abortSignal?.addEventListener("abort", cancel, { once: true })
           if (options.abortSignal?.aborted) cancel()
           try {
@@ -390,10 +443,12 @@ export class Runtime {
               sessionId: session.acpSessionID,
               prompt: [{ type: "text", text: prompt }],
             })
+            await Promise.all(recording)
             emit(AcpTranslate.finish(state, response.stopReason))
           } catch (error) {
             // Let an exit notification land first so the message can say the process is gone.
             await Promise.race([session.process.exited, new Promise((resolve) => setTimeout(resolve, 50))])
+            await Promise.all(recording)
             emit([{ type: "error", error: this.failure(session, error) }])
           } finally {
             session.listener = undefined

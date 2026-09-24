@@ -185,6 +185,24 @@ new AgentSideConnection((connection) => {
         await say(sessionId, `MODE=${modes.get(sessionId)}`)
         return { stopReason: "end_turn" }
       }
+      if (text.includes("plan!")) {
+        const entries = (first: "in_progress" | "completed") => [
+          { content: "write tests", status: first, priority: "high" as const },
+          { content: "ship", status: "pending" as const, priority: "low" as const },
+        ]
+        await connection.sessionUpdate({
+          sessionId,
+          update: { sessionUpdate: "plan", entries: entries("in_progress") },
+        })
+        // An unchanged plan records nothing.
+        await connection.sessionUpdate({
+          sessionId,
+          update: { sessionUpdate: "plan", entries: entries("in_progress") },
+        })
+        await connection.sessionUpdate({ sessionId, update: { sessionUpdate: "plan", entries: entries("completed") } })
+        await say(sessionId, "PLANNED")
+        return { stopReason: "end_turn" }
+      }
       if (text.includes("model?")) {
         await say(sessionId, `MODEL=${models.get(sessionId) ?? "auto"}`)
         return { stopReason: "end_turn" }
