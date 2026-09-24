@@ -47,6 +47,17 @@ describe("delegated runtime boundaries", () => {
     expect(hits).toEqual([])
   })
 
+  test("the ACP runtime package imports nothing from core", async () => {
+    const hits: string[] = []
+    const root = path.join(packages, "runtime-acp")
+    for await (const file of new Bun.Glob("src/**/*.ts").scan({ cwd: root })) {
+      const source = await Bun.file(path.join(root, file)).text()
+      for (const [, specifier] of source.matchAll(/(?:from|import\()\s*"([^"]+)"/g))
+        if (specifier!.startsWith("@opencode/core") || specifier!.startsWith("../")) hits.push(`${file}: ${specifier}`)
+    }
+    expect(hits).toEqual([])
+  })
+
   test("Claude Code is referenced outside its plugin only where allowed", async () => {
     expect(await scan(/ClaudeCode|claude-code|claude_code/)).toEqual([...PERMANENT, ...PENDING].sort())
   })
