@@ -2302,6 +2302,8 @@ export type ConfigEntry =
               inherited_instructions?: Array<string>
               native_approval_mode?: string
               native_approval_args?: Array<string>
+              auto_approval_mode?: string
+              auto_approval_args?: Array<string>
               default_mode?: string
               compact_command?: string
               home?: { env?: string; path?: string }
