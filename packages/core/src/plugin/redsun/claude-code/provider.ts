@@ -2,7 +2,6 @@ export * as ClaudeCodeProviderPlugin from "./provider.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
-import path from "node:path"
 import { Model } from "@opencode/schema/model"
 import { Agent } from "../../../agent.js"
 import { Bus } from "../../../bus.js"
@@ -33,7 +32,8 @@ import { ClaudeCodeSubagents } from "./subagents.js"
 import { ClaudeCodeContext } from "./context.js"
 import { CodeModeCatalog } from "../../../codemode/catalog.js"
 import { InstructionDiscovery } from "../../../instruction-discovery.js"
-import { RedsunProjectMemory } from "../project-memory.js"
+import { RedsunContextOptimizer } from "../context-optimizer.js"
+import { ClaudeCodeHostFiles } from "./host-files.js"
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 
 const ONE_SHOT_AGENTS = new Set(["title", "summary", "compaction"])
@@ -296,6 +296,8 @@ export const Plugin = define({
       if (!agentID) return { delivered: () => {} }
       const profile = profiles.get(agentID)
       const listed = settings?.behavior === "native" ? undefined : await Effect.runPromise(discovery.list())
+      // Read at delivery time so an instruction_max_chars edit applies to the next turn.
+      const maxChars = RedsunContextOptimizer.instructionMaxChars(await Effect.runPromise(config.entries()))
       const runtime = runtimes.get(sessionID)
       const hasSkillTool =
         settings?.behavior !== "native" && runtime?.binding?.definitions.some((item) => item.name === "skill")
@@ -337,15 +339,7 @@ export const Plugin = define({
           ...(catalog === undefined ? {} : { skills: catalog }),
           ...(codeMode === undefined ? {} : { codeMode }),
           ...(Array.isArray(listed)
-            ? {
-                files: listed.map((file) => ({
-                  path: file.path,
-                  content:
-                    file.path === path.join(location.project.directory, RedsunProjectMemory.RELATIVE_PATH)
-                      ? `${RedsunProjectMemory.POLICY}\n\n${file.content}`
-                      : file.content,
-                })),
-              }
+            ? { files: ClaudeCodeHostFiles.deliver(listed, { project: location.project.directory, maxChars }) }
             : {}),
         })
         if (runtime) runtime.submission = delivery

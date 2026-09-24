@@ -5,6 +5,7 @@ import { Config } from "@opencode/core/config"
 import {
   RedsunContextOptimizer,
   boundInstruction,
+  boundInstructionContent,
   boundInstructionText,
   dedupeStaleReads,
 } from "@opencode/core/plugin/redsun/context-optimizer"
@@ -106,6 +107,27 @@ test("boundInstructionText bounds each block and leaves other text alone", () =>
   expect(boundInstructionText("no instructions here", 1_000)).toBe("no instructions here")
   // Second pass is a no-op.
   expect(boundInstructionText(bounded, 1_000)).toBe(bounded)
+})
+
+test("boundInstructionContent bounds like boundInstruction without the header", () => {
+  const text = Array.from({ length: 200 }, (_, index) => `line ${index}`).join("\n")
+  const content = boundInstructionContent("memory.md", text, 500)
+  expect(`Instructions from: memory.md\n${content}`).toBe(boundInstruction("memory.md", text, 500))
+  expect(content.startsWith("line 0\n")).toBe(true)
+  expect(content).toContain("Read the remainder with the read tool: memory.md offset=")
+  expect(boundInstructionContent("memory.md", "short", 500)).toBe("short")
+  expect(RedsunContextOptimizer.instructionMaxChars([])).toBe(24_000)
+})
+
+test("a limit smaller than the header never cuts into the header", () => {
+  const text = Array.from({ length: 50 }, (_, index) => `line ${index}`).join("\n")
+  const header = "Instructions from: /repo/a/very/long/path/to/AGENTS.md\n"
+  expect(boundInstruction("/repo/a/very/long/path/to/AGENTS.md", text, 10)).toBe(header)
+  expect(boundInstructionContent("/repo/a/very/long/path/to/AGENTS.md", text, 10)).toBe("")
+  // Just past the header, only what fits of the marker follows it.
+  const tight = boundInstruction("/repo/a/very/long/path/to/AGENTS.md", text, header.length + 20)
+  expect(tight.startsWith(header)).toBe(true)
+  expect(tight.length).toBe(header.length + 20)
 })
 
 for (const kind of ["context", "compaction", "generate"] as const)

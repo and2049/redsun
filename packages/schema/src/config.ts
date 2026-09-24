@@ -8,6 +8,7 @@ import { ConfigAgent } from "./config/agent.js"
 import { ConfigAttribution } from "./config/attribution.js"
 import { ConfigMedia } from "./config/media.js"
 import { ConfigAdvisor } from "./config/advisor.js"
+import { ConfigProjectMemory } from "./config/project-memory.js"
 import { ConfigCompaction } from "./config/compaction.js"
 import { ConfigCommand } from "./config/command.js"
 import { ConfigClaudeCode } from "./config/claude-code.js"
@@ -89,6 +90,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   advisor: ConfigAdvisor.Info.pipe(optional).annotate({
     description: "Redsun watchdog advisor that reviews completed session turns with a second model",
+  }),
+  project_memory: ConfigProjectMemory.Info.pipe(optional).annotate({
+    description: "Project memory (.redsun/memory.md) loading",
   }),
   skills: Schema.String.pipe(Schema.Array, optional).annotate({
     description: "Additional paths or URLs to discover skills from",
