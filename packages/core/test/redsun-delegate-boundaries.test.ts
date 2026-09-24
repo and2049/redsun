@@ -20,30 +20,20 @@ const scan = async (pattern: RegExp) => {
 
 // Permanent: bundled registration, the `claude_code` config key (kept by decision D3), and the
 // IDE integration's upstream `x-claude-code-ide-authorization` header, which is unrelated.
+// The legacy substitution-notice key in schema/src/delegate.ts keeps persisted rows readable.
 const PERMANENT = [
   "core/src/config/normalize.ts",
   "core/src/plugin/internal.ts",
   "schema/src/config.ts",
   "schema/src/config/claude-code.ts",
+  "schema/src/delegate.ts",
   "tui/src/context/editor.ts",
 ]
 
-// Pending removal by the stage named beside each entry.
-const PENDING = [
-  "tui/src/app.tsx", // stage 4
-  "tui/src/context/permission.tsx", // stage 4
-  "tui/src/routes/session/index.tsx", // stage 4
-]
+const PENDING: string[] = []
 
-// `claude_auto` becomes the runtime-declared `native_auto` in stage 4.
-const PERMISSION_MODE_PENDING = [
-  "core/src/permission.ts",
-  "protocol/src/groups/permission.ts",
-  "schema/src/permission.ts",
-  "tui/src/app.tsx",
-  "tui/src/component/workspace-status.tsx",
-  "tui/src/context/permission.tsx",
-]
+// `claude_auto` is now `native_auto`; core still reads a stored `claude_auto` selection.
+const PERMISSION_MODE_COMPAT = ["core/src/permission.ts"]
 
 describe("delegated runtime boundaries", () => {
   test("the Claude Code plugin reaches core only through ctx", async () => {
@@ -62,6 +52,6 @@ describe("delegated runtime boundaries", () => {
   })
 
   test("the Claude-specific permission mode is not spreading", async () => {
-    expect(await scan(/claude_auto/)).toEqual([...PERMISSION_MODE_PENDING].sort())
+    expect(await scan(/claude_auto/)).toEqual(PERMISSION_MODE_COMPAT)
   })
 })

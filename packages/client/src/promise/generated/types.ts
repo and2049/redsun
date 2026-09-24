@@ -383,7 +383,7 @@ export type ProjectTime = { created: number; updated: number }
 
 export type PermissionSource = { type: "tool"; messageID: string; id: string }
 
-export type PermissionMode = "normal" | "auto" | "claude_auto"
+export type PermissionMode = "normal" | "auto" | "native_auto"
 
 export type PermissionSavedInfo = {
   id: string
@@ -5980,9 +5980,29 @@ export type PermissionRequestListOutput = { location: LocationPublicRef; data: A
 
 export type PermissionModeGetOutput = { data: { mode: PermissionMode } }["data"]
 
-export type PermissionModeSetInput = { readonly mode: { readonly mode: "normal" | "auto" | "claude_auto" }["mode"] }
+export type PermissionModeSetInput = { readonly mode: { readonly mode: "normal" | "auto" | "native_auto" }["mode"] }
 
 export type PermissionModeSetOutput = void
+
+export type PermissionModeOptionsInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly providerID: string
+    readonly modelID: string
+  }["location"]
+  readonly providerID: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly providerID: string
+    readonly modelID: string
+  }["providerID"]
+  readonly modelID: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly providerID: string
+    readonly modelID: string
+  }["modelID"]
+}
+
+export type PermissionModeOptionsOutput = { data: { native: boolean } }["data"]
 
 export type PermissionSavedListInput = { readonly projectID?: { readonly projectID?: string | undefined }["projectID"] }
 

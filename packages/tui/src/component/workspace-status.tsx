@@ -28,7 +28,7 @@ export function WorkspaceStatus() {
           when={permission.mode === "auto"}
           fallback={
             <Show
-              when={permission.mode === "claude_auto"}
+              when={permission.mode === "native_auto"}
               fallback={
                 <span style={{ fg: theme.text.subdued }}>
                   {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}

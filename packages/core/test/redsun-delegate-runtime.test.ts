@@ -187,6 +187,18 @@ describe("delegated runtime registration", () => {
     }),
   )
 
+  it.effect("offers native approval only where the runtime declares it", () =>
+    Effect.gen(function* () {
+      const delegates = yield* DelegatedRuntime.Service
+      yield* register({ ...runtime([]), nativeApproval: (model) => model.id !== "no-classifier" })
+      yield* register({ ...runtime([]), id: "plain", providerID: "plain-agent" })
+      expect(yield* delegates.nativeApproval({ providerID: OWNED, id: "model-1" })).toBe(true)
+      expect(yield* delegates.nativeApproval({ providerID: OWNED, id: "no-classifier" })).toBe(false)
+      expect(yield* delegates.nativeApproval({ providerID: "plain-agent", id: "model-1" })).toBe(false)
+      expect(yield* delegates.nativeApproval({ providerID: "not-delegated", id: "model-1" })).toBe(false)
+    }),
+  )
+
   it.effect("stops owning the provider when the registration scope closes", () =>
     Effect.gen(function* () {
       const delegates = yield* DelegatedRuntime.Service

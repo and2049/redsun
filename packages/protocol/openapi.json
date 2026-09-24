@@ -8940,7 +8940,7 @@
             }
           }
         },
-        "description": "Retrieve manual, approve-all, or Claude Code native classifier mode.",
+        "description": "Retrieve manual, approve-all, or the delegated runtime's native approval mode.",
         "summary": "Get permission mode"
       },
       "put": {
@@ -8973,7 +8973,7 @@
             }
           }
         },
-        "description": "Auto approves host asks; claude_auto selects the native Claude Code classifier for primary Claude sessions while host asks remain manual. Explicit denies always deny.",
+        "description": "auto approves host asks; native_auto selects a delegated runtime's own approval mode (Claude Code's classifier) for models whose runtime declares one, while host asks remain manual. Explicit denies always deny.",
         "summary": "Set permission mode",
         "requestBody": {
           "content": {
@@ -8992,6 +8992,109 @@
           },
           "required": true
         }
+      }
+    },
+    "/api/permission/mode/options": {
+      "get": {
+        "tags": ["permission"],
+        "operationId": "v2.permission.mode.options",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "providerID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "modelID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "native": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["native"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Whether the model's delegated runtime has a native auto-approval mode, which enables native_auto.",
+        "summary": "Get permission mode options"
       }
     },
     "/api/permission/saved": {
@@ -17341,7 +17444,7 @@
       },
       "Permission.Mode": {
         "type": "string",
-        "enum": ["normal", "auto", "claude_auto"]
+        "enum": ["normal", "auto", "native_auto"]
       },
       "Permission.Reply": {
         "type": "string",

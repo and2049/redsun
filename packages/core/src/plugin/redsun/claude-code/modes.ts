@@ -32,7 +32,7 @@ export const permissionMode = (input: {
   // selection changes. Other primary configurations are superseded by a global
   // UI mode; normal and deterministic host auto-approval use native manual.
   if (input.global && input.configured === "plan") return "plan"
-  if (input.global === "claude_auto") return "auto"
+  if (input.global === "native_auto") return "auto"
   if (input.global) return "default"
   return parse(input.configured) ?? "default"
 }

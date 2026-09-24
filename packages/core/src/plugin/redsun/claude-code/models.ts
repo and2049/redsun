@@ -3,6 +3,7 @@ export * as ClaudeCodeModels from "./models.js"
 import type { Types } from "effect"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
+import { Delegate } from "@opencode/schema/delegate"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import type { Options } from "@anthropic-ai/claude-agent-sdk"
 
@@ -14,9 +15,9 @@ export const SENTINEL_PACKAGE = `aisdk:${SENTINEL_NAME}`
 
 export const DISPLAY_NAME = "Anthropic (Claude Code)"
 
-// Synthetic-notice metadata key for a silent CLI model substitution; the TUI
-// colors notices carrying it (SessionNoticeMessageV2 duplicates the literal).
-export const SUBSTITUTED_METADATA_KEY = "redsun.claude-code.model-substituted"
+// Synthetic-notice metadata key for a silent CLI model substitution; the TUI colors notices
+// carrying it.
+export const SUBSTITUTED_METADATA_KEY = Delegate.MODEL_SUBSTITUTED_METADATA_KEY
 
 export const isDelegated = (model: { readonly providerID: string }) => model.providerID === PROVIDER_ID
 

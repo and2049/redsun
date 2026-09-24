@@ -1186,6 +1186,7 @@ test("Claude Code cycles manual, approve-for-me, auto-approve via the app bindin
           location: { directory, project: { id: "proj_test", directory } },
           data: [{ id: "sonnet", providerID: "claude-code", name: "Sonnet", variants: [] }],
         })
+      if (url.pathname === "/api/permission/mode/options") return json({ data: { native: true } })
       if (url.pathname === "/api/permission/mode") {
         if (request.method === "GET") return json({ data: { mode: "normal" } })
         modes.push(((await request.json()) as { mode: string }).mode)
@@ -1202,7 +1203,7 @@ test("Claude Code cycles manual, approve-for-me, auto-approve via the app bindin
   setup.mockInput.pressKey("F7")
   await setup.waitForFrame((frame) => frame.includes("Manual"))
   await setup.waitFor(() => modes.length === 3)
-  expect(modes).toEqual(["claude_auto", "auto", "normal"])
+  expect(modes).toEqual(["native_auto", "auto", "normal"])
 })
 
 test.each([

@@ -1902,6 +1902,16 @@ export type PermissionModeSetOperation<E = never> = (
   input: PermissionModeSetInput,
 ) => Effect.Effect<PermissionModeSetOutput, E>
 
+export type PermissionModeOptionsInput = {
+  readonly location?: { readonly directory?: string | undefined } | undefined
+  readonly providerID: string
+  readonly modelID: string
+}
+export type PermissionModeOptionsOutput = { readonly native: boolean }
+export type PermissionModeOptionsOperation<E = never> = (
+  input: PermissionModeOptionsInput,
+) => Effect.Effect<PermissionModeOptionsOutput, E>
+
 export type PermissionSavedListInput = { readonly projectID?: Project.ID | undefined }
 export type PermissionSavedListOutput = ReadonlyArray<PermissionSaved.Info>
 export type PermissionSavedListOperation<E = never> = (
@@ -1950,7 +1960,11 @@ export type PermissionReplyOperation<E = never> = (
 
 export interface PermissionApi<E = never> {
   readonly request: { readonly list: PermissionRequestListOperation<E> }
-  readonly mode: { readonly get: PermissionModeGetOperation<E>; readonly set: PermissionModeSetOperation<E> }
+  readonly mode: {
+    readonly get: PermissionModeGetOperation<E>
+    readonly set: PermissionModeSetOperation<E>
+    readonly options: PermissionModeOptionsOperation<E>
+  }
   readonly saved: { readonly list: PermissionSavedListOperation<E>; readonly remove: PermissionSavedRemoveOperation<E> }
   readonly create: PermissionCreateOperation<E>
   readonly list: PermissionListOperation<E>

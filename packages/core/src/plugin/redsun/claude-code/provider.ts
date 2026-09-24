@@ -517,6 +517,8 @@ export const Plugin = define({
         notice: "Claude Code compacts its own session; running /compact in the CLI instead.",
         command: "/compact",
       },
+      // The CLI's classifier-backed `auto` permission mode.
+      nativeApproval: () => true,
     })
 
     yield* Effect.addFinalizer(() =>

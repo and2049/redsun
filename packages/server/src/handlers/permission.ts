@@ -1,4 +1,6 @@
+import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Instance } from "@opencode/core/instance/service"
+import { Plugin } from "@opencode/core/plugin"
 import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
 import { PermissionSaved } from "@opencode/core/permission/saved"
@@ -42,6 +44,19 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         Effect.fn(function* () {
           const permission = yield* Permission.Service
           return { data: { mode: yield* permission.mode() } }
+        }),
+      )
+      .handle(
+        "permission.mode.options",
+        Effect.fn(function* (ctx) {
+          // Runtimes register during plugin activation; answering earlier would hide native_auto.
+          yield* Plugin.awaitActivation
+          const delegates = yield* DelegatedRuntime.Service
+          return {
+            data: {
+              native: yield* delegates.nativeApproval({ providerID: ctx.query.providerID, id: ctx.query.modelID }),
+            },
+          }
         }),
       )
       .handle(

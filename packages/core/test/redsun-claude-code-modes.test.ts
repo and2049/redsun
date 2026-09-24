@@ -62,9 +62,9 @@ describe("ClaudeCodeModes.permissionMode", () => {
       ClaudeCodeModes.permissionMode({ agentID: "build", global: "normal", configured: "bypassPermissions" }),
     ).toBe("default")
     expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "auto", configured: "auto" })).toBe("default")
-    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "claude_auto" })).toBe("auto")
-    expect(ClaudeCodeModes.permissionMode({ agentID: "plan", global: "claude_auto" })).toBe("plan")
-    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "claude_auto", configured: "plan" })).toBe("plan")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "native_auto" })).toBe("auto")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "plan", global: "native_auto" })).toBe("plan")
+    expect(ClaudeCodeModes.permissionMode({ agentID: "build", global: "native_auto", configured: "plan" })).toBe("plan")
   })
 
   it("does not push the main session classifier mode into workers", () => {
@@ -72,7 +72,7 @@ describe("ClaudeCodeModes.permissionMode", () => {
       ClaudeCodeModes.permissionMode({
         agentID: "worker",
         agentMode: "subagent",
-        global: "claude_auto",
+        global: "native_auto",
         configured: "acceptEdits",
         worker: "inherit",
       }),
@@ -81,7 +81,7 @@ describe("ClaudeCodeModes.permissionMode", () => {
       ClaudeCodeModes.permissionMode({
         agentID: "worker",
         agentMode: "subagent",
-        global: "claude_auto",
+        global: "native_auto",
         worker: "dontAsk",
       }),
     ).toBe("dontAsk")
@@ -90,7 +90,7 @@ describe("ClaudeCodeModes.permissionMode", () => {
         agentID: "custom-all",
         agentMode: "all",
         isWorker: true,
-        global: "claude_auto",
+        global: "native_auto",
         configured: "acceptEdits",
         worker: "inherit",
       }),
@@ -100,11 +100,11 @@ describe("ClaudeCodeModes.permissionMode", () => {
         agentID: "custom-all",
         agentMode: "all",
         isWorker: true,
-        global: "claude_auto",
+        global: "native_auto",
         worker: "dontAsk",
       }),
     ).toBe("dontAsk")
-    expect(ClaudeCodeModes.permissionMode({ agentID: "custom-all", agentMode: "all", global: "claude_auto" })).toBe(
+    expect(ClaudeCodeModes.permissionMode({ agentID: "custom-all", agentMode: "all", global: "native_auto" })).toBe(
       "auto",
     )
   })

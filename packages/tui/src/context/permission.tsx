@@ -4,16 +4,17 @@ import { useArgs } from "./args"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
 
-export type PermissionMode = "auto" | "normal" | "claude_auto"
+export type PermissionMode = "auto" | "normal" | "native_auto"
 
-export function effectivePermissionMode(mode: PermissionMode, providerID?: string): PermissionMode {
-  return mode === "claude_auto" && providerID !== "claude-code" ? "normal" : mode
+/** `native` is whether the model's delegated runtime has its own auto-approval mode. */
+export function effectivePermissionMode(mode: PermissionMode, native: boolean): PermissionMode {
+  return mode === "native_auto" && !native ? "normal" : mode
 }
 
-export function nextPermissionMode(mode: PermissionMode, providerID?: string): PermissionMode {
-  const effective = effectivePermissionMode(mode, providerID)
-  if (providerID !== "claude-code") return effective === "auto" ? "normal" : "auto"
-  return effective === "normal" ? "claude_auto" : effective === "claude_auto" ? "auto" : "normal"
+export function nextPermissionMode(mode: PermissionMode, native: boolean): PermissionMode {
+  const effective = effectivePermissionMode(mode, native)
+  if (!native) return effective === "auto" ? "normal" : "auto"
+  return effective === "normal" ? "native_auto" : effective === "native_auto" ? "auto" : "normal"
 }
 
 export const { use: usePermission, provider: PermissionProvider } = createSimpleContext({
@@ -23,6 +24,23 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     const client = useClient()
     const [store, setStore] = createStore<{ mode: PermissionMode }>({ mode: args.auto ? "auto" : "normal" })
     const [hydrated, setHydrated] = createSignal(false)
+    // Per model: whether its runtime offers native_auto. Unknown models are fetched once, lazily.
+    const [native, setNative] = createStore<Record<string, boolean>>({})
+    const pending = new Set<string>()
+    const nativeFor = (model?: { readonly providerID: string; readonly modelID: string }) => {
+      if (!model) return false
+      const key = `${model.providerID}/${model.modelID}`
+      const known = native[key]
+      if (known === undefined && !pending.has(key)) {
+        pending.add(key)
+        void client.api.permission.mode
+          .options({ providerID: model.providerID, modelID: model.modelID })
+          .then((result) => setNative(key, result.native))
+          .catch(() => {})
+          .finally(() => pending.delete(key))
+      }
+      return known === true
+    }
 
     const push = (mode: PermissionMode) =>
       client.api.permission.mode.set({ mode }).catch((error) => console.error("Failed to set permission mode", error))
@@ -41,7 +59,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
           void client.api.permission.mode
             .get()
             .then((result) => {
-              setStore("mode", result.mode === "auto" || result.mode === "claude_auto" ? result.mode : "normal")
+              setStore("mode", result.mode === "auto" || result.mode === "native_auto" ? result.mode : "normal")
               setHydrated(true)
             })
             .catch((error) => console.error("Failed to read permission mode", error))
@@ -63,8 +81,9 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
         return hydrated()
       },
       set,
-      toggle(providerID?: string) {
-        set(nextPermissionMode(store.mode, providerID))
+      nativeFor,
+      toggle(native: boolean) {
+        set(nextPermissionMode(store.mode, native))
       },
     }
   },

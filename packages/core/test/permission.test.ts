@@ -232,12 +232,22 @@ describe("Permission", () => {
     }),
   )
 
-  it.effect("claude_auto retains host asks, existing requests, and explicit denies", () =>
+  it.effect("reads a mode stored before the native_auto rename", () =>
+    Effect.sync(() => {
+      expect(Permission.storedMode("claude_auto")).toBe("native_auto")
+      expect(Permission.storedMode("native_auto")).toBe("native_auto")
+      expect(Permission.storedMode("auto")).toBe("auto")
+      expect(Permission.storedMode(undefined)).toBe("normal")
+      expect(Permission.storedMode("bogus")).toBe("normal")
+    }),
+  )
+
+  it.effect("native_auto retains host asks, existing requests, and explicit denies", () =>
     Effect.gen(function* () {
       yield* setup([])
       const { service, fiber, request } = yield* waitForRequest()
-      yield* service.setMode("claude_auto")
-      expect(yield* service.mode()).toBe("claude_auto")
+      yield* service.setMode("native_auto")
+      expect(yield* service.mode()).toBe("native_auto")
       expect(yield* service.inspect(assertion())).toMatchObject({ effect: "ask" })
       expect(yield* service.list()).toEqual([request])
       yield* service.reply({ requestID: request.id, reply: "once" })
@@ -245,7 +255,7 @@ describe("Permission", () => {
       expect(yield* service.ask(assertion())).toMatchObject({ effect: "ask" })
       yield* service.setMode("auto")
       expect(yield* service.inspect(assertion())).toMatchObject({ effect: "allow" })
-      yield* service.setMode("claude_auto")
+      yield* service.setMode("native_auto")
       expect(yield* service.inspect(assertion())).toMatchObject({ effect: "ask" })
       yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
       expect(yield* service.inspect(assertion())).toMatchObject({ effect: "deny" })

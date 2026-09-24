@@ -106,6 +106,8 @@ export type Editor = {
 export interface Interface extends State.Transformable<Editor> {
   readonly get: (model: { readonly providerID: string }) => Effect.Effect<Runtime | undefined>
   readonly owns: (model: { readonly providerID: string }) => Effect.Effect<boolean>
+  /** Whether the model's runtime declares a native auto-approval mode. */
+  readonly nativeApproval: (model: { readonly providerID: string; readonly id: string }) => Effect.Effect<boolean>
   /** Synchronous lookup for the language-model bridge. */
   readonly lookup: (providerID: string) => Runtime | undefined
 }
@@ -128,6 +130,7 @@ export const make = (): Interface => {
     lookup,
     get,
     owns: (model) => get(model).pipe(Effect.map((runtime) => runtime !== undefined)),
+    nativeApproval: (model) => get(model).pipe(Effect.map((runtime) => runtime?.nativeApproval?.(model) === true)),
   })
 }
 

@@ -53,6 +53,13 @@ export interface DelegatedRuntime {
     readonly notice: string
     readonly command?: string
   }
+  /**
+   * Whether the agent itself has a native auto-approval mode for this model (Claude Code's
+   * classifier-backed `auto`). When true, the host offers `native_auto` beside Manual and
+   * Auto-approve, and the runtime maps it onto that native mode. Omit it, or return false, when the
+   * agent has no such mode: the host never simulates one.
+   */
+  readonly nativeApproval?: (model: { readonly providerID: string; readonly id: string }) => boolean
 }
 
 export interface DelegatedPermissionCheck {

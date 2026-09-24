@@ -106,6 +106,10 @@ export type Mode = typeof Mode.Type
 
 const MODE_KEY = "permission.mode"
 
+/** REDSUN: `claude_auto` is the pre-rename spelling of `native_auto`; a stored selection survives. */
+export const storedMode = (value: unknown): Mode =>
+  value === "auto" ? "auto" : value === "native_auto" || value === "claude_auto" ? "native_auto" : "normal"
+
 export interface Interface {
   readonly close: Effect.Effect<void>
   /** Evaluate effective host policy without registering an approval request. */
@@ -143,7 +147,7 @@ const layer = Layer.effect(
     const pending = new Map<ID, Pending>()
 
     const stored = yield* kv.get(MODE_KEY)
-    let currentMode: Mode = stored === "auto" ? "auto" : stored === "claude_auto" ? "claude_auto" : "normal"
+    let currentMode: Mode = storedMode(stored)
 
     let closed = false
 

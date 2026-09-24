@@ -174,6 +174,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       return json({ location: { directory, project: { id: "proj_test", directory, canonical: directory } }, data: [] })
     }
     // REDSUN: the auto-approve mode is server state, read once per connect.
+    if (url.pathname === "/api/permission/mode/options") return json({ data: { native: false } })
     if (url.pathname === "/api/permission/mode")
       return request.method === "PUT" ? new Response(null, { status: 204 }) : json({ data: { mode: "normal" } })
     if (url.pathname === "/provider") return json({ all: [], default: {}, connected: [] })
