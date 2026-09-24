@@ -20,7 +20,7 @@ import { useTheme, useThemes } from "./theme"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { useData } from "./data"
-import { usePermission } from "./permission"
+import { effectivePermissionMode, usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
 
@@ -708,7 +708,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       model,
       agent,
       session,
-      permission,
+      permission: {
+        get mode() {
+          return effectivePermissionMode(permission.mode, model.current()?.providerID)
+        },
+        get hydrated() {
+          return permission.hydrated
+        },
+        set: permission.set,
+        toggle() {
+          permission.toggle(model.current()?.providerID)
+        },
+      },
     }
     return result
   },

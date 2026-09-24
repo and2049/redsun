@@ -1,12 +1,12 @@
 import { Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
-import { usePermission } from "../context/permission"
+import { useLocal } from "../context/local"
 import { useTheme } from "../context/theme"
 import { useRemoteControl } from "../context/remote-control"
 import { useLanguage } from "../i18n"
 
 export function WorkspaceStatus() {
-  const permission = usePermission()
+  const permission = useLocal().permission
   const theme = useTheme()
   const remote = useRemoteControl()
   const dimensions = useTerminalDimensions()
@@ -27,9 +27,21 @@ export function WorkspaceStatus() {
         <Show
           when={permission.mode === "auto"}
           fallback={
-            <span style={{ fg: theme.text.subdued }}>
-              {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
-            </span>
+            <Show
+              when={permission.mode === "claude_auto"}
+              fallback={
+                <span style={{ fg: theme.text.subdued }}>
+                  {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
+                </span>
+              }
+            >
+              <span style={{ fg: theme.text.feedback.success.default }}>
+                {compact() ? language.t("permission.claudeAuto.compact") : language.t("permission.claudeAuto.enabled")}
+              </span>
+              <Show when={!compact()}>
+                <span style={{ fg: theme.text.subdued }}>(Shift+Tab)</span>
+              </Show>
+            </Show>
           }
         >
           <span style={{ fg: theme.text.feedback.success.default }}>

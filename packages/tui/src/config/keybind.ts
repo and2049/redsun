@@ -62,7 +62,7 @@ export const Definitions = {
   "language.switch": keybind("none", "Change interface language"),
   "server.pair": keybind("none", "Pair device"),
   "service.restart": keybind("none", "Restart service"),
-  "permission.mode": keybind("shift+tab", "Toggle auto-approve permissions"),
+  "permission.mode": keybind("shift+tab", "Cycle permission mode"),
   "location.reload": keybind("none", "Reload configuration"),
   "diff.open": keybind("none", "Open diff viewer"),
   "diff.close": keybind("escape,q", "Close diff viewer"),

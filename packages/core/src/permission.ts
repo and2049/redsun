@@ -108,6 +108,10 @@ const MODE_KEY = "permission.mode"
 
 export interface Interface {
   readonly close: Effect.Effect<void>
+  /** Evaluate effective host policy without registering an approval request. */
+  readonly inspect: (
+    input: AssertInput,
+  ) => Effect.Effect<{ effect: Permission.Effect; message?: string }, SessionErrors.NotFoundError>
   readonly ask: (input: AssertInput) => Effect.Effect<AskResult, SessionErrors.NotFoundError>
   readonly assert: (input: AssertInput) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
@@ -139,7 +143,7 @@ const layer = Layer.effect(
     const pending = new Map<ID, Pending>()
 
     const stored = yield* kv.get(MODE_KEY)
-    let autoApprove = stored === "auto"
+    let currentMode: Mode = stored === "auto" ? "auto" : stored === "claude_auto" ? "claude_auto" : "normal"
 
     let closed = false
 
@@ -198,8 +202,15 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      if (autoApprove && event.effect === "ask") return { effect: "allow" as const, message: event.message, rules: all }
+      if (currentMode === "auto" && event.effect === "ask")
+        return { effect: "allow" as const, message: event.message, rules: all }
       return { effect: event.effect, message: event.message, rules: all }
+    })
+
+    const inspect = Effect.fn("Permission.inspect")(function* (input: AssertInput) {
+      if (closed) return { effect: "deny" as const }
+      const { effect, message } = yield* evaluateInput(input)
+      return { effect, message }
     })
 
     function request(input: AssertInput, message?: string): Request {
@@ -347,14 +358,16 @@ const layer = Layer.effect(
     })
 
     const mode = Effect.fn("Permission.mode")(function* () {
-      return (autoApprove ? "auto" : "normal") as Mode
+      return currentMode
     })
 
     const setMode = Effect.fn("Permission.setMode")(function* (next: Mode) {
-      if (autoApprove === (next === "auto")) return
-      autoApprove = next === "auto"
+      if (currentMode === next) return
+      currentMode = next
       yield* kv.set(MODE_KEY, next)
-      if (!autoApprove) return
+      // Claude's classifier is native-only. Host asks (including already pending
+      // requests and non-Claude clients) remain manual in this mode.
+      if (next !== "auto") return
       for (const [id, item] of [...pending]) {
         const rules = yield* configured(item.request.sessionID, item.agent).pipe(
           Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
@@ -370,7 +383,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ ask, assert, reply, get, forSession, list, mode, setMode, close })
+    return Service.of({ inspect, ask, assert, reply, get, forSession, list, mode, setMode, close })
   }),
 )
 

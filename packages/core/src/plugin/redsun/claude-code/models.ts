@@ -2,6 +2,8 @@ export * as ClaudeCodeModels from "./models.js"
 
 import { Model } from "../../../model.js"
 import { Provider } from "../../../provider.js"
+import type { ClaudeCodeSessions } from "./sessions.js"
+import type { Options } from "@anthropic-ai/claude-agent-sdk"
 
 export const PROVIDER_ID = Provider.ID.make("claude-code")
 
@@ -36,8 +38,13 @@ export const MODELS = [
   model("sonnet", { name: "Claude Sonnet", family: "claude-sonnet", limit: CONTEXT_200K }),
   model("sonnet[1m]", { name: "Claude Sonnet 1M", family: "claude-sonnet", limit: CONTEXT_1M }),
   model("haiku", { name: "Claude Haiku", family: "claude-haiku", limit: CONTEXT_200K }),
-  // Pinned previous-generation ids the CLI accepts verbatim. Aliases stay
+  // Version pins explicitly documented by Claude Code, plus older curated ids.
+  // A pin is selectable, not a claim that this subscription can serve it.
+  // Aliases stay
   // first: `catalog.model.small` picks the first claude-haiku-family model.
+  model("claude-fable-5-1", { name: "Claude Fable 5.1", family: "claude-fable", limit: CONTEXT_1M }),
+  model("claude-fable-5", { name: "Claude Fable 5", family: "claude-fable", limit: CONTEXT_1M }),
+  model("claude-opus-5-5", { name: "Claude Opus 5.5", family: "claude-opus", limit: CONTEXT_200K }),
   model("claude-opus-4-8", { name: "Claude Opus 4.8", family: "claude-opus", limit: CONTEXT_1M }),
   model("claude-sonnet-4-5", { name: "Claude Sonnet 4.5", family: "claude-sonnet", limit: CONTEXT_200K }),
   model("claude-haiku-4-5", { name: "Claude Haiku 4.5", family: "claude-haiku", limit: CONTEXT_200K }),
@@ -98,6 +105,60 @@ export const parseDiscovered = (value: unknown): Discovered[] => {
   return result
 }
 
+// Preserve location-scoped model settings while making the initialization-only
+// process inert: the CLI otherwise runs SessionStart hooks, launches inherited
+// MCP servers and writes a native session before receiving any user prompt.
+export const metadataOptions = (options: Options): Options => ({
+  ...options,
+  settingSources: ["user", "project", "local"],
+  settings: { disableAllHooks: true },
+  strictMcpConfig: true,
+  persistSession: false,
+})
+
+// The SDK exposes the CLI's picker in its initialize control response. An
+// idle streaming query never submits a user message or makes a model request.
+export const probe = async (
+  createQuery: ClaudeCodeSessions.CreateQuery,
+  options: Options,
+  timeoutMs = 5_000,
+  signal?: AbortSignal,
+): Promise<Discovered[]> => {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cancel = () => controller.abort()
+  signal?.addEventListener("abort", cancel, { once: true })
+  if (signal?.aborted) cancel()
+  let query: ClaudeCodeSessions.QueryLike | undefined
+  try {
+    if (controller.signal.aborted) return []
+    query = createQuery({
+      prompt: (async function* () {
+        if (!controller.signal.aborted)
+          await new Promise<void>((resolve) =>
+            controller.signal.addEventListener("abort", () => resolve(), { once: true }),
+          )
+      })(),
+      options: { ...options, abortController: controller },
+    })
+    const models = await Promise.race([
+      query.supportedModels?.() ?? Promise.resolve([]),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Claude Code model discovery timed out")), timeoutMs)
+        controller.signal.addEventListener("abort", () => reject(new Error("Claude Code model discovery cancelled")), {
+          once: true,
+        })
+      }),
+    ])
+    return parseDiscovered(models)
+  } finally {
+    if (timer) clearTimeout(timer)
+    controller.abort()
+    query?.close()
+    signal?.removeEventListener("abort", cancel)
+  }
+}
+
 export const parseRetired = (value: unknown): Map<string, Retirement> => {
   const result = new Map<string, Retirement>()
   if (!value || typeof value !== "object" || Array.isArray(value)) return result
@@ -114,16 +175,26 @@ export const parseRetired = (value: unknown): Map<string, Retirement> => {
 // "claude-sonnet-5" → 5, "claude-haiku-4-5-20251001" → 4.5; the second digit
 // only counts when it is a single one, so a dated snapshot's date never reads
 // as a version.
-const GENERATION = /^claude-([a-z]+)-(\d+)(?:-(\d)(?!\d))?/
+const GENERATION = /^claude-([a-z]+)-(\d+)(?:-(\d)(?!\d))?(?:-|$)/
 
 const isOneMillion = (entry: Discovered) => entry.value.endsWith("[1m]") || (entry.resolvedModel ?? "").endsWith("[1m]")
 
 export const discoveredName = (entry: Discovered): string | undefined => {
-  const match = GENERATION.exec(stripVariant(entry.resolvedModel ?? ""))
-  if (!match) return entry.displayName ? `Claude ${entry.displayName}` : undefined
-  const family = match[1]![0]!.toUpperCase() + match[1]!.slice(1)
-  const version = match[3] ? `${match[2]}.${match[3]}` : match[2]!
-  return `Claude ${family} ${version}${isOneMillion(entry) ? " 1M" : ""}`
+  const match = GENERATION.exec(stripVariant(entry.resolvedModel ?? "")) ?? GENERATION.exec(stripVariant(entry.value))
+  const fallback = entry.displayName?.trim().replace(/^Claude\s+/i, "")
+  const name = match
+    ? `${match[1]![0]!.toUpperCase()}${match[1]!.slice(1)} ${match[3] ? `${match[2]}.${match[3]}` : match[2]}`
+    : fallback
+  if (!name) return undefined
+  const variant = isOneMillion(entry) && !/\b1\s?m\b/i.test(name) ? " 1M" : ""
+  const latest =
+    match &&
+    (/(?:^|\s)\(latest\)/i.test(fallback ?? "") ||
+      stripVariant(entry.value) === match[1] ||
+      stripVariant(entry.value) === `claude-${match[1]}`)
+      ? " (latest)"
+      : ""
+  return `Claude ${name}${variant}${latest}`
 }
 
 const discoveredFamily = (entry: Discovered): string => {
@@ -133,6 +204,45 @@ const discoveredFamily = (entry: Discovered): string => {
     : `claude-${stripVariant(entry.value).replace(/^claude-/, "")}`
   const match = /^claude-([a-z]+)/.exec(source)
   return match ? `claude-${match[1]}` : "claude"
+}
+
+// Resolve a missing bare alias label from CLI picker evidence only. A sibling
+// alias is strongest (`opus[1m]` speaks for `opus`'s generation, not its
+// context window); otherwise use the newest comparable versioned row. Equal
+// versions with different wire ids are ambiguous and leave the alias generic.
+const aliasGeneration = (family: string, rows: readonly Discovered[]): string | undefined => {
+  const candidate = (entry: Discovered) => {
+    const pin = stripVariant(entry.resolvedModel ?? entry.value)
+    const match = GENERATION.exec(pin)
+    if (!match || match[1] !== family) return
+    return { pin, major: Number(match[2]), minor: Number(match[3] ?? 0) }
+  }
+  const siblings = rows
+    .filter((entry) => stripVariant(entry.value) === family && entry.value !== family && entry.resolvedModel)
+    .map(candidate)
+    .filter((item) => item !== undefined)
+  const pool = siblings.length
+    ? siblings
+    : rows
+        .filter((entry) => stripVariant(entry.value).startsWith(`claude-${family}-`))
+        .map((entry) => {
+          const value = candidate({ value: entry.value })
+          const resolved = candidate(entry)
+          return value && resolved && value.major === resolved.major && value.minor === resolved.minor
+            ? resolved
+            : undefined
+        })
+        .filter((item) => item !== undefined)
+  if (!pool.length) return
+  if (
+    siblings.length &&
+    siblings.some((item) => item.major !== siblings[0]!.major || item.minor !== siblings[0]!.minor)
+  )
+    return
+  const sorted = pool.sort((a, b) => b.major - a.major || b.minor - a.minor)
+  const best = sorted[0]!
+  if (sorted.some((item) => item.major === best.major && item.minor === best.minor && item.pin !== best.pin)) return
+  return best.pin
 }
 
 // Structural subset of both the plugin context's ProviderEditor and core's
@@ -164,10 +274,20 @@ export const applyCatalog = (
       Object.assign(draft, entry)
     })
   }
+  // An exact alias row wins. Otherwise a sibling variant, or a newest
+  // unambiguous versioned picker row, labels the missing family alias without
+  // changing its model id or context capabilities.
+  const rows = extras?.discovered ?? []
+  for (const family of ["fable", "opus", "sonnet", "haiku"]) {
+    if (rows.some((entry) => entry.value === family)) continue
+    const resolvedModel = aliasGeneration(family, rows)
+    const name = resolvedModel && discoveredName({ value: family, resolvedModel })
+    if (name) providers.models.update(PROVIDER_ID, Model.ID.make(family), (draft) => void (draft.name = name))
+  }
   // The CLI's own picker rows: refresh a curated alias's name to the served
   // generation, append rows the CLI grew that we don't curate. "default"
   // duplicates whatever it resolves to, so it is skipped.
-  for (const found of extras?.discovered ?? []) {
+  for (const found of rows) {
     if (found.value === "default") continue
     const name = discoveredName(found)
     if (curated.has(found.value)) {

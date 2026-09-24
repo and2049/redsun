@@ -383,7 +383,7 @@ export type ProjectTime = { created: number; updated: number }
 
 export type PermissionSource = { type: "tool"; messageID: string; id: string }
 
-export type PermissionMode = "normal" | "auto"
+export type PermissionMode = "normal" | "auto" | "claude_auto"
 
 export type PermissionSavedInfo = {
   id: string
@@ -2279,6 +2279,7 @@ export type ConfigEntry =
         }
         claude_code?: {
           enabled?: boolean
+          behavior?: "native" | "redsun"
           binary_path?: string
           config_dir?: string
           permission_mode?: string
@@ -5978,7 +5979,7 @@ export type PermissionRequestListOutput = { location: LocationPublicRef; data: A
 
 export type PermissionModeGetOutput = { data: { mode: PermissionMode } }["data"]
 
-export type PermissionModeSetInput = { readonly mode: { readonly mode: "normal" | "auto" }["mode"] }
+export type PermissionModeSetInput = { readonly mode: { readonly mode: "normal" | "auto" | "claude_auto" }["mode"] }
 
 export type PermissionModeSetOutput = void
 

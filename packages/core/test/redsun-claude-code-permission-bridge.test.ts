@@ -13,6 +13,7 @@ const harness = (input?: {
   readonly pending?: readonly string[]
   /** False when the user would rather keep planning. */
   readonly exitPlan?: boolean
+  readonly direct?: ReadonlySet<string>
 }) => {
   const asked: { action: string; resource: string }[] = []
   const forms: Form.Field[][] = []
@@ -20,6 +21,7 @@ const harness = (input?: {
   const bridge = ClaudeCodePermissionBridge.make({
     worktree: "/repo",
     agent: () => input?.agent,
+    isDirectHostTool: (name) => input?.direct?.has(name) === true,
     assert: (action, resource) => {
       asked.push({ action, resource })
       if (input?.pending?.includes(action)) return new Promise<never>(() => {})
@@ -50,10 +52,14 @@ const live = { signal: new AbortController().signal }
 const aborted = { signal: AbortSignal.abort() }
 
 describe("ClaudeCodePermissionBridge", () => {
-  it("allows read-only tools without asking anything", async () => {
-    const h = harness({ deny: ["read", "claude_code"] })
-    expect(await h.bridge("Grep", { pattern: "x" }, live)).toEqual({ behavior: "allow", updatedInput: { pattern: "x" } })
-    expect(h.asked).toHaveLength(0)
+  it("checks read-only tools too, including explicit host denials", async () => {
+    const h = harness({ deny: ["grep", "read"] })
+    expect(await h.bridge("Grep", { pattern: "x" }, live)).toEqual({
+      behavior: "deny",
+      message: "Permission denied: grep x",
+    })
+    expect(await h.bridge("Read", { file_path: "/repo/private" }, live)).toMatchObject({ behavior: "deny" })
+    expect(h.actions()).toEqual(["grep", "read"])
   })
 
   it("refuses an aborted turn before asking the user anything", async () => {
@@ -178,7 +184,6 @@ describe("ClaudeCodePermissionBridge", () => {
     expect(h.asked).toEqual([{ action: "claude_code", resource: "BashOutput" }])
   })
 
-
   it("switches redsun out of plan mode when the plan is approved", async () => {
     // The CLI leaves its own plan mode on ExitPlanMode, but redsun would pin the
     // session back to `plan` -- and `modes.ts` would force plan permissions
@@ -214,6 +219,53 @@ describe("ClaudeCodePermissionBridge", () => {
   it("leaves routed delegation alone for every other agent", async () => {
     const h = harness({ agent: "compose" })
     expect(await h.bridge("mcp__redsun__subagent", { agent: "worker" }, live)).toMatchObject({ behavior: "allow" })
+  })
+
+  it("does not double-prompt for a trusted in-process host tool", async () => {
+    const h = harness({ agent: "build" })
+    expect(
+      await h.bridge(
+        "mcp__redsun__skill",
+        { id: "redsun" },
+        {
+          signal: live.signal,
+          mcpServer: { name: "redsun", source: "sdk" },
+        },
+      ),
+    ).toMatchObject({ behavior: "allow" })
+    expect(h.actions()).toEqual([])
+    // A matching name from inherited MCP settings is not a trusted host tool.
+    await h.bridge(
+      "mcp__redsun__skill",
+      { id: "redsun" },
+      {
+        signal: live.signal,
+        mcpServer: { name: "redsun", source: "user" },
+      },
+    )
+    expect(h.actions()).toEqual(["skill"])
+  })
+
+  it("trusts only selected direct MCP tools with SDK redsun provenance", async () => {
+    const selected = new Set(["mcp__redsun__files_search"])
+    const h = harness({ direct: selected })
+    const name = "mcp__redsun__files_search"
+    const sdk = { signal: live.signal, mcpServer: { name: "redsun", source: "sdk" } }
+    expect(await h.bridge(name, { query: "x" }, sdk)).toMatchObject({ behavior: "allow" })
+    expect(h.actions()).toEqual([])
+
+    // A lookalike name and a formerly selected tool are not in this turn's
+    // canonical snapshot, even when the caller advertises SDK provenance.
+    await h.bridge("mcp__redsun__files_write", {}, sdk)
+    selected.clear()
+    await h.bridge(name, { query: "x" }, sdk)
+    expect(h.actions()).toEqual(["claude_code", "claude_code"])
+
+    selected.add(name)
+    await h.bridge(name, {}, { signal: live.signal, mcpServer: { name: "redsun", source: "user" } })
+    await h.bridge(name, {}, { signal: live.signal, mcpServer: { name: "other", source: "sdk" } })
+    await h.bridge(name, {}, live)
+    expect(h.actions()).toEqual(["claude_code", "claude_code", "claude_code", "claude_code", "claude_code"])
   })
 
   it("does not decide until the user has answered", async () => {

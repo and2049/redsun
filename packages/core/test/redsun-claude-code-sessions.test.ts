@@ -57,10 +57,7 @@ const harness = (input?: { interruptRejects?: boolean }) => {
 
 const prompt: SDKUserMessage["message"]["content"] = [{ type: "text", text: "hi" }]
 
-const startTurn = (
-  manager: ClaudeCodeSessions.SessionManager,
-  onExit?: () => void,
-) =>
+const startTurn = (manager: ClaudeCodeSessions.SessionManager, onExit?: () => void) =>
   manager.turn("ses_1", prompt, {
     model: "sonnet",
     permissionMode: "default",
@@ -112,6 +109,18 @@ describe("ClaudeCodeSessions.SessionManager interrupt fallback", () => {
 })
 
 describe("ClaudeCodeSessions.SessionManager onExit", () => {
+  it("signals when startup-only context must be re-established", async () => {
+    const h = harness()
+    const manager = new ClaudeCodeSessions.SessionManager(h.createQuery)
+    expect(manager.willStart("ses_1", "default")).toBe(true)
+    const turn = await startTurn(manager)
+    expect(manager.willStart("ses_1", "default")).toBe(false)
+    expect(manager.willStart("ses_1", "bypassPermissions")).toBe(true)
+    h.feed.push(result())
+    for await (const _ of turn) void _
+    manager.stop("ses_1")
+    expect(manager.willStart("ses_1", "default")).toBe(true)
+  })
   it("fires once when the process dies, even if stop follows", async () => {
     const h = harness()
     const manager = new ClaudeCodeSessions.SessionManager(h.createQuery)

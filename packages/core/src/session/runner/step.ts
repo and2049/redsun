@@ -5,6 +5,8 @@ import {
   InvalidProviderOutputError,
   LLMClient,
   LLMEvent,
+  HttpOptions,
+  LLMRequest,
   isContextOverflowFailure,
   type ProviderErrorEvent,
   type ToolCall,
@@ -28,6 +30,7 @@ import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
+import { ClaudeCodeModels } from "../../plugin/redsun/claude-code/models.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -101,7 +104,18 @@ export const make = Effect.gen(function* () {
     // A local execution starts only after its Tool.Called publication completes.
     let overflowFailure: ProviderErrorEvent | undefined
     // Read to the end, not just the finish event, so the next request can reuse this response.
-    const providerStream = llm.stream(input.prepared.request, input.prepared.options).pipe(
+    // The delegated runtime needs the actual Step's assistant ID to attribute
+    // in-process MCP tools; looking up the latest persisted message races the stream.
+    const request = ClaudeCodeModels.isDelegated(input.model.ref)
+      ? LLMRequest.update(input.prepared.request, {
+          http: new HttpOptions({
+            body: input.prepared.request.http?.body,
+            query: input.prepared.request.http?.query,
+            headers: { ...input.prepared.request.http?.headers, "x-opencode-message": input.assistantMessageID },
+          }),
+        })
+      : input.prepared.request
+    const providerStream = llm.stream(request, input.prepared.options).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           if (overflowFailure || publisher.hasProviderError()) return

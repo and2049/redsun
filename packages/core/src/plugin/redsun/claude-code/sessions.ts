@@ -12,10 +12,7 @@ export interface QueryLike extends AsyncIterable<SDKMessage> {
   supportedModels?(): Promise<unknown>
 }
 
-export type CreateQuery = (input: {
-  prompt: string | AsyncIterable<SDKUserMessage>
-  options: Options
-}) => QueryLike
+export type CreateQuery = (input: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }) => QueryLike
 
 class AsyncQueue<T> implements AsyncIterable<T> {
   private values: T[] = []
@@ -47,7 +44,9 @@ class AsyncQueue<T> implements AsyncIterable<T> {
       next: () => {
         if (this.values.length) return Promise.resolve({ value: this.values.shift()!, done: false })
         if (this.done)
-          return this.failure ? Promise.reject(this.failure) : Promise.resolve({ value: undefined as never, done: true })
+          return this.failure
+            ? Promise.reject(this.failure)
+            : Promise.resolve({ value: undefined as never, done: true })
         return new Promise((resolve, reject) => {
           this.waiters.push((result) => {
             if (result.done && this.failure) reject(this.failure)
@@ -105,8 +104,7 @@ export class SessionManager {
     session.exited = true
     try {
       await session.onExit?.()
-    } catch {
-    }
+    } catch {}
   }
 
   private start(sessionID: string, input: SessionOptions): LiveSession {
@@ -141,8 +139,7 @@ export class SessionManager {
           if (session.observer) {
             try {
               await session.observer(message, turn !== undefined)
-            } catch {
-            }
+            } catch {}
           }
           turn?.push(message)
           if (message.type === "result") {
@@ -165,8 +162,7 @@ export class SessionManager {
     this.evict(sessionID)
     try {
       this.onStart?.(query)
-    } catch {
-    }
+    } catch {}
     return session
   }
 
@@ -180,6 +176,12 @@ export class SessionManager {
 
   busy(sessionID: string): boolean {
     return this.sessions.get(sessionID)?.turn !== undefined
+  }
+
+  /** Startup-only options, including the system preset, are reapplied on a new process. */
+  willStart(sessionID: string, permissionMode: PermissionMode): boolean {
+    const session = this.sessions.get(sessionID)
+    return !session || session.dead || (permissionMode === "bypassPermissions") !== session.bypassAllowed
   }
 
   async turn(
@@ -254,8 +256,7 @@ export class SessionManager {
     session.turn = undefined
     try {
       session.query.close()
-    } catch {
-    }
+    } catch {}
     void this.exit(session)
   }
 

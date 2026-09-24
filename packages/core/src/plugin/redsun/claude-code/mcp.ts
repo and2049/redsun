@@ -3,6 +3,13 @@ export * as ClaudeCodeMcp from "./mcp.js"
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk"
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
+import { ClaudeCodeHostTools } from "./host-tools.js"
+
+/** Canonical host bridge; the legacy delegate-only server remains compatible. */
+export const makeHostServer = ClaudeCodeHostTools.makeServer
+export const fromSnapshot = ClaudeCodeHostTools.fromSnapshot
+export const HOST_TOOL_NAMES = ClaudeCodeHostTools.NAMES
+export const HOST_MCP_NAMES = ClaudeCodeHostTools.MCP_NAMES
 
 const NAME = "subagent"
 

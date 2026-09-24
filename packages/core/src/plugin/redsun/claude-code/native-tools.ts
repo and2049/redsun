@@ -3,6 +3,13 @@ export * as ClaudeCodeNativeTools from "./native-tools.js"
 import { fileDiff } from "../../../tool/plugin/file-diff.js"
 
 export const SUBAGENT_TOOLS = new Set(["Task", "Agent"])
+export const HOST_TOOLS = new Set([
+  "mcp__redsun__subagent",
+  "mcp__redsun__skill",
+  "mcp__redsun__todowrite",
+  "mcp__redsun__worker_model",
+  "mcp__redsun__execute",
+])
 
 const TOOL_NAMES: Record<string, string> = {
   Bash: "shell",
@@ -15,6 +22,11 @@ const TOOL_NAMES: Record<string, string> = {
   WebSearch: "websearch",
   Skill: "skill",
   AskUserQuestion: "question",
+  mcp__redsun__subagent: "subagent",
+  mcp__redsun__skill: "skill",
+  mcp__redsun__todowrite: "todowrite",
+  mcp__redsun__worker_model: "worker_model",
+  mcp__redsun__execute: "execute",
 }
 
 const INPUT_KEYS: Record<string, Record<string, string>> = {
@@ -31,6 +43,12 @@ const INPUT_KEYS: Record<string, Record<string, string>> = {
 }
 
 export const toolName = (name: string) => TOOL_NAMES[name] ?? name
+
+const HOST_PREFIX = "mcp__redsun__"
+
+/** Only a name selected into this turn's host bridge can be unwrapped to its canonical tool id. */
+export const directHostToolName = (name: string, selected: (name: string) => boolean) =>
+  name.startsWith(HOST_PREFIX) && selected(name) ? name.slice(HOST_PREFIX.length) : undefined
 
 export const toolInput = (name: string, input: Record<string, unknown>): Record<string, unknown> => {
   const keys = INPUT_KEYS[name]

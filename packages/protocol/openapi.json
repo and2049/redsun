@@ -8940,8 +8940,8 @@
             }
           }
         },
-        "description": "Retrieve whether permissions that would prompt are approved automatically.",
-        "summary": "Get auto-approve mode"
+        "description": "Retrieve manual, approve-all, or Claude Code native classifier mode.",
+        "summary": "Get permission mode"
       },
       "put": {
         "tags": ["permission"],
@@ -8973,8 +8973,8 @@
             }
           }
         },
-        "description": "Approve every permission that would prompt. Rules that deny still deny, so read-only agents stay read-only.",
-        "summary": "Set auto-approve mode",
+        "description": "Auto approves host asks; claude_auto selects the native Claude Code classifier for primary Claude sessions while host asks remain manual. Explicit denies always deny.",
+        "summary": "Set permission mode",
         "requestBody": {
           "content": {
             "application/json": {
@@ -14349,6 +14349,22 @@
               }
             },
             "additionalProperties": false
+          },
+          "attribution": {
+            "type": "object",
+            "properties": {
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -14654,6 +14670,22 @@
             },
             "additionalProperties": false
           },
+          "attribution": {
+            "type": "object",
+            "properties": {
+              "commit": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
           "advisor": {
             "type": "object",
             "properties": {
@@ -14800,6 +14832,10 @@
             "properties": {
               "enabled": {
                 "type": "boolean"
+              },
+              "behavior": {
+                "type": "string",
+                "enum": ["native", "redsun"]
               },
               "binary_path": {
                 "type": "string"
@@ -17295,7 +17331,7 @@
       },
       "Permission.Mode": {
         "type": "string",
-        "enum": ["normal", "auto"]
+        "enum": ["normal", "auto", "claude_auto"]
       },
       "Permission.Reply": {
         "type": "string",

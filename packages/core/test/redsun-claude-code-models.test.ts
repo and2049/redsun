@@ -14,6 +14,9 @@ describe("ClaudeCodeModels", () => {
       "sonnet",
       "sonnet[1m]",
       "haiku",
+      "claude-fable-5-1",
+      "claude-fable-5",
+      "claude-opus-5-5",
       "claude-opus-4-8",
       "claude-sonnet-4-5",
       "claude-haiku-4-5",
@@ -86,6 +89,8 @@ describe("ClaudeCodeModels", () => {
 
   it("retires only curated pinned ids", () => {
     expect(ClaudeCodeModels.isRetirable("claude-opus-4-8")).toBe(true)
+    expect(ClaudeCodeModels.isRetirable("claude-fable-5")).toBe(true)
+    expect(ClaudeCodeModels.isRetirable("claude-fable-5-1")).toBe(true)
     expect(ClaudeCodeModels.isRetirable("claude-sonnet-4-5")).toBe(true)
     expect(ClaudeCodeModels.isRetirable("opus")).toBe(false)
     expect(ClaudeCodeModels.isRetirable("opus[1m]")).toBe(false)
@@ -95,13 +100,13 @@ describe("ClaudeCodeModels", () => {
 
   it("derives generation-accurate names from the CLI's resolved wire ids", () => {
     expect(ClaudeCodeModels.discoveredName({ value: "sonnet", resolvedModel: "claude-sonnet-5" })).toBe(
-      "Claude Sonnet 5",
+      "Claude Sonnet 5 (latest)",
     )
     expect(ClaudeCodeModels.discoveredName({ value: "haiku", resolvedModel: "claude-haiku-4-5-20251001" })).toBe(
-      "Claude Haiku 4.5",
+      "Claude Haiku 4.5 (latest)",
     )
     expect(ClaudeCodeModels.discoveredName({ value: "opus[1m]", resolvedModel: "claude-opus-5[1m]" })).toBe(
-      "Claude Opus 5 1M",
+      "Claude Opus 5 1M (latest)",
     )
     // A dated snapshot of a single-digit generation must not read the date as
     // a minor version.
@@ -109,7 +114,85 @@ describe("ClaudeCodeModels", () => {
       "Claude Sonnet 4",
     )
     expect(ClaudeCodeModels.discoveredName({ value: "x", displayName: "Fancy" })).toBe("Claude Fancy")
+    expect(ClaudeCodeModels.discoveredName({ value: "claude-fable-5-1", displayName: "Fable 5.1 (latest)" })).toBe(
+      "Claude Fable 5.1 (latest)",
+    )
+    expect(ClaudeCodeModels.discoveredName({ value: "claude-fable-5", displayName: "Claude Fable 5" })).toBe(
+      "Claude Fable 5",
+    )
+    expect(ClaudeCodeModels.discoveredName({ value: "opus[1m]", displayName: "Claude Opus 5 1M" })).toBe(
+      "Claude Opus 5 1M",
+    )
+    expect(ClaudeCodeModels.discoveredName({ value: "claude-opus-5", displayName: "Opus 5" })).toBe("Claude Opus 5")
+    expect(
+      ClaudeCodeModels.discoveredName({
+        value: "opus[1m]",
+        resolvedModel: "claude-opus-5-5[1m]",
+        displayName: "Opus (1M context)",
+      }),
+    ).toBe("Claude Opus 5.5 1M (latest)")
+    expect(
+      ClaudeCodeModels.discoveredName({ value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" }),
+    ).toBe("Claude Sonnet 5 (latest)")
     expect(ClaudeCodeModels.discoveredName({ value: "x" })).toBeUndefined()
+  })
+
+  it("probes only CLI initialization metadata, closes the idle query, and times out safely", async () => {
+    let closed = 0
+    let requested = 0
+    let prompt: unknown
+    const create = ((input: { prompt: unknown; options: { abortController: AbortController } }) => {
+      prompt = input.prompt
+      expect(input.options.abortController).toBeInstanceOf(AbortController)
+      return {
+        supportedModels: async () => {
+          requested++
+          return [
+            { value: "fable", resolvedModel: "claude-fable-5-1", displayName: "Fable 5.1 (latest)" },
+            { value: "claude-fable-5", displayName: "Fable 5" },
+          ]
+        },
+        close: () => closed++,
+      }
+    }) as never
+    const result = await ClaudeCodeModels.probe(create, { cwd: "/tmp", pathToClaudeCodeExecutable: "/bin/claude" })
+    expect(result.map(ClaudeCodeModels.discoveredName)).toEqual(["Claude Fable 5.1 (latest)", "Claude Fable 5"])
+    expect(requested).toBe(1)
+    expect(closed).toBe(1)
+    expect(typeof (prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]).toBe("function")
+
+    const stalled = (() => ({ supportedModels: () => new Promise(() => {}), close: () => closed++ })) as never
+    await expect(ClaudeCodeModels.probe(stalled, {}, 1)).rejects.toThrow("timed out")
+    expect(closed).toBe(2)
+    const cancelled = new AbortController()
+    const pending = ClaudeCodeModels.probe(stalled, {}, 5_000, cancelled.signal)
+    cancelled.abort()
+    await expect(pending).rejects.toThrow("cancelled")
+    expect(closed).toBe(3)
+  })
+
+  it("retains location and model settings while isolating the startup metadata probe", () => {
+    const options = ClaudeCodeModels.metadataOptions({
+      cwd: "/worktree",
+      pathToClaudeCodeExecutable: "/custom/claude",
+      env: { CLAUDE_CONFIG_DIR: "/custom/config" },
+      extraArgs: { "--verbose": null },
+    })
+    expect(options).toMatchObject({
+      cwd: "/worktree",
+      pathToClaudeCodeExecutable: "/custom/claude",
+      env: { CLAUDE_CONFIG_DIR: "/custom/config" },
+      extraArgs: { "--verbose": null },
+      settingSources: ["user", "project", "local"],
+      settings: { disableAllHooks: true },
+      strictMcpConfig: true,
+      persistSession: false,
+    })
+    const query = ((input: { options: unknown }) => {
+      expect(input.options).toMatchObject(options)
+      return { supportedModels: async () => [], close: () => {} }
+    }) as never
+    return ClaudeCodeModels.probe(query, options)
   })
 
   it("parses KV-cached picker rows and retirements defensively", () => {
@@ -176,6 +259,9 @@ describe("ClaudeCodeModels", () => {
         { value: "default", resolvedModel: "claude-opus-5[1m]", displayName: "Default (recommended)" },
         { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" },
         { value: "claude-fable-5[1m]", resolvedModel: "claude-fable-5", displayName: "Fable" },
+        { value: "fable", resolvedModel: "claude-fable-5-1", displayName: "Fable 5.1 (latest)" },
+        { value: "claude-fable-5", displayName: "Fable 5" },
+        { value: "claude-opus-5", displayName: "Opus 5" },
       ],
     })
 
@@ -185,7 +271,10 @@ describe("ClaudeCodeModels", () => {
 
     // Curated alias refreshed in place; "default" skipped; new picker row
     // appended after the curated set so `catalog.model.small` ordering holds.
-    expect(models.get("sonnet")?.name).toBe("Claude Sonnet 5")
+    expect(models.get("sonnet")?.name).toBe("Claude Sonnet 5 (latest)")
+    expect(models.get("fable")?.name).toBe("Claude Fable 5.1 (latest)")
+    expect(models.get("claude-fable-5")?.name).toBe("Claude Fable 5")
+    expect(models.get("claude-opus-5")?.name).toBe("Claude Opus 5")
     expect(models.has("default")).toBe(false)
     const added = models.get("claude-fable-5[1m]")
     expect(added?.name).toBe("Claude Fable 5 1M")
@@ -193,6 +282,98 @@ describe("ClaudeCodeModels", () => {
     expect(String(added?.family)).toBe("claude-fable")
     expect((added?.limit as { context: number }).context).toBe(1_000_000)
     expect([...models.keys()].indexOf("claude-fable-5[1m]")).toBeGreaterThan([...models.keys()].indexOf("haiku"))
+  })
+
+  it("projects the installed CLI's init-only picker inventory without inventing absent versions", () => {
+    const models = new Map<string, string>()
+    ClaudeCodeModels.applyCatalog(
+      {
+        update: (_id: unknown, fn: (draft: Record<string, unknown>) => void) => fn({}),
+        models: {
+          update: (_provider: unknown, id: string, fn: (draft: Record<string, unknown>) => void) => {
+            const draft = { name: models.get(id) ?? "" }
+            fn(draft)
+            models.set(id, String(draft.name))
+          },
+        },
+      } as never,
+      {
+        discovered: [
+          { value: "default", resolvedModel: "claude-opus-5-5[1m]", displayName: "Default (recommended)" },
+          { value: "opus[1m]", resolvedModel: "claude-opus-5-5[1m]", displayName: "Opus (1M context)" },
+          { value: "claude-fable-5-1[1m]", resolvedModel: "claude-fable-5-1", displayName: "Fable" },
+          { value: "sonnet", resolvedModel: "claude-sonnet-5", displayName: "Sonnet" },
+          { value: "haiku", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku" },
+        ],
+      },
+    )
+    expect(models.get("opus[1m]")).toBe("Claude Opus 5.5 1M (latest)")
+    expect(models.get("opus")).toBe("Claude Opus 5.5 (latest)")
+    expect(models.get("fable")).toBe("Claude Fable 5.1 (latest)")
+    expect(models.get("claude-fable-5-1[1m]")).toBe("Claude Fable 5.1 1M")
+    expect(models.get("claude-fable-5-1")).toBe("Claude Fable 5.1")
+    expect(models.get("claude-fable-5")).toBe("Claude Fable 5")
+    expect(models.get("claude-opus-5-5")).toBe("Claude Opus 5.5")
+    expect(models.get("sonnet")).toBe("Claude Sonnet 5 (latest)")
+    expect(models.has("default")).toBe(false)
+    expect(models.has("claude-fable-5-2")).toBe(false)
+  })
+
+  it("uses a reported Fable alias in preference to inferring one from the versioned row", () => {
+    const models = new Map<string, string>()
+    ClaudeCodeModels.applyCatalog(
+      {
+        update: (_id: unknown, fn: (draft: Record<string, unknown>) => void) => fn({}),
+        models: {
+          update: (_provider: unknown, id: string, fn: (draft: Record<string, unknown>) => void) => {
+            const draft = { name: models.get(id) ?? "" }
+            fn(draft)
+            models.set(id, String(draft.name))
+          },
+        },
+      } as never,
+      {
+        discovered: [
+          { value: "claude-fable-5-1[1m]", resolvedModel: "claude-fable-5-1", displayName: "Fable" },
+          { value: "fable", resolvedModel: "claude-fable-5", displayName: "Fable" },
+        ],
+      },
+    )
+    expect(models.get("fable")).toBe("Claude Fable 5 (latest)")
+    expect(models.get("claude-fable-5")).toBe("Claude Fable 5")
+  })
+
+  it("updates missing family aliases from newer picker versions without hardcoding a generation", () => {
+    const models = new Map<string, { name: string; limit?: { context: number } }>()
+    const target = {
+      update: (_id: unknown, fn: (draft: Record<string, unknown>) => void) => fn({}),
+      models: {
+        update: (_provider: unknown, id: string, fn: (draft: Record<string, unknown>) => void) => {
+          const draft = models.get(id) ?? { name: "" }
+          fn(draft)
+          models.set(id, draft)
+        },
+      },
+    }
+    ClaudeCodeModels.applyCatalog(target as never, {
+      discovered: [
+        { value: "claude-fable-5-1[1m]", resolvedModel: "claude-fable-5-1", displayName: "Fable 5.1" },
+        { value: "claude-fable-6[1m]", resolvedModel: "claude-fable-6", displayName: "Fable 6" },
+        { value: "opus[1m]", resolvedModel: "claude-opus-6[1m]", displayName: "Opus 1M" },
+      ],
+    })
+    expect(models.get("fable")).toMatchObject({ name: "Claude Fable 6 (latest)", limit: { context: 1_000_000 } })
+    expect(models.get("opus")).toMatchObject({ name: "Claude Opus 6 (latest)", limit: { context: 200_000 } })
+    expect(models.get("claude-fable-5-1[1m]")?.name).toBe("Claude Fable 5.1 1M")
+    // Equal generations with different wire ids cannot establish the target.
+    models.clear()
+    ClaudeCodeModels.applyCatalog(target as never, {
+      discovered: [
+        { value: "claude-fable-6-20260901", resolvedModel: "claude-fable-6-20260901" },
+        { value: "claude-fable-6-20260902", resolvedModel: "claude-fable-6-20260902" },
+      ],
+    })
+    expect(models.get("fable")?.name).toBe("Claude Fable")
   })
 
   it("stays visible without a connection", () => {

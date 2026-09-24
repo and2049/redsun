@@ -10,6 +10,14 @@ import { AbsolutePath } from "../src/schema.js"
 import { WebSearch } from "../src/websearch.js"
 
 describe("Config.Entry", () => {
+  test("round-trips Claude Code behavior while omitting the optional default", () => {
+    const decode = Schema.decodeUnknownSync(Config.Info)
+    const encode = Schema.encodeSync(Config.Info)
+    expect(encode(decode({ claude_code: { behavior: "redsun" } }))).toEqual({ claude_code: { behavior: "redsun" } })
+    expect(encode(decode({ claude_code: { behavior: "native" } }))).toEqual({ claude_code: { behavior: "native" } })
+    expect(encode(decode({ claude_code: {} }))).toEqual({ claude_code: {} })
+    expect(() => decode({ claude_code: { behavior: "unknown" } })).toThrow()
+  })
   test("accepts directory-only worktree config and omits it when absent", () => {
     const decode = Schema.decodeUnknownSync(Config.Info)
     const input = { worktree: { directory: "../worktrees" } }

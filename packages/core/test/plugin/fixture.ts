@@ -56,6 +56,7 @@ const permissionLayer = Layer.succeed(
   Permission.Service,
   Permission.Service.of({
     close: Effect.void,
+    inspect: () => Effect.succeed({ effect: "ask" as const }),
     ask: (input) => Effect.succeed({ id: input.id ?? Permission.ID.create(), effect: "ask" }),
     assert: () => Effect.void,
     reply: () => Effect.void,
