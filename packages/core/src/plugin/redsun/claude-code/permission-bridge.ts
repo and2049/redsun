@@ -1,6 +1,6 @@
 export * as ClaudeCodePermissionBridge from "./permission-bridge.js"
 
-import type { Form } from "../../../form.js"
+import type { Form } from "@opencode/schema/form"
 import { ClaudeCodePermissions } from "./permissions.js"
 import { ClaudeCodeQuestions } from "./questions.js"
 
@@ -16,7 +16,10 @@ export interface Ports {
   /** Exact direct MCP tools exposed in the current turn's host snapshot. */
   readonly isDirectHostTool?: (toolName: string) => boolean
   readonly assert: (action: string, resource: string, signal: AbortSignal) => Promise<Outcome>
-  readonly form: (fields: Form.Field[], signal: AbortSignal) => Promise<Form.TerminalState | undefined>
+  readonly form: (
+    fields: Form.Field[],
+    signal: AbortSignal,
+  ) => Promise<Exclude<Form.State, { readonly status: "pending" }> | undefined>
   readonly exitPlan: (signal: AbortSignal) => Promise<boolean>
 }
 

@@ -1,6 +1,6 @@
 export * as ClaudeCodeQuestions from "./questions.js"
 
-import type { Form } from "../../../form.js"
+import type { Form } from "@opencode/schema/form"
 
 export const TOOL_NAME = "AskUserQuestion"
 
@@ -57,10 +57,7 @@ export const fields = (questions: readonly Question[]): Form.Field[] =>
     custom: true,
   })) as Form.Field[]
 
-export const answers = (
-  questions: readonly Question[],
-  answer: Form.Answer,
-): Record<string, string> =>
+export const answers = (questions: readonly Question[], answer: Form.Answer): Record<string, string> =>
   Object.fromEntries(
     questions.map((question, index) => {
       const value = answer[key(index)]

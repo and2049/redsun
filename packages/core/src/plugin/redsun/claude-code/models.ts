@@ -1,7 +1,8 @@
 export * as ClaudeCodeModels from "./models.js"
 
-import { Model } from "../../../model.js"
-import { Provider } from "../../../provider.js"
+import type { Types } from "effect"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import type { Options } from "@anthropic-ai/claude-agent-sdk"
 
@@ -9,7 +10,7 @@ export const PROVIDER_ID = Provider.ID.make("claude-code")
 
 export const SENTINEL_NAME = "@redsun/claude-code-delegated"
 
-export const SENTINEL_PACKAGE = Provider.aisdk(SENTINEL_NAME)
+export const SENTINEL_PACKAGE = `aisdk:${SENTINEL_NAME}`
 
 export const DISPLAY_NAME = "Anthropic (Claude Code)"
 
@@ -249,9 +250,9 @@ const aliasGeneration = (family: string, rows: readonly Discovered[]): string | 
 // Provider.Editor (method syntax keeps the id brands bivariant), so the same
 // registration runs from provider.ts and from a test driving a real registry.
 type ProviderTarget = {
-  update(providerID: Provider.ID, fn: (provider: Provider.MutableInfo) => void): void
+  update(providerID: Provider.ID, fn: (provider: Types.DeepMutable<Provider.Info>) => void): void
   readonly models: {
-    update(providerID: Provider.ID, modelID: Model.ID, fn: (model: Model.MutableInfo) => void): void
+    update(providerID: Provider.ID, modelID: Model.ID, fn: (model: Types.DeepMutable<Model.Info>) => void): void
   }
 }
 

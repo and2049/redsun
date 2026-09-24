@@ -12,7 +12,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
-import type { Tool } from "../../../tool.js"
+import type { Tool } from "@opencode/schema/tool"
 import { ClaudeCodeTranslate } from "./translate.js"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
 import PLAN_WORKFLOW from "./prompt/plan-workflow.txt" with { type: "text" }

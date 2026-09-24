@@ -3,7 +3,7 @@ export * as ClaudeCodeAuth from "./auth.js"
 import type { Options } from "@anthropic-ai/claude-agent-sdk"
 import { Effect } from "effect"
 import { Credential } from "@opencode/schema/credential"
-import { Integration } from "../../../integration.js"
+import { Integration } from "@opencode/schema/integration"
 import { ClaudeCodeModels } from "./models.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
 
@@ -54,8 +54,7 @@ export const probe = (input: {
       } finally {
         try {
           query.close()
-        } catch {
-        }
+        } catch {}
       }
     },
     catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
@@ -78,10 +77,7 @@ export const probe = (input: {
     ),
   )
 
-export const oauth = (input: {
-  readonly createQuery: ClaudeCodeSessions.CreateQuery
-  readonly options: Options
-}) =>
+export const oauth = (input: { readonly createQuery: ClaudeCodeSessions.CreateQuery; readonly options: Options }) =>
   ({
     integrationID: INTEGRATION_ID,
     method: { id: METHOD_ID, type: "oauth", label: LABEL },

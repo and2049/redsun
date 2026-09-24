@@ -45,7 +45,25 @@ const PERMISSION_MODE_PENDING = [
   "tui/src/context/permission.tsx",
 ]
 
+// Plugin files that still reach into core instead of `ctx`; stage 3 of the plan empties this.
+const PLUGIN_CORE_IMPORTS_PENDING = [
+  "context.ts", // 3d: Code Mode catalog rendering
+  "host-files.ts", // 3d: instruction bounding, project memory policy
+  "host-tools.ts", // 3c: tool snapshot binding
+  "provider.ts", // 3b-3e: core services
+  "subagent-events.ts", // 3e: child transcript events
+]
+
 describe("delegated runtime boundaries", () => {
+  test("the Claude Code plugin imports nothing outside its directory except where pending", async () => {
+    const hits: string[] = []
+    const glob = new Bun.Glob("*.ts")
+    for await (const file of glob.scan({ cwd: path.join(packages, PLUGIN_DIR) }))
+      if (/^import [^\n]*from "\.\.\//m.test(await Bun.file(path.join(packages, PLUGIN_DIR, file)).text()))
+        hits.push(file)
+    expect(hits.sort()).toEqual(PLUGIN_CORE_IMPORTS_PENDING)
+  })
+
   test("Claude Code is referenced outside its plugin only where allowed", async () => {
     expect(await scan(/ClaudeCode|claude-code|claude_code/)).toEqual([...PERMANENT, ...PENDING].sort())
   })

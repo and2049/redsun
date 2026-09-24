@@ -2,7 +2,7 @@ export * as ClaudeCodeTranslate from "./translate.js"
 
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { Tool } from "../../../tool.js"
+import type { Tool } from "@opencode/schema/tool"
 import { ClaudeCodeNativeTools } from "./native-tools.js"
 
 type OpenBlock =
