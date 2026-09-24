@@ -565,6 +565,7 @@ export const requirements = LayerNode.group([
   Model.node,
   Command.node,
   DelegatedRuntime.node,
+  DelegateHost.requirements,
   Bus.node,
   Integration.node,
   KV.node,

@@ -11,6 +11,7 @@ import type {
 } from "@opencode/plugin/effect/delegate"
 import path from "node:path"
 import { Cause, Effect, Exit, Option } from "effect"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Agent } from "./agent.js"
 import { CodeModeCatalog } from "./codemode/catalog.js"
 import { CodeModeInstructions } from "./codemode/instructions.js"
@@ -105,6 +106,13 @@ export const instructionFiles = (
     return { path: file.path, content: file.path === memory ? `${RedsunProjectMemory.POLICY}\n\n${content}` : content }
   })
 }
+
+/**
+ * Services the delegate domain acquires optionally. They are not guaranteed to be in the plugin
+ * host's graph otherwise, so `PluginHost.requirements` includes this group; the optional
+ * acquisition keeps hand-built harnesses (which lack them) constructible.
+ */
+export const requirements = LayerNode.group([Config.node, Form.node, InstructionDiscovery.node])
 
 export const make = Effect.gen(function* () {
   const delegates = yield* DelegatedRuntime.Service
