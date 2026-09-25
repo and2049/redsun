@@ -33,7 +33,7 @@ const PERMANENT = [
 const PENDING: string[] = []
 
 // `claude_auto` is now `native_auto`; core still reads a stored `claude_auto` selection.
-const PERMISSION_MODE_COMPAT = ["core/src/permission.ts"]
+const PERMISSION_MODE_COMPAT = ["core/src/permission/mode.ts"]
 
 describe("delegated runtime boundaries", () => {
   test.each(RUNTIMES)("%s imports nothing from core and stays inside its package", async (runtime) => {
