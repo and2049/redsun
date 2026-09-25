@@ -285,6 +285,11 @@ export function createData(config: CreateDataInput) {
     )
   }
 
+  function addForm(form: FormWithLocation) {
+    if (store.session.form[form.sessionID]?.some((existing) => existing.id === form.id)) return
+    setStore("session", "form", form.sessionID, [...(store.session.form[form.sessionID] ?? []), form])
+  }
+
   function removeForm(sessionID: string, formID: string, ref?: LocationRef) {
     const forms = store.session.form[sessionID]
     if (!forms) return false
@@ -1182,6 +1187,13 @@ export function createData(config: CreateDataInput) {
       case "form.cancelled":
         removeForm(event.data.sessionID, event.data.id, event.location)
         return
+      case "form.created":
+        // A session's form belongs to that session wherever it was raised: a delegated runtime's
+        // tool asks outside any location, so the event may carry none. Only a global form needs
+        // one, so it is handled with the location events below.
+        if (event.data.form.sessionID === "global") break
+        addForm(event.data.form)
+        return
     }
 
     if (event.type === "credential.updated" || event.type === "credential.switched") {
@@ -1247,11 +1259,7 @@ export function createData(config: CreateDataInput) {
         }))
         break
       case "form.created":
-        if (store.session.form[event.data.form.sessionID]?.some((form) => form.id === event.data.form.id)) break
-        setStore("session", "form", event.data.form.sessionID, [
-          ...(store.session.form[event.data.form.sessionID] ?? []),
-          event.data.form.sessionID === "global" ? { ...event.data.form, location } : event.data.form,
-        ])
+        addForm({ ...event.data.form, location })
         break
       case "shell.created":
         setStore("location", locationKey(location), (data) => ({

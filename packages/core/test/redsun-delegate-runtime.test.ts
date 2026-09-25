@@ -8,6 +8,8 @@ import { Money } from "@opencode/schema/money"
 import { Session } from "@opencode/schema/session"
 import { Agent as AgentService } from "@opencode/core/agent"
 import { AISDK } from "@opencode/core/aisdk"
+import { Bus } from "@opencode/core/bus"
+import { Form } from "@opencode/core/form"
 import { KV } from "@opencode/core/kv"
 import { Skill } from "@opencode/core/skill"
 import { Permission } from "@opencode/core/permission"
@@ -22,9 +24,11 @@ import { AbsolutePath } from "@opencode/core/schema"
 import { SessionModelRequest } from "@opencode/core/session/model-request"
 import { SessionModelTransport } from "@opencode/core/session/model-transport"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
-import { DateTime, Effect, Scope } from "effect"
+import { QuestionTool } from "@opencode/core/tool/plugin/question"
+import { Context, DateTime, Deferred, Effect, Fiber, Scope } from "effect"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
+import { registerToolPlugin } from "./lib/tool"
 
 // REDSUN: the delegated runtime seam. A runtime registers through the real plugin host; core tags
 // its requests in `prepare`, routes its models through the AI SDK bridge ahead of any SDK hook,
@@ -263,6 +267,94 @@ describe("delegated runtime host capabilities", () => {
         assert: () => Effect.fail(new Permission.CorrectedError({ feedback: "use b.ts" })),
       })
       expect(yield* corrected.delegate.permission.assert(input)).toEqual({ ok: false, feedback: "use b.ts" })
+    }),
+  )
+
+  // REDSUN: a runtime calls back from its own process boundary (SDK callback, MCP request) on a
+  // fiber with no ambient Location. The TUI keeps a session form only when its event carries the
+  // location, so the host must envelope it as it is when a native tool runs inside the turn.
+  const formCreated = Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const created = yield* Deferred.make<{ readonly form: Form.Info; readonly location?: Location.Ref }>()
+    const unsubscribe = yield* bus.listen((event) =>
+      event.type === Form.Event.Created.type
+        ? Deferred.succeed(created, {
+            form: (event.data as { readonly form: Form.Info }).form,
+            ...(event.location ? { location: event.location } : {}),
+          }).pipe(Effect.asVoid)
+        : Effect.void,
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+    return created
+  })
+
+  it.effect("envelopes a form a runtime asks from a bare fiber with the host location", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const forms = yield* Form.Service
+      const location = yield* Location.Service
+      const created = yield* formCreated
+      const fiber = yield* host.delegate.form
+        .ask({
+          sessionID: "ses_1",
+          title: "Questions",
+          fields: [
+            { key: "q0", title: "Continue?", type: "string", options: [{ value: "yes", label: "Yes" }] },
+          ] as never,
+        })
+        .pipe(
+          Effect.updateContext((context: Context.Context<never>) => Context.omit(Location.Service)(context)),
+          Effect.forkScoped,
+        )
+      const event = yield* Deferred.await(created)
+      expect(event.form.sessionID).toBe("ses_1")
+      expect(event.location).toEqual({ directory: location.directory, workspaceID: location.workspaceID })
+      yield* forms.reply({ id: event.form.id, answer: { q0: "yes" } })
+      expect(yield* Fiber.join(fiber)).toEqual({ status: "answered", answer: { q0: "yes" } })
+    }),
+  )
+
+  it.effect("envelopes a form a bound host tool asks from a bare fiber with the host location", () =>
+    Effect.gen(function* () {
+      yield* registerToolPlugin(QuestionTool.Plugin)
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const forms = yield* Form.Service
+      const location = yield* Location.Service
+      const agents = yield* AgentService.Service
+      yield* agents.transform((editor) =>
+        editor.update("delegate-test" as never, (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const session = yield* host.session.create({ title: "bind" })
+      const binding = yield* host.delegate.tools.bind({
+        sessionID: session.id,
+        agent: "delegate-test",
+        messageID: "msg_1",
+      })
+      expect(binding.definitions.map((item) => item.name)).toContain("question")
+      const created = yield* formCreated
+      // The binding runs the tool as a runtime does: on the default runtime, outside this fiber.
+      const fiber = yield* Effect.promise(() =>
+        binding.execute({
+          name: "question",
+          args: {
+            questions: [
+              { question: "Continue?", header: "Continue", options: [{ label: "Yes", description: "Go on" }] },
+            ],
+          },
+          callID: "call_1",
+          signal: new AbortController().signal,
+        }),
+      ).pipe(Effect.forkScoped)
+      const event = yield* Deferred.await(created)
+      expect(event.form.sessionID).toBe(session.id)
+      expect(event.location).toEqual({ directory: location.directory, workspaceID: location.workspaceID })
+      // The entry settles on the default runtime's next tick; the reply reads it from this one.
+      yield* Effect.promise(() => Bun.sleep(1))
+      yield* forms.reply({ id: event.form.id, answer: { q0: "Yes" } })
+      const result = yield* Fiber.join(fiber)
+      expect(result.content.some((part) => part.type === "text" && part.text.includes("Yes"))).toBe(true)
     }),
   )
 

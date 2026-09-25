@@ -131,6 +131,10 @@ export const make = Effect.gen(function* () {
   const location = yield* Location.Service
   const skills = yield* Skill.Service
   const bus = yield* Bus.Service
+  // A runtime calls back from its own process boundary (an SDK callback, an MCP request), on a
+  // fiber that carries no ambient Location. A form raised there must still be enveloped with this
+  // location, as it is when a native tool asks inside the turn: the client keeps it only then.
+  const located = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.provideService(effect, Location.Service, location)
   const modelRef = (model: { readonly providerID: string; readonly id: string }) =>
     Model.Ref.make({ providerID: Provider.ID.make(model.providerID), id: Model.ID.make(model.id) })
   const missing = (name: string) => Effect.die(new Error(`${name} is not available to this plugin host.`))
@@ -188,12 +192,15 @@ export const make = Effect.gen(function* () {
           const info = yield* agents.get(agent)
           if (!info) return yield* Effect.fail(new Error(`Agent is no longer available: ${agent}`))
           const snapshot = yield* tools.snapshot(Permission.merge(info.permissions, session.permissions ?? []))
-          return bindSnapshot(snapshot, {
-            sessionID,
-            agent,
-            messageID: SessionMessage.ID.make(input.messageID),
-            direct: directNames(yield* mcp.tools()),
-          })
+          return bindSnapshot(
+            { ...snapshot, execute: (input) => located(snapshot.execute(input)) },
+            {
+              sessionID,
+              agent,
+              messageID: SessionMessage.ID.make(input.messageID),
+              direct: directNames(yield* mcp.tools()),
+            },
+          )
         }),
     },
     context: {
@@ -262,14 +269,14 @@ export const make = Effect.gen(function* () {
       ask: (input) =>
         !forms
           ? missing("Form")
-          : forms
-              .ask({
+          : located(
+              forms.ask({
                 sessionID: input.sessionID as never,
                 title: input.title,
                 ...(input.metadata ? { metadata: input.metadata } : {}),
                 fields: input.fields as never,
-              })
-              .pipe(Effect.orDie),
+              }),
+            ).pipe(Effect.orDie),
     },
   }
   return domain

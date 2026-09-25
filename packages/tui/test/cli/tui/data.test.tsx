@@ -2418,6 +2418,62 @@ test("adds, dismisses, and refreshes form requests", async () => {
   }
 })
 
+// REDSUN: a delegated runtime's tool asks from outside any location, so its form event carries
+// none. A session's form still belongs to that session; only a global form needs the location.
+test("keeps a session form whose event carries no location", async () => {
+  const events = createEventStream()
+  const calls = createFetch(undefined, events)
+  let data!: ReturnType<typeof useData>
+  let client!: ReturnType<typeof useClient>
+
+  function Probe() {
+    data = useData()
+    client = useClient()
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <ClientProvider api={createApi(calls.fetch)}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </ClientProvider>
+    </TestTuiContexts>
+  ))
+
+  try {
+    await wait(() => client.connection.status() === "connected")
+    events.emit({
+      id: "evt_form_created_unlocated",
+      created: 0,
+      type: "form.created",
+      data: { form: { id: "frm_unlocated", sessionID: "ses_1", title: "Questions", fields: formFields } },
+    })
+    await wait(() => data.session.form.list("ses_1")?.length === 1)
+    expect(data.session.form.list("ses_1")?.map((form) => form.id)).toEqual(["frm_unlocated"])
+
+    events.emit({
+      id: "evt_form_created_global_unlocated",
+      created: 1,
+      type: "form.created",
+      data: { form: { id: "frm_global", sessionID: "global", title: "Questions", fields: formFields } },
+    })
+    events.emit({
+      id: "evt_form_cancelled_unlocated",
+      created: 2,
+      type: "form.cancelled",
+      data: { sessionID: "ses_1", id: "frm_unlocated" },
+    })
+    await wait(() => data.session.form.list("ses_1")?.length === 0)
+    expect(data.session.form.list("global", { directory }) ?? []).toEqual([])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("tracks global forms by location", async () => {
   const events = createEventStream()
   const calls = createFetch(undefined, events)
