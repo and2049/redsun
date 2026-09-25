@@ -39,10 +39,12 @@ export class Agent extends Schema.Class<Agent>("ConfigAcp.Agent")({
       'Launch flags for the agent\'s judgement-based approval, offered as the "Approve for me" permission mode.',
   }),
   auto_approval_mode: Schema.String.pipe(optional).annotate({
-    description: "The agent's own approve-everything session mode, selected under the host's Auto-approve mode.",
+    description:
+      "The agent's own approve-everything session mode, selected under the host's Auto-approve mode. Optional: without it the agent keeps asking and the host approves at once; with it the host's deny rules do not reach the agent's own tools.",
   }),
   auto_approval_args: Strings.pipe(optional).annotate({
-    description: "Launch flags that make the agent approve everything, applied under the host's Auto-approve mode.",
+    description:
+      "Launch flags that make the agent approve everything, applied under the host's Auto-approve mode by relaunching the agent at the next turn. Same caveat as auto_approval_mode.",
   }),
   default_mode: Schema.String.pipe(optional).annotate({ description: "The session mode under Manual." }),
   compact_command: Schema.String.pipe(optional).annotate({

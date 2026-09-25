@@ -298,6 +298,29 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  test("answers an agent without an approve-everything mode of its own under Auto-approve, never relaunching it", async () => {
+    const selection: { mode: "normal" | "auto" | "native_auto" } = { mode: "auto" }
+    await withRuntime({ host: selection }, async (runtime, checks) => {
+      const ask = async (history: LanguageModelV3CallOptions["prompt"], text: string) =>
+        textOf(await collect((await runtime.turn(TURN, call([...history, user(text)]))).stream))
+      // Launched standard, in its default mode; its ask reaches the host, which approves at once.
+      expect(await ask([], "permission please")).toBe("ALLOWED")
+      expect(checks).toMatchObject([{ action: "edit", resources: ["src/a.ts"] }])
+      const history = [user("permission please"), assistant("ALLOWED")]
+      expect(await ask(history, "mode?")).toBe("MODE=default")
+      expect(await ask(history, "trust?")).toBe("TRUSTED=false SESSION=acp_1 TURNS=3")
+      // Switching the selection between turns costs no relaunch either way.
+      selection.mode = "normal"
+      expect(await ask(history, "trust?")).toBe("TRUSTED=false SESSION=acp_1 TURNS=4")
+      selection.mode = "auto"
+      expect(await ask(history, "trust?")).toBe("TRUSTED=false SESSION=acp_1 TURNS=5")
+    })
+    // The decision stays the host's: a deny under Auto-approve (a rule, never touched by it) reaches the agent.
+    await withRuntime({ host: { mode: "auto", approve: false } }, async (runtime) => {
+      expect(textOf(await collect((await runtime.turn(TURN, call([user("permission please")]))).stream))).toBe("DENIED")
+    })
+  })
+
   test("relaunches with the agent's approval flags at the next turn, and loads the conversation back", async () => {
     const selection: { mode: "normal" | "auto" | "native_auto" } = { mode: "normal" }
     await withRuntime({ agent: { nativeApprovalArgs: ["--trust-all-tools"] }, host: selection }, async (runtime) => {

@@ -16,9 +16,10 @@ describe("ACP agent options", () => {
       inheritedInstructions: [],
     })
     expect(AcpOptions.hasNativeApproval(kiro!)).toBe(false)
-    // No judgement-based mode of its own; the host's Auto-approve relaunches it trusted.
-    expect(kiro!.autoApprovalArgs).toEqual(["--trust-all-tools"])
-    expect(AcpOptions.launchArgs(kiro!, "auto")).toEqual(["--trust-all-tools"])
+    // No approval mode or flag of its own: it always launches standard and the host answers its asks.
+    expect(kiro!.autoApprovalArgs).toBeUndefined()
+    expect(kiro!.autoApprovalMode).toBeUndefined()
+    expect(AcpOptions.launchArgs(kiro!, "auto")).toEqual([])
     expect(AcpOptions.launchArgs(kiro!, "native_auto")).toEqual([])
     expect(AcpOptions.launchArgs(kiro!, "normal")).toEqual([])
     expect(kiro!.home?.env).toBe("KIRO_HOME")
