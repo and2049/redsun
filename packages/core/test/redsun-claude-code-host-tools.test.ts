@@ -9,6 +9,7 @@ import { AbsolutePath } from "@opencode/core/schema"
 import { Tool } from "@opencode/core/tool"
 import { Schema } from "effect"
 import { it as effectIt } from "./lib/effect"
+import { CodeModeCatalog } from "@opencode/core/codemode/catalog"
 
 const handlers = (server: ReturnType<typeof ClaudeCodeHostTools.makeServer>) => {
   const map = (server.instance.server as unknown as { _requestHandlers: Map<string, Function> })._requestHandlers
@@ -24,7 +25,7 @@ const handlers = (server: ReturnType<typeof ClaudeCodeHostTools.makeServer>) => 
 
 describe("Claude Code canonical host MCP bridge", () => {
   effectIt.effect(
-    "bridges only discovered direct MCP identities and canonical Code Mode through the captured snapshot",
+    "serves the snapshot per profile and bridges only the selected tools through the captured snapshot",
     () =>
       Effect.gen(function* () {
         const tools = yield* Tool.Service
@@ -58,7 +59,24 @@ describe("Claude Code canonical host MCP bridge", () => {
           { server: "hidden", name: "other", codemode: true },
         ] as never)
         const available = snapshot.definitions.map((item) => item.name)
-        const definitions = ClaudeCodeHostTools.select({ definitions: snapshot.definitions, available, direct })
+        const codeMode = DelegateHost.codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog!))
+        const names = (input: Partial<Parameters<typeof ClaudeCodeHostTools.select>[0]>) =>
+          ClaudeCodeHostTools.select({ definitions: snapshot.definitions, available, direct, codeMode, ...input }).map(
+            (item) => item.name,
+          )
+        // redsun (default) and extended serve the whole snapshot; the request allowlist intersects.
+        expect(names({}).toSorted()).toEqual(["arbitrary", "execute", "my_server_ping"])
+        expect(names({ behavior: "extended" }).toSorted()).toEqual(["arbitrary", "execute", "my_server_ping"])
+        expect(names({ available: ["my_server_ping", "missing"] })).toEqual(["my_server_ping"])
+        expect(names({ available: [] })).toEqual([])
+        // Code Mode only comes with its catalog.
+        expect(names({ codeMode: undefined }).toSorted()).toEqual(["arbitrary", "my_server_ping"])
+        const definitions = ClaudeCodeHostTools.select({
+          definitions: snapshot.definitions,
+          available: ["my_server_ping", "execute"],
+          direct,
+          codeMode,
+        })
         expect(definitions.map((item) => item.name)).toEqual(["my_server_ping", "execute"])
         const allowed = new Set(definitions.map((item) => item.name))
         const host = hostFromSnapshot({
@@ -84,16 +102,10 @@ describe("Claude Code canonical host MCP bridge", () => {
         )
         expect(result.content[0].text).toContain("nested")
         expect(result._meta["redsun/metadata"].toolCalls).toMatchObject([{ tool: "echo", status: "completed" }])
-        expect(
-          ClaudeCodeHostTools.select({ definitions: snapshot.definitions, available, direct, behavior: "native" }).map(
-            (item) => item.name,
-          ),
-        ).toEqual([])
-        expect(
-          ClaudeCodeHostTools.select({ definitions: snapshot.definitions, available: ["execute"], direct }).map(
-            (item) => item.name,
-          ),
-        ).toEqual(["execute"])
+        // native serves nothing but compose's host subagent (none in this snapshot).
+        expect(names({ behavior: "native" })).toEqual([])
+        expect(names({ behavior: "native", agent: "compose" })).toEqual([])
+        expect(names({ available: ["execute"] })).toEqual(["execute"])
       }).pipe(
         Effect.scoped,
         Effect.provide(
@@ -103,6 +115,28 @@ describe("Claude Code canonical host MCP bridge", () => {
         ),
       ),
   )
+
+  it("serves the host subagent to compose only under the native profile", () => {
+    const definitions = ["subagent", "skill", "todowrite", "read", "execute"].map((name) => ({
+      type: "tool" as const,
+      name,
+      description: name,
+      inputSchema: { type: "object" as const },
+    }))
+    const select = (input: { behavior?: "redsun" | "extended" | "native"; agent?: string; available?: string[] }) =>
+      ClaudeCodeHostTools.select({
+        definitions,
+        available: input.available ?? definitions.map((item) => item.name),
+        direct: new Set(),
+        behavior: input.behavior,
+        agent: input.agent,
+      }).map((item) => item.name)
+    expect(select({ behavior: "native", agent: "compose" })).toEqual(["subagent"])
+    expect(select({ behavior: "native", agent: "compose", available: ["skill"] })).toEqual([])
+    expect(select({ behavior: "native", agent: "build" })).toEqual([])
+    expect(select({ behavior: "redsun", agent: "build" })).toEqual(["subagent", "skill", "todowrite", "read"])
+    expect(select({ behavior: "extended", agent: "compose" })).toEqual(["subagent", "skill", "todowrite", "read"])
+  })
 
   it("restarts discovery for names, schemas and descriptions, not Code Mode inventory", () => {
     const definitions = [{ type: "tool" as const, name: "execute", inputSchema: { type: "object" }, description: "a" }]

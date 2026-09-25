@@ -14948,7 +14948,7 @@
               },
               "behavior": {
                 "type": "string",
-                "enum": ["native", "redsun"]
+                "enum": ["redsun", "extended", "native"]
               },
               "binary_path": {
                 "type": "string"

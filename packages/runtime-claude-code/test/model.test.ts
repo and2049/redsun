@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { DelegatedTurn } from "@opencode/plugin/effect/delegate"
 import { ClaudeCodeLanguageModel } from "../src/language-model.js"
 import { ClaudeCodeContext } from "../src/context.js"
 import { ClaudeCodePermissions } from "../src/permissions.js"
+import { ClaudeCodeProfiles } from "../src/profiles.js"
 import { ClaudeCodeQuery } from "../src/query.js"
 import { ClaudeCodeSessions } from "../src/sessions.js"
 
@@ -272,18 +273,105 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     ).toBeUndefined()
   })
 
-  it("sends the CLI's own system prompt and settings for an interactive turn", async () => {
-    // Without the preset the SDK sends no Claude Code system prompt at all, and
-    // without settingSources the CLI reads neither CLAUDE.md nor user settings.
+  it("sends redsun's base prompt, no built-in tools and manual mode under the default profile", async () => {
+    // The redsun profile confines the CLI to host tools (`tools: []`) and records redsun's own
+    // base prompt, split at the SDK cache boundary; plan mode is the host's plan agent.
     const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
-    const created = model({ modelID: "sonnet", config, manager, createQuery: () => ({}) as never })
+    const asked: string[] = []
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        permissionMode: async () => "plan",
+        systemPrompt: async (sessionID) => {
+          asked.push(sessionID)
+          return { static: ["BASE", "ANTHROPIC"], dynamic: ["ENV"] }
+        },
+      },
+    })
     await collect((await created.doStream(call({ prompt: [user("hi")] }))).stream)
-    expect(calls[0]!.options.options.settingSources).toEqual(["user", "project", "local"])
-    expect(calls[0]!.options.options.systemPrompt.type).toBe("preset")
-    expect(calls[0]!.options.options.systemPrompt.preset).toBe("claude_code")
-    expect(calls[0]!.options.options.planModeInstructions).toContain("Plan Workflow")
-    expect(calls[0]!.options.options.systemPrompt.append.includes("You are redsun")).toBe(false)
-    expect(calls[0]!.options.options.systemPrompt.append).toContain("Claude Code is running inside redsun")
+    const options = calls[0]!.options
+    expect(asked).toEqual(["ses_1"])
+    expect(options.permissionMode).toBe("default")
+    expect(options.options.tools).toEqual([])
+    expect(options.options.systemPrompt).toEqual(["BASE", "ANTHROPIC", SYSTEM_PROMPT_DYNAMIC_BOUNDARY, "ENV"])
+    expect(options.options.settingSources).toEqual(["user", "project", "local"])
+    expect(options.options.planModeInstructions).toBeUndefined()
+    expect(options.options.disallowedTools).toBeUndefined()
+    expect(options.options.toolAliases).toBeUndefined()
+  })
+
+  it("computes the base prompt only for a process about to start", async () => {
+    const { manager } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    ;(manager as any).willStart = () => false
+    let asked = 0
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        systemPrompt: async () => {
+          asked++
+          return { static: ["BASE"], dynamic: [] }
+        },
+      },
+    })
+    await collect((await created.doStream(call({ prompt: [user("hi")] }))).stream)
+    expect(asked).toBe(0)
+  })
+
+  it("releases the host binding when the base prompt cannot be built", async () => {
+    const { manager, calls } = fakeManager([])
+    let releases = 0
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        prepareTurn: async () => () => void releases++,
+        systemPrompt: async () => {
+          throw new Error("agent is gone")
+        },
+      },
+    })
+    await expect(created.doStream(call({ prompt: [user("hi")] }))).rejects.toThrow("agent is gone")
+    expect(releases).toBe(1)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("keeps the preset, behavior append and SDK plan mode under the extended profile, minus duplicates", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    let asked = 0
+    const created = model({
+      modelID: "sonnet",
+      config: { ...config, behavior: "extended" },
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        permissionMode: async () => "plan",
+        systemPrompt: async () => {
+          asked++
+          return { static: ["BASE"], dynamic: [] }
+        },
+      },
+    })
+    await collect((await created.doStream(call({ prompt: [user("hi")] }))).stream)
+    const options = calls[0]!.options
+    expect(asked).toBe(0)
+    expect(options.permissionMode).toBe("plan")
+    expect(options.options.tools).toBeUndefined()
+    expect(options.options.settingSources).toEqual(["user", "project", "local"])
+    expect(options.options.systemPrompt.type).toBe("preset")
+    expect(options.options.systemPrompt.preset).toBe("claude_code")
+    expect(options.options.planModeInstructions).toContain("Plan Workflow")
+    expect(options.options.systemPrompt.append.includes("You are redsun")).toBe(false)
+    expect(options.options.systemPrompt.append).toContain("Claude Code is running inside redsun")
+    expect(options.options.disallowedTools).toEqual(Object.keys(ClaudeCodeProfiles.DUPLICATES))
+    expect(options.options.disallowedTools).not.toContain("ExitPlanMode")
   })
 
   it("keeps the native profile opt-out and one-shots free of the behavior append", async () => {
@@ -297,6 +385,9 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     await collect((await created.doStream(call({ prompt: [user("hi")] }))).stream)
     expect(calls[0]!.options.options.systemPrompt).toEqual({ type: "preset", preset: "claude_code" })
     expect(calls[0]!.options.options.disallowedTools).toBeUndefined()
+    expect(calls[0]!.options.options.tools).toBeUndefined()
+    expect(calls[0]!.options.options.toolAliases).toBeUndefined()
+    expect(calls[0]!.options.options.planModeInstructions).toContain("Plan Workflow")
   })
 
   it("binds the host turn before startup discovery and installs both policy hooks once", async () => {
@@ -342,13 +433,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     expect(observed).toEqual([["ses_1", "msg_actual", ["subagent"]], true])
     expect(calls[0]!.options.options.hooks.PreToolUse[0].hooks).toEqual([pre])
     expect(calls[0]!.options.options.hooks.PostToolUse[0].hooks).toEqual([post])
-    expect(calls[0]!.options.options.disallowedTools).toEqual([
-      "TodoWrite",
-      "TaskCreate",
-      "TaskGet",
-      "TaskUpdate",
-      "TaskList",
-    ])
+    expect(calls[0]!.options.options.tools).toEqual([])
     expect(bound).toBe(false)
     expect(releases).toBe(1)
   })
@@ -462,7 +547,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
       (await created.doStream(call({ prompt: [user("name this")] }), { kind: "title", agent: "title" })).stream,
     )
     expect(calls).toHaveLength(0)
-    expect(oneShot[0].options).toMatchObject({ maxTurns: 1, allowedTools: [], persistSession: false })
+    expect(oneShot[0].options).toMatchObject({ maxTurns: 1, tools: [], allowedTools: [], persistSession: false })
     // Not a coding turn, so no preset and no project settings.
     expect(oneShot[0].options.systemPrompt).toBeUndefined()
     expect(oneShot[0].options.settingSources).toBeUndefined()
@@ -577,7 +662,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     await collect((await created.doStream(call({ prompt: [user("summarize this")] }))).stream)
 
     expect(calls).toHaveLength(0)
-    expect(oneShot[0].options).toMatchObject({ maxTurns: 1, allowedTools: [], persistSession: false })
+    expect(oneShot[0].options).toMatchObject({ maxTurns: 1, tools: [], allowedTools: [], persistSession: false })
     // A one-shot flattens the transcript rather than sending only a delta.
     expect(oneShot[0].prompt).toContain("user: summarize this")
   })
@@ -633,20 +718,11 @@ describe("ClaudeCodePermissions", () => {
     })
   })
 
-  it("maps only known in-process tools to their canonical host permission", () => {
-    expect(
-      ClaudeCodePermissions.mapPermission({ toolName: "mcp__redsun__subagent", input: { agent: "worker" }, worktree }),
-    ).toEqual({ action: "subagent", resource: "worker" })
-    expect(
-      ClaudeCodePermissions.mapPermission({ toolName: "mcp__redsun__skill", input: { id: "redsun" }, worktree }),
-    ).toEqual({ action: "skill", resource: "redsun" })
-    expect(ClaudeCodePermissions.mapPermission({ toolName: "mcp__redsun__todowrite", input: {}, worktree })).toEqual({
-      action: "todowrite",
-      resource: "*",
-    })
-    expect(ClaudeCodePermissions.mapPermission({ toolName: "mcp__redsun__worker_model", input: {}, worktree })).toEqual(
-      { action: "worker_model", resource: "*" },
-    )
+  it("maps no host tool to a host action: a served one never gets here, a lookalike is unknown", () => {
+    for (const name of ["subagent", "skill", "todowrite", "worker_model", "read"])
+      expect(
+        ClaudeCodePermissions.mapPermission({ toolName: `mcp__redsun__${name}`, input: { agent: "worker" }, worktree }),
+      ).toEqual({ action: "claude_code", resource: `mcp__redsun__${name}` })
   })
 
   it("flags a file outside the worktree as an external directory", async () => {

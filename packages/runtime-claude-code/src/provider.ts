@@ -15,7 +15,9 @@ import { ClaudeCodeMcp } from "./mcp.js"
 import { ClaudeCodeHostTools } from "./host-tools.js"
 import { ClaudeCodeModes } from "./modes.js"
 import { ClaudeCodeModels } from "./models.js"
+import { ClaudeCodePermissionBridge } from "./permission-bridge.js"
 import { ClaudeCodePolicyHooks } from "./policy-hooks.js"
+import { ClaudeCodeProfiles } from "./profiles.js"
 import { ClaudeCodeQuery } from "./query.js"
 import { ClaudeCodeQuestions } from "./questions.js"
 import { ClaudeCodeSessions } from "./sessions.js"
@@ -49,6 +51,8 @@ export const Plugin = define({
       return
     }
 
+    // Location configuration, read once: a config reload re-creates the plugin.
+    const profile = ClaudeCodeProfiles.resolve(settings?.behavior)
     const kv = ctx.delegate.storage(RUNTIME_ID)
     const location = ctx.location
     const resolveAgent = (agentID: string) =>
@@ -133,9 +137,16 @@ export const Plugin = define({
     const permission = ctx.delegate.permission
 
     const cursors = new Map<string, string>()
+    // The prompt identity of the process each session last started; stored with its cursor.
+    const promptHashes = new Map<string, string>()
+    const presetHash =
+      profile.systemPrompt === "host"
+        ? undefined
+        : ClaudeCodeProfiles.promptHash(ClaudeCodeLanguageModel.systemPrompt(profile))
+    const staleNoticed = new Set<string>()
     const agents = new Map<string, string>()
     const workers = new Set<string>()
-    const context = new ClaudeCodeContext.Tracker()
+    const context = new ClaudeCodeContext.Tracker(profile.name)
     const compactRestored = new Map<string, number>()
     const profiles = new Map<string, { mode?: string; system?: string }>()
     const substitutionsNotified = new Set<string>()
@@ -263,24 +274,37 @@ export const Plugin = define({
         profiles.set(turn.agent, { mode: info?.mode, system: info?.system })
         if (turn.parentID) workers.add(turn.sessionID)
       }
-      const stored = await Effect.runPromise(
-        kv.get(cursorKey(turn.sessionID)).pipe(Effect.orElseSucceed(() => undefined)),
+      const stored = ClaudeCodeProfiles.parseCursor(
+        await Effect.runPromise(kv.get(cursorKey(turn.sessionID)).pipe(Effect.orElseSucceed(() => undefined))),
       )
-      if (typeof stored === "string" && stored) cursors.set(turn.sessionID, stored)
+      if (!stored) return
+      if (ClaudeCodeProfiles.resumable(stored, profile.name)) {
+        cursors.set(turn.sessionID, stored.cursor)
+        return
+      }
+      // The CLI replays the prompt and tools the history was recorded with: history from another
+      // profile (or from before profiles) starts fresh; the host transcript is the record.
+      cursors.delete(turn.sessionID)
+      if (isOneShot(turn) || staleNoticed.has(turn.sessionID)) return
+      staleNoticed.add(turn.sessionID)
+      Effect.runFork(
+        ctx.delegate.transcript
+          .notice({ sessionID: turn.sessionID, ...ClaudeCodeProfiles.staleNotice(stored, profile.name) })
+          .pipe(Effect.catch(() => Effect.void)),
+      )
     }
 
     const turnContext = async (sessionID: string, freshProcess: boolean, current: () => boolean = () => true) => {
       const agentID = agents.get(sessionID)
       if (!agentID) return { delivered: () => {} }
-      const profile = profiles.get(agentID)
-      const files =
-        settings?.behavior === "native" ? undefined : await Effect.runPromise(ctx.delegate.context.instructions())
+      const agentProfile = profiles.get(agentID)
+      const files = profile.name === "native" ? undefined : await Effect.runPromise(ctx.delegate.context.instructions())
       const runtime = runtimes.get(sessionID)
       const hasSkillTool =
-        settings?.behavior !== "native" && runtime?.binding?.definitions.some((item) => item.name === "skill")
+        profile.name !== "native" && runtime?.binding?.definitions.some((item) => item.name === "skill")
       const catalog = hasSkillTool
         ? await Effect.runPromise(ctx.delegate.context.skills({ sessionID, agent: agentID }))
-        : settings?.behavior === "native"
+        : profile.name === "native"
           ? undefined
           : []
       const codeMode = runtime?.codeMode
@@ -288,7 +312,7 @@ export const Plugin = define({
       // successfully delivered project rules until the canonical source recovers.
       return ClaudeCodeContext.commitIfCurrent(current, () => {
         const delivery = context.prepare(sessionID, {
-          agent: { id: agentID, mode: profile?.mode, system: profile?.system },
+          agent: { id: agentID, mode: agentProfile?.mode, system: agentProfile?.system },
           isWorker: workers.has(sessionID),
           freshProcess,
           ...(catalog === undefined ? {} : { skills: catalog }),
@@ -321,6 +345,7 @@ export const Plugin = define({
         global: await Effect.runPromise(permission.mode()),
         configured: settings?.permission_mode,
         worker: settings?.worker_permission_mode,
+        profile: profile.name,
       })
     }
 
@@ -369,10 +394,10 @@ export const Plugin = define({
               ...(agents.get(sessionID) ? { agent: agents.get(sessionID)! } : {}),
             }),
             { signal },
-          ).then(
-            (approval) => approval.ok,
-            () => false,
-          ),
+          ).catch((): ClaudeCodePermissionBridge.Outcome => ({ ok: false })),
+        onPlanExit: (toolUseID, outcome) => {
+          runtimes.get(sessionID)?.results.set(toolUseID, outcome)
+        },
         commitPlanExit: async (signal) => {
           await Effect.runPromise(ctx.session.switchAgent({ sessionID: sessionID as never, agent: "build" as never }), {
             signal,
@@ -401,7 +426,9 @@ export const Plugin = define({
         definitions: bound.definitions,
         available: availableTools,
         direct: bound.direct,
-        behavior: settings?.behavior,
+        codeMode: bound.codeMode,
+        behavior: profile.name,
+        agent: agentID,
       })
       const allowed = new Set(definitions.map((item) => item.name))
       const captured = ClaudeCodeMcp.fromBinding({
@@ -414,12 +441,12 @@ export const Plugin = define({
             active.results.set(nativeToolUseID, result.metadata)
         },
       })
+      // Every served tool: translate unwraps its rows to the canonical id and attaches the
+      // host result metadata; the permission layer leaves its policy to the host leaf.
       const binding = {
         ...captured,
         definitions,
-        directNames: new Set(
-          [...bound.direct].filter((name) => allowed.has(name)).map((name) => `mcp__redsun__${name}`),
-        ),
+        directNames: new Set([...allowed].map((name) => `${ClaudeCodeProfiles.HOST_PREFIX}${name}`)),
       }
       const catalog = ClaudeCodeHostTools.discoveryKey(definitions)
       let runtime = runtimes.get(sessionID)
@@ -469,7 +496,7 @@ export const Plugin = define({
           configDir: settings?.config_dir,
           extraArgs: settings?.extra_args,
           env: settings?.env,
-          behavior: settings?.behavior,
+          behavior: profile.name,
         },
         manager,
         createQuery: ClaudeCodeQuery.defaultCreateQuery,
@@ -487,6 +514,14 @@ export const Plugin = define({
           turnOptions: (sessionID) => ({
             mcpServers: { redsun: runtimes.get(sessionID)!.server },
           }),
+          systemPrompt: async (sessionID) => {
+            const agent = agents.get(sessionID)
+            const served = runtimes.get(sessionID)?.binding?.definitions.map((item) => item.name)
+            if (!agent || !served) return undefined
+            const prompt = await Effect.runPromise(ctx.delegate.context.system({ sessionID, agent, tools: served }))
+            promptHashes.set(sessionID, ClaudeCodeProfiles.promptHash(prompt))
+            return prompt
+          },
           isOneShot,
           context: async (sessionID, freshProcess) => (await turnContext(sessionID, freshProcess))!,
           userPromptSubmit,
@@ -505,7 +540,12 @@ export const Plugin = define({
           onCursor: (sessionID, claudeSessionID) => {
             if (cursors.get(sessionID) === claudeSessionID) return
             cursors.set(sessionID, claudeSessionID)
-            Effect.runFork(kv.set(cursorKey(sessionID), claudeSessionID))
+            const stored = ClaudeCodeProfiles.record(
+              claudeSessionID,
+              profile.name,
+              promptHashes.get(sessionID) ?? presetHash,
+            )
+            Effect.runFork(kv.set(cursorKey(sessionID), { ...stored }))
           },
         },
       })
@@ -524,8 +564,8 @@ export const Plugin = define({
         notice: "Claude Code compacts its own session; running /compact in the CLI instead.",
         command: "/compact",
       },
-      // The CLI's classifier-backed `auto` permission mode.
-      nativeApproval: () => true,
+      // The CLI's classifier-backed `auto` permission mode, where native tools exist to judge (D5).
+      nativeApproval: () => profile.nativeApproval,
     })
 
     yield* Effect.addFinalizer(() =>

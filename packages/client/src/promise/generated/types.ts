@@ -2280,7 +2280,7 @@ export type ConfigEntry =
         }
         claude_code?: {
           enabled?: boolean
-          behavior?: "native" | "redsun"
+          behavior?: "redsun" | "extended" | "native"
           binary_path?: string
           config_dir?: string
           permission_mode?: string

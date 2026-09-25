@@ -7,6 +7,7 @@ import type {
   DelegatedInstructionFile,
   DelegatedSkillSummary,
 } from "@opencode/plugin/effect/delegate"
+import type { ClaudeCodeProfiles } from "./profiles.js"
 import { ClaudeCodeTurnBrief } from "./turn-brief.js"
 
 export type File = DelegatedInstructionFile
@@ -28,11 +29,15 @@ const inherited = (file: File) => /(?:^|\/)CLAUDE\.md$/i.test(file.path)
 
 /** The shared delivery tracker with Claude Code's inherited files, skill tool and agent briefs. */
 export class Tracker {
-  private readonly shared = new DelegateContext.Tracker({
-    inherited,
-    skillTool: "mcp__redsun__skill",
-    brief: ({ agent, isWorker }) => ClaudeCodeTurnBrief.make({ agent, isWorker, agentChanged: true }),
-  })
+  private readonly shared: DelegateContext.Tracker
+
+  constructor(profile?: ClaudeCodeProfiles.Name) {
+    this.shared = new DelegateContext.Tracker({
+      inherited,
+      skillTool: "mcp__redsun__skill",
+      brief: ({ agent, isWorker }) => ClaudeCodeTurnBrief.make({ agent, isWorker, agentChanged: true, profile }),
+    })
+  }
 
   prepare(sessionID: string, input: Input): DelegateContext.Delivery {
     const { freshProcess, ...rest } = input

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { query } from "@anthropic-ai/claude-agent-sdk"
+import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Location } from "@opencode/core/location"
 import { AbsolutePath } from "@opencode/core/schema"
@@ -131,10 +131,12 @@ describe.skipIf(!executable)("Claude Code installed CLI / canonical MCP and Code
             })
           })
           const snapshot = yield* tools.snapshot()
+          const codeMode = DelegateHost.codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog!))
           const definitions = ClaudeCodeHostTools.select({
             definitions: snapshot.definitions,
             available: snapshot.definitions.map((item) => item.name),
             direct: DelegateHost.directNames([{ server: "fixture.mcp", name: "echo", codemode: false }] as never),
+            codeMode,
           })
           expect(definitions.map((item) => item.name)).toEqual(["fixture_mcp_echo", "execute"])
           const calls: Array<{ name: string; nativeToolUseID?: string; metadata?: Tool.Metadata }> = []
@@ -154,7 +156,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / canonical MCP and Code
             agent: { id: "build" },
             isWorker: false,
             freshProcess: true,
-            codeMode: DelegateHost.codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog!)),
+            codeMode,
           })
           native = query({
             prompt: "Follow the fixture's tool requests and return the results.",
@@ -174,6 +176,9 @@ describe.skipIf(!executable)("Claude Code installed CLI / canonical MCP and Code
                 DISABLE_TELEMETRY: "1",
                 DISABLE_ERROR_REPORTING: "1",
               },
+              // The `redsun` profile: no built-in tools, redsun's own base prompt.
+              tools: [],
+              systemPrompt: ["FIXTURE_BASE_PROMPT_SENTINEL", SYSTEM_PROMPT_DYNAMIC_BOUNDARY, "FIXTURE_ENV_SENTINEL"],
               abortController: controller,
               permissionMode: "bypassPermissions",
               allowDangerouslySkipPermissions: true,
@@ -190,6 +195,14 @@ describe.skipIf(!executable)("Claude Code installed CLI / canonical MCP and Code
             return received
           })
           expect(messages.at(-1)?.subtype).toBe("success")
+          // The SDK init frame and the first request list only the host tools.
+          const init = messages.find((message) => message.type === "system" && message.subtype === "init")
+          expect(init.tools.length).toBeGreaterThan(0)
+          expect(init.tools.filter((name: string) => !name.startsWith("mcp__redsun__"))).toEqual([])
+          const requested = (seen[0].tools as { name: string }[]).map((item) => item.name)
+          expect(requested.toSorted()).toEqual(["mcp__redsun__execute", "mcp__redsun__fixture_mcp_echo"])
+          expect(JSON.stringify(seen[0].system)).toContain("FIXTURE_BASE_PROMPT_SENTINEL")
+          expect(JSON.stringify(seen[0].system)).toContain("FIXTURE_ENV_SENTINEL")
           expect(seen).toHaveLength(3)
           expect(JSON.stringify(seen[0])).toContain("fixture.nested")
           expect(JSON.stringify(seen[1])).toContain(`${direct}:direct`)

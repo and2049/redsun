@@ -13,10 +13,13 @@ const harness = (input?: {
   readonly pending?: readonly string[]
   /** False when the user would rather keep planning. */
   readonly exitPlan?: boolean
+  /** Feedback a declined plan exit carries. */
+  readonly exitFeedback?: string
   readonly direct?: ReadonlySet<string>
 }) => {
   const asked: { action: string; resource: string }[] = []
   const forms: Form.Field[][] = []
+  const planExits: [string, ClaudeCodePermissionBridge.PlanExit][] = []
   let exitPlanCalls = 0
   const bridge = ClaudeCodePermissionBridge.make({
     worktree: "/repo",
@@ -36,13 +39,18 @@ const harness = (input?: {
     },
     exitPlan: async () => {
       exitPlanCalls++
-      return input?.exitPlan !== false
+      if (input?.exitPlan !== false) return { ok: true as const }
+      return input.exitFeedback === undefined
+        ? { ok: false as const }
+        : { ok: false as const, feedback: input.exitFeedback }
     },
+    onPlanExit: (id, outcome) => planExits.push([id, outcome]),
   })
   return {
     bridge,
     asked,
     forms,
+    planExits,
     actions: () => asked.map((entry) => entry.action),
     exitPlanCalls: () => exitPlanCalls,
   }
@@ -194,6 +202,8 @@ describe("ClaudeCodePermissionBridge", () => {
       updatedInput: { plan: "do the thing" },
     })
     expect(h.exitPlanCalls()).toBe(1)
+    // No native tool-use id, nothing to key the outcome on.
+    expect(h.planExits).toEqual([])
   })
 
   it("stays in plan mode when the user is not done planning", async () => {
@@ -202,6 +212,24 @@ describe("ClaudeCodePermissionBridge", () => {
       behavior: "deny",
       message: ClaudeCodePermissions.PLAN_KEEP_REFINING,
     })
+  })
+
+  it("records every decided plan exit under its native tool-use id and hands feedback to the model", async () => {
+    const approved = harness({ agent: "plan" })
+    await approved.bridge("ExitPlanMode", {}, { ...live, toolUseID: "toolu_exit_1" })
+    expect(approved.planExits).toEqual([["toolu_exit_1", { approved: true }]])
+
+    const declined = harness({ agent: "plan", exitPlan: false, exitFeedback: "split the migration first" })
+    expect(await declined.bridge("ExitPlanMode", {}, { ...live, toolUseID: "toolu_exit_2" })).toEqual({
+      behavior: "deny",
+      message: `${ClaudeCodePermissions.PLAN_KEEP_REFINING} The user said: split the migration first`,
+    })
+    expect(declined.planExits).toEqual([["toolu_exit_2", { approved: false, feedback: "split the migration first" }]])
+
+    // An interrupted exit decided nothing.
+    const interrupted = harness({ agent: "plan" })
+    await interrupted.bridge("ExitPlanMode", {}, { ...aborted, toolUseID: "toolu_exit_3" })
+    expect(interrupted.planExits).toEqual([])
   })
 
   it("refuses routed delegation while planning", async () => {
@@ -243,7 +271,8 @@ describe("ClaudeCodePermissionBridge", () => {
         mcpServer: { name: "redsun", source: "user" },
       },
     )
-    expect(h.actions()).toEqual(["skill"])
+    // An unverified lookalike is an unknown tool, never a host action.
+    expect(h.actions()).toEqual(["claude_code"])
   })
 
   it("trusts only selected direct MCP tools with SDK redsun provenance", async () => {

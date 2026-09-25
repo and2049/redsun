@@ -395,7 +395,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
       },
       assert: async () => ({ ok: true }),
       form: async () => undefined,
-      exitPlan: async () => false,
+      exitPlan: async () => ({ ok: false }),
     })
     try {
       const result = await run({

@@ -2,6 +2,7 @@ export * as ClaudeCodeModes from "./modes.js"
 
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk"
 import type { Permission } from "@opencode/schema/permission"
+import type { ClaudeCodeProfiles } from "./profiles.js"
 
 export const PLAN_AGENT = "plan"
 
@@ -17,7 +18,11 @@ export const permissionMode = (input: {
   readonly configured?: string
   readonly worker?: string
   readonly global?: Permission.Mode
+  readonly profile?: ClaudeCodeProfiles.Name
 }): PermissionMode => {
+  // The `redsun` profile has no built-in tools: plan mode is the host's plan agent and there
+  // is nothing for the CLI's classifier to judge, so the CLI always runs manual.
+  if (input.profile === "redsun") return "default"
   if (input.agentID === PLAN_AGENT) return "plan"
   if (input.isWorker || input.agentMode === "subagent") {
     if (input.worker !== undefined && input.worker !== "inherit") {

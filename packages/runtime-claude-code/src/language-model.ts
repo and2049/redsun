@@ -1,7 +1,8 @@
 export * as ClaudeCodeLanguageModel from "./language-model.js"
 
 import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { DelegatedStreamResult, DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import type { DelegatedStreamResult, DelegatedSystemPrompt, DelegatedTurn } from "@opencode/plugin/effect/delegate"
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk"
 import type {
   CanUseTool,
   HookCallback,
@@ -11,6 +12,7 @@ import type {
   SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeModels } from "./models.js"
+import { ClaudeCodeProfiles } from "./profiles.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import type { Tool } from "@opencode/schema/tool"
 import { ClaudeCodeTranslate } from "./translate.js"
@@ -122,6 +124,11 @@ export interface Hooks {
     availableTools: readonly string[],
   ) => Promise<() => void>
   readonly turnOptions?: (sessionID: string) => Partial<Options>
+  /**
+   * The host base prompt for a process about to start (profile `redsun` only), computed after
+   * `prepareTurn` bound the served tools. The CLI records it on the session's first request.
+   */
+  readonly systemPrompt?: (sessionID: string) => Promise<DelegatedSystemPrompt | undefined>
   readonly taskChildren?: (sessionID: string) => ReadonlyMap<string, ClaudeCodeTranslate.TaskChild> | undefined
   /** What the native session still owes once a result lands; see ClaudeCodeSessions.HoldReason. */
   readonly turnPending?: (sessionID: string) => ClaudeCodeSessions.HoldReason
@@ -148,7 +155,7 @@ export interface Config {
   readonly configDir?: string
   readonly extraArgs?: readonly string[] | Readonly<Record<string, string | null>>
   readonly env?: Record<string, string>
-  readonly behavior?: "native" | "redsun"
+  readonly behavior?: ClaudeCodeProfiles.Name
 }
 
 const extraArgs = (value: Config["extraArgs"]) => {
@@ -163,25 +170,39 @@ const baseOptions = (config: Config): Options =>
   ({
     cwd: config.cwd,
     pathToClaudeCodeExecutable: config.executablePath,
-    planModeInstructions: PLAN_WORKFLOW,
     ...(config.configDir ? { env: { ...process.env, ...config.env, CLAUDE_CONFIG_DIR: config.configDir } } : {}),
     ...(config.env && !config.configDir ? { env: { ...process.env, ...config.env } } : {}),
     ...extraArgs(config.extraArgs),
   }) as Options
 
-const interactiveOptions = (config: Config): Options =>
-  ({
+/** The profile's system prompt: redsun's own base prompt split at the cache boundary, or the preset. */
+export const systemPrompt = (
+  profile: ClaudeCodeProfiles.Profile,
+  host?: DelegatedSystemPrompt,
+): Options["systemPrompt"] => {
+  if (profile.systemPrompt === "host")
+    return host ? [...host.static, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, ...host.dynamic] : undefined
+  return {
+    type: "preset",
+    preset: "claude_code",
+    ...(profile.systemPrompt === "preset-behavior" ? { append: BEHAVIOR } : {}),
+  }
+}
+
+/** Startup-only options per profile; a live process keeps the ones it started with. */
+export const interactiveOptions = (config: Config, host?: DelegatedSystemPrompt): Options => {
+  const profile = ClaudeCodeProfiles.resolve(config.behavior)
+  const prompt = systemPrompt(profile, host)
+  return {
     ...baseOptions(config),
-    systemPrompt: {
-      type: "preset",
-      preset: "claude_code",
-      ...(config.behavior === "native" ? {} : { append: BEHAVIOR }),
-    },
+    ...(profile.sdkPlanMode ? { planModeInstructions: PLAN_WORKFLOW } : {}),
+    ...(profile.tools ? { tools: [...profile.tools] } : {}),
+    ...(profile.disallowedTools.length ? { disallowedTools: [...profile.disallowedTools] } : {}),
+    ...(Object.keys(profile.toolAliases).length ? { toolAliases: { ...profile.toolAliases } } : {}),
+    ...(prompt === undefined ? {} : { systemPrompt: prompt }),
     settingSources: ["user", "project", "local"],
-    ...(config.behavior === "native"
-      ? {}
-      : { disallowedTools: ["TodoWrite", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"] }),
-  }) as Options
+  } as Options
+}
 
 const errorStream = (message: string): ReadableStream<LanguageModelV3StreamPart> =>
   new ReadableStream({
@@ -226,8 +247,11 @@ export const make = (input: {
         prompt: text,
         options: {
           ...baseOptions(config),
+          planModeInstructions: PLAN_WORKFLOW,
           model: ClaudeCodeModels.cliModel(modelID),
           maxTurns: 1,
+          // Never load built-in tool definitions for a one-shot.
+          tools: [],
           allowedTools: [],
           strictMcpConfig: true,
           persistSession: false,
@@ -237,8 +261,12 @@ export const make = (input: {
     }
 
     const resume = hooks?.resumeCursor?.(sessionID)
+    const profile = ClaudeCodeProfiles.resolve(config.behavior)
+    // redsun's plan agent is the host's (D4): the CLI always runs in manual mode.
     const permissionMode =
-      (await hooks?.permissionMode?.(sessionID)) ?? ((config.permissionMode ?? "default") as PermissionMode)
+      profile.name === "redsun"
+        ? "default"
+        : ((await hooks?.permissionMode?.(sessionID)) ?? ((config.permissionMode ?? "default") as PermissionMode))
     const release = await hooks?.prepareTurn?.(
       sessionID,
       turn.assistantMessageID ?? "",
@@ -248,7 +276,16 @@ export const make = (input: {
         ? []
         : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : [])),
     )
-    const context = await hooks?.context?.(sessionID, manager.willStart(sessionID, permissionMode)).catch((error) => {
+    const freshProcess = manager.willStart(sessionID, permissionMode)
+    // Only a starting process takes startup options; compute the prompt before context preparation.
+    const host =
+      profile.systemPrompt === "host" && freshProcess
+        ? await (hooks?.systemPrompt?.(sessionID) ?? Promise.resolve(undefined)).catch((error) => {
+            release?.()
+            throw error
+          })
+        : undefined
+    const context = await hooks?.context?.(sessionID, freshProcess).catch((error) => {
       release?.()
       throw error
     })
@@ -293,7 +330,7 @@ export const make = (input: {
         holdTurn: hooks?.turnPending ? () => hooks.turnPending!(sessionID) : undefined,
         onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
         options: {
-          ...interactiveOptions(config),
+          ...interactiveOptions(config, host),
           ...(resume ? { resume } : {}),
           ...(canUseTool ? { canUseTool } : {}),
           ...(preToolUse || postToolUse || userPromptSubmit || sessionStart
