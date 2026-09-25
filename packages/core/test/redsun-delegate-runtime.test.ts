@@ -358,6 +358,58 @@ describe("delegated runtime host capabilities", () => {
     }),
   )
 
+  // Dismissal and interruption through the real binding, as both runtimes reach the host question.
+  for (const settle of ["dismiss", "interrupt"] as const)
+    it.effect(`settles a bound host question on ${settle}, attributed to the call, and refuses a late reply`, () =>
+      Effect.gen(function* () {
+        yield* registerToolPlugin(QuestionTool.Plugin)
+        const host = yield* PluginHost.make(yield* Plugin.Service)
+        const forms = yield* Form.Service
+        const agents = yield* AgentService.Service
+        yield* agents.transform((editor) =>
+          editor.update("delegate-test" as never, (agent) => {
+            agent.mode = "primary"
+          }),
+        )
+        const session = yield* host.session.create({ title: "bind" })
+        const binding = yield* host.delegate.tools.bind({
+          sessionID: session.id,
+          agent: "delegate-test",
+          messageID: "msg_1",
+        })
+        const created = yield* formCreated
+        const controller = new AbortController()
+        const pending = binding
+          .execute({
+            name: "question",
+            args: {
+              questions: [
+                { question: "Continue?", header: "Continue", options: [{ label: "Yes", description: "Go on" }] },
+              ],
+            },
+            callID: "call_1",
+            signal: controller.signal,
+          })
+          .then(
+            () => "answered",
+            (error: unknown) => (error instanceof Error ? error.message : String(error)),
+          )
+        const event = yield* Deferred.await(created)
+        expect(event.form.sessionID).toBe(session.id)
+        expect(event.form.metadata).toEqual({ kind: "question", tool: { messageID: "msg_1", id: "call_1" } })
+        yield* Effect.promise(() => Bun.sleep(1))
+        if (settle === "dismiss") yield* forms.cancel(event.form.id)
+        else controller.abort()
+        const outcome = yield* Effect.promise(() => pending)
+        if (settle === "dismiss") expect(outcome).toBe("The user dismissed this question")
+        else expect(outcome).not.toBe("answered")
+        expect(yield* forms.state(event.form.id)).toEqual({ status: "cancelled" })
+        expect(yield* forms.list({ sessionID: session.id })).toEqual([])
+        const late = yield* forms.reply({ id: event.form.id, answer: { q0: "Yes" } }).pipe(Effect.flip)
+        expect(late._tag).toBe("Form.AlreadySettledError")
+      }),
+    )
+
   it.effect("binds tools only for a live session and agent", () =>
     Effect.gen(function* () {
       const host = yield* PluginHost.make(yield* Plugin.Service)
