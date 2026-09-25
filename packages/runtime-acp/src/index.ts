@@ -92,11 +92,7 @@ export default define({
             )
           : Promise.resolve(undefined),
       system: (turn, tools) =>
-        Effect.runPromise(
-          ctx.delegate.context
-            .system({ sessionID: turn.sessionID, agent: turn.agent, tools })
-            .pipe(Effect.orElseSucceed(() => undefined)),
-        ),
+        Effect.runPromise(ctx.delegate.context.system({ sessionID: turn.sessionID, agent: turn.agent, tools })),
       context: async (turn, input) => {
         if (turn.parentID) workers.add(turn.sessionID)
         const info = await Effect.runPromise(

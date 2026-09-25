@@ -757,6 +757,47 @@ describe("ACP runtime against a scripted agent", () => {
         return { static: [`BASE for ${turn.agent}`, "TOOL GUIDANCE"], dynamic: ["ENV today"] }
       }
 
+      test("fails before prompting if the base is unavailable, then retries without losing the agent prompt", async () => {
+        let available = false
+        await withRuntime(
+          {
+            agent: { prompt: "prefix" },
+            host: {
+              context,
+              system: () => (available ? { static: ["Be brief."], dynamic: ["ENV"] } : undefined),
+            },
+          },
+          async (runtime) => {
+            await expect(runtime.turn(HOSTED, call([user("echo")]))).rejects.toThrow("host base prompt is unavailable")
+            available = true
+            const sent = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+            expect(sent).toContain("Be brief.")
+            expect(sent.match(/Be brief\./g)).toHaveLength(1)
+          },
+        )
+      })
+
+      for (const key of ["FAKE_ACP_NO_LOAD", "FAKE_ACP_FAIL_LOAD"])
+        test(`restores the base when a replacement has no history (${key})`, async () => {
+          const env = { [key]: "1" }
+          const asked: (readonly string[])[] = []
+          let names = ["todowrite"]
+          await withRuntime(
+            {
+              agent: { prompt: "prefix", env },
+              host: { context, system: system(asked), tools: () => binding(names).tools },
+            },
+            async (runtime) => {
+              await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream)
+              // A new process without history must receive context even if the host prompt has no assistant row.
+              names = ["skill"]
+              const sent = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+              expect(sent).toContain("BASE for build")
+              expect(sent).toContain("Use tabs.")
+            },
+          )
+        })
+
       test("with prefix, goes ahead of the brief in the first prompt of each agent session", async () => {
         rules = "Use tabs."
         const asked: (readonly string[])[] = []

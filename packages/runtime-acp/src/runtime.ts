@@ -237,7 +237,7 @@ export class Runtime {
       inherited: AcpContext.inherited(host.cwd, agent.inheritedInstructions),
       skillTool: AcpContext.SKILL_TOOL,
       // A sent base prompt already carries the agent's own prompt.
-      brief: agent.prompt === "prefix" && host.system ? AcpContext.workerBrief : AcpContext.brief,
+      brief: agent.prompt === "prefix" ? AcpContext.workerBrief : AcpContext.brief,
     })
   }
 
@@ -268,12 +268,12 @@ export class Runtime {
    * session (and after compaction), and again when it changes (another agent, other tools).
    */
   private async prepareBase(turn: DelegatedTurn, session: Session, fresh: boolean) {
-    if (this.agent.prompt !== "prefix" || !this.host.system) return undefined
+    if (this.agent.prompt !== "prefix") return undefined
     if (fresh) this.based.delete(turn.sessionID)
     const tools = session.slot?.definitions.map((item) => item.name) ?? []
-    const system = await this.host.system(turn, tools).catch(() => undefined)
+    const system = await this.host.system?.(turn, tools)
     const text = system && AcpContext.base(system)
-    if (!system || !text) return undefined
+    if (!system || !text) throw new Error(`The host base prompt is unavailable for ${this.agent.name}.`)
     const key = JSON.stringify(system.static)
     if (key === this.based.get(turn.sessionID)) return undefined
     return { text, delivered: () => void this.based.set(turn.sessionID, key) }
@@ -437,6 +437,8 @@ export class Runtime {
   drop(sessionID: string) {
     const session = this.sessions.get(sessionID)
     if (session) this.close(session)
+    this.context.clear(sessionID)
+    this.based.delete(sessionID)
   }
 
   /**
@@ -530,14 +532,14 @@ export class Runtime {
     const existing = this.sessions.get(turn.sessionID)
     // The agent lists host tools once per session, so a changed catalog also needs a relaunch.
     if (existing && sameArgs(existing.launch, launch) && existing.catalog === tools.catalog)
-      return { session: existing, remembers: true }
+      return { session: existing, remembers: true, fresh: false }
     if (existing) this.close(existing)
     const resume = existing?.acpSessionID ?? (await this.host.cursor?.get(turn.sessionID).catch(() => undefined))
     const opened = await this.open(turn.sessionID, { launch, tools, ...(resume ? { resume } : {}) })
     this.sessions.set(turn.sessionID, opened.session)
     if (opened.session.acpSessionID !== resume)
       await this.host.cursor?.set(turn.sessionID, opened.session.acpSessionID).catch(() => {})
-    return { session: opened.session, remembers: opened.resumed || !history }
+    return { session: opened.session, remembers: opened.resumed || !history, fresh: !opened.resumed }
   }
 
   async turn(turn: DelegatedTurn, options: LanguageModelV3CallOptions): Promise<DelegatedStreamResult> {
@@ -574,8 +576,8 @@ export class Runtime {
         ? []
         : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : []))
     const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools, available) : []
-    const { session, remembers } = oneShot
-      ? { session: (await this.open(turn.sessionID)).session, remembers: false }
+    const { session, remembers, fresh } = oneShot
+      ? { session: (await this.open(turn.sessionID)).session, remembers: false, fresh: true }
       : await this.acquire(
           turn,
           selection,
@@ -584,7 +586,7 @@ export class Runtime {
         )
     const delta = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     const compacting = !oneShot && !!this.agent.compactCommand && delta.trim() === this.agent.compactCommand
-    const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, !remembers)
+    const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, fresh)
     const corrections = oneShot || compacting ? [] : session.corrections.splice(0)
     const prompt = AcpContext.wrap(delivery?.text, AcpContext.corrected(corrections, delta))
     session.agent = turn.agent

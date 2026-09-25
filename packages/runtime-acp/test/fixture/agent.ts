@@ -107,6 +107,7 @@ new AgentSideConnection((connection) => {
     ...(loadable
       ? {
           loadSession: async (params: { sessionId: string; mcpServers: McpServer[] }) => {
+            if (process.env.FAKE_ACP_FAIL_LOAD === "1") throw new Error("Stored session is unavailable")
             modes.set(params.sessionId, "default")
             servers.set(params.sessionId, params.mcpServers)
             // A real agent replays the loaded conversation; the client must not forward it.
