@@ -1,5 +1,7 @@
 import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/effect/integration"
 import { define } from "@opencode/plugin/effect/plugin"
+import { registerUsage } from "@opencode/plugin/effect/usage"
+import { readOpenAIUsage } from "./openai-usage.js"
 import { Deferred, Effect, Option, Schema, Semaphore, Stream } from "effect"
 import type { Server } from "node:http"
 import { App } from "../../app.js"
@@ -251,6 +253,11 @@ export const OpenAIPlugin = define({
       editor.method.update(headless(ctx.app))
     })
     yield* load()
+    yield* registerUsage(ctx, {
+      providerID: "openai",
+      methods: [browserMethodID, headlessMethodID],
+      read: readOpenAIUsage,
+    })
     yield* ctx.provider.transform((providers) => {
       const item = providers.get(Provider.ID.openai)
       if (!item) return

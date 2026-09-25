@@ -62,6 +62,7 @@ import { PermissionProvider } from "./context/permission"
 import { RemoteControlProvider } from "./context/remote-control"
 import { DialogRemote } from "./component/dialog-remote"
 import { DialogModel } from "./component/dialog-model"
+import { DialogUsage } from "./component/dialog-usage"
 import { useWorkerModelDialog, useWorkerVariantDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
@@ -748,6 +749,13 @@ function App(props: { pair?: DialogPairCredentials }) {
         category: "Agent",
         description: t("models.refresh.description"),
         run: refreshModels,
+      },
+      {
+        name: "usage.show",
+        title: "Show usage limits",
+        category: "Agent",
+        slash: { name: "usage" },
+        run: () => dialog.replace(() => <DialogUsage />),
       },
       {
         name: "remote.control",

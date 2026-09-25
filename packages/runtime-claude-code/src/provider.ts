@@ -1,6 +1,8 @@
 export * as ClaudeCodeProviderPlugin from "./provider.js"
 
 import { define } from "@opencode/plugin/effect/plugin"
+import { registerUsage } from "@opencode/plugin/effect/usage"
+import { readClaudeUsage } from "./usage.js"
 import { Effect } from "effect"
 import { Model } from "@opencode/schema/model"
 import { Agent } from "@opencode/schema/agent"
@@ -92,6 +94,11 @@ export const Plugin = define({
     })
     const probe = (signal: AbortSignal) =>
       ClaudeCodeModels.probe(ClaudeCodeQuery.defaultCreateQuery, probeOptions, 5_000, signal)
+    yield* registerUsage(ctx, {
+      providerID: ClaudeCodeModels.PROVIDER_ID,
+      methods: [ClaudeCodeAuth.METHOD_ID],
+      read: (_credential, signal) => readClaudeUsage(ClaudeCodeQuery.defaultCreateQuery, probeOptions, signal),
+    })
     // No cache: wait briefly for an accurate first picker. With cached rows,
     // register immediately and refresh in a scope-bound background fiber.
     if (!discovered.length) {

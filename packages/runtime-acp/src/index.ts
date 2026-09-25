@@ -1,6 +1,8 @@
 import { accessSync, constants } from "node:fs"
 import path from "node:path"
 import { define } from "@opencode/plugin/effect/plugin"
+import { registerUsage } from "@opencode/plugin/effect/usage"
+import { readKiroUsage } from "./usage.js"
 import { Agent } from "@opencode/schema/agent"
 import { Credential } from "@opencode/schema/credential"
 import { Integration } from "@opencode/schema/integration"
@@ -111,6 +113,12 @@ export default define({
     }
 
     for (const agent of agents) {
+      if (agent.id === "kiro")
+        yield* registerUsage(ctx, {
+          providerID: agent.id,
+          methods: [METHOD_ID],
+          read: (_credential, signal) => readKiroUsage(agent, ctx.location.directory, signal),
+        })
       const storage = ctx.delegate.storage(agent.id)
       let reported = discovered(yield* storage.get(MODELS_KEY))
       const onModels = (models: readonly AcpModels.Discovered[]) => {

@@ -48,6 +48,13 @@ export const Cursor = Schema.Struct({
 }).annotate({ description: "Terminal cursor settings" })
 
 export const Info = Schema.Struct({
+  usage: Schema.optional(
+    Schema.Struct({
+      collapsed: Schema.optional(Schema.Array(Schema.String)).annotate({
+        description: "Collapsed providers in the usage menu; all are expanded by default",
+      }),
+    }),
+  ).annotate({ description: "Account usage menu preferences" }),
   language: Schema.optional(Schema.String.check(Schema.makeFilter(isLocale))).annotate({
     description: "Interface language; defaults to English",
   }),

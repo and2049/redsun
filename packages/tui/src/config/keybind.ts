@@ -139,6 +139,7 @@ export const Definitions = {
   "model.dialog.provider": keybind("ctrl+a", "Open provider list from model dialog"),
   "model.dialog.favorite": keybind("ctrl+f", "Toggle model favorite status"),
   "model.list": keybind("none", "List available models"),
+  "usage.show": keybind("none", "Show account usage limits"),
   "model.refresh": keybind("none", "Refresh the model catalog from models.dev"),
   "worker.model": keybind("none", "Switch the model worker subagents run on"),
   "worker.variant": keybind("none", "Switch the worker model variant"),

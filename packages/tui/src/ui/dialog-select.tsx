@@ -71,7 +71,7 @@ export interface DialogSelectOption<T = any> {
   description?: string
   searchText?: string
   searchFooter?: JSX.Element | string
-  details?: string[]
+  details?: (string | { text: string; color?: RGBA })[]
   detailsColor?: RGBA
   detailsWrap?: boolean
   footer?: JSX.Element | string
@@ -790,18 +790,28 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                             />
                           </box>
                           <For each={option.details}>
-                            {(detail) => (
-                              <box paddingLeft={3} paddingRight={3}>
-                                <text
-                                  fg={option.detailsColor ?? theme.text.subdued}
-                                  wrapMode={option.detailsWrap ? "word" : "none"}
-                                >
-                                  {option.detailsWrap
-                                    ? detail
-                                    : Locale.truncateMiddle(detail, Math.max(1, Math.min(76, dimensions().width - 12)))}
-                                </text>
-                              </box>
-                            )}
+                            {(detail) => {
+                              const text = () => (typeof detail === "string" ? detail : detail.text)
+                              return (
+                                <box paddingLeft={3} paddingRight={3}>
+                                  <text
+                                    fg={
+                                      (typeof detail === "string" ? undefined : detail.color) ??
+                                      option.detailsColor ??
+                                      theme.text.subdued
+                                    }
+                                    wrapMode={option.detailsWrap ? "word" : "none"}
+                                  >
+                                    {option.detailsWrap
+                                      ? text()
+                                      : Locale.truncateMiddle(
+                                          text(),
+                                          Math.max(1, Math.min(76, dimensions().width - 12)),
+                                        )}
+                                  </text>
+                                </box>
+                              )
+                            }}
                           </For>
                         </box>
                       )
