@@ -43,13 +43,15 @@ export interface Agent {
   readonly nativeApprovalArgs?: readonly string[]
   /**
    * The agent's own mode that approves everything, selected under the host's Auto-approve mode so
-   * the agent stops asking (the host approves every ask anyway). Optional: without it the agent
-   * keeps asking and the host answers yes.
+   * the agent stops asking. Optional, and off in every preset: without it the agent keeps asking
+   * and the host answers yes at once, with no restart on a switch and host `deny` rules still
+   * applied. With it, the host is not asked, so its `deny` rules (plan mode's read-only contract)
+   * do not reach the agent's native tools while Auto-approve is on.
    */
   readonly autoApprovalMode?: string
   /**
-   * Launch flags that make the agent approve everything (Kiro's `--trust-all-tools`), for an agent
-   * without mode switching; applied like `autoApprovalMode`, by relaunching at the next turn.
+   * Launch flags that make the agent approve everything, for an agent without mode switching;
+   * applied like `autoApprovalMode`, by relaunching at the next turn, with the same caveat.
    */
   readonly autoApprovalArgs?: readonly string[]
   /** The mode to restore under Manual. Defaults to the session's initial mode. */
@@ -103,8 +105,9 @@ export const defaultHome = (id: string) =>
  * MCP server, in a Kiro home redsun owns (the user's ~/.kiro is left alone; Kiro's login lives in
  * its data directory, not its home). File edits, shell commands and every other tool therefore run
  * as redsun's own, with redsun's permissions, snapshots and rendering. Kiro has no judgement-based
- * approval mode, so the preset offers no `native_auto`; under Auto-approve it is relaunched with
- * its trust flag so it stops asking for the tools the host approves anyway.
+ * approval mode, so the preset offers no `native_auto`. It always launches standard: its asks for
+ * host tools are answered locally and the host tool applies the host's policy when it runs, so
+ * Auto-approve never restarts it and host `deny` rules always hold (no `--trust-all-tools`).
  */
 const KIRO_AGENT = {
   name: "redsun",
@@ -125,7 +128,6 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
     },
     args: ["acp", "--agent", KIRO_AGENT.name],
     hostTools: "all",
-    autoApprovalArgs: ["--trust-all-tools"],
     compactCommand: "/compact",
     home: { env: "KIRO_HOME", files: { [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT } },
   },

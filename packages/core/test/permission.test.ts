@@ -1,13 +1,15 @@
 import { describe, expect } from "bun:test"
-import { Cause, Deferred, Effect, Fiber, Layer } from "effect"
+import { Cause, Context, Deferred, Effect, Fiber, Layer } from "effect"
 import { Agent } from "@opencode/core/agent"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
 import { DelegatedRuntime } from "@opencode/core/delegate"
+import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
+import { PermissionMode } from "@opencode/core/permission/mode"
 import { PermissionTable } from "@opencode/core/permission/sql"
 import { PermissionSaved } from "@opencode/core/permission/saved"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
@@ -31,6 +33,8 @@ const it = testEffect(
     LayerNode.group([
       Database.node,
       Bus.node,
+      KV.node,
+      PermissionMode.node,
       SessionStore.node,
       PermissionSaved.node,
       Agent.node,
@@ -105,6 +109,31 @@ function waitForRequest(input: Partial<Permission.AssertInput> = {}) {
     const fiber = yield* service.assert(value).pipe(Effect.forkScoped)
     const request = yield* Deferred.await(asked)
     return { service, fiber, request }
+  })
+}
+
+/**
+ * A second location's Permission instance over the same global services, as the server hosts one
+ * per directory it serves. Built with its own memo map so it is not the instance under test.
+ */
+function otherLocation(directory: string) {
+  return Effect.gen(function* () {
+    const ref = Location.Ref.make({ directory: AbsolutePath.make(directory) })
+    const replacements: LayerNode.Replacements = [
+      Location.node.replace(Layer.succeed(Location.Service, Location.Service.of(location(ref)))),
+      Bus.node.replace(Layer.succeed(Bus.Service, yield* Bus.Service)),
+      KV.node.replace(Layer.succeed(KV.Service, yield* KV.Service)),
+      PermissionMode.node.replace(Layer.succeed(PermissionMode.Service, yield* PermissionMode.Service)),
+      Agent.node.replace(Layer.succeed(Agent.Service, yield* Agent.Service)),
+      SessionStore.node.replace(Layer.succeed(SessionStore.Service, yield* SessionStore.Service)),
+      PermissionSaved.node.replace(Layer.succeed(PermissionSaved.Service, yield* PermissionSaved.Service)),
+      PluginHooks.node.replace(Layer.succeed(PluginHooks.Service, yield* PluginHooks.Service)),
+      DelegatedRuntime.node.replace(Layer.succeed(DelegatedRuntime.Service, yield* DelegatedRuntime.Service)),
+    ]
+    const scope = yield* Effect.scope
+    const memo = yield* Layer.makeMemoMap
+    const context = yield* Layer.buildWithMemoMap(LayerNode.compile(Permission.node, { replacements }), memo, scope)
+    return Context.get(context, Permission.Service)
   })
 }
 
@@ -261,6 +290,37 @@ describe("Permission", () => {
       expect(yield* service.inspect(assertion())).toMatchObject({ effect: "ask" })
       yield* setRules([{ action: "read", resource: "*", effect: "deny" }])
       expect(yield* service.inspect(assertion())).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  it.effect("the mode is one selection for every location the server hosts", () =>
+    Effect.gen(function* () {
+      yield* setup([])
+      const service = yield* Permission.Service
+      // `/api/permission/mode` carries no location, so a client's switch lands on another instance
+      // than the one holding the session's prompts.
+      const elsewhere = yield* otherLocation("/elsewhere")
+      expect(elsewhere).not.toBe(service)
+      const { fiber, request } = yield* waitForRequest({ action: "external_directory", resources: ["/outside/*"] })
+      expect(yield* service.list()).toEqual([request])
+      expect(yield* elsewhere.list()).toEqual([])
+
+      // A switch made elsewhere is what the session's location reports and applies: the prompt it
+      // holds is released, and later asks are approved.
+      yield* elsewhere.setMode("auto")
+      expect(yield* service.mode()).toBe("auto")
+      yield* Fiber.join(fiber)
+      expect(yield* service.list()).toEqual([])
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "allow" })
+
+      // And back: the session's location is manual again, not on the value it booted with.
+      yield* elsewhere.setMode("normal")
+      expect(yield* service.mode()).toBe("normal")
+      expect(yield* service.inspect(assertion())).toMatchObject({ effect: "ask" })
+
+      // The selection is persisted once, wherever it was made.
+      const kv = yield* KV.Service
+      expect(yield* kv.get("permission.mode")).toBe("normal")
     }),
   )
 
