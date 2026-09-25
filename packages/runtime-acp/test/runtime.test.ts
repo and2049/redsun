@@ -36,7 +36,7 @@ const host = (
     tools?: () => DelegatedToolBinding | undefined
     cursors?: Map<string, string>
     reported?: string[][]
-    context?: () => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
+    context?: (turn: DelegatedTurn) => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
     skillsAsked?: boolean[]
     system?: (turn: DelegatedTurn, tools: readonly string[]) => DelegatedSystemPrompt | undefined
   } = {},
@@ -59,9 +59,9 @@ const host = (
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
       ...(input.context
         ? {
-            context: async (_turn: DelegatedTurn, request: { readonly skills: boolean }) => {
+            context: async (turn: DelegatedTurn, request: { readonly skills: boolean }) => {
               input.skillsAsked?.push(request.skills)
-              return input.context!()
+              return input.context!(turn)
             },
           }
         : {}),
@@ -769,6 +769,33 @@ describe("ACP runtime against a scripted agent", () => {
           expect(third).not.toContain("deploy")
         },
       )
+    })
+
+    test("sends the new agent's instructions once on an agent change, in the same agent session", async () => {
+      rules = "Use tabs."
+      const perAgent = (turn: DelegatedTurn) => ({
+        ...context(),
+        agent: { id: turn.agent, system: `Act as ${turn.agent}.` },
+      })
+      await withRuntime({ host: { context: perAgent } }, async (runtime) => {
+        const history = [user("echo one"), assistant("ok")]
+        const first = textOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+        expect(first).toContain("[redsun agent instructions: build]\nAct as build.")
+        const switched = textOf(
+          await collect(
+            (await runtime.turn({ ...HOSTED, agent: "plan" }, call([...history, user("echo two")]))).stream,
+          ),
+        )
+        expect(switched).toStartWith("SESSION=acp_1 TURNS=2")
+        expect(switched).toContain("[redsun agent instructions: plan]\nAct as plan.")
+        expect(switched).not.toContain("Use tabs.")
+        const again = promptOf(
+          await collect(
+            (await runtime.turn({ ...HOSTED, agent: "plan" }, call([...history, user("echo three")]))).stream,
+          ),
+        )
+        expect(again).toBe("echo three")
+      })
     })
 
     test("sends a compaction command alone, then everything again", async () => {
