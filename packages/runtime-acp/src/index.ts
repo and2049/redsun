@@ -80,7 +80,7 @@ export default define({
     const shared: AcpRuntime.Host = {
       cwd: ctx.location.directory,
       mode: () => Effect.runPromise(ctx.delegate.permission.mode()),
-      approve: (check) => Effect.runPromise(ctx.delegate.permission.assert(check)),
+      approve: (check, signal) => Effect.runPromise(ctx.delegate.permission.assert(check), { signal }),
       tools: (turn) =>
         turn.assistantMessageID
           ? Effect.runPromise(

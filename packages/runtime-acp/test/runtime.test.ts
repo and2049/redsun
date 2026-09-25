@@ -515,6 +515,44 @@ describe("ACP runtime against a scripted agent", () => {
       })
     })
 
+  test("cancels an in-flight host call with the turn, and can execute another turn", async () => {
+    const started = Promise.withResolvers<void>()
+    const stopped = Promise.withResolvers<void>()
+    const bound = binding(["todowrite"])
+    let count = 0
+    const tools: DelegatedToolBinding = {
+      ...bound.tools,
+      execute: async ({ signal }) => {
+        if (++count !== 1) return { content: [{ type: "text", text: "recovered" }] }
+        started.resolve()
+        return new Promise((_, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              stopped.resolve()
+              reject(new Error("interrupted"))
+            },
+            { once: true },
+          )
+        })
+      },
+    }
+    await withRuntime({ host: { tools: () => tools } }, async (runtime) => {
+      const controller = new AbortController()
+      const pending = collect(
+        (await runtime.turn(HOSTED, call([user("hostcall")], { abortSignal: controller.signal }))).stream,
+      )
+      await started.promise
+      controller.abort()
+      await stopped.promise
+      await pending
+      const next = await collect(
+        (await runtime.turn({ ...HOSTED, assistantMessageID: "msg_2" }, call([user("hostcall")]))).stream,
+      )
+      expect(next.find((part) => part.type === "tool-result")).toMatchObject({ result: "recovered" })
+    })
+  })
+
   test("starts the agent in the home the host manages for it", async () => {
     const dir = path.join(import.meta.dir, ".home-" + process.pid)
     try {
@@ -797,6 +835,20 @@ describe("ACP runtime against a scripted agent", () => {
             },
           )
         })
+
+      test("retries base delivery after a cancelled prompt", async () => {
+        await withRuntime({ agent: { prompt: "prefix" }, host: { context, system: system([]) } }, async (runtime) => {
+          const controller = new AbortController()
+          const reader = (
+            await runtime.turn(HOSTED, call([user("slow")], { abortSignal: controller.signal }))
+          ).stream.getReader()
+          while ((await reader.read()).value?.type !== "text-delta") {}
+          controller.abort()
+          while (!(await reader.read()).done) {}
+          const sent = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+          expect(sent).toContain("BASE for build")
+        })
+      })
 
       test("with prefix, goes ahead of the brief in the first prompt of each agent session", async () => {
         rules = "Use tabs."

@@ -39,7 +39,7 @@ export interface Host {
   readonly cwd: string
   readonly mode: () => Promise<Selection>
   /** Asks the host policy (prompting when it asks); a decline may carry the user's correction. */
-  readonly approve: (check: DelegatedPermissionCheck) => Promise<DelegatedApproval>
+  readonly approve: (check: DelegatedPermissionCheck, signal?: AbortSignal) => Promise<DelegatedApproval>
   /** The host tools a primary turn may use, bound to its attribution; absent when it has none. */
   readonly tools?: (turn: DelegatedTurn) => Promise<DelegatedToolBinding | undefined>
   /** The agent session a host session last used, kept across host restarts. */
@@ -202,6 +202,7 @@ interface Session {
   readonly plans: AcpPlan.Plans
   agent?: string
   listener?: (update: SessionUpdate) => void
+  controller?: AbortController
   /** Corrections the user typed into declines; ACP has no channel for them but the next prompt. */
   readonly corrections: string[]
 }
@@ -305,7 +306,7 @@ export class Runtime {
     return {
       sessionUpdate: async (notification: SessionNotification) => {
         const session = current()
-        if (!session || notification.sessionId !== session.acpSessionID) return
+        if (!session || session.exited || notification.sessionId !== session.acpSessionID) return
         if (notification.update.sessionUpdate === "current_mode_update")
           session.currentMode = notification.update.currentModeId
         if (notification.update.sessionUpdate === "config_option_update" && session.model?.control.kind === "config") {
@@ -316,11 +317,22 @@ export class Runtime {
       },
       requestPermission: async (request) => {
         const session = current()
-        if (!session || request.sessionId !== session.acpSessionID) return { outcome: { outcome: "cancelled" } }
+        if (
+          !session ||
+          session.exited ||
+          !session.controller ||
+          session.controller.signal.aborted ||
+          request.sessionId !== session.acpSessionID
+        )
+          return { outcome: { outcome: "cancelled" } }
+        const controller = session.controller
         // The host's own tools apply the host's permission policy when they execute.
         if (session.slot?.owns(request.toolCall.toolCallId)) return AcpPermissions.respond(request, true)
         const check = AcpPermissions.check(request, { sessionID: session.sessionID, agent: session.agent })
-        const approval = await this.host.approve(check).catch((): DelegatedApproval => ({ ok: false }))
+        const approval = await this.host
+          .approve(check, controller.signal)
+          .catch((): DelegatedApproval => ({ ok: false }))
+        if (controller.signal.aborted || session.controller !== controller) return { outcome: { outcome: "cancelled" } }
         if (!approval.ok && approval.feedback)
           session.corrections.push(AcpPermissions.correction(request.toolCall, approval.feedback))
         return AcpPermissions.respond(request, approval.ok)
@@ -423,12 +435,15 @@ export class Runtime {
   }
 
   private forget(session: Session) {
+    session.controller?.abort()
+    session.listener = undefined
     if (session.slot) this.endpoint.detach(session.slot)
     this.live.delete(session)
     if (this.sessions.get(session.sessionID) === session) this.sessions.delete(session.sessionID)
   }
 
   private close(session: Session) {
+    session.exited = true
     this.forget(session)
     session.process.kill()
   }
@@ -605,9 +620,12 @@ export class Runtime {
     let plans = 0
     let settled = false
     let grace: ReturnType<typeof setTimeout> | undefined
+    const controller = new AbortController()
+    session.controller = controller
     // Cancel is a notification the agent may ignore; a turn that does not end in time is ended
     // by killing the process, which rejects the pending prompt.
     const cancel = () => {
+      controller.abort()
       void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})
       grace ??= setTimeout(() => {
         if (!settled) this.close(session)
@@ -615,13 +633,13 @@ export class Runtime {
     }
     return {
       stream: new ReadableStream<LanguageModelV3StreamPart>({
-        start: async (controller) => {
+        start: async (stream) => {
           let closed = false
           const emit = (parts: readonly LanguageModelV3StreamPart[]) => {
             for (const part of parts) {
               if (closed) return
               try {
-                controller.enqueue(part)
+                stream.enqueue(part)
               } catch {
                 closed = true
               }
@@ -656,7 +674,7 @@ export class Runtime {
                   name: AcpPlan.TOOL,
                   args: input,
                   callID: toolCallId,
-                  signal: options.abortSignal ?? new AbortController().signal,
+                  signal: controller.signal,
                 })
                 .then(
                   (result) => {
@@ -669,10 +687,15 @@ export class Runtime {
           }
           // Host tool calls the agent never reports still ran: they render from the host's side.
           if (binding && turn.assistantMessageID)
-            session.slot?.bind(binding, turn.assistantMessageID, {
-              called: (id, name, args) => emit(AcpTranslate.hostCall(state, id, name, args)),
-              settled: (id, error) => emit(AcpTranslate.hostResult(state, id, error)),
-            })
+            session.slot?.bind(
+              binding,
+              turn.assistantMessageID,
+              {
+                called: (id, name, args) => emit(AcpTranslate.hostCall(state, id, name, args)),
+                settled: (id, error) => emit(AcpTranslate.hostResult(state, id, error)),
+              },
+              controller.signal,
+            )
           session.listener = (update) => {
             const todos = todowrite ? AcpPlan.apply(session.plans, update) : undefined
             if (todos) record(todos)
@@ -687,10 +710,11 @@ export class Runtime {
             })
             settled = true
             await Promise.all(recording)
-            if (compacting) {
+            if (!controller.signal.aborted && !session.exited && compacting) {
               this.context.clear(turn.sessionID)
               this.based.delete(turn.sessionID)
-            } else if (response.stopReason !== "cancelled") delivery?.delivered()
+            } else if (!controller.signal.aborted && !session.exited && response.stopReason !== "cancelled")
+              delivery?.delivered()
             emit(AcpTranslate.finish(state, response.stopReason))
           } catch (error) {
             settled = true
@@ -705,12 +729,14 @@ export class Runtime {
             if (grace !== undefined) clearTimeout(grace)
             session.listener = undefined
             session.slot?.unbind()
+            controller.abort()
+            if (session.controller === controller) session.controller = undefined
             options.abortSignal?.removeEventListener("abort", cancel)
             if (oneShot) this.close(session)
             release()
             if (!closed)
               try {
-                controller.close()
+                stream.close()
               } catch {}
           }
         },

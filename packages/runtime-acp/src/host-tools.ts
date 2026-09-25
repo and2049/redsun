@@ -111,6 +111,8 @@ export class Slot {
     readonly tools: DelegatedToolBinding
     readonly messageID: string
     readonly unreported?: Unreported
+    readonly controller: AbortController
+    readonly signal: AbortSignal
   }
   /** Host tool calls the agent reported and has not yet executed, oldest first. */
   private readonly reported: Reported[] = []
@@ -127,13 +129,24 @@ export class Slot {
     readonly definitions: ReadonlyArray<ToolDefinition>,
   ) {}
 
-  bind(tools: DelegatedToolBinding, messageID: string, unreported?: Unreported) {
-    this.binding = { tools, messageID, ...(unreported ? { unreported } : {}) }
+  bind(tools: DelegatedToolBinding, messageID: string, unreported?: Unreported, signal?: AbortSignal) {
+    this.unbind()
+    const controller = new AbortController()
+    this.binding = {
+      tools,
+      messageID,
+      ...(unreported ? { unreported } : {}),
+      controller,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+    }
   }
 
   unbind() {
+    this.binding?.controller.abort()
     this.binding = undefined
     this.reported.length = 0
+    this.known.clear()
+    this.results.clear()
   }
 
   /** Records a tool call the agent reported; returns the host tool's name when it is one. */
@@ -172,6 +185,8 @@ export class Slot {
     const own = `${OWN_PREFIX}${messageID}-${++this.calls}`
     return new Promise((resolve) => {
       const giveUp = () => {
+        clearTimeout(timer)
+        signal.removeEventListener("abort", giveUp)
         const at = this.waiting.indexOf(waiting)
         if (at >= 0) this.waiting.splice(at, 1)
         resolve(own)
@@ -188,6 +203,7 @@ export class Slot {
       }
       this.waiting.push(waiting)
       signal.addEventListener("abort", giveUp, { once: true })
+      if (signal.aborted) giveUp()
     })
   }
 
@@ -196,7 +212,10 @@ export class Slot {
     if (!bound) throw new Error("Host tools are not bound to an active turn.")
     if (!this.definitions.some((item) => item.name === name))
       throw new Error(`Tool is not available for this request: ${name}`)
+    signal = AbortSignal.any([signal, bound.signal])
+    signal.throwIfAborted()
     const callID = await this.claim(name, args, bound.messageID, signal)
+    signal.throwIfAborted()
     const own = callID.startsWith(OWN_PREFIX)
     if (own) bound.unreported?.called(callID, name, args)
     try {
@@ -207,11 +226,13 @@ export class Slot {
         allowed: new Set(this.definitions.map((item) => item.name)),
         signal,
       })
-      this.results.set(callID, result)
-      if (own) bound.unreported?.settled(callID)
+      if (this.binding === bound && !signal.aborted) {
+        this.results.set(callID, result)
+        if (own) bound.unreported?.settled(callID)
+      }
       return result
     } catch (error) {
-      if (own) bound.unreported?.settled(callID, error)
+      if (own && this.binding === bound && !signal.aborted) bound.unreported?.settled(callID, error)
       throw error
     }
   }
@@ -241,6 +262,7 @@ export class Endpoint {
   }
 
   detach(slot: Slot) {
+    slot.unbind()
     this.slots.delete(slot.token)
   }
 
