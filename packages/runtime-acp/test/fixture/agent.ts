@@ -136,6 +136,33 @@ new AgentSideConnection((connection) => {
       const sessionId = params.sessionId
       const text = params.prompt.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
       received.push(text)
+      if (text.startsWith("invoke:")) {
+        const input = JSON.parse(text.slice("invoke:".length))
+        const toolCallId = "call_invoke"
+        await connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: input.name,
+            rawInput: input.args,
+            _meta: { mcpToolIdentity: { serverName: "redsun", toolName: input.name } },
+          },
+        })
+        const client = await mcp(sessionId)
+        const result = await client?.callTool({ name: input.name, arguments: input.args })
+        await client?.close()
+        await connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: result?.isError ? "failed" : "completed",
+            content: [{ type: "content", content: { type: "text", text: JSON.stringify(result) } }],
+          },
+        })
+        return { stopReason: "end_turn" }
+      }
       if (text.includes("think")) {
         await connection.sessionUpdate({
           sessionId,
