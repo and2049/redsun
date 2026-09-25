@@ -65,7 +65,14 @@ export const codeMode = (summary: CodeModeCatalog.Summary): DelegatedCodeMode =>
 export const directNames = (connected: readonly Mcp.Tool[]): ReadonlySet<string> =>
   new Set(connected.filter((tool) => tool.codemode === false).map((tool) => McpTool.name(tool.server, tool.name)))
 
-/** Binds a tool snapshot to one turn's attribution. */
+/** What the model reads for a declined host tool call; the text native steps record for it. */
+export const DECLINED = "The user declined this tool call"
+
+/**
+ * Binds a tool snapshot to one turn's attribution. A plain decline arrives as a message-less
+ * `DeclinedError` defect (see `Permission.assert`); a runtime relays a rejection's message to its
+ * agent, so it rejects with the declined text instead of an empty error.
+ */
 export const bindSnapshot = (
   snapshot: Tool.Snapshot,
   input: {
@@ -80,19 +87,25 @@ export const bindSnapshot = (
   ...(snapshot.codeModeCatalog ? { codeMode: codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog)) } : {}),
   execute: ({ name, args, callID, allowed, signal }) =>
     Effect.runPromise(
-      snapshot.execute({
-        sessionID: input.sessionID,
-        agent: input.agent,
-        messageID: input.messageID,
-        call: { type: "tool-call", id: callID, name, input: args } as never,
-        ...(allowed === undefined
-          ? {}
-          : {
-              definitions: new Map(
-                snapshot.definitions.filter((item) => allowed.has(item.name)).map((item) => [item.name, item]),
-              ),
-            }),
-      }),
+      snapshot
+        .execute({
+          sessionID: input.sessionID,
+          agent: input.agent,
+          messageID: input.messageID,
+          call: { type: "tool-call", id: callID, name, input: args } as never,
+          ...(allowed === undefined
+            ? {}
+            : {
+                definitions: new Map(
+                  snapshot.definitions.filter((item) => allowed.has(item.name)).map((item) => [item.name, item]),
+                ),
+              }),
+        })
+        .pipe(
+          Effect.catchDefect((defect) =>
+            Effect.die(defect instanceof Permission.DeclinedError ? new Error(DECLINED) : defect),
+          ),
+        ),
       { signal },
     ),
 })

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { DelegateTools } from "@opencode/plugin/effect/delegate-tools"
+import { DelegateHost } from "@opencode/core/delegate-host"
+import { Permission } from "@opencode/core/permission"
+import { Effect } from "effect"
 
 // REDSUN: the shared host-tool selector both delegated runtimes use for their view of a binding.
 
@@ -56,5 +59,23 @@ describe("DelegateTools.select", () => {
     expect(
       DelegateTools.select(binding(true), { mode: "extras", available: ["read", "skill"] }).map((i) => i.name),
     ).toEqual(["skill"])
+  })
+})
+
+describe("DelegateHost.bindSnapshot", () => {
+  const bound = (failure: unknown) =>
+    DelegateHost.bindSnapshot({ definitions: [], execute: () => Effect.die(failure) } as never, {
+      sessionID: "ses_1" as never,
+      agent: "build" as never,
+      messageID: "msg_1" as never,
+      direct: new Set(),
+    }).execute({ name: "edit", args: {}, callID: "call_1", signal: new AbortController().signal })
+
+  test("rejects a plain decline with the declined text a runtime relays to its agent", async () => {
+    await expect(bound(new Permission.DeclinedError())).rejects.toThrow("The user declined this tool call")
+  })
+
+  test("leaves other defects as they are", async () => {
+    await expect(bound(new Error("boom"))).rejects.toThrow("boom")
   })
 })
