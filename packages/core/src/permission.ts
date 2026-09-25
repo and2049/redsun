@@ -5,13 +5,13 @@ import { Context, Deferred, Effect, Layer, Option, Schema } from "effect"
 import { Permission } from "@opencode/schema/permission"
 import { Bus } from "./bus.js"
 import { DelegatedRuntime } from "./delegate.js"
-import { KV } from "./kv.js"
 import { Location } from "./location.js"
 import { Agent } from "./agent.js"
 import { SessionErrors } from "./session/error.js"
 import { SessionSchema } from "./session/schema.js"
 import { SessionStore } from "./session/store.js"
 import { Wildcard } from "./util/wildcard.js"
+import { PermissionMode } from "./permission/mode.js"
 import { PermissionSaved } from "./permission/saved.js"
 import { PluginHooks } from "./plugin/hooks.js"
 
@@ -102,14 +102,10 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
-export const Mode = Permission.Mode
-export type Mode = typeof Mode.Type
+export const Mode = PermissionMode.Mode
+export type Mode = PermissionMode.Mode
 
-const MODE_KEY = "permission.mode"
-
-/** REDSUN: `claude_auto` is the pre-rename spelling of `native_auto`; a stored selection survives. */
-export const storedMode = (value: unknown): Mode =>
-  value === "auto" ? "auto" : value === "native_auto" || value === "claude_auto" ? "native_auto" : "normal"
+export const storedMode = PermissionMode.stored
 
 export interface Interface {
   readonly close: Effect.Effect<void>
@@ -143,19 +139,18 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
-    const kv = yield* KV.Service
+    const modes = yield* PermissionMode.Service
     const hooks = yield* PluginHooks.Service
     // REDSUN: optional so the service stays constructible in harnesses without the registry.
     const delegates = Option.getOrUndefined(yield* Effect.serviceOption(DelegatedRuntime.Service))
     const pending = new Map<ID, Pending>()
 
-    const stored = yield* kv.get(MODE_KEY)
-    let currentMode: Mode = storedMode(stored)
-
     // REDSUN: `auto` approves every host ask. `native_auto` defers to the runtime's own
     // judgement-based approval (Claude Code's classifier): in a session whose model's runtime
-    // declares one the host adds no prompts of its own, elsewhere it is Manual.
+    // declares one the host adds no prompts of its own, elsewhere it is Manual. The selection is
+    // server-wide (`PermissionMode`); this instance only holds the prompts of its own location.
     const approvesAll = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      const currentMode = yield* modes.current()
       if (currentMode === "auto") return true
       if (currentMode !== "native_auto" || !delegates) return false
       const model = (yield* sessions.get(sessionID))?.model
@@ -376,14 +371,12 @@ const layer = Layer.effect(
     })
 
     const mode = Effect.fn("Permission.mode")(function* () {
-      return currentMode
+      return yield* modes.current()
     })
 
-    const setMode = Effect.fn("Permission.setMode")(function* (next: Mode) {
-      if (currentMode === next) return
-      currentMode = next
-      yield* kv.set(MODE_KEY, next)
-      // A dialog raised under the old mode would contradict the one the user just chose.
+    // A dialog raised under the old mode would contradict the one the user just chose, whichever
+    // location the selection was made through.
+    const release = Effect.fnUntraced(function* (next: Mode) {
       if (next === "normal") return
       for (const [id, item] of [...pending]) {
         const rules = yield* configured(item.request.sessionID, item.agent).pipe(
@@ -400,6 +393,12 @@ const layer = Layer.effect(
         pending.delete(id)
       }
     })
+    const unlisten = yield* modes.listen(release)
+    yield* Effect.addFinalizer(() => unlisten)
+
+    const setMode = Effect.fn("Permission.setMode")(function* (next: Mode) {
+      yield* modes.set(next)
+    })
 
     return Service.of({ inspect, ask, assert, reply, get, forSession, list, mode, setMode, close })
   }),
@@ -410,7 +409,7 @@ export const node = makeLocationNode({
   layer,
   deps: [
     Bus.node,
-    KV.node,
+    PermissionMode.node,
     Location.node,
     Agent.node,
     SessionStore.node,

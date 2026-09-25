@@ -217,7 +217,9 @@ export function Session() {
   const permissions = createMemo(() =>
     familySessionIDs().flatMap((sessionID) => data.session.permission.list(sessionID) ?? []),
   )
-  const promptedPermissions = createMemo(() => (local.permission.mode === "auto" ? [] : permissions()))
+  // REDSUN: approval is server-side, so a request the server still holds must be answerable here
+  // whatever mode this client believes is selected; hiding it would leave the tool waiting.
+  const promptedPermissions = permissions
   const forms = createMemo(() => {
     const global = data.session.form.list("global", location()) ?? []
     return familySessionIDs()
@@ -2977,9 +2979,7 @@ function GenericTool(props: ToolProps) {
 function useToolPermission(part: () => SessionMessageAssistantTool | undefined) {
   const ctx = use()
   const data = useData()
-  const local = useLocal()
   return createMemo(() => {
-    if (local.permission.mode === "auto") return false
     const request = data.session.permission.list(ctx.sessionID)?.[0]
     return request?.source?.type === "tool" && request.source.id === part()?.id
   })
