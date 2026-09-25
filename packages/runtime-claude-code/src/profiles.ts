@@ -64,6 +64,12 @@ export interface Profile {
   readonly hostTools: "all" | "compose-subagent"
   /** Whether native tools exist for the CLI's classifier to judge (`native_auto`). */
   readonly nativeApproval: boolean
+  /**
+   * Whether the CLI ignores its own MCP configuration (user/project `.mcp.json`, plugins). The
+   * confined profiles take connected MCP from redsun's catalog (direct tools and Code Mode), as a
+   * native agent does; without ToolSearch every CLI-configured server would load eagerly.
+   */
+  readonly strictMcpConfig: boolean
 }
 
 export const PROFILES: Readonly<Record<Name, Profile>> = {
@@ -76,6 +82,7 @@ export const PROFILES: Readonly<Record<Name, Profile>> = {
     sdkPlanMode: false,
     hostTools: "all",
     nativeApproval: false,
+    strictMcpConfig: true,
   },
   extended: {
     name: "extended",
@@ -85,6 +92,7 @@ export const PROFILES: Readonly<Record<Name, Profile>> = {
     sdkPlanMode: true,
     hostTools: "all",
     nativeApproval: true,
+    strictMcpConfig: true,
   },
   native: {
     name: "native",
@@ -94,6 +102,7 @@ export const PROFILES: Readonly<Record<Name, Profile>> = {
     sdkPlanMode: true,
     hostTools: "compose-subagent",
     nativeApproval: true,
+    strictMcpConfig: false,
   },
 }
 

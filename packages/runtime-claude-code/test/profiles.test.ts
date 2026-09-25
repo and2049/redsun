@@ -35,6 +35,8 @@ describe("ClaudeCodeProfiles", () => {
     expect(redsun.systemPrompt).toEqual(["BASE", "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__", "ENV"])
     expect(redsun.planModeInstructions).toBeUndefined()
     expect(redsun.disallowedTools).toBeUndefined()
+    // Connected MCP comes from redsun's catalog; the CLI's own MCP config never loads.
+    expect(redsun.strictMcpConfig).toBe(true)
     // No host prompt (a live process), no systemPrompt option at all.
     expect(ClaudeCodeLanguageModel.interactiveOptions(config).systemPrompt).toBeUndefined()
 
@@ -44,11 +46,13 @@ describe("ClaudeCodeProfiles", () => {
     expect((extended.systemPrompt as { append?: string }).append).toContain("running inside redsun")
     expect(extended.disallowedTools).toEqual(Object.keys(ClaudeCodeProfiles.DUPLICATES))
     expect(extended.planModeInstructions).toContain("Plan Workflow")
+    expect(extended.strictMcpConfig).toBe(true)
 
     const native = ClaudeCodeLanguageModel.interactiveOptions({ ...config, behavior: "native" }, host)
     expect(native.systemPrompt).toEqual({ type: "preset", preset: "claude_code" })
     expect(native.disallowedTools).toBeUndefined()
     expect(native.tools).toBeUndefined()
+    expect(native.strictMcpConfig).toBeUndefined()
   })
 
   it("resumes a cursor only under the profile that recorded it", () => {

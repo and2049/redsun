@@ -200,6 +200,7 @@ export const interactiveOptions = (config: Config, host?: DelegatedSystemPrompt)
     ...(profile.disallowedTools.length ? { disallowedTools: [...profile.disallowedTools] } : {}),
     ...(Object.keys(profile.toolAliases).length ? { toolAliases: { ...profile.toolAliases } } : {}),
     ...(prompt === undefined ? {} : { systemPrompt: prompt }),
+    ...(profile.strictMcpConfig ? { strictMcpConfig: true } : {}),
     settingSources: ["user", "project", "local"],
   } as Options
 }
