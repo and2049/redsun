@@ -403,6 +403,55 @@ describe("delegated runtime host capabilities", () => {
     }),
   )
 
+  it.effect("builds the base prompt a native agent would get, split static/dynamic", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const agents = yield* AgentService.Service
+      yield* agents.transform((editor) =>
+        editor.update("delegate-test" as never, (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const base = yield* host.delegate.context.system({
+        sessionID: "ses_1",
+        agent: "delegate-test",
+        tools: ["read", "edit", "shell"],
+      })
+      expect(base.static).toHaveLength(1)
+      expect(base.static[0]).toContain("You are an AI agent powered by redsun")
+      expect(base.static[0]).toContain("Use the edit tool for targeted changes")
+      expect(base.static[0]).toContain("Prefer dedicated tools over shell commands")
+      expect(base.static[0]).toContain("# Code comments")
+      expect(base.static[0]).not.toContain("${OPENCODE_TOOL_GUIDANCE}")
+      expect(base.dynamic.some((part) => part.includes("<env>") && part.includes("ses_1"))).toBe(true)
+      expect(base.dynamic.some((part) => part.startsWith("Today's date:"))).toBe(true)
+      // Guidance follows the served tools: no edit line without the edit tool.
+      const readOnly = yield* host.delegate.context.system({
+        sessionID: "ses_1",
+        agent: "delegate-test",
+        tools: ["read"],
+      })
+      expect(readOnly.static[0]).not.toContain("Use the edit tool for targeted changes")
+      // A custom agent prompt replaces the base and the provider note, as native requests do.
+      yield* agents.transform((editor) =>
+        editor.update("delegate-test" as never, (agent) => {
+          agent.system = "You are a custom agent."
+        }),
+      )
+      const custom = yield* host.delegate.context.system({
+        sessionID: "ses_1",
+        agent: "delegate-test",
+        tools: ["read"],
+      })
+      expect(custom.static).toEqual(["You are a custom agent."])
+      expect(
+        yield* host.delegate.context
+          .system({ sessionID: "ses_1", agent: "no-such-agent", tools: [] })
+          .pipe(Effect.flip),
+      ).toBeInstanceOf(Error)
+    }),
+  )
+
   it.effect("creates mirrored child sessions under their parent", () =>
     Effect.gen(function* () {
       const host = yield* PluginHost.make(yield* Plugin.Service)

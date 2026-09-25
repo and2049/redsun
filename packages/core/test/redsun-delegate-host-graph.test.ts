@@ -7,6 +7,7 @@ import { FileSystem } from "@opencode/core/filesystem"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
 import { Form } from "@opencode/core/form"
+import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { LayerNodePlatform } from "@opencode/util/effect/app-node-platform"
@@ -51,6 +52,12 @@ describe("delegate host in the production plugin graph", () => {
       expect(yield* host.delegate.config("instruction_max_chars")).toBeUndefined()
       const files = yield* host.delegate.context.instructions()
       expect(files === undefined || Array.isArray(files)).toBe(true)
+      // The graph provides the environment builtins the base prompt's dynamic part needs.
+      const missing = yield* host.delegate.context
+        .system({ sessionID: "ses_graph", agent: "no-such-agent", tools: ["read"] })
+        .pipe(Effect.flip)
+      expect(missing.message).toContain("no-such-agent")
+      expect(Option.isSome(yield* Effect.serviceOption(InstructionBuiltIns.Service as never))).toBe(true)
     }),
   )
 })

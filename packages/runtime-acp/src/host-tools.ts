@@ -20,24 +20,20 @@ type ToolDefinition = DelegatedToolBinding["definitions"][number]
 export const SERVER_NAME = "redsun"
 
 /** Host tools offered to every agent; connected MCP tools join only when the host exposes them directly. */
-export const NAMES: ReadonlySet<string> = new Set(["subagent", "skill", "todowrite", "worker_model"])
+export const NAMES = DelegateTools.EXTRAS
 
 /** Some agents add bookkeeping fields to a tool's input before reporting it. */
 const BOOKKEEPING = ["__tool_use_purpose"]
 
 /** Code Mode's tool; offered only with its catalog, which the host context delivers. */
-export const CODE_MODE = "execute"
+export const CODE_MODE = DelegateTools.CODE_MODE
 
 /**
  * The host tools an agent session gets: the host's extras beside the agent's native tools, or
- * everything a native redsun agent has. Code Mode only ever comes with its catalog.
+ * everything a native redsun agent has (the shared selector; Code Mode only with its catalog).
  */
 export const select = (binding: DelegatedToolBinding, mode: "extras" | "all" = "extras") =>
-  binding.definitions.filter((item) =>
-    item.name === CODE_MODE
-      ? !!binding.codeMode
-      : mode === "all" || NAMES.has(item.name) || binding.direct.has(item.name),
-  )
+  DelegateTools.select(binding, { mode })
 
 /** The agent lists tools once per session; a different key needs a new session. */
 export const catalogKey = DelegateTools.catalogKey

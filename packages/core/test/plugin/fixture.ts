@@ -12,6 +12,7 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Form } from "@opencode/core/form"
 import { Generate } from "@opencode/core/generate"
 import { Integration } from "@opencode/core/integration"
+import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
@@ -89,6 +90,7 @@ export const PluginTestLayer = AppNodeBuilder.build(
     Model.node,
     Command.node,
     Integration.node,
+    InstructionBuiltIns.node,
     KV.node,
     Mcp.node,
     Session.node,

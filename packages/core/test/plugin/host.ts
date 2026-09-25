@@ -53,6 +53,7 @@ export function host(overrides: Overrides = {}): Plugin.Context {
       context: {
         instructions: () => Effect.die("unused delegate.context.instructions"),
         skills: () => Effect.die("unused delegate.context.skills"),
+        system: () => Effect.die("unused delegate.context.system"),
       },
     },
     rpc:
