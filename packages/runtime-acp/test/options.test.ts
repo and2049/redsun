@@ -76,4 +76,16 @@ describe("ACP agent options", () => {
     expect(AcpOptions.sessionMode(both, "normal")).toBeUndefined()
     expect(AcpOptions.launchArgs(both, "auto")).toEqual(["-y"])
   })
+
+  test("sends no base prompt unless an agent asks for it as a prefix", () => {
+    const parse = (entry: Record<string, unknown>) =>
+      AcpOptions.parse({ agents: { a: { command: "agent", ...entry } } }).agents[0]!
+    expect(parse({}).prompt).toBe("none")
+    expect(parse({ prompt: "prefix" }).prompt).toBe("prefix")
+    expect(parse({ prompt: "system" }).prompt).toBe("none")
+    expect(AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } }).agents[0]!.prompt).toBe("none")
+    expect(AcpOptions.parse({ agents: { kiro: { preset: "kiro", prompt: "prefix" } } }).agents[0]!.prompt).toBe(
+      "prefix",
+    )
+  })
 })

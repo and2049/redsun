@@ -68,6 +68,13 @@ export interface Agent {
    */
   readonly hostTools: "extras" | "all"
   /**
+   * Where the host's base prompt (the system prompt a native redsun agent gets, with guidance for
+   * the served host tools) goes. `none` sends none: the agent keeps its own. `prefix` sends it
+   * ahead of the first prompt of each agent session, in the host context block, for an agent
+   * without a system-prompt channel.
+   */
+  readonly prompt: "none" | "prefix"
+  /**
    * A home directory the host manages for the agent: `env` names the variable that points the
    * agent at it and `files` are written into it (JSON values as JSON) before the agent starts.
    */
@@ -277,6 +284,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),
       ...(string(entry.compactCommand) ? { compactCommand: string(entry.compactCommand) } : {}),
       hostTools: entry.hostTools === "all" ? "all" : "extras",
+      prompt: entry.prompt === "prefix" ? "prefix" : "none",
       integration: integration(name, record(entry.integration)),
       ...home(id, record(entry.home), errors),
     })

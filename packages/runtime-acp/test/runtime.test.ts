@@ -5,9 +5,11 @@ import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-
 import type {
   DelegatedApproval,
   DelegatedPermissionCheck,
+  DelegatedSystemPrompt,
   DelegatedToolBinding,
   DelegatedTurn,
 } from "@opencode/plugin/effect/delegate"
+import { AcpContext } from "../src/context.js"
 import { AcpHostTools } from "../src/host-tools.js"
 import type { AcpOptions } from "../src/options.js"
 import { AcpRuntime } from "../src/runtime.js"
@@ -21,6 +23,7 @@ const agent = (extra: Partial<AcpOptions.Agent> = {}): AcpOptions.Agent => ({
   models: [{ id: "default", name: "Fake ACP" }],
   inheritedInstructions: [],
   hostTools: "extras",
+  prompt: "none",
   integration: { name: "Fake ACP", url: "" },
   ...extra,
 })
@@ -35,6 +38,7 @@ const host = (
     reported?: string[][]
     context?: () => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
     skillsAsked?: boolean[]
+    system?: (turn: DelegatedTurn, tools: readonly string[]) => DelegatedSystemPrompt | undefined
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -49,6 +53,9 @@ const host = (
         return input.feedback ? { ok: false, feedback: input.feedback } : { ok: false }
       },
       tools: async () => input.tools?.(),
+      ...(input.system
+        ? { system: async (turn: DelegatedTurn, tools: readonly string[]) => input.system!(turn, tools) }
+        : {}),
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
       ...(input.context
         ? {
@@ -705,6 +712,97 @@ describe("ACP runtime against a scripted agent", () => {
         )
         expect(after).toContain("Instructions from: /etc/redsun/rules.md")
         expect(after).toContain("Be brief.")
+      })
+    })
+
+    describe("base prompt", () => {
+      const system = (asked: (readonly string[])[]) => (turn: DelegatedTurn, tools: readonly string[]) => {
+        asked.push(tools)
+        return { static: [`BASE for ${turn.agent}`, "TOOL GUIDANCE"], dynamic: ["ENV today"] }
+      }
+
+      test("with prefix, goes ahead of the brief in the first prompt of each agent session", async () => {
+        rules = "Use tabs."
+        const asked: (readonly string[])[] = []
+        await withRuntime(
+          {
+            agent: { prompt: "prefix", compactCommand: "/compact echo" },
+            // A worker, so the brief has its standing line to follow the base prompt.
+            host: {
+              context: () => ({ ...context(), isWorker: true }),
+              system: system(asked),
+              tools: () => binding(["skill"]).tools,
+            },
+          },
+          async (runtime) => {
+            const first = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+            expect(first).toStartWith(
+              [
+                "<redsun-context>",
+                "Context from redsun, the application hosting this session. It is not part of the user's message.",
+                "",
+                AcpContext.BASE,
+                "BASE for build\n\nTOOL GUIDANCE\n\nENV today",
+                "",
+                "[redsun agent instructions: build]",
+                "[redsun worker]",
+              ].join("\n"),
+            )
+            // The agent's own prompt is in the base prompt; the brief does not repeat it.
+            expect(first).not.toContain("Be brief.")
+            expect(first).toContain("Instructions from: /etc/redsun/rules.md\nUse tabs.")
+            expect(first).toEndWith("</redsun-context>\n\necho one")
+            expect(asked).toEqual([["skill"]])
+
+            const second = promptOf(
+              await collect(
+                (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo two")]))).stream,
+              ),
+            )
+            expect(second).toBe("echo two")
+
+            // Another agent's base prompt differs, so it is sent again.
+            const other = promptOf(
+              await collect(
+                (
+                  await runtime.turn(
+                    { ...HOSTED, agent: "plan" },
+                    call([user("echo one"), assistant("ok"), user("echo three")]),
+                  )
+                ).stream,
+              ),
+            )
+            expect(other).toContain("BASE for plan")
+
+            await collect(
+              (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("/compact echo")]))).stream,
+            )
+            const after = promptOf(
+              await collect(
+                (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo")]))).stream,
+              ),
+            )
+            expect(after).toContain("BASE for build")
+          },
+        )
+      })
+
+      test("with none, is never sent and the brief keeps the agent's prompt", async () => {
+        rules = "Use tabs."
+        const asked: (readonly string[])[] = []
+        await withRuntime({ host: { context, system: system(asked) } }, async (runtime) => {
+          const first = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+          expect(first).not.toContain("BASE")
+          expect(first).not.toContain(AcpContext.BASE)
+          expect(first).toContain("[redsun agent instructions: build]\nBe brief.")
+          const second = promptOf(
+            await collect(
+              (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo two")]))).stream,
+            ),
+          )
+          expect(second).toBe("echo two")
+        })
+        expect(asked).toEqual([])
       })
     })
 

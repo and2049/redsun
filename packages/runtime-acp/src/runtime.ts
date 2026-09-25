@@ -20,6 +20,7 @@ import type {
   DelegatedSkillSummary,
   DelegatedPermissionCheck,
   DelegatedStreamResult,
+  DelegatedSystemPrompt,
   DelegatedToolBinding,
   DelegatedTurn,
 } from "@opencode/plugin/effect/delegate"
@@ -59,6 +60,11 @@ export interface Host {
     readonly files?: readonly DelegatedInstructionFile[]
     readonly skills?: readonly DelegatedSkillSummary[]
   }>
+  /**
+   * The host's base prompt for a primary turn's agent, with guidance for `tools` (the host tool ids
+   * served to the agent session); for an agent with `prompt: "prefix"`.
+   */
+  readonly system?: (turn: DelegatedTurn, tools: readonly string[]) => Promise<DelegatedSystemPrompt | undefined>
   /** The agent's own model list, as each new agent session reports it. */
   readonly onModels?: (models: readonly AcpModels.Discovered[]) => void
 }
@@ -213,6 +219,8 @@ export class Runtime {
   /** The model a new agent session starts with; a loaded session reports the one it last used. */
   private defaultModel?: string
   private readonly context: DelegateContext.Tracker
+  /** The base prompt (its static part) each host session's agent session last received. */
+  private readonly based = new Map<string, string>()
   /** Host sessions with a primary turn in flight, from acquisition to the end of its stream. */
   private readonly turns = new Set<string>()
   private readonly spawn: Spawn
@@ -228,7 +236,8 @@ export class Runtime {
     this.context = new DelegateContext.Tracker({
       inherited: AcpContext.inherited(host.cwd, agent.inheritedInstructions),
       skillTool: AcpContext.SKILL_TOOL,
-      brief: AcpContext.brief,
+      // A sent base prompt already carries the agent's own prompt.
+      brief: agent.prompt === "prefix" && host.system ? AcpContext.workerBrief : AcpContext.brief,
     })
   }
 
@@ -237,6 +246,40 @@ export class Runtime {
    * alone, and the agent holds none of the earlier context after it.
    */
   private async prepareContext(
+    turn: DelegatedTurn,
+    session: Session,
+    binding: DelegatedToolBinding | undefined,
+    fresh: boolean,
+  ): Promise<DelegateContext.Delivery | undefined> {
+    const base = await this.prepareBase(turn, session, fresh)
+    const context = await this.prepareHostContext(turn, session, binding, fresh)
+    if (!base) return context
+    return {
+      text: [base.text, context?.text].filter(Boolean).join("\n\n"),
+      delivered: () => {
+        base.delivered()
+        context?.delivered()
+      },
+    }
+  }
+
+  /**
+   * The host's base prompt, for an agent that takes it ahead of the prompt: sent to each new agent
+   * session (and after compaction), and again when it changes (another agent, other tools).
+   */
+  private async prepareBase(turn: DelegatedTurn, session: Session, fresh: boolean) {
+    if (this.agent.prompt !== "prefix" || !this.host.system) return undefined
+    if (fresh) this.based.delete(turn.sessionID)
+    const tools = session.slot?.definitions.map((item) => item.name) ?? []
+    const system = await this.host.system(turn, tools).catch(() => undefined)
+    const text = system && AcpContext.base(system)
+    if (!system || !text) return undefined
+    const key = JSON.stringify(system.static)
+    if (key === this.based.get(turn.sessionID)) return undefined
+    return { text, delivered: () => void this.based.set(turn.sessionID, key) }
+  }
+
+  private async prepareHostContext(
     turn: DelegatedTurn,
     session: Session,
     binding: DelegatedToolBinding | undefined,
@@ -638,8 +681,10 @@ export class Runtime {
             })
             settled = true
             await Promise.all(recording)
-            if (compacting) this.context.clear(turn.sessionID)
-            else if (response.stopReason !== "cancelled") delivery?.delivered()
+            if (compacting) {
+              this.context.clear(turn.sessionID)
+              this.based.delete(turn.sessionID)
+            } else if (response.stopReason !== "cancelled") delivery?.delivered()
             emit(AcpTranslate.finish(state, response.stopReason))
           } catch (error) {
             settled = true
