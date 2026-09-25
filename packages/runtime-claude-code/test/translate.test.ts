@@ -253,6 +253,24 @@ describe("ClaudeCodeTranslate", () => {
       })
     })
 
+    it("keeps both the approval and the failure when an approved exit fails natively", () => {
+      const parts = exitPlan(
+        { approved: true },
+        {
+          type: "user",
+          tool_use_result: planResult,
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "tu_plan", content: "hook blocked", is_error: true }],
+          },
+        },
+      )
+      expect(parts[1]).toMatchObject({
+        type: "tool-result",
+        result: { output: "hook blocked", metadata: { approved: true, error: "hook blocked" } },
+      })
+      expect(parts[1]).not.toHaveProperty("isError")
+    })
+
     it("keeps metadata on an errored exit and records the error", () => {
       const parts = exitPlan(undefined, {
         type: "user",

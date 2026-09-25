@@ -245,6 +245,11 @@ describe("TUI inline tool wrapping", () => {
     })
     // An explicit decision outranks an error the CLI reported for the declined call.
     expect(parsePlanExit({ approved: false, error: "denied" }).outcome?.kind).toBe("declined")
+    // Approved, then the native exit failed: still in plan mode, so the failure shows.
+    expect(parsePlanExit({ plan: "p", approved: true, error: "hook blocked" }).outcome).toEqual({
+      kind: "failed",
+      text: "failed: hook blocked",
+    })
     expect(parsePlanExit({ plan: 1, filePath: null, approved: "yes" })).toEqual({
       plan: undefined,
       filePath: undefined,

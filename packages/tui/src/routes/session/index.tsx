@@ -4195,13 +4195,15 @@ export type PlanExitOutcome = { kind: "approved" | "declined" | "failed"; text: 
 export function parsePlanExit(metadata: Record<string, unknown>) {
   const feedback = stringValue(metadata.feedback)?.trim()
   const error = stringValue(metadata.error)?.trim()
+  // A decline outranks the error the CLI reports for it; an error after approval means the native
+  // exit failed, so the session stayed in plan mode and the row shows the failure.
   const outcome: PlanExitOutcome | undefined =
-    metadata.approved === true
-      ? { kind: "approved", text: "approved" }
-      : metadata.approved === false
-        ? { kind: "declined", text: feedback ? `declined: ${feedback}` : "declined" }
-        : error
-          ? { kind: "failed", text: `failed: ${error}` }
+    metadata.approved === false
+      ? { kind: "declined", text: feedback ? `declined: ${feedback}` : "declined" }
+      : error
+        ? { kind: "failed", text: `failed: ${error}` }
+        : metadata.approved === true
+          ? { kind: "approved", text: "approved" }
           : undefined
   return { plan: stringValue(metadata.plan), filePath: stringValue(metadata.filePath), outcome }
 }
