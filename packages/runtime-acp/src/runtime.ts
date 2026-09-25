@@ -569,7 +569,11 @@ export class Runtime {
       selected === "native_auto" && !AcpOptions.hasNativeApproval(this.agent) ? "normal" : selected
     // Bound at the turn boundary: calls during the turn carry its attribution.
     const binding = oneShot ? undefined : await this.host.tools?.(turn)
-    const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools) : []
+    const available =
+      options.toolChoice?.type === "none"
+        ? []
+        : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : []))
+    const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools, available) : []
     const { session, remembers } = oneShot
       ? { session: (await this.open(turn.sessionID)).session, remembers: false }
       : await this.acquire(
@@ -594,7 +598,7 @@ export class Runtime {
     // The agent's plan becomes the host's todo list through the host's own todowrite, so it is
     // stored and rendered as if the agent had called it. Only when the turn may use todowrite.
     const todowrite =
-      binding?.definitions.some((item) => item.name === AcpPlan.TOOL) && turn.assistantMessageID ? binding : undefined
+      definitions.some((item) => item.name === AcpPlan.TOOL) && turn.assistantMessageID ? binding : undefined
     const recording: Promise<void>[] = []
     let plans = 0
     let settled = false

@@ -32,8 +32,11 @@ export const CODE_MODE = DelegateTools.CODE_MODE
  * The host tools an agent session gets: the host's extras beside the agent's native tools, or
  * everything a native redsun agent has (the shared selector; Code Mode only with its catalog).
  */
-export const select = (binding: DelegatedToolBinding, mode: "extras" | "all" = "extras") =>
-  DelegateTools.select(binding, { mode })
+export const select = (
+  binding: DelegatedToolBinding,
+  mode: "extras" | "all" = "extras",
+  available?: readonly string[],
+) => DelegateTools.select(binding, { mode, available })
 
 /** The agent lists tools once per session; a different key needs a new session. */
 export const catalogKey = DelegateTools.catalogKey
@@ -137,7 +140,7 @@ export class Slot {
   report(update: SessionUpdate): string | undefined {
     if (update.sessionUpdate !== "tool_call") return undefined
     const name = identify(update._meta)
-    if (!name) return undefined
+    if (!name || !this.definitions.some((item) => item.name === name)) return undefined
     this.known.add(update.toolCallId)
     const input = JSON.stringify(cleanInput(update.rawInput ?? {}))
     const waiting = match(this.waiting, name, input)

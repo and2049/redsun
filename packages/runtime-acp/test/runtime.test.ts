@@ -83,7 +83,23 @@ const user = (text: string) => ({ role: "user" as const, content: [{ type: "text
 const assistant = (text: string) => ({ role: "assistant" as const, content: [{ type: "text" as const, text }] })
 
 const call = (prompt: LanguageModelV3CallOptions["prompt"], extra: Partial<LanguageModelV3CallOptions> = {}) =>
-  ({ prompt, ...extra }) as LanguageModelV3CallOptions
+  ({
+    prompt,
+    // The final request catalog, which production core supplies independently of the host binding.
+    tools: [
+      "read",
+      "shell",
+      "bash",
+      "skill",
+      "todowrite",
+      "subagent",
+      "question",
+      "execute",
+      "mcp_docs",
+      "mcp_hidden",
+    ].map((name) => ({ type: "function", name, inputSchema: { type: "object" } })),
+    ...extra,
+  }) as LanguageModelV3CallOptions
 
 const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
   const parts: LanguageModelV3StreamPart[] = []
@@ -478,6 +494,26 @@ describe("ACP runtime against a scripted agent", () => {
       expect(textOf(parts)).toBe("TOOLS=read,shell,todowrite")
     })
   })
+
+  for (const mode of ["all", "extras"] as const)
+    test(`intersects the final request catalog and tool choice under ${mode}`, async () => {
+      const bound = binding(["todowrite", "skill"])
+      await withRuntime({ agent: { hostTools: mode }, host: { tools: () => bound.tools } }, async (runtime) => {
+        const filtered = { tools: [{ type: "function" as const, name: "skill", inputSchema: { type: "object" } }] }
+        const ask = async (extra: Partial<LanguageModelV3CallOptions>, text = "tools?") =>
+          collect((await runtime.turn(HOSTED, call([user(text)], extra))).stream)
+        expect(textOf(await ask(filtered))).toBe("TOOLS=skill")
+        // A removed tool is refused even when the agent calls the MCP endpoint directly.
+        expect(textOf(await ask(filtered, "hostquiet"))).toBe("QUIET FAILED")
+        await ask(filtered, "plan!")
+        expect(bound.calls).toEqual([])
+        expect(textOf(await ask({ toolChoice: { type: "none" } }))).toBe("TOOLS=none")
+        await ask({ toolChoice: { type: "none" } }, "plan!")
+        expect(bound.calls).toEqual([])
+        expect(textOf(await ask({ tools: [] }))).toBe("TOOLS=none")
+        expect(textOf(await ask({ tools: undefined }))).toBe("TOOLS=none")
+      })
+    })
 
   test("starts the agent in the home the host manages for it", async () => {
     const dir = path.join(import.meta.dir, ".home-" + process.pid)
