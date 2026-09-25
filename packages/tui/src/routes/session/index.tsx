@@ -2823,6 +2823,9 @@ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }
       <Match when={display() === "question"}>
         <Question {...toolprops} />
       </Match>
+      <Match when={display() === "plan_exit"}>
+        <PlanExit {...toolprops} />
+      </Match>
       <Match when={display() === "skill"}>
         <Skill {...toolprops} />
       </Match>
@@ -3978,6 +3981,73 @@ function Question(props: ToolProps) {
   )
 }
 
+const PLAN_BLOCK_ROWS = 10
+
+function PlanExit(props: ToolProps) {
+  const { t } = useLanguage()
+  const ctx = use()
+  const theme = useTheme()
+  const { currentSyntax: syntax } = useThemes()
+  const pathFormatter = usePathFormatter()
+  const info = createMemo(() => parsePlanExit(props.metadata))
+  const [expanded, setExpanded] = createSignal(false)
+  const plan = createMemo(() => info().plan?.trim() ?? "")
+  const collapsed = createMemo(() =>
+    collapseToolOutput(plan(), PLAN_BLOCK_ROWS, PLAN_BLOCK_ROWS * Math.max(20, ctx.width - 4)),
+  )
+  const remaining = createMemo(() => Math.max(0, plan().split("\n").length - PLAN_BLOCK_ROWS))
+  const outcomeColor = createMemo(() => {
+    const kind = info().outcome?.kind
+    if (kind === "approved") return theme.text.feedback.success.default
+    if (kind === "declined") return theme.text.feedback.warning.default
+    return theme.text.feedback.error.default
+  })
+
+  return (
+    <Switch>
+      <Match when={plan() || info().outcome}>
+        <BlockTool
+          title={info().filePath ? undefined : "# Plan"}
+          path={info().filePath ? { label: "# Plan", value: pathFormatter.format(info().filePath) } : undefined}
+          part={props.part}
+          onClick={collapsed().overflow ? () => setExpanded((value) => !value) : undefined}
+        >
+          <Show when={plan()}>
+            <code
+              conceal={false}
+              fg={theme.text.default}
+              filetype="markdown"
+              syntaxStyle={syntax()}
+              content={expanded() || !collapsed().overflow ? plan() : collapsed().output}
+            />
+            <Show when={collapsed().overflow}>
+              <text fg={theme.text.subdued}>
+                {expanded()
+                  ? t("tools.clickToCollapse")
+                  : remaining() > 0
+                    ? t("tools.shell.expandLines", { count: remaining() })
+                    : t("tools.clickToExpand")}
+              </text>
+            </Show>
+          </Show>
+          <Show when={info().outcome}>{(outcome) => <text fg={outcomeColor()}>{outcome().text}</text>}</Show>
+        </BlockTool>
+      </Match>
+      <Match when={true}>
+        <InlineTool
+          icon="→"
+          name="Plan"
+          pending="Presenting plan…"
+          complete={props.part.state.status === "completed"}
+          part={props.part}
+        >
+          {props.output?.trim().split("\n")[0] ?? ""}
+        </InlineTool>
+      </Match>
+    </Switch>
+  )
+}
+
 function Skill(props: ToolProps) {
   const { t } = useLanguage()
   const name = createMemo(() => stringValue(props.metadata.name) ?? stringValue(props.input.id))
@@ -4031,6 +4101,7 @@ const toolDisplays = new Set([
   "execute",
   "patch",
   "question",
+  "plan_exit",
   "skill",
   "todowrite",
 ])
@@ -4116,6 +4187,23 @@ export function parseQuestionAnswers(value: unknown) {
   return value.map((answer) =>
     Array.isArray(answer) ? answer.filter((item): item is string => typeof item === "string") : [],
   )
+}
+
+export type PlanExitOutcome = { kind: "approved" | "declined" | "failed"; text: string }
+
+/** A `plan_exit` row: `{plan?, filePath?, approved?, feedback?, error?}` metadata. */
+export function parsePlanExit(metadata: Record<string, unknown>) {
+  const feedback = stringValue(metadata.feedback)?.trim()
+  const error = stringValue(metadata.error)?.trim()
+  const outcome: PlanExitOutcome | undefined =
+    metadata.approved === true
+      ? { kind: "approved", text: "approved" }
+      : metadata.approved === false
+        ? { kind: "declined", text: feedback ? `declined: ${feedback}` : "declined" }
+        : error
+          ? { kind: "failed", text: `failed: ${error}` }
+          : undefined
+  return { plan: stringValue(metadata.plan), filePath: stringValue(metadata.filePath), outcome }
 }
 
 export function parseDiagnostics(value: unknown, filePath: string) {

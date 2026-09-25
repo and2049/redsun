@@ -247,11 +247,28 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
     }
 
     // Only our in-process bridge records metadata under a verified native tool-use ID.
-    // A name-matching user MCP server cannot manufacture an entry in that map.
-    const metadata = item.is_error
-      ? undefined
-      : (state.hostResultMetadata?.(item.tool_use_id) ??
-        ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result))
+    // A name-matching user MCP server cannot manufacture an entry in that map. Native
+    // rows merge it too: the plan-exit bridge records its approval outcome there.
+    const host = state.hostResultMetadata?.(item.tool_use_id)
+    const native = ClaudeCodeNativeTools.resultMetadata(call.name, call.input, message.tool_use_result)
+    const merged: Tool.Metadata | undefined = host && native ? { ...native, ...host } : (host ?? native)
+
+    // A declined or failed plan exit is still the plan row: core drops metadata from
+    // error results, so it settles as a result whose metadata carries the outcome.
+    if (item.is_error && call.name === "plan_exit") {
+      parts.push({
+        type: "tool-result",
+        toolCallId: item.tool_use_id,
+        toolName: call.name,
+        result: {
+          output: text,
+          metadata: { ...merged, ...(merged?.approved === false ? {} : { error: text || "Plan exit failed." }) },
+        },
+      })
+      continue
+    }
+
+    const metadata = item.is_error ? undefined : merged
     parts.push({
       type: "tool-result",
       toolCallId: item.tool_use_id,
