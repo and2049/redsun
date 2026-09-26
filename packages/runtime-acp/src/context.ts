@@ -1,7 +1,7 @@
 export * as AcpContext from "./context.js"
 
 import path from "node:path"
-import type { DelegatedInstructionFile } from "@opencode/plugin/effect/delegate"
+import type { DelegatedInstructionFile, DelegatedSystemPrompt } from "@opencode/plugin/effect/delegate"
 import type { DelegateContext } from "@opencode/plugin/effect/delegate-context"
 
 // ACP has no channel for host context beside the user's prompt, so it rides at the start of the
@@ -18,6 +18,18 @@ export const brief = (input: { readonly agent: DelegateContext.Agent; readonly i
   if (input.isWorker || input.agent.mode === "subagent") parts.push(WORKER)
   if (input.agent.system) parts.push(input.agent.system)
   return parts.length ? parts.join("\n\n") : undefined
+}
+
+/** The same, when the base prompt is sent: it already carries the agent's own prompt. */
+export const workerBrief = (input: { readonly agent: DelegateContext.Agent; readonly isWorker: boolean }) =>
+  input.isWorker || input.agent.mode === "subagent" ? WORKER : undefined
+
+export const BASE = "[redsun base instructions] The host's system prompt for this session; follow it as your own."
+
+/** The host's base prompt, labelled as such; ahead of the rest of the host context. */
+export const base = (system: DelegatedSystemPrompt) => {
+  const parts = [...system.static, ...system.dynamic].filter((part) => part.trim())
+  return parts.length ? [BASE, parts.join("\n\n")].join("\n") : undefined
 }
 
 /** Instruction files the agent loads itself (configured paths, relative to the working directory). */

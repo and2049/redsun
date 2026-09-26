@@ -10,6 +10,12 @@ export type Decision =
 
 export type Outcome = { readonly ok: true } | { readonly ok: false; readonly feedback?: string }
 
+/** A plan-exit decision as the `plan_exit` row renders it, keyed by the native tool-use id. */
+export interface PlanExit {
+  readonly approved: boolean
+  readonly feedback?: string
+}
+
 export interface Ports {
   readonly worktree: string
   readonly agent: () => string | undefined
@@ -20,8 +26,20 @@ export interface Ports {
     fields: Form.Field[],
     signal: AbortSignal,
   ) => Promise<Exclude<Form.State, { readonly status: "pending" }> | undefined>
-  readonly exitPlan: (signal: AbortSignal) => Promise<boolean>
+  /** The user's plan-exit decision; a decline may carry feedback for the model. */
+  readonly exitPlan: (signal: AbortSignal) => Promise<Outcome>
+  /** Records a decided ExitPlanMode call (approved or declined) under its native tool-use id. */
+  readonly onPlanExit?: (toolUseID: string, outcome: PlanExit) => void
 }
+
+/** The refusal the model reads when the user keeps planning, with their feedback when given. */
+export const keepRefining = (feedback?: string) =>
+  feedback
+    ? `${ClaudeCodePermissions.PLAN_KEEP_REFINING} The user said: ${feedback}`
+    : ClaudeCodePermissions.PLAN_KEEP_REFINING
+
+export const planExit = (outcome: Outcome): PlanExit =>
+  outcome.ok ? { approved: true } : { approved: false, ...(outcome.feedback ? { feedback: outcome.feedback } : {}) }
 
 const INTERRUPTED = "Interrupted"
 
@@ -44,6 +62,7 @@ export const make =
     options: {
       signal: AbortSignal
       mcpServer?: { name: string; source: string }
+      toolUseID?: string
     },
   ): Promise<Decision> => {
     const allow = { behavior: "allow", updatedInput: input } as const
@@ -61,12 +80,10 @@ export const make =
     if (toolName === ClaudeCodePermissions.EXIT_PLAN_TOOL) {
       const exitAbort = aborted(options.signal)
       try {
-        return (await Promise.race([ports.exitPlan(options.signal), exitAbort.promise])) === true
-          ? allow
-          : {
-              behavior: "deny",
-              message: options.signal.aborted ? INTERRUPTED : ClaudeCodePermissions.PLAN_KEEP_REFINING,
-            }
+        const outcome = await Promise.race([ports.exitPlan(options.signal), exitAbort.promise])
+        if (outcome === "aborted" || options.signal.aborted) return { behavior: "deny", message: INTERRUPTED }
+        if (options.toolUseID) ports.onPlanExit?.(options.toolUseID, planExit(outcome))
+        return outcome.ok ? allow : { behavior: "deny", message: keepRefining(outcome.feedback) }
       } finally {
         exitAbort.detach()
       }
@@ -75,9 +92,10 @@ export const make =
     const reason = ClaudeCodePermissions.policyReason(toolName, ports.agent())
     if (reason) return { behavior: "deny", message: reason }
 
-    // The in-process host tool executes through Tool.Snapshot and its leaf owns
-    // the interactive permission. Do not ask here and then ask again at the leaf.
-    // Name alone is not proof: inherited/user MCP servers may spoof the prefix.
+    // A host tool served this turn executes through Tool.Snapshot and its leaf owns the
+    // whole policy (rules, asks, plan mode, external directories): do not inspect or ask
+    // here and then again at the leaf. Name alone is not proof: inherited/user MCP
+    // servers may spoof the prefix, so the SDK `redsun` provenance is required.
     if (
       (ClaudeCodePermissions.isHostTool(toolName) || ports.isDirectHostTool?.(toolName) === true) &&
       options.mcpServer?.source === "sdk" &&

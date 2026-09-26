@@ -20,6 +20,14 @@ describe("tool name mapping", () => {
     expect(toolName("AskUserQuestion")).toBe("question")
   })
 
+  it("routes plan exit, todo list and notebook edits onto canonical rows", () => {
+    expect(toolName("ExitPlanMode")).toBe("plan_exit")
+    expect(toolName("TodoWrite")).toBe("todowrite")
+    expect(toolName("NotebookEdit")).toBe("edit")
+    // Incremental task tools have no full-list shape; they stay native rows.
+    for (const name of ["TaskCreate", "TaskGet", "TaskUpdate", "TaskList"]) expect(toolName(name)).toBe(name)
+  })
+
   it("leaves an unlisted tool on its raw name and the generic renderer", () => {
     expect(toolName("BashOutput")).toBe("BashOutput")
     expect(toolName("unrelated__subagent")).toBe("unrelated__subagent")
@@ -56,9 +64,16 @@ describe("tool input mapping", () => {
     expect(toolInput("Skill", { skill: "artifact-design" })).toEqual({ id: "artifact-design" })
   })
 
+  it("puts a notebook path on the key the edit row reads", () => {
+    expect(toolInput("NotebookEdit", { notebook_path: "/n.ipynb", new_source: "x" })).toEqual({
+      path: "/n.ipynb",
+      new_source: "x",
+    })
+  })
+
   it("passes an unlisted tool's input through untouched", () => {
     const input = { file_path: "/a.ts" }
-    expect(toolInput("NotebookEdit", input)).toBe(input)
+    expect(toolInput("LSP", input)).toBe(input)
   })
 
   it("does not convert host MCP skill arguments with the native Skill adapter", () => {
@@ -170,6 +185,59 @@ describe("result metadata", () => {
     // A no-op edit has nothing to show.
     expect(
       resultMetadata("edit", { path: "/a.ts" }, { ...editResult, oldString: "absent", newString: "x" }),
+    ).toBeUndefined()
+  })
+
+  it("reads the plan from the ExitPlanMode result, not the input", () => {
+    expect(
+      resultMetadata("plan_exit", {}, { plan: "# Plan\n1. do it", isAgent: false, filePath: "/p/plan.md" }),
+    ).toEqual({ plan: "# Plan\n1. do it", filePath: "/p/plan.md" })
+    expect(resultMetadata("plan_exit", {}, { plan: null, isAgent: false })).toBeUndefined()
+    // A declined exit has no structured result; an input plan (older CLIs) still renders.
+    expect(resultMetadata("plan_exit", { plan: "old" }, "denied")).toEqual({ plan: "old" })
+    expect(resultMetadata("plan_exit", {}, undefined)).toBeUndefined()
+  })
+
+  it("maps a TodoWrite list onto the todowrite metadata shape", () => {
+    const todos = [
+      { content: "a", status: "completed", activeForm: "Doing a" },
+      { content: "b", status: "in_progress", activeForm: "Doing b" },
+      { content: 3, status: "pending" },
+      { content: "c", status: "unknown" },
+    ]
+    const expected: ReturnType<typeof resultMetadata> = {
+      todos: [
+        { content: "a", status: "completed" },
+        { content: "b", status: "in_progress" },
+      ],
+    }
+    expect(resultMetadata("todowrite", { todos }, { oldTodos: [], newTodos: todos })).toEqual(expected)
+    // The result's list wins; the input is the fallback.
+    expect(resultMetadata("todowrite", { todos }, {})).toEqual(expected)
+    expect(resultMetadata("todowrite", { todos: [] }, { newTodos: [{ content: "x", status: "pending" }] })).toEqual({
+      todos: [{ content: "x", status: "pending" }],
+    })
+    expect(resultMetadata("todowrite", {}, {})).toBeUndefined()
+  })
+
+  it("diffs a notebook edit from the notebook before and after", () => {
+    const result = {
+      new_source: "print(2)",
+      old_source: "print(1)",
+      cell_type: "code",
+      language: "python",
+      edit_mode: "replace",
+      notebook_path: "/n.ipynb",
+      original_file: '{\n  "source": "print(1)"\n}\n',
+      updated_file: '{\n  "source": "print(2)"\n}\n',
+    }
+    const file = resultMetadata("edit", { path: "/n.ipynb" }, result)?.files?.[0]
+    expect(file).toMatchObject({ file: "/n.ipynb", status: "modified", additions: 1, deletions: 1 })
+    expect(file?.patch).toContain('+  "source": "print(2)"')
+    expect(resultMetadata("edit", { path: "/other.ipynb" }, result)).toBeUndefined()
+    expect(resultMetadata("edit", { path: "/n.ipynb" }, { ...result, error: "Cell not found" })).toBeUndefined()
+    expect(
+      resultMetadata("edit", { path: "/n.ipynb" }, { ...result, updated_file: result.original_file }),
     ).toBeUndefined()
   })
 })

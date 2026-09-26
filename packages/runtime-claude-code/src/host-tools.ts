@@ -6,24 +6,34 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import type { ToolDefinition } from "@opencode/ai"
 import type { DelegatedToolBinding, DelegatedToolResult } from "@opencode/plugin/effect/delegate"
 import { DelegateTools } from "@opencode/plugin/effect/delegate-tools"
+import { ClaudeCodeProfiles } from "./profiles.js"
 
+/** The host's extras; the `native` profile's ceiling, not the others'. */
 export const NAMES = ["subagent", "skill", "todowrite", "worker_model", "execute"] as const
 export const MCP_NAMES = NAMES.map((name) => `mcp__redsun__${name}`)
 
-/** Keep selection at the canonical request boundary; neither arbitrary host nor Code Mode leaf tools are direct. */
+const COMPOSE_AGENT = "compose"
+
+/**
+ * The host tools one turn serves, per profile, at the canonical request boundary: `redsun` and
+ * `extended` serve the whole snapshot; `native` serves only the host `subagent`, and only to
+ * compose (worker routing is a redsun feature, not a tool duplicate). `available` is the
+ * request-level allowlist (tool choice and hooks already applied); Code Mode needs its catalog.
+ */
 export const select = (input: {
   readonly definitions: HostExecution["definitions"]
   readonly available: readonly string[]
   readonly direct: ReadonlySet<string>
-  readonly behavior?: "redsun" | "native"
+  readonly codeMode?: DelegatedToolBinding["codeMode"]
+  readonly behavior?: ClaudeCodeProfiles.Name
+  readonly agent?: string
 }) => {
-  const available = new Set(input.available)
-  return input.definitions.filter(
-    (item) =>
-      available.has(item.name) &&
-      (input.behavior === "native"
-        ? item.name === "subagent"
-        : NAMES.includes(item.name as (typeof NAMES)[number]) || input.direct.has(item.name)),
+  const binding = { definitions: input.definitions, direct: input.direct, codeMode: input.codeMode }
+  if (ClaudeCodeProfiles.resolve(input.behavior).hostTools === "all")
+    return DelegateTools.select(binding, { mode: "all", available: input.available })
+  if (input.agent !== COMPOSE_AGENT) return []
+  return DelegateTools.select(binding, { mode: "extras", available: input.available }).filter(
+    (item) => item.name === "subagent",
   )
 }
 

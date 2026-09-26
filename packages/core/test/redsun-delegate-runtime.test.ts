@@ -358,6 +358,58 @@ describe("delegated runtime host capabilities", () => {
     }),
   )
 
+  // Dismissal and interruption through the real binding, as both runtimes reach the host question.
+  for (const settle of ["dismiss", "interrupt"] as const)
+    it.effect(`settles a bound host question on ${settle}, attributed to the call, and refuses a late reply`, () =>
+      Effect.gen(function* () {
+        yield* registerToolPlugin(QuestionTool.Plugin)
+        const host = yield* PluginHost.make(yield* Plugin.Service)
+        const forms = yield* Form.Service
+        const agents = yield* AgentService.Service
+        yield* agents.transform((editor) =>
+          editor.update("delegate-test" as never, (agent) => {
+            agent.mode = "primary"
+          }),
+        )
+        const session = yield* host.session.create({ title: "bind" })
+        const binding = yield* host.delegate.tools.bind({
+          sessionID: session.id,
+          agent: "delegate-test",
+          messageID: "msg_1",
+        })
+        const created = yield* formCreated
+        const controller = new AbortController()
+        const pending = binding
+          .execute({
+            name: "question",
+            args: {
+              questions: [
+                { question: "Continue?", header: "Continue", options: [{ label: "Yes", description: "Go on" }] },
+              ],
+            },
+            callID: "call_1",
+            signal: controller.signal,
+          })
+          .then(
+            () => "answered",
+            (error: unknown) => (error instanceof Error ? error.message : String(error)),
+          )
+        const event = yield* Deferred.await(created)
+        expect(event.form.sessionID).toBe(session.id)
+        expect(event.form.metadata).toEqual({ kind: "question", tool: { messageID: "msg_1", id: "call_1" } })
+        yield* Effect.promise(() => Bun.sleep(1))
+        if (settle === "dismiss") yield* forms.cancel(event.form.id)
+        else controller.abort()
+        const outcome = yield* Effect.promise(() => pending)
+        if (settle === "dismiss") expect(outcome).toBe("The user dismissed this question")
+        else expect(outcome).not.toBe("answered")
+        expect(yield* forms.state(event.form.id)).toEqual({ status: "cancelled" })
+        expect(yield* forms.list({ sessionID: session.id })).toEqual([])
+        const late = yield* forms.reply({ id: event.form.id, answer: { q0: "Yes" } }).pipe(Effect.flip)
+        expect(late._tag).toBe("Form.AlreadySettledError")
+      }),
+    )
+
   it.effect("binds tools only for a live session and agent", () =>
     Effect.gen(function* () {
       const host = yield* PluginHost.make(yield* Plugin.Service)
@@ -400,6 +452,55 @@ describe("delegated runtime host capabilities", () => {
       const listed = yield* host.delegate.context.skills({ sessionID: "ses_1", agent: "delegate-test" })
       expect(listed).toEqual([{ id: "offered", name: "offered", description: "offered skill" }])
       expect(yield* host.delegate.context.skills({ sessionID: "ses_1", agent: "no-such-agent" })).toEqual([])
+    }),
+  )
+
+  it.effect("builds the base prompt a native agent would get, split static/dynamic", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const agents = yield* AgentService.Service
+      yield* agents.transform((editor) =>
+        editor.update("delegate-test" as never, (agent) => {
+          agent.mode = "primary"
+        }),
+      )
+      const base = yield* host.delegate.context.system({
+        sessionID: "ses_1",
+        agent: "delegate-test",
+        tools: ["read", "edit", "shell"],
+      })
+      expect(base.static).toHaveLength(1)
+      expect(base.static[0]).toContain("You are an AI agent powered by redsun")
+      expect(base.static[0]).toContain("Use the edit tool for targeted changes")
+      expect(base.static[0]).toContain("Prefer dedicated tools over shell commands")
+      expect(base.static[0]).toContain("# Code comments")
+      expect(base.static[0]).not.toContain("${OPENCODE_TOOL_GUIDANCE}")
+      expect(base.dynamic.some((part) => part.includes("<env>") && part.includes("ses_1"))).toBe(true)
+      expect(base.dynamic.some((part) => part.startsWith("Today's date:"))).toBe(true)
+      // Guidance follows the served tools: no edit line without the edit tool.
+      const readOnly = yield* host.delegate.context.system({
+        sessionID: "ses_1",
+        agent: "delegate-test",
+        tools: ["read"],
+      })
+      expect(readOnly.static[0]).not.toContain("Use the edit tool for targeted changes")
+      // A custom agent prompt replaces the base and the provider note, as native requests do.
+      yield* agents.transform((editor) =>
+        editor.update("delegate-test" as never, (agent) => {
+          agent.system = "You are a custom agent."
+        }),
+      )
+      const custom = yield* host.delegate.context.system({
+        sessionID: "ses_1",
+        agent: "delegate-test",
+        tools: ["read"],
+      })
+      expect(custom.static).toEqual(["You are a custom agent."])
+      expect(
+        yield* host.delegate.context
+          .system({ sessionID: "ses_1", agent: "no-such-agent", tools: [] })
+          .pipe(Effect.flip),
+      ).toBeInstanceOf(Error)
     }),
   )
 

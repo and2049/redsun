@@ -88,6 +88,9 @@ export const make = (ports: Ports) => {
     if (options.signal.aborted) return deny(INTERRUPTED)
     const reason = ClaudeCodePermissions.policyReason(toolName, ports.agent())
     if (reason) return deny(reason)
+    // A host tool served this turn enforces redsun's policy at its leaf; canUseTool still
+    // checks the SDK `redsun` provenance before allowing it.
+    if (ports.isDirectHostTool?.(toolName) === true) return {}
 
     const resources = [] as { action: string; resource: string }[]
     const external = await untilAbort(
@@ -125,14 +128,16 @@ export const make = (ports: Ports) => {
     if (!id) return deny("Missing tool-use ID for plan approval")
     // A denied/dismissed exit stays in plan mode. The hook does not "allow":
     // native and managed rules still get their say after it returns.
-    let approved: boolean | "aborted"
+    let outcome: ClaudeCodePermissionBridge.Outcome | "aborted"
     try {
-      approved = await untilAbort(() => ports.exitPlan(options.signal), options.signal)
+      outcome = await untilAbort(() => ports.exitPlan(options.signal), options.signal)
     } catch {
       return deny(options.signal.aborted ? INTERRUPTED : ClaudeCodePermissions.PLAN_KEEP_REFINING)
     }
-    if (approved === "aborted" || options.signal.aborted) return deny(INTERRUPTED)
-    if (!approved) return deny(ClaudeCodePermissions.PLAN_KEEP_REFINING)
+    if (outcome === "aborted" || options.signal.aborted) return deny(INTERRUPTED)
+    // Recorded for the `plan_exit` row whatever the answer; the transition is PostToolUse's.
+    ports.onPlanExit?.(id, ClaudeCodePermissionBridge.planExit(outcome))
+    if (!outcome.ok) return deny(ClaudeCodePermissionBridge.keepRefining(outcome.feedback))
     remember(id, toolName, values, { behavior: "allow", updatedInput: values })
     approvedExits.add(id)
     return {}

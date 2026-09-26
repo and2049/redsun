@@ -2,6 +2,7 @@ import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from "@agentclie
 import type { Usage } from "@opencode/plugin/usage"
 import { Schema } from "effect"
 import { AcpRuntime } from "./runtime.js"
+import { AcpKiro } from "./kiro.js"
 import type { AcpOptions } from "./options.js"
 
 const Result = Schema.Struct({
@@ -68,7 +69,11 @@ export async function readKiroUsage(
     return await Promise.race([
       cancelled,
       (async () => {
-        await connection.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+        const initialized = await connection.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+        if (agent.preset === "kiro") {
+          AcpKiro.validate(initialized)
+          return parseKiroUsage(await connection.request("_kiro/account/getUsage", {}))
+        }
         const session = await connection.newSession({ cwd, mcpServers: [] })
         return parseKiroUsage(
           await connection.request("_kiro.dev/commands/execute", {

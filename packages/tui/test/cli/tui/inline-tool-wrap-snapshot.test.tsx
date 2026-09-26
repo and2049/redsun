@@ -8,6 +8,7 @@ import {
   isBackgroundSubagent,
   parseApplyPatchFiles,
   parseDiagnostics,
+  parsePlanExit,
   parseQuestionAnswers,
   parseQuestions,
   thinkingTeaser,
@@ -218,6 +219,42 @@ describe("TUI inline tool wrapping", () => {
     expect(parseQuestions([{}, { question: 1 }, { question: "Continue?" }])).toEqual([{ question: "Continue?" }])
     expect(parseQuestionAnswers([null, ["yes", 1], "no"])).toEqual([[], ["yes"], []])
     expect(parseQuestionAnswers({})).toBeUndefined()
+  })
+
+  test("routes plan exits and the history todo alias to their rows", () => {
+    expect(toolDisplay("plan_exit")).toBe("plan_exit")
+    // Persisted delegated history keeps the native task-list name.
+    expect(toolDisplay("TodoWrite")).toBe("todowrite")
+    expect(toolDisplay("todowrite")).toBe("todowrite")
+  })
+
+  test("reads a plan exit's plan and outcome from its metadata", () => {
+    expect(parsePlanExit({ plan: "# Plan", filePath: "/p.md", approved: true })).toEqual({
+      plan: "# Plan",
+      filePath: "/p.md",
+      outcome: { kind: "approved", text: "approved" },
+    })
+    expect(parsePlanExit({ approved: false, feedback: " split step 2 " }).outcome).toEqual({
+      kind: "declined",
+      text: "declined: split step 2",
+    })
+    expect(parsePlanExit({ approved: false, feedback: "" }).outcome).toEqual({ kind: "declined", text: "declined" })
+    expect(parsePlanExit({ plan: "p", error: "hook blocked" }).outcome).toEqual({
+      kind: "failed",
+      text: "failed: hook blocked",
+    })
+    // An explicit decision outranks an error the CLI reported for the declined call.
+    expect(parsePlanExit({ approved: false, error: "denied" }).outcome?.kind).toBe("declined")
+    // Approved, then the native exit failed: still in plan mode, so the failure shows.
+    expect(parsePlanExit({ plan: "p", approved: true, error: "hook blocked" }).outcome).toEqual({
+      kind: "failed",
+      text: "failed: hook blocked",
+    })
+    expect(parsePlanExit({ plan: 1, filePath: null, approved: "yes" })).toEqual({
+      plan: undefined,
+      filePath: undefined,
+      outcome: undefined,
+    })
   })
 
   test("summarizes execute calls on one line", () => {

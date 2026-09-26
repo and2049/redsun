@@ -3,6 +3,7 @@ export * as AcpRuntime from "./runtime.js"
 import { execFile, spawn } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import path from "node:path"
+import os from "node:os"
 import { Readable, Writable } from "node:stream"
 import {
   ClientSideConnection,
@@ -20,6 +21,7 @@ import type {
   DelegatedSkillSummary,
   DelegatedPermissionCheck,
   DelegatedStreamResult,
+  DelegatedSystemPrompt,
   DelegatedToolBinding,
   DelegatedTurn,
 } from "@opencode/plugin/effect/delegate"
@@ -30,6 +32,7 @@ import { AcpPlan } from "./plan.js"
 import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
+import { AcpKiro } from "./kiro.js"
 
 export type Selection = "normal" | "auto" | "native_auto"
 
@@ -38,7 +41,7 @@ export interface Host {
   readonly cwd: string
   readonly mode: () => Promise<Selection>
   /** Asks the host policy (prompting when it asks); a decline may carry the user's correction. */
-  readonly approve: (check: DelegatedPermissionCheck) => Promise<DelegatedApproval>
+  readonly approve: (check: DelegatedPermissionCheck, signal?: AbortSignal) => Promise<DelegatedApproval>
   /** The host tools a primary turn may use, bound to its attribution; absent when it has none. */
   readonly tools?: (turn: DelegatedTurn) => Promise<DelegatedToolBinding | undefined>
   /** The agent session a host session last used, kept across host restarts. */
@@ -59,6 +62,11 @@ export interface Host {
     readonly files?: readonly DelegatedInstructionFile[]
     readonly skills?: readonly DelegatedSkillSummary[]
   }>
+  /**
+   * The host's base prompt for a primary turn's agent, with guidance for `tools` (the host tool ids
+   * served to the agent session); for an agent with `prompt: "prefix"`.
+   */
+  readonly system?: (turn: DelegatedTurn, tools: readonly string[]) => Promise<DelegatedSystemPrompt | undefined>
   /** The agent's own model list, as each new agent session reports it. */
   readonly onModels?: (models: readonly AcpModels.Discovered[]) => void
 }
@@ -82,6 +90,7 @@ export type Spawn = (agent: AcpOptions.Agent, cwd: string, extraArgs: readonly s
 
 /** Writes the files of the home the host manages for the agent; they are the host's, so overwritten. */
 export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
+  mkdirSync(home.path, { recursive: true })
   for (const [name, content] of Object.entries(home.files)) {
     const target = path.resolve(home.path, name)
     if (!target.startsWith(path.resolve(home.path) + path.sep))
@@ -94,6 +103,10 @@ export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
 /** The agent process environment: the host's, the configured additions, and the managed home. */
 const environment = (agent: AcpOptions.Agent) => ({
   ...process.env,
+  // KAS uses HOME, but the CLI's existing sign-in remains in its original data directory.
+  ...(agent.preset === "kiro"
+    ? { XDG_DATA_HOME: process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share") }
+    : {}),
   ...agent.env,
   ...(agent.home ? { [agent.home.env]: agent.home.path } : {}),
 })
@@ -112,11 +125,14 @@ export const account = (stdout: string): Record<string, string> => {
 }
 
 export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
+  const group = agent.preset === "kiro" && process.platform !== "win32"
   const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
     env: environment(agent),
     stdio: ["pipe", "pipe", "pipe"],
+    detached: group,
   })
+  let killed = false
   let stderr = ""
   child.stderr.on("data", (chunk: Buffer | string) => {
     stderr = (stderr + String(chunk)).slice(-STDERR_TAIL)
@@ -124,7 +140,23 @@ export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
   return {
     stdin: Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
     stdout: Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>,
-    kill: () => void child.kill(),
+    kill: () => {
+      if (killed) return
+      killed = true
+      if (!group || !child.pid) {
+        child.kill()
+        return
+      }
+      const pid = child.pid
+      const signal = (value: NodeJS.Signals) => {
+        try {
+          process.kill(-pid, value)
+        } catch {}
+      }
+      signal("SIGTERM")
+      const timer = setTimeout(() => signal("SIGKILL"), 2_000)
+      timer.unref()
+    },
     exited: new Promise((resolve) => {
       child.once("exit", resolve)
       child.once("error", resolve)
@@ -196,11 +228,22 @@ interface Session {
   readonly plans: AcpPlan.Plans
   agent?: string
   listener?: (update: SessionUpdate) => void
+  controller?: AbortController
+  compaction?: ReturnType<typeof Promise.withResolvers<void>>
+  compacted?: boolean
   /** Corrections the user typed into declines; ACP has no channel for them but the next prompt. */
   readonly corrections: string[]
 }
 
 export interface Options {
+  /** Optional agent extension acknowledging asynchronous compaction completion. */
+  readonly compactionStatus?: (
+    method: string,
+    params: Record<string, unknown>,
+  ) =>
+    | { readonly sessionID: string; readonly status: "started" | "completed" | "failed"; readonly error?: string }
+    | undefined
+  readonly compactionTimeoutMs?: number
   readonly spawn?: Spawn
   readonly interruptGraceMs?: number
 }
@@ -213,6 +256,8 @@ export class Runtime {
   /** The model a new agent session starts with; a loaded session reports the one it last used. */
   private defaultModel?: string
   private readonly context: DelegateContext.Tracker
+  /** The base prompt (its static part) each host session's agent session last received. */
+  private readonly based = new Map<string, string>()
   /** Host sessions with a primary turn in flight, from acquisition to the end of its stream. */
   private readonly turns = new Set<string>()
   private readonly spawn: Spawn
@@ -221,14 +266,15 @@ export class Runtime {
   constructor(
     private readonly agent: AcpOptions.Agent,
     private readonly host: Host,
-    options: Options = {},
+    private readonly options: Options = {},
   ) {
     this.spawn = options.spawn ?? spawnProcess
     this.interruptGraceMs = options.interruptGraceMs ?? INTERRUPT_GRACE_MS
     this.context = new DelegateContext.Tracker({
       inherited: AcpContext.inherited(host.cwd, agent.inheritedInstructions),
       skillTool: AcpContext.SKILL_TOOL,
-      brief: AcpContext.brief,
+      // A sent base prompt already carries the agent's own prompt.
+      brief: agent.prompt === "prefix" ? AcpContext.workerBrief : AcpContext.brief,
     })
   }
 
@@ -241,11 +287,46 @@ export class Runtime {
     session: Session,
     binding: DelegatedToolBinding | undefined,
     fresh: boolean,
+  ): Promise<DelegateContext.Delivery | undefined> {
+    const base = await this.prepareBase(turn, session, fresh)
+    const context = await this.prepareHostContext(turn, session, binding, fresh)
+    if (!base) return context
+    return {
+      text: [base.text, context?.text].filter(Boolean).join("\n\n"),
+      delivered: () => {
+        base.delivered()
+        context?.delivered()
+      },
+    }
+  }
+
+  /**
+   * The host's base prompt, for an agent that takes it ahead of the prompt: sent to each new agent
+   * session (and after compaction), and again when it changes (another agent, other tools).
+   */
+  private async prepareBase(turn: DelegatedTurn, session: Session, fresh: boolean) {
+    if (this.agent.prompt !== "prefix") return undefined
+    if (fresh) this.based.delete(turn.sessionID)
+    const tools = session.slot?.definitions.map((item) => item.name) ?? []
+    const system = await this.host.system?.(turn, tools)
+    const text = system && AcpContext.base(system)
+    if (!system || !text) throw new Error(`The host base prompt is unavailable for ${this.agent.name}.`)
+    const key = JSON.stringify(system.static)
+    if (key === this.based.get(turn.sessionID)) return undefined
+    return { text, delivered: () => void this.based.set(turn.sessionID, key) }
+  }
+
+  private async prepareHostContext(
+    turn: DelegatedTurn,
+    session: Session,
+    binding: DelegatedToolBinding | undefined,
+    fresh: boolean,
   ) {
     if (!this.host.context) return undefined
     const served = (name: string) => session.slot?.definitions.some((item) => item.name === name) === true
-    const gathered = await this.host.context(turn, { skills: served("skill") }).catch(() => undefined)
-    if (!gathered) return undefined
+    // A failed lookup fails the turn, as it does under Claude Code: prompting without the context
+    // would silently drop the agent's instructions. Nothing was delivered, so a retry sends it all.
+    const gathered = await this.host.context(turn, { skills: served("skill") })
     return this.context.prepare(turn.sessionID, {
       ...gathered,
       skills: gathered.skills ?? [],
@@ -260,9 +341,33 @@ export class Runtime {
    */
   private client(current: () => Session | undefined): Client {
     return {
+      extNotification: async (method, params) => {
+        const update = this.options.compactionStatus?.(method, params)
+        const session = current()
+        if (!update || !session || session.exited || update.sessionID !== session.acpSessionID) return
+        if (update.status === "started") {
+          this.compactionStarted(session)
+          return
+        }
+        if (!session.compaction) return
+        if (update.status === "failed") session.compaction.reject(new Error(update.error ?? "Agent compaction failed."))
+        else {
+          this.context.clear(session.sessionID)
+          this.based.delete(session.sessionID)
+          session.compaction.resolve()
+        }
+      },
       sessionUpdate: async (notification: SessionNotification) => {
         const session = current()
-        if (!session || notification.sessionId !== session.acpSessionID) return
+        if (!session || session.exited || notification.sessionId !== session.acpSessionID) return
+        if (this.agent.preset === "kiro") {
+          if (AcpKiro.compacted(notification.update)) {
+            session.compacted = true
+            this.context.clear(session.sessionID)
+            this.based.delete(session.sessionID)
+          }
+          notification = { ...notification, update: AcpKiro.normalize(notification.update) }
+        }
         if (notification.update.sessionUpdate === "current_mode_update")
           session.currentMode = notification.update.currentModeId
         if (notification.update.sessionUpdate === "config_option_update" && session.model?.control.kind === "config") {
@@ -273,11 +378,22 @@ export class Runtime {
       },
       requestPermission: async (request) => {
         const session = current()
-        if (!session || request.sessionId !== session.acpSessionID) return { outcome: { outcome: "cancelled" } }
+        if (
+          !session ||
+          session.exited ||
+          !session.controller ||
+          session.controller.signal.aborted ||
+          request.sessionId !== session.acpSessionID
+        )
+          return { outcome: { outcome: "cancelled" } }
+        const controller = session.controller
         // The host's own tools apply the host's permission policy when they execute.
         if (session.slot?.owns(request.toolCall.toolCallId)) return AcpPermissions.respond(request, true)
         const check = AcpPermissions.check(request, { sessionID: session.sessionID, agent: session.agent })
-        const approval = await this.host.approve(check).catch((): DelegatedApproval => ({ ok: false }))
+        const approval = await this.host
+          .approve(check, controller.signal)
+          .catch((): DelegatedApproval => ({ ok: false }))
+        if (controller.signal.aborted || session.controller !== controller) return { outcome: { outcome: "cancelled" } }
         if (!approval.ok && approval.feedback)
           session.corrections.push(AcpPermissions.correction(request.toolCall, approval.feedback))
         return AcpPermissions.respond(request, approval.ok)
@@ -313,26 +429,33 @@ export class Runtime {
     try {
       const initialized = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
-        // The agent keeps its own file and terminal tools (decision D6 is still open).
+        // Host tools travel over MCP; no ACP file or terminal callbacks are exposed.
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       })
+      if (this.agent.preset === "kiro") AcpKiro.validate(initialized)
       const loadable = initialized.agentCapabilities?.loadSession === true
       slot =
         input.tools?.definitions.length && initialized.agentCapabilities?.mcpCapabilities?.http
           ? new AcpHostTools.Slot(input.tools.catalog, input.tools.definitions)
           : undefined
       const mcpServers = slot ? [await this.endpoint.entry(slot)] : []
+      const request = {
+        cwd: this.host.cwd,
+        mcpServers,
+        ...(this.agent.preset === "kiro" ? { _meta: AcpKiro.metadata(!!slot, this.host.cwd) } : {}),
+      }
       if (slot) this.endpoint.attach(slot)
       // The agent replays a loaded conversation as session updates; they arrive before `opened` is
       // set and are dropped, since the host already holds that transcript.
       const loaded =
         input.resume && loadable
           ? await connection
-              .loadSession({ sessionId: input.resume, cwd: this.host.cwd, mcpServers })
+              .loadSession({ sessionId: input.resume, ...request })
               .then((response) => ({ ...response, sessionId: input.resume! }))
               .catch(() => undefined)
           : undefined
-      const created = loaded ?? (await connection.newSession({ cwd: this.host.cwd, mcpServers }))
+      const created = loaded ?? (await connection.newSession(request))
+      if (this.agent.preset === "kiro") AcpKiro.validateSession(created)
       const models = AcpModels.read(created)
       if (models?.models.length) this.host.onModels?.(models.models)
       if (!loaded && models?.current) this.defaultModel ??= models.current
@@ -380,20 +503,59 @@ export class Runtime {
   }
 
   private forget(session: Session) {
+    session.compaction?.reject(new Error("The agent exited during compaction."))
+    session.controller?.abort()
+    session.listener = undefined
     if (session.slot) this.endpoint.detach(session.slot)
     this.live.delete(session)
     if (this.sessions.get(session.sessionID) === session) this.sessions.delete(session.sessionID)
   }
 
   private close(session: Session) {
+    session.exited = true
     this.forget(session)
     session.process.kill()
+  }
+
+  private compactionStarted(session: Session) {
+    if (!session.compaction) {
+      session.compaction = Promise.withResolvers<void>()
+      // The extension may arrive before the prompt response, when nobody is awaiting it yet.
+      void session.compaction.promise.catch(() => {})
+    }
+    return session.compaction
+  }
+
+  private async awaitCompaction(session: Session, signal: AbortSignal) {
+    const pending = session.compaction
+    if (!pending) return
+    const abort = () => {
+      pending.reject(new Error("Compaction was interrupted."))
+      // An acknowledgement does not mean the process is idle; don't reuse it after interruption.
+      this.close(session)
+    }
+    const timeout = setTimeout(() => {
+      pending.reject(new Error("Timed out waiting for the agent to finish compaction."))
+      this.close(session)
+    }, this.options.compactionTimeoutMs ?? 120_000)
+    signal.addEventListener("abort", abort, { once: true })
+    if (signal.aborted) abort()
+    try {
+      await pending.promise
+      return true
+    } finally {
+      clearTimeout(timeout)
+      signal.removeEventListener("abort", abort)
+      if (session.compaction === pending) session.compaction = undefined
+    }
   }
 
   /** The host session is gone: its agent process goes too (its cursor is the plugin's to remove). */
   drop(sessionID: string) {
     const session = this.sessions.get(sessionID)
     if (session) this.close(session)
+    this.context.clear(sessionID)
+    this.based.delete(sessionID)
   }
 
   /**
@@ -487,14 +649,23 @@ export class Runtime {
     const existing = this.sessions.get(turn.sessionID)
     // The agent lists host tools once per session, so a changed catalog also needs a relaunch.
     if (existing && sameArgs(existing.launch, launch) && existing.catalog === tools.catalog)
-      return { session: existing, remembers: true }
+      return { session: existing, remembers: true, fresh: false }
     if (existing) this.close(existing)
-    const resume = existing?.acpSessionID ?? (await this.host.cursor?.get(turn.sessionID).catch(() => undefined))
+    const stored = await this.host.cursor?.get(turn.sessionID).catch(() => undefined)
+    const resume =
+      existing?.acpSessionID ??
+      (this.agent.preset === "kiro"
+        ? stored?.startsWith(AcpKiro.CURSOR)
+          ? stored.slice(AcpKiro.CURSOR.length)
+          : undefined
+        : stored)
     const opened = await this.open(turn.sessionID, { launch, tools, ...(resume ? { resume } : {}) })
     this.sessions.set(turn.sessionID, opened.session)
     if (opened.session.acpSessionID !== resume)
-      await this.host.cursor?.set(turn.sessionID, opened.session.acpSessionID).catch(() => {})
-    return { session: opened.session, remembers: opened.resumed || !history }
+      await this.host.cursor
+        ?.set(turn.sessionID, (this.agent.preset === "kiro" ? AcpKiro.CURSOR : "") + opened.session.acpSessionID)
+        .catch(() => {})
+    return { session: opened.session, remembers: opened.resumed || !history, fresh: !opened.resumed }
   }
 
   async turn(turn: DelegatedTurn, options: LanguageModelV3CallOptions): Promise<DelegatedStreamResult> {
@@ -526,9 +697,13 @@ export class Runtime {
       selected === "native_auto" && !AcpOptions.hasNativeApproval(this.agent) ? "normal" : selected
     // Bound at the turn boundary: calls during the turn carry its attribution.
     const binding = oneShot ? undefined : await this.host.tools?.(turn)
-    const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools) : []
-    const { session, remembers } = oneShot
-      ? { session: (await this.open(turn.sessionID)).session, remembers: false }
+    const available =
+      options.toolChoice?.type === "none"
+        ? []
+        : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : []))
+    const definitions = binding ? AcpHostTools.select(binding, this.agent.hostTools, available) : []
+    const { session, remembers, fresh } = oneShot
+      ? { session: (await this.open(turn.sessionID)).session, remembers: false, fresh: true }
       : await this.acquire(
           turn,
           selection,
@@ -536,8 +711,9 @@ export class Runtime {
           options.prompt.some((message) => message.role === "assistant"),
         )
     const delta = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
-    const compacting = !oneShot && !!this.agent.compactCommand && delta.trim() === this.agent.compactCommand
-    const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, !remembers)
+    const compacting =
+      !oneShot && !!this.agent.compactCommand && promptDelta(options.prompt).trim() === this.agent.compactCommand
+    const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, fresh)
     const corrections = oneShot || compacting ? [] : session.corrections.splice(0)
     const prompt = AcpContext.wrap(delivery?.text, AcpContext.corrected(corrections, delta))
     session.agent = turn.agent
@@ -548,17 +724,21 @@ export class Runtime {
     })
 
     const state = AcpTranslate.make(session.slot)
+    session.compacted = false
     // The agent's plan becomes the host's todo list through the host's own todowrite, so it is
     // stored and rendered as if the agent had called it. Only when the turn may use todowrite.
     const todowrite =
-      binding?.definitions.some((item) => item.name === AcpPlan.TOOL) && turn.assistantMessageID ? binding : undefined
+      definitions.some((item) => item.name === AcpPlan.TOOL) && turn.assistantMessageID ? binding : undefined
     const recording: Promise<void>[] = []
     let plans = 0
     let settled = false
     let grace: ReturnType<typeof setTimeout> | undefined
+    const controller = new AbortController()
+    session.controller = controller
     // Cancel is a notification the agent may ignore; a turn that does not end in time is ended
     // by killing the process, which rejects the pending prompt.
     const cancel = () => {
+      controller.abort()
       void session.connection.cancel({ sessionId: session.acpSessionID }).catch(() => {})
       grace ??= setTimeout(() => {
         if (!settled) this.close(session)
@@ -566,13 +746,13 @@ export class Runtime {
     }
     return {
       stream: new ReadableStream<LanguageModelV3StreamPart>({
-        start: async (controller) => {
+        start: async (stream) => {
           let closed = false
           const emit = (parts: readonly LanguageModelV3StreamPart[]) => {
             for (const part of parts) {
               if (closed) return
               try {
-                controller.enqueue(part)
+                stream.enqueue(part)
               } catch {
                 closed = true
               }
@@ -607,7 +787,7 @@ export class Runtime {
                   name: AcpPlan.TOOL,
                   args: input,
                   callID: toolCallId,
-                  signal: options.abortSignal ?? new AbortController().signal,
+                  signal: controller.signal,
                 })
                 .then(
                   (result) => {
@@ -620,10 +800,15 @@ export class Runtime {
           }
           // Host tool calls the agent never reports still ran: they render from the host's side.
           if (binding && turn.assistantMessageID)
-            session.slot?.bind(binding, turn.assistantMessageID, {
-              called: (id, name, args) => emit(AcpTranslate.hostCall(state, id, name, args)),
-              settled: (id, error) => emit(AcpTranslate.hostResult(state, id, error)),
-            })
+            session.slot?.bind(
+              binding,
+              turn.assistantMessageID,
+              {
+                called: (id, name, args) => emit(AcpTranslate.hostCall(state, id, name, args)),
+                settled: (id, error) => emit(AcpTranslate.hostResult(state, id, error)),
+              },
+              controller.signal,
+            )
           session.listener = (update) => {
             const todos = todowrite ? AcpPlan.apply(session.plans, update) : undefined
             if (todos) record(todos)
@@ -632,14 +817,69 @@ export class Runtime {
           options.abortSignal?.addEventListener("abort", cancel, { once: true })
           if (options.abortSignal?.aborted) cancel()
           try {
+            if (compacting && this.agent.preset === "kiro") {
+              session.compacted = false
+              const interrupted = () => this.close(session)
+              controller.signal.addEventListener("abort", interrupted, { once: true })
+              let timedOut = false
+              const timer = setTimeout(() => {
+                timedOut = true
+                this.close(session)
+              }, this.options.compactionTimeoutMs ?? 120_000)
+              try {
+                controller.signal.throwIfAborted()
+                const result = await session.connection.extMethod(AcpKiro.COMPACT, { sessionId: session.acpSessionID })
+                if (result.success !== true) throw new Error("Kiro could not compact its native session history.")
+                if (!controller.signal.aborted)
+                  emit(
+                    AcpTranslate.update(state, {
+                      sessionUpdate: "agent_message_chunk",
+                      content: {
+                        type: "text",
+                        text: session.compacted
+                          ? `${this.agent.name} compacted its native session history.\n`
+                          : `${this.agent.name} did not change its native session history.\n`,
+                      },
+                    }),
+                  )
+                emit(AcpTranslate.finish(state, controller.signal.aborted ? "cancelled" : "end_turn"))
+              } catch (error) {
+                if (timedOut) throw new Error("Timed out waiting for Kiro to compact its native session history.")
+                throw error
+              } finally {
+                clearTimeout(timer)
+                controller.signal.removeEventListener("abort", interrupted)
+              }
+              return
+            }
+            if (compacting && this.options.compactionStatus) this.compactionStarted(session)
             const response = await session.connection.prompt({
               sessionId: session.acpSessionID,
               prompt: [{ type: "text", text: prompt }],
             })
+            const compacted =
+              response.stopReason !== "cancelled"
+                ? this.agent.preset === "kiro"
+                  ? session.compacted
+                  : await this.awaitCompaction(session, controller.signal)
+                : undefined
+            if (response.stopReason === "cancelled" && session.compaction) this.close(session)
             settled = true
             await Promise.all(recording)
-            if (compacting) this.context.clear(turn.sessionID)
-            else if (response.stopReason !== "cancelled") delivery?.delivered()
+            if (!controller.signal.aborted && !session.exited && (compacting || compacted)) {
+              this.context.clear(turn.sessionID)
+              this.based.delete(turn.sessionID)
+              // Kiro's acknowledgement only says "Compacting...". Report completion once
+              // its extension confirms it, not when the prompt request merely returns.
+              if (compacting && compacted)
+                emit(
+                  AcpTranslate.update(state, {
+                    sessionUpdate: "agent_message_chunk",
+                    content: { type: "text", text: `\n${this.agent.name} compacted its native session history.\n` },
+                  }),
+                )
+            } else if (!controller.signal.aborted && !session.exited && response.stopReason !== "cancelled")
+              delivery?.delivered()
             emit(AcpTranslate.finish(state, response.stopReason))
           } catch (error) {
             settled = true
@@ -654,12 +894,14 @@ export class Runtime {
             if (grace !== undefined) clearTimeout(grace)
             session.listener = undefined
             session.slot?.unbind()
+            controller.abort()
+            if (session.controller === controller) session.controller = undefined
             options.abortSignal?.removeEventListener("abort", cancel)
             if (oneShot) this.close(session)
             release()
             if (!closed)
               try {
-                controller.close()
+                stream.close()
               } catch {}
           }
         },

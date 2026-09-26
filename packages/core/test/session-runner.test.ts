@@ -2914,20 +2914,21 @@ describe("SessionRunnerLLM", () => {
 
     s.requests.length = 0
     yield* s.llm.push(TestLLM.text("Compacted", "text-delegated-manual-compact"))
+    yield* s.llm.push(TestLLM.text("Continued", "text-delegated-after-compact"))
+    yield* s.session.prompt({ sessionID, text: "Steering waiting for compaction", resume: false })
     const compaction = yield* s.session.compact({ sessionID })
     yield* s.resume
 
-    // One request, and it is the runtime's own /compact command rather than a
-    // summary prompt: a one-shot summary process does not own the interactive
-    // session's history, so it could not compact anything.
-    expect(s.requests).toHaveLength(1)
-    expect(userTexts(s.requests[0])).toContain("/compact")
-    expect((yield* s.messages).find((message) => message.id === compaction.id)).toMatchObject({
-      type: "compaction",
-      status: "failed",
-      reason: "manual",
-      error: { type: "compaction.delegated", message: "The agent compacts itself." },
-    })
+    // The runtime's own command goes alone, before waiting steering input. A one-shot
+    // summary process does not own the interactive session's history.
+    expect(s.requests).toHaveLength(2)
+    expect(userTexts(s.requests[0]).at(-1)).toBe("/compact")
+    expect(userTexts(s.requests[0])).not.toContain("Steering waiting for compaction")
+    expect(userTexts(s.requests[1]).at(-1)).toBe("Steering waiting for compaction")
+    expect((yield* s.messages).find((message) => message.id === compaction.id)).toBeUndefined()
+    // Delegation is a command turn, not a failed host compaction or a replacement summary.
+    expect((yield* s.messages).some((message) => message.type === "compaction")).toBe(false)
+    expect(yield* s.context).toContainEqual(expect.objectContaining({ type: "user", text: "Earlier question" }))
   })
 
   scenario("fails a manual compaction when the delegated runtime has no command", function* (s) {
@@ -4714,6 +4715,47 @@ describe("SessionRunnerLLM", () => {
       Expected.user("Call corrected"),
       Expected.assistant({}, [
         Expected.failedTool({ id: "call-corrected" }, { error: { message: "Use another tool" } }),
+      ]),
+      { type: "assistant", finish: "stop" },
+    ])
+  })
+
+  // REDSUN: real leaves yield `Permission.assert` without mapping its errors.
+  scenario("returns a correction from a leaf that does not map it", function* (s) {
+    const registry = yield* Tool.Service
+    yield* transformTools(
+      registry,
+      {
+        unmapped: {
+          name: "unmapped",
+          description: "Fail with an unmapped user correction",
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          // Typed as a leaf plugin's error channel reaches the runtime.
+          execute: () => Effect.fail(new Permission.CorrectedError({ feedback: "Use another tool" })) as never,
+        },
+      },
+      { codemode: false },
+    )
+    yield* s.admit("Call unmapped")
+
+    yield* s.llm.push(TestLLM.tool("call-unmapped", "unmapped", {}), TestLLM.stop())
+
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(2)
+    expect(yield* s.context).toMatchObject([
+      Expected.user("Call unmapped"),
+      Expected.assistant({}, [
+        Expected.failedTool(
+          { id: "call-unmapped" },
+          {
+            error: {
+              message:
+                "The user rejected permission to use this specific tool call with the following feedback: Use another tool",
+            },
+          },
+        ),
       ]),
       { type: "assistant", finish: "stop" },
     ])

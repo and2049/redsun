@@ -67,7 +67,13 @@ export class DeclinedError extends Schema.TaggedError<DeclinedError>()("Permissi
 
 export class CorrectedError extends Schema.TaggedError<CorrectedError>()("Permission.CorrectedError", {
   feedback: Schema.String,
-}) {}
+}) {
+  // REDSUN: leaves let the correction reach the tool runtime, which keeps only the message; without
+  // one the model read an empty failure instead of the user's feedback (the v1 wording).
+  override get message() {
+    return `The user rejected permission to use this specific tool call with the following feedback: ${this.feedback}`
+  }
+}
 
 export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {
   rules: Permission.Ruleset,
@@ -289,6 +295,18 @@ const layer = Layer.effect(
               // WITH feedback (CorrectedError) intentionally stays typed so the leaf can turn
               // it into ToolFailure and the model continues.
               Effect.catchTag("Permission.DeclinedError", (error) => Effect.die(error)),
+              Effect.onInterrupt(() =>
+                Effect.gen(function* () {
+                  if (!pending.delete(item.request.id)) return
+                  // Withdraw the client dialog too: deleting only server state strands the dock
+                  // after a cancelled host tool, even though the next turn could otherwise run.
+                  yield* bus.publish(Permission.Event.Replied, {
+                    sessionID: item.request.sessionID,
+                    requestID: item.request.id,
+                    reply: "reject",
+                  })
+                }),
+              ),
               Effect.ensuring(
                 Effect.sync(() => {
                   pending.delete(item.request.id)

@@ -7,6 +7,7 @@ import { FileSystem } from "@opencode/core/filesystem"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
 import { Form } from "@opencode/core/form"
+import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { LayerNodePlatform } from "@opencode/util/effect/app-node-platform"
@@ -14,6 +15,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Npm } from "@opencode/util/npm"
 import { AppProcess } from "@opencode/util/process"
+import { Global } from "@opencode/util/global"
 import { tempLocationLayer } from "./fixture/location"
 import { emptyMcpLayer } from "./fixture/mcp"
 import { testEffect } from "./lib/effect"
@@ -49,8 +51,21 @@ describe("delegate host in the production plugin graph", () => {
         expect(Option.isSome(yield* Effect.serviceOption(service as never))).toBe(true)
       const host = yield* PluginHost.make({ list: () => Effect.succeed([]) } as never)
       expect(yield* host.delegate.config("instruction_max_chars")).toBeUndefined()
+      const location = yield* Location.Service
+      const global = yield* Global.Service
+      expect(yield* host.delegate.context.environment()).toEqual({
+        directory: location.directory,
+        workspaceRoot: location.project.directory,
+        temporaryDirectory: global.tmp,
+      })
       const files = yield* host.delegate.context.instructions()
       expect(files === undefined || Array.isArray(files)).toBe(true)
+      // The graph provides the environment builtins the base prompt's dynamic part needs.
+      const missing = yield* host.delegate.context
+        .system({ sessionID: "ses_graph", agent: "no-such-agent", tools: ["read"] })
+        .pipe(Effect.flip)
+      expect(missing.message).toContain("no-such-agent")
+      expect(Option.isSome(yield* Effect.serviceOption(InstructionBuiltIns.Service as never))).toBe(true)
     }),
   )
 })

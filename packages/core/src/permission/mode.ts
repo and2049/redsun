@@ -2,8 +2,9 @@ export * as PermissionMode from "./mode.js"
 
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { Permission } from "@opencode/schema/permission"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { KV } from "../kv.js"
+import { Bus } from "../bus.js"
 
 export const Mode = Permission.Mode
 export type Mode = typeof Mode.Type
@@ -36,15 +37,22 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const kv = yield* KV.Service
+    const bus = yield* Bus.Service
+    const lock = yield* Semaphore.make(1)
     let current = stored(yield* kv.get(KEY))
     const listeners = new Set<Listener>()
 
-    const set = Effect.fn("PermissionMode.set")(function* (mode: Mode) {
-      if (current === mode) return
-      current = mode
-      yield* kv.set(KEY, mode)
-      yield* Effect.forEach(Array.from(listeners), (listener) => listener(mode), { discard: true })
-    })
+    const set = Effect.fn("PermissionMode.set")(
+      function* (mode: Mode) {
+        if (current === mode) return
+        yield* kv.set(KEY, mode)
+        current = mode
+        yield* bus.publish(Permission.Event.ModeChanged, { mode }, { global: true })
+        yield* Effect.forEach(Array.from(listeners), (listener) => listener(mode), { discard: true })
+      },
+      lock.withPermits(1),
+      Effect.uninterruptible,
+    )
 
     const listen = (listener: Listener) =>
       Effect.sync(() => {
@@ -58,4 +66,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [KV.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [KV.node, Bus.node] })

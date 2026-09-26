@@ -129,6 +129,19 @@ export interface DelegatedSkillSummary {
 }
 
 /**
+ * The host's base prompt for a delegated session, split for a runtime that records its system
+ * prompt once per native session. `static` is the same on every request of the session (the
+ * agent's own prompt or the host's base prompt with guidance for the served tools); `dynamic`
+ * changes between sessions (environment, date) and is the runtime's to place where it can
+ * change. Instruction files, memory, skills and Code Mode are not here: `context.instructions`,
+ * `context.skills` and `tools.bind().codeMode` deliver those, and their changes.
+ */
+export interface DelegatedSystemPrompt {
+  readonly static: readonly string[]
+  readonly dynamic: readonly string[]
+}
+
+/**
  * A row the host writes into a mirrored child transcript. A runtime whose native agent spawns its
  * own subagents records their progress in child sessions through these.
  */
@@ -197,6 +210,15 @@ export interface DelegateDomain {
     }) => Effect.Effect<DelegatedToolBinding, Error>
   }
   readonly context: {
+    /** Structured host paths for runtimes that supply their own base prompt and environment. */
+    readonly environment: () => Effect.Effect<
+      {
+        readonly directory: string
+        readonly workspaceRoot: string
+        readonly temporaryDirectory: string
+      },
+      Error
+    >
     /**
      * The location's discovered instruction files (AGENTS.md chain, project memory), each bounded
      * to `instruction_max_chars`; project memory carries its maintenance policy. Undefined while
@@ -211,6 +233,18 @@ export interface DelegateDomain {
       readonly sessionID: string
       readonly agent: string
     }) => Effect.Effect<readonly DelegatedSkillSummary[]>
+    /**
+     * The base prompt a native redsun agent would get for this session, built from the same
+     * pure pieces (never a second run of the request hooks): the agent's custom prompt when it
+     * has one, else the host's base prompt with guidance for `tools` (the host tool ids the
+     * runtime serves) and the provider note native Anthropic requests carry. Fails when the
+     * agent no longer exists.
+     */
+    readonly system: (input: {
+      readonly sessionID: string
+      readonly agent: string
+      readonly tools: readonly string[]
+    }) => Effect.Effect<DelegatedSystemPrompt, Error>
   }
   readonly transcript: {
     /** A fresh message id for a mirrored step. */

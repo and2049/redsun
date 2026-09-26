@@ -16,6 +16,8 @@ import path from "node:path"
  * A `preset` supplies the settings a known agent needs; the entry's own keys override it.
  */
 export interface Agent {
+  /** Preset provenance, used to install that agent's protocol extensions. */
+  readonly preset?: string
   /** Provider id; also the runtime id and the storage prefix. */
   readonly id: string
   /** Provider display name in pickers. */
@@ -68,6 +70,13 @@ export interface Agent {
    */
   readonly hostTools: "extras" | "all"
   /**
+   * Where the host's base prompt (the system prompt a native redsun agent gets, with guidance for
+   * the served host tools) goes. `none` sends none: the agent keeps its own. `prefix` sends it
+   * ahead of the first prompt of each agent session, in the host context block, for an agent
+   * without a system-prompt channel.
+   */
+  readonly prompt: "none" | "prefix"
+  /**
    * A home directory the host manages for the agent: `env` names the variable that points the
    * agent at it and `files` are written into it (JSON values as JSON) before the agent starts.
    */
@@ -108,14 +117,9 @@ export const defaultHome = (id: string) =>
  * approval mode, so the preset offers no `native_auto`. It always launches standard: its asks for
  * host tools are answered locally and the host tool applies the host's policy when it runs, so
  * Auto-approve never restarts it and host `deny` rules always hold (no `--trust-all-tools`).
+ * The host owns base instructions and discovered resources. V3 receives a wire profile and an
+ * empty workspace; tracked host prefixes supply the actual project context (see kiro.ts).
  */
-const KIRO_AGENT = {
-  name: "redsun",
-  description: "Kiro driven by redsun: every tool is redsun's.",
-  tools: ["@redsun"],
-  allowedTools: ["@redsun"],
-}
-
 export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
   kiro: {
     name: "Kiro-cli",
@@ -126,10 +130,14 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
       whoami: ["whoami", "--format", "json"],
       signIn: "Run `kiro-cli login` in a terminal, then connect again.",
     },
-    args: ["acp", "--agent", KIRO_AGENT.name],
+    args: ["acp", "--agent-engine", "v3", "--auth-method", "cli"],
     hostTools: "all",
+    prompt: "prefix",
     compactCommand: "/compact",
-    home: { env: "KIRO_HOME", files: { [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT } },
+    home: {
+      env: "HOME",
+      files: {},
+    },
   },
 }
 
@@ -261,6 +269,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
         return modelID ? [{ id: modelID, name: string(item?.name) ?? modelID }] : []
       })
     agents.push({
+      ...(presetName ? { preset: presetName } : {}),
       id,
       name,
       command,
@@ -277,8 +286,9 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),
       ...(string(entry.compactCommand) ? { compactCommand: string(entry.compactCommand) } : {}),
       hostTools: entry.hostTools === "all" ? "all" : "extras",
+      prompt: entry.prompt === "prefix" ? "prefix" : "none",
       integration: integration(name, record(entry.integration)),
-      ...home(id, record(entry.home), errors),
+      ...home(presetName === "kiro" ? `${id}-v3` : id, record(entry.home), errors),
     })
   }
   return { agents, errors }

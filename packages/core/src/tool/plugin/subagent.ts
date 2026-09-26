@@ -13,6 +13,8 @@ import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentCompletion } from "../../session/subagent-completion.js"
 import { RedsunWorkerModel } from "../../plugin/redsun/worker-model.js"
+import { RedsunWorkerModelTool } from "../../plugin/redsun/worker-model-tool.js"
+import { Form } from "../../form.js"
 import { KV } from "../../kv.js"
 import { SessionStore } from "../../session/store.js"
 import { SubagentJob } from "../../session/subagent-job.js"
@@ -73,6 +75,7 @@ export const Plugin = {
     const config = yield* Config.Service
     const permission = yield* Permission.Service
     const models = yield* Model.Service
+    const forms = yield* Form.Service
     const redsunWorkerModel: RedsunWorkerModel.Services = {
       kv: yield* KV.Service,
       models,
@@ -189,8 +192,9 @@ export const Plugin = {
                 )
               }
 
-              const model =
+              let model =
                 override ??
+                existing?.model ??
                 (yield* RedsunWorkerModel.resolve({
                   services: redsunWorkerModel,
                   agentID: agent.id,
@@ -198,6 +202,10 @@ export const Plugin = {
                   parentModel: parent.model,
                   sessionID: context.sessionID,
                 }))
+              if (model === undefined && agent.id === "worker") {
+                const chosen = yield* RedsunWorkerModelTool.choose({ ...redsunWorkerModel, forms }, context.sessionID)
+                if (chosen !== undefined) model = yield* resolveModel(chosen)
+              }
               if (model === undefined)
                 return yield* new ToolFailure({ message: RedsunWorkerModel.unconfigured(agent.id) })
               const child =

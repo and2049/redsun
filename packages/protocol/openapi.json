@@ -14948,7 +14948,7 @@
               },
               "behavior": {
                 "type": "string",
-                "enum": ["native", "redsun"]
+                "enum": ["redsun", "extended", "native"]
               },
               "binary_path": {
                 "type": "string"
@@ -15365,6 +15365,10 @@
           "host_tools": {
             "type": "string",
             "enum": ["extras", "all"]
+          },
+          "prompt": {
+            "type": "string",
+            "enum": ["none", "prefix"]
           },
           "inherited_instructions": {
             "type": "array",

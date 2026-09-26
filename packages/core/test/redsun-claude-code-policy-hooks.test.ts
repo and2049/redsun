@@ -19,16 +19,21 @@ const setup = (options?: {
   denied?: string[]
   pending?: boolean
   exit?: boolean
+  exitFeedback?: string
   form?: Form.TerminalState
+  served?: ReadonlySet<string>
 }) => {
   const checked: string[] = []
   const prompted: string[] = []
+  const planExits: [string, { approved: boolean; feedback?: string }][] = []
   let exits = 0
   let committed = 0
   let forms = 0
   const hooks = ClaudeCodePolicyHooks.make({
     worktree: "/repo",
     agent: () => options?.agent,
+    isDirectHostTool: (name) => options?.served?.has(name) === true,
+    onPlanExit: (id, outcome) => planExits.push([id, outcome]),
     policy: async (action, resource) => {
       checked.push(`${action}:${resource}`)
       return { effect: options?.denied?.includes(action) ? "deny" : "ask" }
@@ -44,7 +49,10 @@ const setup = (options?: {
     },
     exitPlan: async () => {
       exits++
-      return options?.exit !== false
+      if (options?.exit !== false) return { ok: true as const }
+      return options.exitFeedback === undefined
+        ? { ok: false as const }
+        : { ok: false as const, feedback: options.exitFeedback }
     },
     commitPlanExit: async () => {
       committed++
@@ -64,6 +72,7 @@ const setup = (options?: {
     callback,
     checked,
     prompted,
+    planExits,
     exits: () => exits,
     committed: () => committed,
     forms: () => forms,
@@ -208,7 +217,7 @@ describe("Claude Code mandatory PreToolUse policy", () => {
       policy: () => new Promise<never>(() => {}),
       assert: async () => ({ ok: true }),
       form: async () => undefined,
-      exitPlan: async () => true,
+      exitPlan: async () => ({ ok: true }),
     })
     const controller = new AbortController()
     const result = h.preToolUse(event("Bash", { command: "ls" }), "call-1", { signal: controller.signal })
@@ -226,7 +235,7 @@ describe("Claude Code mandatory PreToolUse policy", () => {
         throw new Error("must not prompt")
       },
       form: async () => undefined,
-      exitPlan: async () => true,
+      exitPlan: async () => ({ ok: true }),
     })
     expect(
       await h.preToolUse(event("Bash", { command: "ls" }), "call-1", { signal: new AbortController().signal }),
@@ -234,6 +243,55 @@ describe("Claude Code mandatory PreToolUse policy", () => {
       hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "Blocked by host plugin" },
     })
     h.clear()
+  })
+
+  it("leaves served host tools to their leaf without inspecting or prompting", async () => {
+    const served = new Set(["mcp__redsun__read", "mcp__redsun__shell"])
+    const h = setup({ agent: "build", denied: ["read", "shell", "external_directory", "claude_code"], served })
+    expect(await h.pre("mcp__redsun__read", { path: "/other/secret" })).toEqual({})
+    expect(await h.pre("mcp__redsun__shell", { command: "rm -rf /" })).toEqual({})
+    expect(h.checked).toEqual([])
+    const sdk = { toolUseID: "call-9", requestId: "r", signal: new AbortController().signal }
+    expect(
+      await h.canUseTool("mcp__redsun__read", { path: "x" }, { ...sdk, mcpServer: { name: "redsun", source: "sdk" } }),
+    ).toMatchObject({ behavior: "allow" })
+    expect(h.prompted).toEqual([])
+    // Not served this turn: an unknown tool subject to host policy.
+    expect(await h.pre("mcp__redsun__write", { path: "x" })).toMatchObject({
+      hookSpecificOutput: { permissionDecision: "deny" },
+    })
+    expect(h.checked).toEqual(["claude_code:mcp__redsun__write"])
+    // The compose guard on native delegation stays for the profiles that have it.
+    const compose = setup({ agent: "compose", served })
+    expect(await compose.pre("Agent", { subagent_type: "worker" })).toMatchObject({
+      hookSpecificOutput: { permissionDecisionReason: ClaudeCodePermissions.COMPOSE_SUBAGENT_REDIRECT },
+    })
+  })
+
+  it("records approved and declined plan exits for the plan_exit row, feedback included", async () => {
+    const approved = setup({ agent: "plan" })
+    await approved.pre("ExitPlanMode", {}, "toolu_exit_ok")
+    expect(approved.planExits).toEqual([["toolu_exit_ok", { approved: true }]])
+    // canUseTool reuses the PreToolUse decision: one prompt, one record.
+    expect(await approved.callback("ExitPlanMode", {}, "toolu_exit_ok")).toMatchObject({ behavior: "allow" })
+    expect(approved.exits()).toBe(1)
+    expect(approved.planExits).toHaveLength(1)
+
+    const declined = setup({ agent: "plan", exit: false, exitFeedback: "cover the rollback" })
+    expect(await declined.pre("ExitPlanMode", {}, "toolu_exit_no")).toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: `${ClaudeCodePermissions.PLAN_KEEP_REFINING} The user said: cover the rollback`,
+      },
+    })
+    expect(declined.planExits).toEqual([["toolu_exit_no", { approved: false, feedback: "cover the rollback" }]])
+    // A decline never commits the transition.
+    await declined.postToolUse(
+      { ...event("ExitPlanMode", {}, "toolu_exit_no"), hook_event_name: "PostToolUse", tool_response: {} } as never,
+      "toolu_exit_no",
+      { signal: new AbortController().signal },
+    )
+    expect(declined.committed()).toBe(0)
   })
 
   it("isolates exit approvals by instance, ID and corrected input", async () => {

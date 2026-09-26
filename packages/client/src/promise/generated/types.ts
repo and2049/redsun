@@ -1656,6 +1656,15 @@ export type PermissionAsked = {
   }
 }
 
+export type PermissionModeChanged = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "permission.mode.changed"
+  location?: LocationRef
+  data: { mode: PermissionMode }
+}
+
 export type PermissionReplied = {
   id: string
   created: number
@@ -2280,7 +2289,7 @@ export type ConfigEntry =
         }
         claude_code?: {
           enabled?: boolean
-          behavior?: "native" | "redsun"
+          behavior?: "redsun" | "extended" | "native"
           binary_path?: string
           config_dir?: string
           permission_mode?: string
@@ -2299,6 +2308,7 @@ export type ConfigEntry =
               env?: { [x: string]: string }
               models?: Array<string | { id: string; name?: string }>
               host_tools?: "extras" | "all"
+              prompt?: "none" | "prefix"
               inherited_instructions?: Array<string>
               native_approval_mode?: string
               native_approval_args?: Array<string>
@@ -2585,6 +2595,7 @@ export type V2Event =
   | ReferenceUpdated
   | PermissionAsked
   | PermissionReplied
+  | PermissionModeChanged
   | PluginUpdated
   | ProjectUpdated
   | WorktreeUpdated

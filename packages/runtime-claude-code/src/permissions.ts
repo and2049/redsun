@@ -47,11 +47,8 @@ export const mapPermission = (input: {
   if (input.toolName === "AskUserQuestion") return { action: "question", resource: "*" }
   if (input.toolName === EXIT_PLAN_TOOL) return { action: "plan_exit", resource: "*" }
   if (input.toolName === "Skill") return { action: "skill", resource: text(input.input, "skill") ?? "*" }
-  if (input.toolName === ROUTED_SUBAGENT_TOOL)
-    return { action: "subagent", resource: text(input.input, "agent") ?? "*" }
-  if (input.toolName === "mcp__redsun__skill") return { action: "skill", resource: text(input.input, "id") ?? "*" }
-  if (input.toolName === "mcp__redsun__todowrite") return { action: "todowrite", resource: "*" }
-  if (input.toolName === "mcp__redsun__worker_model") return { action: "worker_model", resource: "*" }
+  // Served host tools (`mcp__redsun__*`) never get here: their leaf applies the policy. A name
+  // that only looks like one is an unknown tool.
   return { action: "claude_code", resource: input.toolName }
 }
 
@@ -72,6 +69,7 @@ export const PLAN_DELEGATION_REFUSED = "Plan mode is read-only. Delegate work af
 
 export const PLAN_KEEP_REFINING = "The user wants to keep refining the plan. Stay in plan mode."
 
+/** Native tools only: a host tool's leaf authorizes its own external paths. */
 export const externalDirectory = async (input: {
   readonly toolName: string
   readonly input: Record<string, unknown>

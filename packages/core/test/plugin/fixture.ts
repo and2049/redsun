@@ -12,6 +12,8 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Form } from "@opencode/core/form"
 import { Generate } from "@opencode/core/generate"
 import { Integration } from "@opencode/core/integration"
+import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
+import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
@@ -21,6 +23,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Provider } from "@opencode/core/provider"
 import { Session } from "@opencode/core/session"
+import { SessionStore } from "@opencode/core/session/store"
 import { PersistentPty } from "@opencode/core/persistent-pty"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -69,50 +72,57 @@ const permissionLayer = Layer.succeed(
   }),
 )
 
-export const PluginTestLayer = AppNodeBuilder.build(
-  LayerNode.group([
-    AppProcess.node,
-    FileSystem.node,
-    FSUtil.node,
-    Location.node,
-    Npm.node,
-    Credential.node,
-    Bus.node,
-    DelegatedRuntime.node,
-    Form.node,
-    Generate.node,
-    LayerNodePlatform.httpClient,
-    Plugin.node,
-    Agent.node,
-    AISDK.node,
-    Provider.node,
-    Model.node,
-    Command.node,
-    Integration.node,
-    KV.node,
-    Mcp.node,
-    Session.node,
-    PersistentPty.node,
-    LocationServiceMap.node,
-    Permission.node,
-    PluginHooks.node,
-    Reference.node,
-    Rpc.node,
-    Skill.node,
-    SkillDiscovery.node,
-    Tool.node,
-    Vcs.node,
-    Watcher.node,
-    WebSearch.node,
-    Worktree.node,
-    WorktreeStrategies.node,
-  ]),
-  [
-    Location.node.replace(tempLocationLayer),
-    Npm.node.replace(npmLayer),
-    Config.node.replace(Config.testLayer()),
-    Mcp.node.replace(emptyMcpLayer),
-    Generate.node.replace(generateLayer),
-    Permission.node.replace(permissionLayer),
-  ],
-)
+const nodes = LayerNode.group([
+  AppProcess.node,
+  FileSystem.node,
+  FSUtil.node,
+  Location.node,
+  Npm.node,
+  Credential.node,
+  Bus.node,
+  DelegatedRuntime.node,
+  Form.node,
+  Generate.node,
+  LayerNodePlatform.httpClient,
+  Plugin.node,
+  Agent.node,
+  AISDK.node,
+  Provider.node,
+  Model.node,
+  Command.node,
+  Integration.node,
+  InstructionBuiltIns.node,
+  // REDSUN: the delegate domain's host context reads discovered instructions (`PluginHost.requirements`).
+  InstructionDiscovery.node,
+  KV.node,
+  Mcp.node,
+  Session.node,
+  SessionStore.node,
+  PersistentPty.node,
+  LocationServiceMap.node,
+  Permission.node,
+  PluginHooks.node,
+  Reference.node,
+  Rpc.node,
+  Skill.node,
+  SkillDiscovery.node,
+  Tool.node,
+  Vcs.node,
+  Watcher.node,
+  WebSearch.node,
+  Worktree.node,
+  WorktreeStrategies.node,
+])
+
+const replacements = [
+  Location.node.replace(tempLocationLayer),
+  Npm.node.replace(npmLayer),
+  Config.node.replace(Config.testLayer()),
+  Mcp.node.replace(emptyMcpLayer),
+  Generate.node.replace(generateLayer),
+]
+
+export const PluginTestLayer = AppNodeBuilder.build(nodes, [...replacements, Permission.node.replace(permissionLayer)])
+
+/** The same graph with the real permission service, for tests that exercise host policy. */
+export const PluginPermissionTestLayer = AppNodeBuilder.build(nodes, replacements)

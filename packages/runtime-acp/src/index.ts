@@ -80,7 +80,7 @@ export default define({
     const shared: AcpRuntime.Host = {
       cwd: ctx.location.directory,
       mode: () => Effect.runPromise(ctx.delegate.permission.mode()),
-      approve: (check) => Effect.runPromise(ctx.delegate.permission.assert(check)),
+      approve: (check, signal) => Effect.runPromise(ctx.delegate.permission.assert(check), { signal }),
       tools: (turn) =>
         turn.assistantMessageID
           ? Effect.runPromise(
@@ -91,6 +91,8 @@ export default define({
               }),
             )
           : Promise.resolve(undefined),
+      system: (turn, tools) =>
+        Effect.runPromise(ctx.delegate.context.system({ sessionID: turn.sessionID, agent: turn.agent, tools })),
       context: async (turn, input) => {
         if (turn.parentID) workers.add(turn.sessionID)
         const info = await Effect.runPromise(

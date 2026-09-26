@@ -5,10 +5,13 @@ import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-
 import type {
   DelegatedApproval,
   DelegatedPermissionCheck,
+  DelegatedSystemPrompt,
   DelegatedToolBinding,
   DelegatedTurn,
 } from "@opencode/plugin/effect/delegate"
+import { AcpContext } from "../src/context.js"
 import { AcpHostTools } from "../src/host-tools.js"
+import { AcpKiro } from "../src/kiro.js"
 import type { AcpOptions } from "../src/options.js"
 import { AcpRuntime } from "../src/runtime.js"
 
@@ -21,6 +24,7 @@ const agent = (extra: Partial<AcpOptions.Agent> = {}): AcpOptions.Agent => ({
   models: [{ id: "default", name: "Fake ACP" }],
   inheritedInstructions: [],
   hostTools: "extras",
+  prompt: "none",
   integration: { name: "Fake ACP", url: "" },
   ...extra,
 })
@@ -33,8 +37,9 @@ const host = (
     tools?: () => DelegatedToolBinding | undefined
     cursors?: Map<string, string>
     reported?: string[][]
-    context?: () => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
+    context?: (turn: DelegatedTurn) => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
     skillsAsked?: boolean[]
+    system?: (turn: DelegatedTurn, tools: readonly string[]) => DelegatedSystemPrompt | undefined
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -49,12 +54,15 @@ const host = (
         return input.feedback ? { ok: false, feedback: input.feedback } : { ok: false }
       },
       tools: async () => input.tools?.(),
+      ...(input.system
+        ? { system: async (turn: DelegatedTurn, tools: readonly string[]) => input.system!(turn, tools) }
+        : {}),
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
       ...(input.context
         ? {
-            context: async (_turn: DelegatedTurn, request: { readonly skills: boolean }) => {
+            context: async (turn: DelegatedTurn, request: { readonly skills: boolean }) => {
               input.skillsAsked?.push(request.skills)
-              return input.context!()
+              return input.context!(turn)
             },
           }
         : {}),
@@ -76,7 +84,23 @@ const user = (text: string) => ({ role: "user" as const, content: [{ type: "text
 const assistant = (text: string) => ({ role: "assistant" as const, content: [{ type: "text" as const, text }] })
 
 const call = (prompt: LanguageModelV3CallOptions["prompt"], extra: Partial<LanguageModelV3CallOptions> = {}) =>
-  ({ prompt, ...extra }) as LanguageModelV3CallOptions
+  ({
+    prompt,
+    // The final request catalog, which production core supplies independently of the host binding.
+    tools: [
+      "read",
+      "shell",
+      "bash",
+      "skill",
+      "todowrite",
+      "subagent",
+      "question",
+      "execute",
+      "mcp_docs",
+      "mcp_hidden",
+    ].map((name) => ({ type: "function", name, inputSchema: { type: "object" } })),
+    ...extra,
+  }) as LanguageModelV3CallOptions
 
 const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
   const parts: LanguageModelV3StreamPart[] = []
@@ -105,6 +129,213 @@ const withRuntime = async (
 }
 
 describe("ACP runtime against a scripted agent", () => {
+  test("v3 restores tracked instructions after compaction and delivers changes/removals", async () => {
+    let files = [{ path: "/project/AGENTS.md", content: "HOST_CONTEXT_ONE" }]
+    await withRuntime(
+      {
+        agent: { preset: "kiro", prompt: "prefix", compactCommand: "/compact", env: { FAKE_ACP_V3: "1" } },
+        host: {
+          system: () => ({ static: ["HOST_BASE"], dynamic: [] }),
+          context: () => ({ agent: { id: "build" }, isWorker: false, files }),
+        },
+      },
+      async (runtime) => {
+        const echo = async () => textOf(await collect((await runtime.turn(TURN, call([user("echo")]))).stream))
+        expect(await echo()).toContain("HOST_CONTEXT_ONE")
+        expect(await echo()).not.toContain("HOST_BASE")
+        await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
+        const restored = await echo()
+        expect(restored).toContain("HOST_BASE")
+        expect(restored).toContain("HOST_CONTEXT_ONE")
+        files = [{ path: "/project/AGENTS.md", content: "HOST_CONTEXT_TWO" }]
+        expect(await echo()).toContain("HOST_CONTEXT_TWO")
+        files = []
+        expect(await echo()).toContain("no longer apply")
+      },
+    )
+  })
+
+  test("v3 replaces legacy cursors and sends a confined wire profile on creation and resume", async () => {
+    const cursors = new Map([[TURN.sessionID, "old-v2-session"]])
+    const config = { agent: { preset: "kiro", env: { FAKE_ACP_V3: "1" } }, host: { cursors } }
+    await withRuntime(config, async (runtime) => {
+      const parts = await collect(
+        (await runtime.turn(TURN, call([assistant("prior conversation"), user("session-requests")]))).stream,
+      )
+      const [request] = JSON.parse(textOf(parts))
+      expect(request.method).toBe("new")
+      expect(request._meta.kiro).toMatchObject({ modeId: "redsun", isEmptyWorkspace: true })
+      expect(request._meta.kiro.customAgents[0]).toMatchObject({
+        tools: [],
+        includeMcpJson: false,
+        includePowers: false,
+        permissions: {
+          rules: [
+            { capability: "builtin", match: ["*"], effect: "deny" },
+            { capability: "mcp", match: ["redsun/*"], effect: "deny" },
+          ],
+        },
+      })
+      expect(cursors.get(TURN.sessionID)).toBe("kiro-v3:acp_1")
+    })
+    await withRuntime(config, async (runtime) => {
+      const [request] = JSON.parse(
+        textOf(await collect((await runtime.turn(TURN, call([user("session-requests")]))).stream)),
+      )
+      expect(request.method).toBe("load")
+      expect(request.sessionId).toBe("acp_1")
+      expect(request._meta.kiro.customAgents[0].id).toBe("redsun")
+    })
+  })
+
+  test("v3 rejects incompatible engines and profile fallback before prompting", async () => {
+    for (const env of [{}, { FAKE_ACP_V3: "1", FAKE_ACP_BAD_PROFILE: "1" }] as Record<string, string>[])
+      await withRuntime({ agent: { preset: "kiro", env } }, async (runtime) => {
+        await expect(runtime.turn(TURN, call([user("hello")]))).rejects.toThrow()
+      })
+  })
+
+  test("v3 tools retain canonical host attribution and host result metadata", async () => {
+    const calls: unknown[] = []
+    await withRuntime(
+      {
+        agent: { preset: "kiro", hostTools: "all", env: { FAKE_ACP_V3: "1" } },
+        host: {
+          tools: () => ({
+            direct: new Set(),
+            definitions: [{ type: "tool", name: "shell", description: "shell", inputSchema: { type: "object" } }],
+            execute: async (args) => {
+              calls.push({ name: args.name, args: args.args, callID: args.callID })
+              return { content: [{ type: "text", text: "host result" }], metadata: { exit: 0 } }
+            },
+          }),
+        },
+      },
+      async (runtime, checks) => {
+        const parts = await collect(
+          (
+            await runtime.turn(
+              { ...TURN, assistantMessageID: "msg_v3" },
+              call([user('invoke:{"name":"shell","args":{"command":"pwd"}}')]),
+            )
+          ).stream,
+        )
+        expect(calls).toEqual([{ name: "shell", args: { command: "pwd" }, callID: "call_invoke" }])
+        expect(parts.filter((p) => p.type === "tool-call")).toHaveLength(1)
+        expect(parts.find((p) => p.type === "tool-result")).toMatchObject({
+          toolName: "shell",
+          result: { output: "host result", metadata: { exit: 0 } },
+        })
+        expect(checks).toEqual([])
+      },
+    )
+  })
+
+  for (const mode of ["complete", "noop", "fail", "hang"])
+    test(`v3 compaction ${mode} uses the extension and reports only confirmed completion`, async () => {
+      await withRuntime(
+        {
+          agent: { preset: "kiro", compactCommand: "/compact", env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_COMPACT: mode } },
+          options: { compactionTimeoutMs: 150 },
+        },
+        async (runtime) => {
+          const parts = await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
+          expect(textOf(parts).includes("compacted its native session history")).toBe(mode === "complete")
+          expect(parts.some((p) => p.type === "error")).toBe(mode === "fail" || mode === "hang")
+          if (mode === "noop") expect(textOf(parts)).toContain("did not change")
+          if (mode === "hang") expect(String(parts.find((p) => p.type === "error")?.error)).toContain("Timed out")
+          expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+            "Hello from the fake agent",
+          )
+        },
+      )
+    })
+
+  test("v3 compaction interruption releases the turn and replaces the process", async () => {
+    await withRuntime(
+      { agent: { preset: "kiro", compactCommand: "/compact", env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_COMPACT: "hang" } } },
+      async (runtime) => {
+        const controller = new AbortController()
+        const stream = (await runtime.turn(TURN, call([user("/compact")], { abortSignal: controller.signal }))).stream
+        controller.abort()
+        expect((await collect(stream)).at(-1)).toMatchObject({ type: "finish", finishReason: { raw: "cancelled" } })
+        expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+          "Hello from the fake agent",
+        )
+      },
+    )
+  })
+
+  test("waits for extension compaction completion before releasing the turn", async () => {
+    await withRuntime(
+      {
+        agent: { compactCommand: "/compact", env: { FAKE_ACP_ASYNC_COMPACT: "complete" } },
+        options: { compactionStatus: AcpKiro.compactionStatus },
+      },
+      async (runtime) => {
+        const compact = await runtime.turn(TURN, call([user("/compact")]))
+        const reader = compact.stream.getReader()
+        await reader.read()
+        await expect(runtime.turn(TURN, call([user("hello")]))).rejects.toThrow()
+        const parts: LanguageModelV3StreamPart[] = []
+        for (;;) {
+          const item = await reader.read()
+          if (item.done) break
+          parts.push(item.value)
+        }
+        expect(textOf(parts)).toContain("compacted its native session history")
+        const next = await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
+        expect(textOf(next)).toBe("Hello from the fake agent")
+      },
+    )
+  })
+
+  for (const mode of ["fail", "hang"])
+    test(`surfaces asynchronous compaction ${mode} and recovers on the next turn`, async () => {
+      await withRuntime(
+        {
+          agent: { compactCommand: "/compact", env: { FAKE_ACP_ASYNC_COMPACT: mode } },
+          options: { compactionStatus: AcpKiro.compactionStatus, compactionTimeoutMs: 150 },
+        },
+        async (runtime) => {
+          const parts = await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
+          const error = parts.find((part) => part.type === "error")
+          expect(textOf(parts)).not.toContain("compacted its native session history")
+          expect(String(error?.error)).toContain(mode === "fail" ? "fixture compaction failed" : "Timed out")
+          expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+            "Hello from the fake agent",
+          )
+        },
+      )
+    })
+
+  test("interrupts an acknowledged asynchronous compaction and replaces the process", async () => {
+    await withRuntime(
+      {
+        agent: { compactCommand: "/compact", env: { FAKE_ACP_ASYNC_COMPACT: "hang" } },
+        options: { compactionStatus: AcpKiro.compactionStatus },
+      },
+      async (runtime) => {
+        const controller = new AbortController()
+        const reader = (
+          await runtime.turn(TURN, call([user("/compact")], { abortSignal: controller.signal }))
+        ).stream.getReader()
+        await reader.read()
+        controller.abort()
+        const parts: LanguageModelV3StreamPart[] = []
+        for (;;) {
+          const item = await reader.read()
+          if (item.done) break
+          parts.push(item.value)
+        }
+        expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "other", raw: "cancelled" } })
+        expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+          "Hello from the fake agent",
+        )
+      },
+    )
+  })
+
   test("streams text as one block and finishes with the agent's usage", () =>
     withRuntime({}, async (runtime) => {
       const parts = await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
@@ -472,6 +703,64 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  for (const mode of ["all", "extras"] as const)
+    test(`intersects the final request catalog and tool choice under ${mode}`, async () => {
+      const bound = binding(["todowrite", "skill"])
+      await withRuntime({ agent: { hostTools: mode }, host: { tools: () => bound.tools } }, async (runtime) => {
+        const filtered = { tools: [{ type: "function" as const, name: "skill", inputSchema: { type: "object" } }] }
+        const ask = async (extra: Partial<LanguageModelV3CallOptions>, text = "tools?") =>
+          collect((await runtime.turn(HOSTED, call([user(text)], extra))).stream)
+        expect(textOf(await ask(filtered))).toBe("TOOLS=skill")
+        // A removed tool is refused even when the agent calls the MCP endpoint directly.
+        expect(textOf(await ask(filtered, "hostquiet"))).toBe("QUIET FAILED")
+        await ask(filtered, "plan!")
+        expect(bound.calls).toEqual([])
+        expect(textOf(await ask({ toolChoice: { type: "none" } }))).toBe("TOOLS=none")
+        await ask({ toolChoice: { type: "none" } }, "plan!")
+        expect(bound.calls).toEqual([])
+        expect(textOf(await ask({ tools: [] }))).toBe("TOOLS=none")
+        expect(textOf(await ask({ tools: undefined }))).toBe("TOOLS=none")
+      })
+    })
+
+  test("cancels an in-flight host call with the turn, and can execute another turn", async () => {
+    const started = Promise.withResolvers<void>()
+    const stopped = Promise.withResolvers<void>()
+    const bound = binding(["todowrite"])
+    let count = 0
+    const tools: DelegatedToolBinding = {
+      ...bound.tools,
+      execute: async ({ signal }) => {
+        if (++count !== 1) return { content: [{ type: "text", text: "recovered" }] }
+        started.resolve()
+        return new Promise((_, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              stopped.resolve()
+              reject(new Error("interrupted"))
+            },
+            { once: true },
+          )
+        })
+      },
+    }
+    await withRuntime({ host: { tools: () => tools } }, async (runtime) => {
+      const controller = new AbortController()
+      const pending = collect(
+        (await runtime.turn(HOSTED, call([user("hostcall")], { abortSignal: controller.signal }))).stream,
+      )
+      await started.promise
+      controller.abort()
+      await stopped.promise
+      await pending
+      const next = await collect(
+        (await runtime.turn({ ...HOSTED, assistantMessageID: "msg_2" }, call([user("hostcall")]))).stream,
+      )
+      expect(next.find((part) => part.type === "tool-result")).toMatchObject({ result: "recovered" })
+    })
+  })
+
   test("starts the agent in the home the host manages for it", async () => {
     const dir = path.join(import.meta.dir, ".home-" + process.pid)
     try {
@@ -690,6 +979,50 @@ describe("ACP runtime against a scripted agent", () => {
       )
     })
 
+    test("sends the new agent's instructions once on an agent change, in the same agent session", async () => {
+      rules = "Use tabs."
+      const perAgent = (turn: DelegatedTurn) => ({
+        ...context(),
+        agent: { id: turn.agent, system: `Act as ${turn.agent}.` },
+      })
+      await withRuntime({ host: { context: perAgent } }, async (runtime) => {
+        const history = [user("echo one"), assistant("ok")]
+        const first = textOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+        expect(first).toContain("[redsun agent instructions: build]\nAct as build.")
+        const switched = textOf(
+          await collect(
+            (await runtime.turn({ ...HOSTED, agent: "plan" }, call([...history, user("echo two")]))).stream,
+          ),
+        )
+        expect(switched).toStartWith("SESSION=acp_1 TURNS=2")
+        expect(switched).toContain("[redsun agent instructions: plan]\nAct as plan.")
+        expect(switched).not.toContain("Use tabs.")
+        const again = promptOf(
+          await collect(
+            (await runtime.turn({ ...HOSTED, agent: "plan" }, call([...history, user("echo three")]))).stream,
+          ),
+        )
+        expect(again).toBe("echo three")
+      })
+    })
+
+    test("fails the turn before prompting when the host context is unavailable, then delivers it on retry", async () => {
+      rules = "Use tabs."
+      let available = false
+      const flaky = () => {
+        if (!available) throw new Error("instructions could not be read")
+        return context()
+      }
+      await withRuntime({ host: { context: flaky } }, async (runtime) => {
+        await expect(runtime.turn(HOSTED, call([user("echo one")]))).rejects.toThrow("instructions could not be read")
+        available = true
+        const sent = textOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+        // The failed turn never reached the agent.
+        expect(sent).toStartWith("SESSION=acp_1 TURNS=1")
+        expect(sent).toContain("[redsun agent instructions: build]\nBe brief.")
+      })
+    })
+
     test("sends a compaction command alone, then everything again", async () => {
       rules = "Use tabs."
       await withRuntime({ agent: { compactCommand: "/compact echo" }, host: { context } }, async (runtime) => {
@@ -705,6 +1038,152 @@ describe("ACP runtime against a scripted agent", () => {
         )
         expect(after).toContain("Instructions from: /etc/redsun/rules.md")
         expect(after).toContain("Be brief.")
+      })
+    })
+
+    describe("base prompt", () => {
+      const system = (asked: (readonly string[])[]) => (turn: DelegatedTurn, tools: readonly string[]) => {
+        asked.push(tools)
+        return { static: [`BASE for ${turn.agent}`, "TOOL GUIDANCE"], dynamic: ["ENV today"] }
+      }
+
+      test("fails before prompting if the base is unavailable, then retries without losing the agent prompt", async () => {
+        let available = false
+        await withRuntime(
+          {
+            agent: { prompt: "prefix" },
+            host: {
+              context,
+              system: () => (available ? { static: ["Be brief."], dynamic: ["ENV"] } : undefined),
+            },
+          },
+          async (runtime) => {
+            await expect(runtime.turn(HOSTED, call([user("echo")]))).rejects.toThrow("host base prompt is unavailable")
+            available = true
+            const sent = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+            expect(sent).toContain("Be brief.")
+            expect(sent.match(/Be brief\./g)).toHaveLength(1)
+          },
+        )
+      })
+
+      for (const key of ["FAKE_ACP_NO_LOAD", "FAKE_ACP_FAIL_LOAD"])
+        test(`restores the base when a replacement has no history (${key})`, async () => {
+          const env = { [key]: "1" }
+          const asked: (readonly string[])[] = []
+          let names = ["todowrite"]
+          await withRuntime(
+            {
+              agent: { prompt: "prefix", env },
+              host: { context, system: system(asked), tools: () => binding(names).tools },
+            },
+            async (runtime) => {
+              await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream)
+              // A new process without history must receive context even if the host prompt has no assistant row.
+              names = ["skill"]
+              const sent = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+              expect(sent).toContain("BASE for build")
+              expect(sent).toContain("Use tabs.")
+            },
+          )
+        })
+
+      test("retries base delivery after a cancelled prompt", async () => {
+        await withRuntime({ agent: { prompt: "prefix" }, host: { context, system: system([]) } }, async (runtime) => {
+          const controller = new AbortController()
+          const reader = (
+            await runtime.turn(HOSTED, call([user("slow")], { abortSignal: controller.signal }))
+          ).stream.getReader()
+          while ((await reader.read()).value?.type !== "text-delta") {}
+          controller.abort()
+          while (!(await reader.read()).done) {}
+          const sent = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo")]))).stream))
+          expect(sent).toContain("BASE for build")
+        })
+      })
+
+      test("with prefix, goes ahead of the brief in the first prompt of each agent session", async () => {
+        rules = "Use tabs."
+        const asked: (readonly string[])[] = []
+        await withRuntime(
+          {
+            agent: { prompt: "prefix", compactCommand: "/compact echo" },
+            // A worker, so the brief has its standing line to follow the base prompt.
+            host: {
+              context: () => ({ ...context(), isWorker: true }),
+              system: system(asked),
+              tools: () => binding(["skill"]).tools,
+            },
+          },
+          async (runtime) => {
+            const first = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+            expect(first).toStartWith(
+              [
+                "<redsun-context>",
+                "Context from redsun, the application hosting this session. It is not part of the user's message.",
+                "",
+                AcpContext.BASE,
+                "BASE for build\n\nTOOL GUIDANCE\n\nENV today",
+                "",
+                "[redsun agent instructions: build]",
+                "[redsun worker]",
+              ].join("\n"),
+            )
+            // The agent's own prompt is in the base prompt; the brief does not repeat it.
+            expect(first).not.toContain("Be brief.")
+            expect(first).toContain("Instructions from: /etc/redsun/rules.md\nUse tabs.")
+            expect(first).toEndWith("</redsun-context>\n\necho one")
+            expect(asked).toEqual([["skill"]])
+
+            const second = promptOf(
+              await collect(
+                (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo two")]))).stream,
+              ),
+            )
+            expect(second).toBe("echo two")
+
+            // Another agent's base prompt differs, so it is sent again.
+            const other = promptOf(
+              await collect(
+                (
+                  await runtime.turn(
+                    { ...HOSTED, agent: "plan" },
+                    call([user("echo one"), assistant("ok"), user("echo three")]),
+                  )
+                ).stream,
+              ),
+            )
+            expect(other).toContain("BASE for plan")
+
+            await collect(
+              (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("/compact echo")]))).stream,
+            )
+            const after = promptOf(
+              await collect(
+                (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo")]))).stream,
+              ),
+            )
+            expect(after).toContain("BASE for build")
+          },
+        )
+      })
+
+      test("with none, is never sent and the brief keeps the agent's prompt", async () => {
+        rules = "Use tabs."
+        const asked: (readonly string[])[] = []
+        await withRuntime({ host: { context, system: system(asked) } }, async (runtime) => {
+          const first = promptOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+          expect(first).not.toContain("BASE")
+          expect(first).not.toContain(AcpContext.BASE)
+          expect(first).toContain("[redsun agent instructions: build]\nBe brief.")
+          const second = promptOf(
+            await collect(
+              (await runtime.turn(HOSTED, call([user("echo one"), assistant("ok"), user("echo two")]))).stream,
+            ),
+          )
+          expect(second).toBe("echo two")
+        })
+        expect(asked).toEqual([])
       })
     })
 

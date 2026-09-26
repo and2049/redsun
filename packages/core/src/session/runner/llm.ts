@@ -87,11 +87,19 @@ const layer = Layer.effect(
                     sessionID,
                     entering || !continuing ? "input" : "steer",
                   )
-                  if (next?.type === "compaction")
-                    yield* bus.publishAll([
-                      [SessionEvent.InboxDelivered, { sessionID, inboxID: next.id }],
-                      [SessionEvent.Compaction.Started, { sessionID, reason: "manual", recent: "", inputID: next.id }],
-                    ])
+                  if (next?.type === "compaction") {
+                    const session = yield* store.get(sessionID)
+                    const delegated = session?.model ? yield* delegates.get(session.model) : undefined
+                    // A supported runtime command has its own turn and progress. It does not create
+                    // a host summary/checkpoint, so don't open a host compaction row only to fail it.
+                    if (delegated?.compaction?.command)
+                      yield* bus.publish(SessionEvent.InboxDelivered, { sessionID, inboxID: next.id })
+                    else
+                      yield* bus.publishAll([
+                        [SessionEvent.InboxDelivered, { sessionID, inboxID: next.id }],
+                        [SessionEvent.Compaction.Started, { sessionID, reason: "manual", recent: "", inputID: next.id }],
+                      ])
+                  }
                   if (next?.type === "move")
                     yield* restore(
                       Effect.gen(function* () {
@@ -117,22 +125,27 @@ const layer = Layer.effect(
                 // REDSUN: a delegated runtime compacts its own context; forward its command.
                 const delegated = session.model ? yield* delegates.get(session.model) : undefined
                 if (delegated) {
-                  yield* bus.publish(SessionEvent.Compaction.Failed, {
-                    sessionID,
-                    reason: "manual",
-                    inputID: pending.id,
-                    error: {
-                      type: "compaction.delegated",
-                      message: delegated.compaction?.notice ?? DelegatedRuntime.DEFAULT_COMPACTION_NOTICE,
-                    },
-                  })
                   const command = delegated.compaction?.command
+                  if (!command)
+                    yield* bus.publish(SessionEvent.Compaction.Failed, {
+                      sessionID,
+                      reason: "manual",
+                      inputID: pending.id,
+                      error: {
+                        type: "compaction.delegated",
+                        message: delegated.compaction?.notice ?? DelegatedRuntime.DEFAULT_COMPACTION_NOTICE,
+                      },
+                    })
                   if (command)
                     yield* inbox
                       .admit({
                         id: SessionMessage.ID.create(),
                         sessionID,
-                        item: { type: "user", payload: { text: command }, delivery: "steer" },
+                        item: {
+                          type: "user",
+                          payload: { text: command, metadata: { [SessionInbox.RUNTIME_COMMAND]: true } },
+                          delivery: "steer",
+                        },
                       })
                       .pipe(Effect.orDie)
                   force = false

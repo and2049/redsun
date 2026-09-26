@@ -7,8 +7,9 @@ export class Info extends Schema.Class<Info>("ConfigClaudeCode.Info")({
   enabled: Schema.Boolean.pipe(optional).annotate({
     description: "Enable the Claude Code provider when the claude CLI is present. Defaults to true.",
   }),
-  behavior: Schema.Literals(["native", "redsun"]).pipe(optional).annotate({
-    description: 'Delegated Claude Code behavior profile. Defaults to "redsun"; "native" preserves the native prompt.',
+  behavior: Schema.Literals(["redsun", "extended", "native"]).pipe(optional).annotate({
+    description:
+      'Delegated Claude Code behavior profile. "redsun" (default): the Claude Code prompt with redsun host instructions and tools only, no Claude Code built-in tools. "extended": the Claude Code prompt and the built-in tools redsun does not duplicate, beside redsun\'s tools. "native": Claude Code as installed.',
   }),
   binary_path: Schema.String.pipe(optional).annotate({
     description: "Path to the claude executable. Defaults to resolving `claude` on PATH.",

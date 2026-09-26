@@ -198,6 +198,167 @@ describe("ClaudeCodeTranslate", () => {
     expect(call("tu_native", "Skill")[0]).toMatchObject({ toolName: "skill", input: '{"id":"example"}' })
   })
 
+  describe("plan exit rows", () => {
+    const exitPlan = (outcome: Record<string, unknown> | undefined, result: Record<string, unknown>) => {
+      const state = ClaudeCodeTranslate.makeState(undefined, (id) => (id === "tu_plan" ? outcome : undefined))
+      return [
+        {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id: "tu_plan", name: "ExitPlanMode", input: {} }] },
+        },
+        result,
+      ].flatMap((message) => ClaudeCodeTranslate.translate(state, msg(message)))
+    }
+    const planResult = { plan: "# Plan\n1. ship", isAgent: false, filePath: "/plans/p.md" }
+
+    it("merges the approval outcome into the plan read from the native result", () => {
+      const parts = exitPlan(
+        { approved: true },
+        {
+          type: "user",
+          tool_use_result: planResult,
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "tu_plan", content: "User has approved your plan." }],
+          },
+        },
+      )
+      expect(parts[0]).toMatchObject({ type: "tool-call", toolName: "plan_exit" })
+      expect(parts[1]).toEqual({
+        type: "tool-result",
+        toolCallId: "tu_plan",
+        toolName: "plan_exit",
+        result: {
+          output: "User has approved your plan.",
+          metadata: { plan: "# Plan\n1. ship", filePath: "/plans/p.md", approved: true },
+        },
+      })
+    })
+
+    it("keeps a declined exit's feedback on the row instead of failing it", () => {
+      const parts = exitPlan(
+        { approved: false, feedback: "split step 2" },
+        {
+          type: "user",
+          tool_use_result: "Error: split step 2",
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "tu_plan", content: "split step 2", is_error: true }],
+          },
+        },
+      )
+      expect(parts[1]).toEqual({
+        type: "tool-result",
+        toolCallId: "tu_plan",
+        toolName: "plan_exit",
+        result: { output: "split step 2", metadata: { approved: false, feedback: "split step 2" } },
+      })
+    })
+
+    it("keeps both the approval and the failure when an approved exit fails natively", () => {
+      const parts = exitPlan(
+        { approved: true },
+        {
+          type: "user",
+          tool_use_result: planResult,
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "tu_plan", content: "hook blocked", is_error: true }],
+          },
+        },
+      )
+      expect(parts[1]).toMatchObject({
+        type: "tool-result",
+        result: { output: "hook blocked", metadata: { approved: true, error: "hook blocked" } },
+      })
+      expect(parts[1]).not.toHaveProperty("isError")
+    })
+
+    it("keeps metadata on an errored exit and records the error", () => {
+      const parts = exitPlan(undefined, {
+        type: "user",
+        tool_use_result: planResult,
+        message: {
+          content: [{ type: "tool_result", tool_use_id: "tu_plan", content: "hook blocked", is_error: true }],
+        },
+      })
+      expect(parts[1]).toEqual({
+        type: "tool-result",
+        toolCallId: "tu_plan",
+        toolName: "plan_exit",
+        result: {
+          output: "hook blocked",
+          metadata: { plan: "# Plan\n1. ship", filePath: "/plans/p.md", error: "hook blocked" },
+        },
+      })
+    })
+  })
+
+  it("renders a native TodoWrite as a todowrite row with todo metadata", () => {
+    const todos = [
+      { content: "a", status: "completed", activeForm: "Doing a" },
+      { content: "b", status: "in_progress", activeForm: "Doing b" },
+    ]
+    const { parts } = run([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "tu_todo", name: "TodoWrite", input: { todos } }] },
+      },
+      {
+        type: "user",
+        tool_use_result: { oldTodos: [], newTodos: todos },
+        message: { content: [{ type: "tool_result", tool_use_id: "tu_todo", content: "Todos have been modified" }] },
+      },
+    ])
+    expect(parts[0]).toMatchObject({ toolName: "todowrite", input: JSON.stringify({ todos }) })
+    expect(parts[1]).toMatchObject({
+      toolName: "todowrite",
+      result: {
+        output: "Todos have been modified",
+        metadata: {
+          todos: [
+            { content: "a", status: "completed" },
+            { content: "b", status: "in_progress" },
+          ],
+        },
+      },
+    })
+  })
+
+  it("renders a native NotebookEdit as an edit row with a diff", () => {
+    const { parts } = run([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "tu_nb",
+              name: "NotebookEdit",
+              input: { notebook_path: "/n.ipynb", cell_id: "c1", new_source: "print(2)" },
+            },
+          ],
+        },
+      },
+      {
+        type: "user",
+        tool_use_result: {
+          new_source: "print(2)",
+          cell_type: "code",
+          language: "python",
+          edit_mode: "replace",
+          notebook_path: "/n.ipynb",
+          original_file: "print(1)\n",
+          updated_file: "print(2)\n",
+        },
+        message: { content: [{ type: "tool_result", tool_use_id: "tu_nb", content: "Updated cell c1" }] },
+      },
+    ])
+    expect(parts[0]).toMatchObject({ toolName: "edit" })
+    expect(JSON.parse((parts[0] as { input: string }).input)).toMatchObject({ path: "/n.ipynb" })
+    expect(parts[1]).toMatchObject({
+      toolName: "edit",
+      result: { metadata: { files: [{ file: "/n.ipynb", status: "modified", additions: 1, deletions: 1 }] } },
+    })
+  })
+
   it("uses canonical direct MCP names for stream starts, aggregate calls and results only when selected", () => {
     const selected = new Set(["mcp__redsun__my_server_ping"])
     const state = ClaudeCodeTranslate.makeState(undefined, undefined, (name) => selected.has(name))

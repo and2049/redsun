@@ -47,6 +47,15 @@ export {
  */
 export type Promotable = "input" | "steer"
 
+/** REDSUN: a runtime command must reach its parser alone, never joined to steering text. */
+export const RUNTIME_COMMAND = "redsun.runtime-command"
+const runtimeCommand = (row: typeof SessionInboxTable.$inferSelect) => {
+  const entry = fromRow(row)
+  return entry.type === "user" && entry.payload.metadata?.[RUNTIME_COMMAND] === true
+}
+const controlRow = (row: typeof SessionInboxTable.$inferSelect) =>
+  row.type === "compaction" || row.type === "move" || runtimeCommand(row)
+
 const decodeUser = Schema.decodeUnknownSync(UserPayload)
 const encodeUser = Schema.encodeSync(UserPayload)
 const decodeSynthetic = Schema.decodeUnknownSync(SyntheticPayload)
@@ -504,8 +513,9 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
     Effect.gen(function* () {
       const steers = yield* pendingSteers(db, sessionID)
       if (steers.length > 0 || scope === "steer") {
-        const control = steers.findIndex((row) => row.type === "compaction" || row.type === "move")
-        if (control === 0) return undefined
+        const control = steers.findIndex(controlRow)
+        if (control === 0)
+          return runtimeCommand(steers[0]) ? yield* publish(db, bus, sessionID, steers.slice(0, 1)) : undefined
         return yield* publish(db, bus, sessionID, control === -1 ? steers : steers.slice(0, control))
       }
 
@@ -520,8 +530,9 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
       if (!queued) return 0
       if (queued.type === "compaction" || queued.type === "move") return undefined
       const promoted = yield* publish(db, bus, sessionID, [queued])
+      if (runtimeCommand(queued)) return promoted
       const arrivedSteers = yield* pendingSteers(db, sessionID)
-      const control = arrivedSteers.findIndex((row) => row.type === "compaction" || row.type === "move")
+      const control = arrivedSteers.findIndex(controlRow)
       return (
         promoted +
         (yield* publish(db, bus, sessionID, control === -1 ? arrivedSteers : arrivedSteers.slice(0, control)))
@@ -543,8 +554,8 @@ const pendingSteers = (db: DatabaseService, sessionID: SessionSchema.ID) =>
         // A move changes the context's Location: never pull compaction across it.
         // Within that boundary, compact before promoting even earlier steers so
         // their text stays verbatim after the checkpoint, not inside its summary.
-        const control = rows.findIndex((row) => row.type === "compaction" || row.type === "move")
-        if (control > 0 && rows[control].type === "compaction") rows.unshift(...rows.splice(control, 1))
+        const control = rows.findIndex(controlRow)
+        if (control > 0 && rows[control].type !== "move") rows.unshift(...rows.splice(control, 1))
         return rows
       }),
     )

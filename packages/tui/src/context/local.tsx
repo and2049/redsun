@@ -710,18 +710,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       session,
       permission: {
         get mode() {
-          return effectivePermissionMode(permission.mode, permission.nativeFor(model.current()))
+          return effectivePermissionMode(permission.mode, permission.nativeFor(model.current(), location.ref))
         },
         /** Whether the current model's runtime offers native_auto ("Approve for me"). */
         native() {
-          return permission.nativeFor(model.current())
+          return permission.nativeFor(model.current(), location.ref)
         },
         get hydrated() {
           return permission.hydrated
         },
         set: permission.set,
         toggle() {
-          return permission.toggle(model.current())
+          return permission.toggle(model.current(), location.ref)
         },
       },
     }

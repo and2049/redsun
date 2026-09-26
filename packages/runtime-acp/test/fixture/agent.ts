@@ -30,6 +30,9 @@ let sessions = 0
 const modes = new Map<string, string>()
 const cancelled = new Set<string>()
 const received: string[] = []
+let compacting = false
+const v3 = process.env.FAKE_ACP_V3 === "1"
+const requests: unknown[] = []
 const servers = new Map<string, McpServer[]>()
 // FAKE_ACP_MODELS picks how the agent reports its models: the standard config option or the
 // unstable `models` field with `session/set_model`.
@@ -80,9 +83,10 @@ const mcp = async (sessionId: string) => {
 const trusted = process.argv.includes("--trust-all-tools")
 const loadable = process.env.FAKE_ACP_NO_LOAD !== "1"
 const MODES = {
-  currentModeId: "default",
+  currentModeId: v3 && process.env.FAKE_ACP_BAD_PROFILE !== "1" ? "redsun" : "default",
   availableModes: [
     { id: "default", name: "Default" },
+    ...(v3 ? [{ id: "redsun", name: "Redsun" }] : []),
     { id: "trust", name: "Trust all tools" },
   ],
 }
@@ -96,9 +100,14 @@ new AgentSideConnection((connection) => {
   const agent: Agent = {
     initialize: async () => ({
       protocolVersion: PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: loadable, mcpCapabilities: { http: process.env.FAKE_ACP_NO_HTTP !== "1" } },
+      agentCapabilities: {
+        loadSession: loadable,
+        mcpCapabilities: { http: process.env.FAKE_ACP_NO_HTTP !== "1" },
+        ...(v3 ? { _meta: { kiro: { extensionMethods: ["_kiro/session/compact"] } } } : {}),
+      },
     }),
     newSession: async (params) => {
+      requests.push({ method: "new", ...params })
       const sessionId = `acp_${++sessions}`
       modes.set(sessionId, "default")
       servers.set(sessionId, params.mcpServers)
@@ -107,6 +116,8 @@ new AgentSideConnection((connection) => {
     ...(loadable
       ? {
           loadSession: async (params: { sessionId: string; mcpServers: McpServer[] }) => {
+            requests.push({ method: "load", ...params })
+            if (process.env.FAKE_ACP_FAIL_LOAD === "1") throw new Error("Stored session is unavailable")
             modes.set(params.sessionId, "default")
             servers.set(params.sessionId, params.mcpServers)
             // A real agent replays the loaded conversation; the client must not forward it.
@@ -121,6 +132,19 @@ new AgentSideConnection((connection) => {
       return modelFields(params.sessionId) as { configOptions: [] }
     },
     extMethod: async (method, params) => {
+      if (method === "_kiro/session/compact") {
+        if (process.env.FAKE_ACP_V3_COMPACT === "hang") await new Promise(() => {})
+        if (process.env.FAKE_ACP_V3_COMPACT === "fail") return { success: false }
+        if (process.env.FAKE_ACP_V3_COMPACT !== "noop")
+          await connection.sessionUpdate({
+            sessionId: String(params.sessionId),
+            update: {
+              sessionUpdate: "session_info_update",
+              _meta: { kiro: { kind: "summarization_completed", summarization: { status: "success" } } },
+            },
+          })
+        return { success: true }
+      }
       if (method === "session/set_model") models.set(String(params.sessionId), String(params.modelId))
       return {}
     },
@@ -135,6 +159,61 @@ new AgentSideConnection((connection) => {
       const sessionId = params.sessionId
       const text = params.prompt.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
       received.push(text)
+      if (text.includes("session-requests")) {
+        await say(sessionId, JSON.stringify(requests))
+        return { stopReason: "end_turn" }
+      }
+      if (process.env.FAKE_ACP_ASYNC_COMPACT && text === "/compact") {
+        compacting = true
+        void (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          await connection.extNotification("_kiro.dev/compaction/status", { sessionId, status: { type: "started" } })
+          if (process.env.FAKE_ACP_ASYNC_COMPACT === "hang") return
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          compacting = false
+          await connection.extNotification("_kiro.dev/compaction/status", {
+            sessionId,
+            status:
+              process.env.FAKE_ACP_ASYNC_COMPACT === "fail"
+                ? { type: "failed", message: "fixture compaction failed" }
+                : { type: "completed" },
+          })
+        })()
+        return { stopReason: "end_turn" }
+      }
+      if (compacting) throw new Error("A prompt arrived before compaction completed")
+      // The host context may ride ahead of it; the call is the last line.
+      if (text.includes("invoke:")) {
+        const input = JSON.parse(text.slice(text.lastIndexOf("invoke:") + "invoke:".length))
+        const toolCallId = "call_invoke"
+        await connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: v3 ? `@redsun/${input.name}` : input.name,
+            rawInput: v3
+              ? { ...input.args, _meta: { _isValid: true, _activePath: [], _completedPaths: [] } }
+              : input.args,
+            _meta: v3
+              ? { kiro: { serverName: "redsun", toolOrigin: "client" } }
+              : { mcpToolIdentity: { serverName: "redsun", toolName: input.name } },
+          },
+        })
+        const client = await mcp(sessionId)
+        const result = await client?.callTool({ name: input.name, arguments: input.args })
+        await client?.close()
+        await connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: result?.isError ? "failed" : "completed",
+            content: [{ type: "content", content: { type: "text", text: JSON.stringify(result) } }],
+          },
+        })
+        return { stopReason: "end_turn" }
+      }
       if (text.includes("think")) {
         await connection.sessionUpdate({
           sessionId,

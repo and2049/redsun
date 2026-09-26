@@ -7,11 +7,13 @@ import type {
   DelegateDomain,
   DelegatedCodeMode,
   DelegatedInstructionFile,
+  DelegatedSystemPrompt,
   DelegatedToolBinding,
 } from "@opencode/plugin/effect/delegate"
 import path from "node:path"
 import { Cause, Effect, Exit, Option } from "effect"
 import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
 import { Agent } from "./agent.js"
 import { CodeModeCatalog } from "./codemode/catalog.js"
 import { CodeModeInstructions } from "./codemode/instructions.js"
@@ -20,7 +22,9 @@ import { Bus } from "./bus.js"
 import { DelegatedRuntime } from "./delegate.js"
 import { DelegateTranscript } from "./delegate-transcript.js"
 import { Form } from "./form.js"
+import { InstructionBuiltIns } from "./instructions/builtins.js"
 import { InstructionDiscovery } from "./instruction-discovery.js"
+import { Instructions } from "./instructions/index.js"
 import { KV } from "./kv.js"
 import { Location } from "./location.js"
 import { Mcp } from "./mcp/index.js"
@@ -31,6 +35,8 @@ import { RedsunProjectMemory } from "./plugin/redsun/project-memory.js"
 import { Session } from "./session.js"
 import { SessionEvent } from "./session/event.js"
 import { SessionMessage } from "./session/message.js"
+import { SessionSystemPrompt } from "./session/system-prompt.js"
+import PROMPT_ANTHROPIC from "./plugin/system-prompt/anthropic.txt"
 import { Model } from "./model.js"
 import { Provider } from "./provider.js"
 import { SessionSchema } from "./session/schema.js"
@@ -60,7 +66,14 @@ export const codeMode = (summary: CodeModeCatalog.Summary): DelegatedCodeMode =>
 export const directNames = (connected: readonly Mcp.Tool[]): ReadonlySet<string> =>
   new Set(connected.filter((tool) => tool.codemode === false).map((tool) => McpTool.name(tool.server, tool.name)))
 
-/** Binds a tool snapshot to one turn's attribution. */
+/** What the model reads for a declined host tool call; the text native steps record for it. */
+export const DECLINED = "The user declined this tool call"
+
+/**
+ * Binds a tool snapshot to one turn's attribution. A plain decline arrives as a message-less
+ * `DeclinedError` defect (see `Permission.assert`); a runtime relays a rejection's message to its
+ * agent, so it rejects with the declined text instead of an empty error.
+ */
 export const bindSnapshot = (
   snapshot: Tool.Snapshot,
   input: {
@@ -75,19 +88,25 @@ export const bindSnapshot = (
   ...(snapshot.codeModeCatalog ? { codeMode: codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog)) } : {}),
   execute: ({ name, args, callID, allowed, signal }) =>
     Effect.runPromise(
-      snapshot.execute({
-        sessionID: input.sessionID,
-        agent: input.agent,
-        messageID: input.messageID,
-        call: { type: "tool-call", id: callID, name, input: args } as never,
-        ...(allowed === undefined
-          ? {}
-          : {
-              definitions: new Map(
-                snapshot.definitions.filter((item) => allowed.has(item.name)).map((item) => [item.name, item]),
-              ),
-            }),
-      }),
+      snapshot
+        .execute({
+          sessionID: input.sessionID,
+          agent: input.agent,
+          messageID: input.messageID,
+          call: { type: "tool-call", id: callID, name, input: args } as never,
+          ...(allowed === undefined
+            ? {}
+            : {
+                definitions: new Map(
+                  snapshot.definitions.filter((item) => allowed.has(item.name)).map((item) => [item.name, item]),
+                ),
+              }),
+        })
+        .pipe(
+          Effect.catchDefect((defect) =>
+            Effect.die(defect instanceof Permission.DeclinedError ? new Error(DECLINED) : defect),
+          ),
+        ),
       { signal },
     ),
 })
@@ -108,11 +127,42 @@ export const instructionFiles = (
 }
 
 /**
+ * The base prompt of a delegated session as a native agent would get it: the agent's own prompt,
+ * or the host's base prompt with guidance for the served tools plus the note native Anthropic
+ * requests append (`OptimizePlugin.AnthropicPlugin`, skipped for a custom prompt there too).
+ */
+export const systemPrompt = (
+  agent: { readonly system?: string },
+  tools: readonly string[],
+): DelegatedSystemPrompt["static"] =>
+  agent.system
+    ? [agent.system]
+    : [`${SessionSystemPrompt.make([...tools])}\n\n${SessionSystemPrompt.render(PROMPT_ANTHROPIC, [...tools])}`]
+
+/** The environment and date builtins rendered as their initial text, in source order. */
+export const renderBuiltins = (list: Instructions.List) =>
+  Instructions.read(list).pipe(
+    Effect.map((observed) =>
+      observed.flatMap(({ key, value }) => {
+        if (typeof value === "object" && value !== null && "_tag" in value) return []
+        const text = list.find((source) => source.key === key)?.initial(value)
+        return text === undefined ? [] : [text]
+      }),
+    ),
+  )
+
+/**
  * Services the delegate domain acquires optionally. They are not guaranteed to be in the plugin
  * host's graph otherwise, so `PluginHost.requirements` includes this group; the optional
  * acquisition keeps hand-built harnesses (which lack them) constructible.
  */
-export const requirements = LayerNode.group([Config.node, Form.node, InstructionDiscovery.node])
+export const requirements = LayerNode.group([
+  Global.node,
+  Config.node,
+  Form.node,
+  InstructionDiscovery.node,
+  InstructionBuiltIns.node,
+])
 
 export const make = Effect.gen(function* () {
   const delegates = yield* DelegatedRuntime.Service
@@ -128,6 +178,8 @@ export const make = Effect.gen(function* () {
   const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
   const forms = Option.getOrUndefined(yield* Effect.serviceOption(Form.Service))
   const discovery = Option.getOrUndefined(yield* Effect.serviceOption(InstructionDiscovery.Service))
+  const builtins = Option.getOrUndefined(yield* Effect.serviceOption(InstructionBuiltIns.Service))
+  const global = Option.getOrUndefined(yield* Effect.serviceOption(Global.Service))
   const location = yield* Location.Service
   const skills = yield* Skill.Service
   const bus = yield* Bus.Service
@@ -204,6 +256,14 @@ export const make = Effect.gen(function* () {
         }),
     },
     context: {
+      environment: () =>
+        global
+          ? Effect.succeed({
+              directory: location.directory,
+              workspaceRoot: location.project.directory,
+              temporaryDirectory: global.tmp,
+            })
+          : Effect.fail(new Error("Host environment is not available to this plugin host.")),
       instructions: () =>
         Effect.gen(function* () {
           if (!discovery) return yield* missing("InstructionDiscovery")
@@ -238,6 +298,15 @@ export const make = Effect.gen(function* () {
           return decisions
             .filter(({ result }) => result.effect !== "deny")
             .map(({ skill }) => ({ id: skill.id, name: skill.name, description: skill.description! }))
+        }),
+      system: (input) =>
+        Effect.gen(function* () {
+          const info = yield* agents.get(Agent.ID.make(input.agent))
+          if (!info) return yield* Effect.fail(new Error(`Agent is no longer available: ${input.agent}`))
+          const dynamic = builtins
+            ? yield* renderBuiltins(yield* builtins.load(SessionSchema.ID.make(input.sessionID)))
+            : []
+          return { static: systemPrompt(info, input.tools), dynamic }
         }),
     },
     transcript: {
