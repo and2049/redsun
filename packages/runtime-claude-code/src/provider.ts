@@ -140,7 +140,7 @@ export const Plugin = define({
     // The prompt identity of the process each session last started; stored with its cursor.
     const promptHashes = new Map<string, string>()
     const presetHash =
-      profile.systemPrompt === "host"
+      profile.systemPrompt === "preset-host"
         ? undefined
         : ClaudeCodeProfiles.promptHash(ClaudeCodeLanguageModel.systemPrompt(profile))
     const staleNoticed = new Set<string>()
@@ -514,13 +514,13 @@ export const Plugin = define({
           turnOptions: (sessionID) => ({
             mcpServers: { redsun: runtimes.get(sessionID)!.server },
           }),
-          systemPrompt: async (sessionID) => {
-            const agent = agents.get(sessionID)
-            const served = runtimes.get(sessionID)?.binding?.definitions.map((item) => item.name)
-            if (!agent || !served) return undefined
-            const prompt = await Effect.runPromise(ctx.delegate.context.system({ sessionID, agent, tools: served }))
-            promptHashes.set(sessionID, ClaudeCodeProfiles.promptHash(prompt))
-            return prompt
+          hostContext: async (sessionID) => {
+            const host = { ...(await Effect.runPromise(ctx.delegate.context.environment())), sessionID }
+            promptHashes.set(
+              sessionID,
+              ClaudeCodeProfiles.promptHash(ClaudeCodeLanguageModel.systemPrompt(profile, host)),
+            )
+            return host
           },
           isOneShot,
           context: async (sessionID, freshProcess) => (await turnContext(sessionID, freshProcess))!,

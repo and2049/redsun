@@ -29,16 +29,17 @@ describe("ClaudeCodeProfiles", () => {
   })
 
   it("builds each profile's startup options", () => {
-    const host = { static: ["BASE"], dynamic: ["ENV"] }
+    const host = { sessionID: "ses_1", directory: "/repo", workspaceRoot: "/repo", temporaryDirectory: "/tmp/redsun" }
     const redsun = ClaudeCodeLanguageModel.interactiveOptions({ ...config, behavior: "redsun" }, host)
     expect(redsun.tools).toEqual([])
-    expect(redsun.systemPrompt).toEqual(["BASE", "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__", "ENV"])
+    expect(redsun.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" })
+    expect((redsun.systemPrompt as { append: string }).append).toContain("/tmp/redsun")
     expect(redsun.planModeInstructions).toBeUndefined()
     expect(redsun.disallowedTools).toBeUndefined()
     // Connected MCP comes from redsun's catalog; the CLI's own MCP config never loads.
     expect(redsun.strictMcpConfig).toBe(true)
-    // No host prompt (a live process), no systemPrompt option at all.
-    expect(ClaudeCodeLanguageModel.interactiveOptions(config).systemPrompt).toBeUndefined()
+    // A live process keeps its recorded prompt; options without facts still describe the preset.
+    expect(ClaudeCodeLanguageModel.interactiveOptions(config).systemPrompt).toMatchObject({ type: "preset" })
 
     const extended = ClaudeCodeLanguageModel.interactiveOptions({ ...config, behavior: "extended" }, host)
     expect(extended.tools).toBeUndefined()

@@ -56,8 +56,8 @@ export interface Profile {
   readonly tools?: readonly string[]
   readonly disallowedTools: readonly string[]
   readonly toolAliases: Readonly<Record<string, string>>
-  /** `host`: redsun's base prompt (`ctx.delegate.context.system`); otherwise the preset. */
-  readonly systemPrompt: "host" | "preset-behavior" | "preset"
+  /** The CLI preset, optionally supplemented with host-only policy or extended behavior. */
+  readonly systemPrompt: "preset-host" | "preset-behavior" | "preset"
   /** Whether the plan agent runs in SDK `plan` mode with the ExitPlanMode bridge. */
   readonly sdkPlanMode: boolean
   /** `all`: the whole host snapshot; `compose-subagent`: host `subagent` for compose only. */
@@ -78,7 +78,7 @@ export const PROFILES: Readonly<Record<Name, Profile>> = {
     tools: [],
     disallowedTools: [],
     toolAliases: ALIASES,
-    systemPrompt: "host",
+    systemPrompt: "preset-host",
     sdkPlanMode: false,
     hostTools: "all",
     nativeApproval: false,

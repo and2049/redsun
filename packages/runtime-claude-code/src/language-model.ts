@@ -1,8 +1,7 @@
 export * as ClaudeCodeLanguageModel from "./language-model.js"
 
 import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import type { DelegatedStreamResult, DelegatedSystemPrompt, DelegatedTurn } from "@opencode/plugin/effect/delegate"
-import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk"
+import type { DelegatedStreamResult, DelegatedTurn } from "@opencode/plugin/effect/delegate"
 import type {
   CanUseTool,
   HookCallback,
@@ -13,6 +12,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk"
 import { ClaudeCodeModels } from "./models.js"
 import { ClaudeCodeProfiles } from "./profiles.js"
+import { ClaudeCodeHostPrompt } from "./host-prompt.js"
 import type { ClaudeCodeSessions } from "./sessions.js"
 import type { Tool } from "@opencode/schema/tool"
 import { ClaudeCodeTranslate } from "./translate.js"
@@ -128,7 +128,7 @@ export interface Hooks {
    * The host base prompt for a process about to start (profile `redsun` only), computed after
    * `prepareTurn` bound the served tools. The CLI records it on the session's first request.
    */
-  readonly systemPrompt?: (sessionID: string) => Promise<DelegatedSystemPrompt | undefined>
+  readonly hostContext?: (sessionID: string) => Promise<ClaudeCodeHostPrompt.Context | undefined>
   readonly taskChildren?: (sessionID: string) => ReadonlyMap<string, ClaudeCodeTranslate.TaskChild> | undefined
   /** What the native session still owes once a result lands; see ClaudeCodeSessions.HoldReason. */
   readonly turnPending?: (sessionID: string) => ClaudeCodeSessions.HoldReason
@@ -175,22 +175,24 @@ const baseOptions = (config: Config): Options =>
     ...extraArgs(config.extraArgs),
   }) as Options
 
-/** The profile's system prompt: redsun's own base prompt split at the cache boundary, or the preset. */
+/** Every profile retains the CLI preset; redsun adds only host-specific policy and facts. */
 export const systemPrompt = (
   profile: ClaudeCodeProfiles.Profile,
-  host?: DelegatedSystemPrompt,
+  host?: ClaudeCodeHostPrompt.Context,
 ): Options["systemPrompt"] => {
-  if (profile.systemPrompt === "host")
-    return host ? [...host.static, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, ...host.dynamic] : undefined
   return {
     type: "preset",
     preset: "claude_code",
-    ...(profile.systemPrompt === "preset-behavior" ? { append: BEHAVIOR } : {}),
+    ...(profile.systemPrompt === "preset-host"
+      ? { append: ClaudeCodeHostPrompt.make(host) }
+      : profile.systemPrompt === "preset-behavior"
+        ? { append: BEHAVIOR }
+        : {}),
   }
 }
 
 /** Startup-only options per profile; a live process keeps the ones it started with. */
-export const interactiveOptions = (config: Config, host?: DelegatedSystemPrompt): Options => {
+export const interactiveOptions = (config: Config, host?: ClaudeCodeHostPrompt.Context): Options => {
   const profile = ClaudeCodeProfiles.resolve(config.behavior)
   const prompt = systemPrompt(profile, host)
   return {
@@ -280,8 +282,8 @@ export const make = (input: {
     const freshProcess = manager.willStart(sessionID, permissionMode)
     // Only a starting process takes startup options; compute the prompt before context preparation.
     const host =
-      profile.systemPrompt === "host" && freshProcess
-        ? await (hooks?.systemPrompt?.(sessionID) ?? Promise.resolve(undefined)).catch((error) => {
+      profile.systemPrompt === "preset-host" && freshProcess
+        ? await (hooks?.hostContext?.(sessionID) ?? Promise.resolve(undefined)).catch((error) => {
             release?.()
             throw error
           })

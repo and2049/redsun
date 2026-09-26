@@ -13,6 +13,7 @@ import type {
 import path from "node:path"
 import { Cause, Effect, Exit, Option } from "effect"
 import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
 import { Agent } from "./agent.js"
 import { CodeModeCatalog } from "./codemode/catalog.js"
 import { CodeModeInstructions } from "./codemode/instructions.js"
@@ -156,6 +157,7 @@ export const renderBuiltins = (list: Instructions.List) =>
  * acquisition keeps hand-built harnesses (which lack them) constructible.
  */
 export const requirements = LayerNode.group([
+  Global.node,
   Config.node,
   Form.node,
   InstructionDiscovery.node,
@@ -177,6 +179,7 @@ export const make = Effect.gen(function* () {
   const forms = Option.getOrUndefined(yield* Effect.serviceOption(Form.Service))
   const discovery = Option.getOrUndefined(yield* Effect.serviceOption(InstructionDiscovery.Service))
   const builtins = Option.getOrUndefined(yield* Effect.serviceOption(InstructionBuiltIns.Service))
+  const global = Option.getOrUndefined(yield* Effect.serviceOption(Global.Service))
   const location = yield* Location.Service
   const skills = yield* Skill.Service
   const bus = yield* Bus.Service
@@ -253,6 +256,14 @@ export const make = Effect.gen(function* () {
         }),
     },
     context: {
+      environment: () =>
+        global
+          ? Effect.succeed({
+              directory: location.directory,
+              workspaceRoot: location.project.directory,
+              temporaryDirectory: global.tmp,
+            })
+          : Effect.fail(new Error("Host environment is not available to this plugin host.")),
       instructions: () =>
         Effect.gen(function* () {
           if (!discovery) return yield* missing("InstructionDiscovery")

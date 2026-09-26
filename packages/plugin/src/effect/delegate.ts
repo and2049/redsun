@@ -210,6 +210,15 @@ export interface DelegateDomain {
     }) => Effect.Effect<DelegatedToolBinding, Error>
   }
   readonly context: {
+    /** Structured host paths for runtimes that supply their own base prompt and environment. */
+    readonly environment: () => Effect.Effect<
+      {
+        readonly directory: string
+        readonly workspaceRoot: string
+        readonly temporaryDirectory: string
+      },
+      Error
+    >
     /**
      * The location's discovered instruction files (AGENTS.md chain, project memory), each bounded
      * to `instruction_max_chars`; project memory carries its maintenance policy. Undefined while

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
-import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY, type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { type SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { DelegatedTurn } from "@opencode/plugin/effect/delegate"
 import { ClaudeCodeLanguageModel } from "../src/language-model.js"
 import { ClaudeCodeContext } from "../src/context.js"
@@ -273,9 +273,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     ).toBeUndefined()
   })
 
-  it("sends redsun's base prompt, no built-in tools and manual mode under the default profile", async () => {
-    // The redsun profile confines the CLI to host tools (`tools: []`) and records redsun's own
-    // base prompt, split at the SDK cache boundary; plan mode is the host's plan agent.
+  it("sends the native preset with host facts, no built-in tools and manual mode under the default profile", async () => {
     const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
     const asked: string[] = []
     const created = model({
@@ -285,9 +283,9 @@ describe("ClaudeCodeLanguageModel.stream", () => {
       createQuery: () => ({}) as never,
       hooks: {
         permissionMode: async () => "plan",
-        systemPrompt: async (sessionID) => {
+        hostContext: async (sessionID) => {
           asked.push(sessionID)
-          return { static: ["BASE", "ANTHROPIC"], dynamic: ["ENV"] }
+          return { sessionID, directory: "/repo", workspaceRoot: "/workspace", temporaryDirectory: "/tmp/redsun" }
         },
       },
     })
@@ -296,7 +294,11 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     expect(asked).toEqual(["ses_1"])
     expect(options.permissionMode).toBe("default")
     expect(options.options.tools).toEqual([])
-    expect(options.options.systemPrompt).toEqual(["BASE", "ANTHROPIC", SYSTEM_PROMPT_DYNAMIC_BOUNDARY, "ENV"])
+    expect(options.options.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" })
+    expect(options.options.systemPrompt.append).toContain("ses_1")
+    expect(options.options.systemPrompt.append).toContain("/tmp/redsun")
+    expect(options.options.systemPrompt.append).toContain("/workspace")
+    expect(options.options.systemPrompt.append).not.toContain("<env>")
     expect(options.options.settingSources).toEqual(["user", "project", "local"])
     expect(options.options.planModeInstructions).toBeUndefined()
     expect(options.options.disallowedTools).toBeUndefined()
@@ -313,9 +315,9 @@ describe("ClaudeCodeLanguageModel.stream", () => {
       manager,
       createQuery: () => ({}) as never,
       hooks: {
-        systemPrompt: async () => {
+        hostContext: async () => {
           asked++
-          return { static: ["BASE"], dynamic: [] }
+          return { sessionID: "ses_1", directory: "/repo", workspaceRoot: "/repo", temporaryDirectory: "/tmp/redsun" }
         },
       },
     })
@@ -333,7 +335,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
       createQuery: () => ({}) as never,
       hooks: {
         prepareTurn: async () => () => void releases++,
-        systemPrompt: async () => {
+        hostContext: async () => {
           throw new Error("agent is gone")
         },
       },
@@ -353,9 +355,9 @@ describe("ClaudeCodeLanguageModel.stream", () => {
       createQuery: () => ({}) as never,
       hooks: {
         permissionMode: async () => "plan",
-        systemPrompt: async () => {
+        hostContext: async () => {
           asked++
-          return { static: ["BASE"], dynamic: [] }
+          return { sessionID: "ses_1", directory: "/repo", workspaceRoot: "/repo", temporaryDirectory: "/tmp/redsun" }
         },
       },
     })
