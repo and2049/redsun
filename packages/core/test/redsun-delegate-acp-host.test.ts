@@ -13,6 +13,7 @@ import { Permission } from "@opencode/core/permission"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { QuestionTool } from "@opencode/core/tool/plugin/question"
+import { RedsunWorkerModelTool } from "@opencode/core/plugin/redsun/worker-model-tool"
 import { Tool } from "@opencode/schema/tool"
 import { Deferred, Effect, Fiber, Schema } from "effect"
 import { testEffect } from "./lib/effect"
@@ -66,7 +67,7 @@ const QUESTION = {
 }
 
 /** The final request catalog core would send; the runtime intersects the binding with it. */
-const TOOLS: LanguageModelV3CallOptions["tools"] = ["question", "probe"].map((name) => ({
+const TOOLS: LanguageModelV3CallOptions["tools"] = ["question", "probe", "worker_model"].map((name) => ({
   type: "function" as const,
   name,
   inputSchema: { type: "object" as const },
@@ -99,6 +100,7 @@ const next = <A>(type: string) =>
 const setup = Effect.gen(function* () {
   yield* registerToolPlugin(QuestionTool.Plugin)
   yield* registerToolPlugin(ProbeTool)
+  yield* registerToolPlugin(RedsunWorkerModelTool.Plugin)
   const host = yield* PluginHost.make(yield* Plugin.Service)
   yield* AcpPlugin.effect({
     ...host,
@@ -168,6 +170,24 @@ const reported = (parts: readonly LanguageModelV3StreamPart[]) => {
 }
 
 describe("generic ACP host tools through the real host boundary", () => {
+  for (const dismiss of [false, true])
+    it.live(`settles the shared worker picker over ACP (${dismiss ? "dismiss" : "choose"})`, () =>
+      Effect.gen(function* () {
+        const { session, invoke } = yield* setup
+        const forms = yield* Form.Service
+        const created = yield* next<{ readonly form: Form.Info }>(Form.Event.Created.type)
+        const fiber = yield* Effect.forkScoped(invoke("worker_model", {}).parts)
+        const { form } = yield* Deferred.await(created)
+        expect(form.sessionID).toBe(session.id)
+        expect(form.metadata).toMatchObject({ kind: "worker-model" })
+        if (dismiss) yield* forms.cancel(form.id)
+        else yield* forms.reply({ id: form.id, answer: { model: "fake/default" } })
+        expect(reported(yield* Fiber.join(fiber))).toContain(
+          dismiss ? "dismissed the worker model picker" : "fake/default",
+        )
+      }),
+    )
+
   it.live("opens one question form attributed to the agent's call and returns the answer", () =>
     Effect.gen(function* () {
       const { session, invoke } = yield* setup

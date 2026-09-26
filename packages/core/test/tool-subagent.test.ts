@@ -14,6 +14,7 @@ import { Database } from "@opencode/core/database/database"
 import { Bus } from "@opencode/core/bus"
 import { Config } from "@opencode/core/config"
 import { KV } from "@opencode/core/kv"
+import { Form } from "@opencode/core/form"
 import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
@@ -33,6 +34,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
 import { Permission } from "@opencode/core/permission"
 import { SubagentTool } from "@opencode/core/tool/plugin/subagent"
+import { RedsunWorkerModel } from "@opencode/core/plugin/redsun/worker-model"
 import { Tool } from "@opencode/core/tool"
 import { tmpdir } from "./fixture/tmpdir"
 import { tempGlobalLayer } from "./fixture/global"
@@ -124,6 +126,7 @@ const subagentPluginSupervisor = makeLocationNode({
     Agent.node,
     Config.node,
     Model.node,
+    Form.node,
     KV.node,
     Permission.node,
     Session.node,
@@ -135,6 +138,7 @@ const subagentPluginSupervisor = makeLocationNode({
 
 const nodes = LayerNode.group([
   Database.node,
+  KV.node,
   Bus.node,
   Job.node,
   Session.node,
@@ -208,6 +212,72 @@ const withSubagent = (location: Location.Ref) =>
   })
 
 describe("SubagentTool", () => {
+  it.live("picks an unconfigured worker model once and reuses it, including when continuing a child", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const parent = yield* sessions.create({
+            location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+            model: parentModel,
+          })
+          yield* withSubagent(parent.location)
+          const locations = yield* LocationServiceMap.Service
+          const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+          const forms = yield* Form.Service.pipe(Effect.provide(locations.get(parent.location)))
+          const agents = yield* Agent.Service.pipe(Effect.provide(locations.get(parent.location)))
+          yield* agents.transform((editor) =>
+            editor.update(Agent.ID.make("worker"), (agent) => {
+              agent.mode = "subagent"
+              agent.model = undefined
+            }),
+          )
+          let asks = 0
+          let selected = ""
+          const bus = yield* Bus.Service
+          yield* bus.listen((event) => {
+            if (event.type !== Form.Event.Created.type) return Effect.void
+            asks++
+            const form = (event.data as { form: Form.Info }).form
+            expect(form.sessionID).toBe(parent.id)
+            expect(form.metadata).toMatchObject({ kind: "worker-model" })
+            const field = form.fields[0]!
+            if (field.type !== "string" || !field.options?.length) return Effect.die(new Error("Missing model options"))
+            selected = String(field.options[0]!.value)
+            return forms.reply({ id: form.id, answer: { model: selected } }).pipe(Effect.orDie, Effect.asVoid)
+          })
+          const invoke = (id: string, sessionID?: string) =>
+            executeTool(registry, {
+              sessionID: parent.id,
+              ...toolIdentity,
+              call: {
+                type: "tool-call",
+                id,
+                name: SubagentTool.name,
+                input: {
+                  agent: "worker",
+                  description: "worker qualification",
+                  prompt: "work",
+                  ...(sessionID ? { sessionID } : {}),
+                },
+              },
+            })
+          const first = yield* invoke("call-worker-first")
+          const childID = outputSessionID(first.metadata)
+          expect((yield* sessions.get(childID)).model).toMatchObject(Model.Ref.parse(selected))
+          yield* invoke("call-worker-second")
+          const kv = yield* KV.Service.pipe(Effect.provide(locations.get(parent.location)))
+          yield* kv.remove(RedsunWorkerModel.key(parent.id))
+          yield* invoke("call-worker-resume", childID)
+          expect(asks).toBe(1)
+        }),
+      ),
+    ),
+  )
+
   completionIt.live("admits one durable completion across live delivery and restart replay", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

@@ -29,6 +29,47 @@ export const options = (models: readonly Model.Info[]) => [
   { value: CLEAR, label: "Use the configured default", description: "Clear this session's worker model" },
 ]
 
+/** Shared picker for an explicit change and a worker's missing-model recovery. */
+export const choose = Effect.fn("RedsunWorkerModelTool.choose")(function* (
+  services: RedsunWorkerModel.Services & { readonly forms: Form.Interface },
+  sessionID: string,
+) {
+  const models = yield* services.models.available()
+  if (models.length === 0) return yield* new ToolFailure({ message: "No models are available to choose from." })
+  const state = yield* services.forms
+    .ask({
+      sessionID: sessionID as never,
+      title: "Worker model",
+      metadata: { kind: FORM_KIND },
+      fields: [
+        {
+          key: FIELD,
+          title: "Worker model",
+          description: "The model worker subagents run on for this session.",
+          type: "string",
+          options: options(models),
+          required: true,
+        },
+      ],
+    })
+    .pipe(Effect.orDie)
+  if (state.status === "cancelled")
+    return yield* new ToolFailure({ message: "The user dismissed the worker model picker." })
+  const chosen = state.answer[FIELD]
+  if (typeof chosen !== "string" || !chosen) return yield* new ToolFailure({ message: "No worker model was chosen." })
+  if (chosen === CLEAR) {
+    yield* RedsunWorkerModel.clearSessionOverride(services, sessionID)
+    return undefined
+  }
+  const ref = yield* Effect.try(() => Model.Ref.parse(chosen)).pipe(
+    Effect.mapError(() => new ToolFailure({ message: `Not a model reference: ${chosen}` })),
+  )
+  const known = yield* services.models.get(ref.providerID, ref.id)
+  if (!known) return yield* new ToolFailure({ message: `No such model: ${chosen}` })
+  yield* RedsunWorkerModel.setSessionOverride(services, sessionID, chosen)
+  return chosen
+})
+
 export const Plugin = define({
   id: "redsun.tool.worker-model",
   effect: Effect.fn(function* (ctx) {
@@ -50,50 +91,14 @@ export const Plugin = define({
           output: Schema.Struct({ model: Schema.String }),
           execute: (_input, context) =>
             Effect.gen(function* () {
-              const models = yield* registry.available()
-              if (models.length === 0)
-                return yield* new ToolFailure({ message: "No models are available to choose from." })
-
-              const state = yield* forms
-                .ask({
-                  sessionID: context.sessionID,
-                  title: "Worker model",
-                  metadata: { kind: FORM_KIND },
-                  fields: [
-                    {
-                      key: FIELD,
-                      title: "Worker model",
-                      description: "The model worker subagents run on for this session.",
-                      type: "string",
-                      options: options(models),
-                      required: true,
-                    },
-                  ],
-                })
-                .pipe(Effect.orDie)
-
-              if (state.status === "cancelled")
-                return yield* new ToolFailure({ message: "The user dismissed the worker model picker." })
-
-              const chosen = state.answer[FIELD]
-              if (typeof chosen !== "string" || !chosen)
-                return yield* new ToolFailure({ message: "No worker model was chosen." })
-
-              if (chosen === CLEAR) {
-                yield* RedsunWorkerModel.clearSessionOverride(services, context.sessionID)
+              const chosen = yield* choose({ ...services, forms }, context.sessionID)
+              if (chosen === undefined) {
                 return {
                   output: { model: "" },
                   content: "Cleared this session's worker model; workers fall back to the configured default.",
                 }
               }
 
-              const ref = yield* Effect.try(() => Model.Ref.parse(chosen)).pipe(
-                Effect.mapError(() => new ToolFailure({ message: `Not a model reference: ${chosen}` })),
-              )
-              const known = yield* registry.get(ref.providerID, ref.id)
-              if (!known) return yield* new ToolFailure({ message: `No such model: ${chosen}` })
-
-              yield* RedsunWorkerModel.setSessionOverride(services, context.sessionID, chosen)
               return {
                 output: { model: chosen },
                 content: `Worker subagents in this session will run on ${chosen}.`,

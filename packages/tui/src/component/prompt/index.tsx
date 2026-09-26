@@ -393,7 +393,6 @@ export function Prompt(props: PromptProps) {
     }
   })
   const workerMetadata = createMemo(() => {
-    if (local.agent.current()?.id !== "compose") return undefined
     const ref = local.model.worker.ref()
     return ref === undefined ? undefined : { [WORKER_MODEL_KEY]: ref }
   })
