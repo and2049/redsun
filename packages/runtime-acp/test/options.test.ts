@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { AcpOptions } from "../src/options.js"
+import { ConfigAcp } from "@opencode/schema/config/acp"
+import { Schema } from "effect"
 
 describe("ACP agent options", () => {
+  test("preserves prompt selection through public configuration decoding", () => {
+    const decode = Schema.decodeUnknownSync(ConfigAcp.Info)
+    const configured = decode({
+      agents: { kiro: { preset: "kiro", prompt: "none" }, other: { command: "agent", prompt: "prefix" } },
+    })
+    expect(AcpOptions.parse(configured).agents.map((agent) => agent.prompt)).toEqual(["none", "prefix"])
+    expect(() => decode({ agents: { other: { command: "agent", prompt: "replace" } } })).toThrow()
+  })
   test("the kiro preset confines Kiro to redsun's tools in a home redsun owns", () => {
     const { agents, errors } = AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } })
     expect(errors).toEqual([])
@@ -12,6 +22,7 @@ describe("ACP agent options", () => {
       command: "kiro-cli",
       args: ["acp", "--agent", "redsun"],
       hostTools: "all",
+      prompt: "prefix",
       compactCommand: "/compact",
       inheritedInstructions: [],
     })
@@ -28,6 +39,10 @@ describe("ACP agent options", () => {
       name: "redsun",
       tools: ["@redsun"],
       allowedTools: ["@redsun"],
+      resources: [],
+    })
+    expect(JSON.parse(kiro!.home!.files["settings/cli.json"]!)).toEqual({
+      "chat.disableInheritingDefaultResources": true,
     })
   })
 
@@ -83,9 +98,7 @@ describe("ACP agent options", () => {
     expect(parse({}).prompt).toBe("none")
     expect(parse({ prompt: "prefix" }).prompt).toBe("prefix")
     expect(parse({ prompt: "system" }).prompt).toBe("none")
-    expect(AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } }).agents[0]!.prompt).toBe("none")
-    expect(AcpOptions.parse({ agents: { kiro: { preset: "kiro", prompt: "prefix" } } }).agents[0]!.prompt).toBe(
-      "prefix",
-    )
+    expect(AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } }).agents[0]!.prompt).toBe("prefix")
+    expect(AcpOptions.parse({ agents: { kiro: { preset: "kiro", prompt: "none" } } }).agents[0]!.prompt).toBe("none")
   })
 })

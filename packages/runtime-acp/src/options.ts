@@ -117,12 +117,16 @@ export const defaultHome = (id: string) =>
  * approval mode, so the preset offers no `native_auto`. It always launches standard: its asks for
  * host tools are answered locally and the host tool applies the host's policy when it runs, so
  * Auto-approve never restarts it and host `deny` rules always hold (no `--trust-all-tools`).
+ * The host owns base instructions and discovered resources. Kiro v2's profile prompt is not a
+ * verified system-prompt replacement, so use ACP's tracked prefix and disable default resource
+ * inheritance in the managed home (resources: [] alone still loads AGENTS.md).
  */
 const KIRO_AGENT = {
   name: "redsun",
   description: "Kiro driven by redsun: every tool is redsun's.",
   tools: ["@redsun"],
   allowedTools: ["@redsun"],
+  resources: [],
 }
 
 export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
@@ -137,8 +141,15 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
     },
     args: ["acp", "--agent", KIRO_AGENT.name],
     hostTools: "all",
+    prompt: "prefix",
     compactCommand: "/compact",
-    home: { env: "KIRO_HOME", files: { [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT } },
+    home: {
+      env: "KIRO_HOME",
+      files: {
+        [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT,
+        "settings/cli.json": { "chat.disableInheritingDefaultResources": true },
+      },
+    },
   },
 }
 

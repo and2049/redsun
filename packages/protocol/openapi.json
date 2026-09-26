@@ -15366,6 +15366,10 @@
             "type": "string",
             "enum": ["extras", "all"]
           },
+          "prompt": {
+            "type": "string",
+            "enum": ["none", "prefix"]
+          },
           "inherited_instructions": {
             "type": "array",
             "items": {

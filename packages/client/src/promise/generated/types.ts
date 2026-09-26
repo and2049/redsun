@@ -2299,6 +2299,7 @@ export type ConfigEntry =
               env?: { [x: string]: string }
               models?: Array<string | { id: string; name?: string }>
               host_tools?: "extras" | "all"
+              prompt?: "none" | "prefix"
               inherited_instructions?: Array<string>
               native_approval_mode?: string
               native_approval_args?: Array<string>

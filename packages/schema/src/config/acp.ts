@@ -27,6 +27,10 @@ export class Agent extends Schema.Class<Agent>("ConfigAcp.Agent")({
   host_tools: Schema.Literals(["extras", "all"]).pipe(optional).annotate({
     description: '"all" runs the agent on redsun\'s own tools; "extras" adds redsun\'s tools to the agent\'s.',
   }),
+  prompt: Schema.Literals(["none", "prefix"]).pipe(optional).annotate({
+    description:
+      'Host base-prompt delivery: "prefix" sends tracked host instructions ahead of user text; "none" keeps the agent\'s prompt. Defaults to "prefix" for Kiro and "none" for other agents.',
+  }),
   inherited_instructions: Strings.pipe(optional).annotate({
     description: "Instruction files the agent loads itself, relative to the working directory.",
   }),
