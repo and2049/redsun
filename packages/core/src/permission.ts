@@ -67,7 +67,13 @@ export class DeclinedError extends Schema.TaggedError<DeclinedError>()("Permissi
 
 export class CorrectedError extends Schema.TaggedError<CorrectedError>()("Permission.CorrectedError", {
   feedback: Schema.String,
-}) {}
+}) {
+  // REDSUN: leaves let the correction reach the tool runtime, which keeps only the message; without
+  // one the model read an empty failure instead of the user's feedback (the v1 wording).
+  override get message() {
+    return `The user rejected permission to use this specific tool call with the following feedback: ${this.feedback}`
+  }
+}
 
 export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {
   rules: Permission.Ruleset,

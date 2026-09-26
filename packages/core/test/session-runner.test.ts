@@ -4719,6 +4719,47 @@ describe("SessionRunnerLLM", () => {
     ])
   })
 
+  // REDSUN: real leaves yield `Permission.assert` without mapping its errors.
+  scenario("returns a correction from a leaf that does not map it", function* (s) {
+    const registry = yield* Tool.Service
+    yield* transformTools(
+      registry,
+      {
+        unmapped: {
+          name: "unmapped",
+          description: "Fail with an unmapped user correction",
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          // Typed as a leaf plugin's error channel reaches the runtime.
+          execute: () => Effect.fail(new Permission.CorrectedError({ feedback: "Use another tool" })) as never,
+        },
+      },
+      { codemode: false },
+    )
+    yield* s.admit("Call unmapped")
+
+    yield* s.llm.push(TestLLM.tool("call-unmapped", "unmapped", {}), TestLLM.stop())
+
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(2)
+    expect(yield* s.context).toMatchObject([
+      Expected.user("Call unmapped"),
+      Expected.assistant({}, [
+        Expected.failedTool(
+          { id: "call-unmapped" },
+          {
+            error: {
+              message:
+                "The user rejected permission to use this specific tool call with the following feedback: Use another tool",
+            },
+          },
+        ),
+      ]),
+      { type: "assistant", finish: "stop" },
+    ])
+  })
+
   scenario("returns configured permission denials to the model and continues", function* (s) {
     const registry = yield* Tool.Service
     yield* transformTools(registry, { permissionfail: permissionFail }, { codemode: false })

@@ -201,7 +201,7 @@ describe("generic ACP host tools through the real host boundary", () => {
     }),
   )
 
-  for (const reply of ["once", "reject"] as const)
+  for (const reply of ["once", "reject", "correct"] as const)
     it.live(`asks the host policy once for a host tool and relays the ${reply} reply`, () =>
       Effect.gen(function* () {
         const { session, invoke, permission } = yield* setup
@@ -216,9 +216,17 @@ describe("generic ACP host tools through the real host boundary", () => {
           source: { type: "tool", messageID: turn.messageID, id: "call_invoke" },
         })
         expect(yield* permission.forSession(session.id)).toHaveLength(1)
-        yield* permission.reply({ requestID: request.id, reply })
+        yield* permission.reply(
+          reply === "correct"
+            ? { requestID: request.id, reply: "reject", message: "use the lib directory" }
+            : { requestID: request.id, reply },
+        )
         const parts = yield* Fiber.join(fiber)
-        expect(reported(parts)).toContain(reply === "once" ? "PROBED" : "The user declined this tool call")
+        expect(reported(parts)).toContain(
+          { once: "PROBED", reject: "The user declined this tool call", correct: "feedback: use the lib directory" }[
+            reply
+          ],
+        )
         expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
       }),
     )
