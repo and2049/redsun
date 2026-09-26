@@ -140,9 +140,15 @@ describe("ACP runtime against a scripted agent", () => {
         const reader = compact.stream.getReader()
         await reader.read()
         await expect(runtime.turn(TURN, call([user("hello")]))).rejects.toThrow()
-        while (!(await reader.read()).done) {}
-        const parts = await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
-        expect(textOf(parts)).toBe("Hello from the fake agent")
+        const parts: LanguageModelV3StreamPart[] = []
+        for (;;) {
+          const item = await reader.read()
+          if (item.done) break
+          parts.push(item.value)
+        }
+        expect(textOf(parts)).toContain("compacted its native session history")
+        const next = await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
+        expect(textOf(next)).toBe("Hello from the fake agent")
       },
     )
   })
@@ -157,6 +163,7 @@ describe("ACP runtime against a scripted agent", () => {
         async (runtime) => {
           const parts = await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
           const error = parts.find((part) => part.type === "error")
+          expect(textOf(parts)).not.toContain("compacted its native session history")
           expect(String(error?.error)).toContain(mode === "fail" ? "fixture compaction failed" : "Timed out")
           expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
             "Hello from the fake agent",

@@ -139,7 +139,9 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
       whoami: ["whoami", "--format", "json"],
       signIn: "Run `kiro-cli login` in a terminal, then connect again.",
     },
-    args: ["acp", "--agent", KIRO_AGENT.name],
+    // The managed JSON profile and compaction notifications below are v2 contracts.
+    // V3 has different profile discovery and rejects --agent; opt into it with a custom config.
+    args: ["acp", "--agent-engine", "v2", "--agent", KIRO_AGENT.name],
     hostTools: "all",
     prompt: "prefix",
     compactCommand: "/compact",

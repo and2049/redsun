@@ -777,6 +777,15 @@ export class Runtime {
             if (!controller.signal.aborted && !session.exited && (compacting || compacted)) {
               this.context.clear(turn.sessionID)
               this.based.delete(turn.sessionID)
+              // Kiro's acknowledgement only says "Compacting...". Report completion once
+              // its extension confirms it, not when the prompt request merely returns.
+              if (compacting && compacted)
+                emit(
+                  AcpTranslate.update(state, {
+                    sessionUpdate: "agent_message_chunk",
+                    content: { type: "text", text: `\n${this.agent.name} compacted its native session history.\n` },
+                  }),
+                )
             } else if (!controller.signal.aborted && !session.exited && response.stopReason !== "cancelled")
               delivery?.delivered()
             emit(AcpTranslate.finish(state, response.stopReason))

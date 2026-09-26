@@ -20,7 +20,7 @@ describe("ACP agent options", () => {
       id: "kiro",
       name: "Kiro-cli",
       command: "kiro-cli",
-      args: ["acp", "--agent", "redsun"],
+      args: ["acp", "--agent-engine", "v2", "--agent", "redsun"],
       hostTools: "all",
       prompt: "prefix",
       compactCommand: "/compact",
