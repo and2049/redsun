@@ -288,8 +288,9 @@ export class Runtime {
   ) {
     if (!this.host.context) return undefined
     const served = (name: string) => session.slot?.definitions.some((item) => item.name === name) === true
-    const gathered = await this.host.context(turn, { skills: served("skill") }).catch(() => undefined)
-    if (!gathered) return undefined
+    // A failed lookup fails the turn, as it does under Claude Code: prompting without the context
+    // would silently drop the agent's instructions. Nothing was delivered, so a retry sends it all.
+    const gathered = await this.host.context(turn, { skills: served("skill") })
     return this.context.prepare(turn.sessionID, {
       ...gathered,
       skills: gathered.skills ?? [],

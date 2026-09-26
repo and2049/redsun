@@ -798,6 +798,23 @@ describe("ACP runtime against a scripted agent", () => {
       })
     })
 
+    test("fails the turn before prompting when the host context is unavailable, then delivers it on retry", async () => {
+      rules = "Use tabs."
+      let available = false
+      const flaky = () => {
+        if (!available) throw new Error("instructions could not be read")
+        return context()
+      }
+      await withRuntime({ host: { context: flaky } }, async (runtime) => {
+        await expect(runtime.turn(HOSTED, call([user("echo one")]))).rejects.toThrow("instructions could not be read")
+        available = true
+        const sent = textOf(await collect((await runtime.turn(HOSTED, call([user("echo one")]))).stream))
+        // The failed turn never reached the agent.
+        expect(sent).toStartWith("SESSION=acp_1 TURNS=1")
+        expect(sent).toContain("[redsun agent instructions: build]\nBe brief.")
+      })
+    })
+
     test("sends a compaction command alone, then everything again", async () => {
       rules = "Use tabs."
       await withRuntime({ agent: { compactCommand: "/compact echo" }, host: { context } }, async (runtime) => {
