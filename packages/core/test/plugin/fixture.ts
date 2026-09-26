@@ -13,6 +13,7 @@ import { Form } from "@opencode/core/form"
 import { Generate } from "@opencode/core/generate"
 import { Integration } from "@opencode/core/integration"
 import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
+import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Mcp } from "@opencode/core/mcp/index"
@@ -90,6 +91,8 @@ const nodes = LayerNode.group([
   Command.node,
   Integration.node,
   InstructionBuiltIns.node,
+  // REDSUN: the delegate domain's host context reads discovered instructions (`PluginHost.requirements`).
+  InstructionDiscovery.node,
   KV.node,
   Mcp.node,
   Session.node,

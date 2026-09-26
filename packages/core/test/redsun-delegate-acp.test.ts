@@ -154,7 +154,9 @@ describe("ACP runtime plugin through the real host", () => {
         ),
       )
       const text = parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : [])).join("")
-      expect(text).toBe("SESSION=acp_1 TURNS=1 PROMPT=echo from the host")
+      // The host context goes ahead of the first prompt.
+      expect(text).toStartWith("SESSION=acp_1 TURNS=1 PROMPT=<redsun-context>")
+      expect(text).toEndWith("</redsun-context>\n\necho from the host")
       expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
     }),
   )

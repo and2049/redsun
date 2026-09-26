@@ -136,8 +136,9 @@ new AgentSideConnection((connection) => {
       const sessionId = params.sessionId
       const text = params.prompt.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
       received.push(text)
-      if (text.startsWith("invoke:")) {
-        const input = JSON.parse(text.slice("invoke:".length))
+      // The host context may ride ahead of it; the call is the last line.
+      if (text.includes("invoke:")) {
+        const input = JSON.parse(text.slice(text.lastIndexOf("invoke:") + "invoke:".length))
         const toolCallId = "call_invoke"
         await connection.sessionUpdate({
           sessionId,
