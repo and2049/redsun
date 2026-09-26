@@ -20,7 +20,7 @@ describe("ACP agent options", () => {
       id: "kiro",
       name: "Kiro-cli",
       command: "kiro-cli",
-      args: ["acp", "--agent-engine", "v2", "--agent", "redsun"],
+      args: ["acp", "--agent-engine", "v3", "--auth-method", "cli"],
       hostTools: "all",
       prompt: "prefix",
       compactCommand: "/compact",
@@ -33,17 +33,9 @@ describe("ACP agent options", () => {
     expect(AcpOptions.launchArgs(kiro!, "auto")).toEqual([])
     expect(AcpOptions.launchArgs(kiro!, "native_auto")).toEqual([])
     expect(AcpOptions.launchArgs(kiro!, "normal")).toEqual([])
-    expect(kiro!.home?.env).toBe("KIRO_HOME")
-    expect(kiro!.home?.path).toBe(AcpOptions.defaultHome("kiro"))
-    expect(JSON.parse(kiro!.home!.files["agents/redsun.json"]!)).toMatchObject({
-      name: "redsun",
-      tools: ["@redsun"],
-      allowedTools: ["@redsun"],
-      resources: [],
-    })
-    expect(JSON.parse(kiro!.home!.files["settings/cli.json"]!)).toEqual({
-      "chat.disableInheritingDefaultResources": true,
-    })
+    expect(kiro!.home?.env).toBe("HOME")
+    expect(kiro!.home?.path).toBe(AcpOptions.defaultHome("kiro-v3"))
+    expect(kiro!.home!.files).toEqual({})
   })
 
   test("an entry's own keys override its preset; env and home merge", () => {
@@ -53,7 +45,7 @@ describe("ACP agent options", () => {
       },
     })
     expect(agents[0]).toMatchObject({ name: "Kiro", command: "kiro-cli", env: { XDG_DATA_HOME: "/data" } })
-    expect(agents[0]!.home?.env).toBe("KIRO_HOME")
+    expect(agents[0]!.home?.env).toBe("HOME")
     expect(agents[0]!.home?.path).toEndWith("/kiro-home")
     expect(agents[0]!.home?.path.startsWith("~")).toBe(false)
   })

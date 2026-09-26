@@ -215,7 +215,7 @@ const withSubagent = (location: Location.Ref) =>
   })
 
 describe("SubagentTool", () => {
-  for (const transport of ["native", "acp"] as const)
+  for (const transport of ["native", "acp", "kiro-v3"] as const)
     it.live(
       `picks an unconfigured worker model once and reuses it, including when continuing a child (${transport})`,
       () =>
@@ -264,6 +264,14 @@ describe("SubagentTool", () => {
                       command: process.execPath,
                       args: [path.join(import.meta.dir, "../../runtime-acp/test/fixture/agent.ts")],
                       hostTools: "all",
+                      ...(transport === "kiro-v3"
+                        ? {
+                            preset: "kiro",
+                            prompt: "none",
+                            env: { FAKE_ACP_V3: "1" },
+                            home: { path: path.join(dir.path, ".kiro-home") },
+                          }
+                        : {}),
                     },
                   },
                 }).agents[0]!,
@@ -282,7 +290,7 @@ describe("SubagentTool", () => {
               )
               yield* Effect.addFinalizer(() => Effect.sync(() => runtime.stop()))
               const invoke = (id: string, sessionID?: string) =>
-                transport === "acp"
+                transport !== "native"
                   ? Effect.promise(async () => {
                       const args = {
                         agent: "worker",

@@ -117,18 +117,9 @@ export const defaultHome = (id: string) =>
  * approval mode, so the preset offers no `native_auto`. It always launches standard: its asks for
  * host tools are answered locally and the host tool applies the host's policy when it runs, so
  * Auto-approve never restarts it and host `deny` rules always hold (no `--trust-all-tools`).
- * The host owns base instructions and discovered resources. Kiro v2's profile prompt is not a
- * verified system-prompt replacement, so use ACP's tracked prefix and disable default resource
- * inheritance in the managed home (resources: [] alone still loads AGENTS.md).
+ * The host owns base instructions and discovered resources. V3 receives a wire profile and an
+ * empty workspace; tracked host prefixes supply the actual project context (see kiro.ts).
  */
-const KIRO_AGENT = {
-  name: "redsun",
-  description: "Kiro driven by redsun: every tool is redsun's.",
-  tools: ["@redsun"],
-  allowedTools: ["@redsun"],
-  resources: [],
-}
-
 export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
   kiro: {
     name: "Kiro-cli",
@@ -139,18 +130,13 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
       whoami: ["whoami", "--format", "json"],
       signIn: "Run `kiro-cli login` in a terminal, then connect again.",
     },
-    // The managed JSON profile and compaction notifications below are v2 contracts.
-    // V3 has different profile discovery and rejects --agent; opt into it with a custom config.
-    args: ["acp", "--agent-engine", "v2", "--agent", KIRO_AGENT.name],
+    args: ["acp", "--agent-engine", "v3", "--auth-method", "cli"],
     hostTools: "all",
     prompt: "prefix",
     compactCommand: "/compact",
     home: {
-      env: "KIRO_HOME",
-      files: {
-        [`agents/${KIRO_AGENT.name}.json`]: KIRO_AGENT,
-        "settings/cli.json": { "chat.disableInheritingDefaultResources": true },
-      },
+      env: "HOME",
+      files: {},
     },
   },
 }
@@ -302,7 +288,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       hostTools: entry.hostTools === "all" ? "all" : "extras",
       prompt: entry.prompt === "prefix" ? "prefix" : "none",
       integration: integration(name, record(entry.integration)),
-      ...home(id, record(entry.home), errors),
+      ...home(presetName === "kiro" ? `${id}-v3` : id, record(entry.home), errors),
     })
   }
   return { agents, errors }

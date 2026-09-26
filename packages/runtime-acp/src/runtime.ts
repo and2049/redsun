@@ -3,6 +3,7 @@ export * as AcpRuntime from "./runtime.js"
 import { execFile, spawn } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import path from "node:path"
+import os from "node:os"
 import { Readable, Writable } from "node:stream"
 import {
   ClientSideConnection,
@@ -31,6 +32,7 @@ import { AcpPlan } from "./plan.js"
 import { AcpOptions } from "./options.js"
 import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
+import { AcpKiro } from "./kiro.js"
 
 export type Selection = "normal" | "auto" | "native_auto"
 
@@ -88,6 +90,7 @@ export type Spawn = (agent: AcpOptions.Agent, cwd: string, extraArgs: readonly s
 
 /** Writes the files of the home the host manages for the agent; they are the host's, so overwritten. */
 export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
+  mkdirSync(home.path, { recursive: true })
   for (const [name, content] of Object.entries(home.files)) {
     const target = path.resolve(home.path, name)
     if (!target.startsWith(path.resolve(home.path) + path.sep))
@@ -100,6 +103,10 @@ export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
 /** The agent process environment: the host's, the configured additions, and the managed home. */
 const environment = (agent: AcpOptions.Agent) => ({
   ...process.env,
+  // KAS uses HOME, but the CLI's existing sign-in remains in its original data directory.
+  ...(agent.preset === "kiro"
+    ? { XDG_DATA_HOME: process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share") }
+    : {}),
   ...agent.env,
   ...(agent.home ? { [agent.home.env]: agent.home.path } : {}),
 })
@@ -118,11 +125,14 @@ export const account = (stdout: string): Record<string, string> => {
 }
 
 export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
+  const group = agent.preset === "kiro" && process.platform !== "win32"
   const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
     env: environment(agent),
     stdio: ["pipe", "pipe", "pipe"],
+    detached: group,
   })
+  let killed = false
   let stderr = ""
   child.stderr.on("data", (chunk: Buffer | string) => {
     stderr = (stderr + String(chunk)).slice(-STDERR_TAIL)
@@ -130,7 +140,23 @@ export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
   return {
     stdin: Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
     stdout: Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>,
-    kill: () => void child.kill(),
+    kill: () => {
+      if (killed) return
+      killed = true
+      if (!group || !child.pid) {
+        child.kill()
+        return
+      }
+      const pid = child.pid
+      const signal = (value: NodeJS.Signals) => {
+        try {
+          process.kill(-pid, value)
+        } catch {}
+      }
+      signal("SIGTERM")
+      const timer = setTimeout(() => signal("SIGKILL"), 2_000)
+      timer.unref()
+    },
     exited: new Promise((resolve) => {
       child.once("exit", resolve)
       child.once("error", resolve)
@@ -204,6 +230,7 @@ interface Session {
   listener?: (update: SessionUpdate) => void
   controller?: AbortController
   compaction?: ReturnType<typeof Promise.withResolvers<void>>
+  compacted?: boolean
   /** Corrections the user typed into declines; ACP has no channel for them but the next prompt. */
   readonly corrections: string[]
 }
@@ -333,6 +360,14 @@ export class Runtime {
       sessionUpdate: async (notification: SessionNotification) => {
         const session = current()
         if (!session || session.exited || notification.sessionId !== session.acpSessionID) return
+        if (this.agent.preset === "kiro") {
+          if (AcpKiro.compacted(notification.update)) {
+            session.compacted = true
+            this.context.clear(session.sessionID)
+            this.based.delete(session.sessionID)
+          }
+          notification = { ...notification, update: AcpKiro.normalize(notification.update) }
+        }
         if (notification.update.sessionUpdate === "current_mode_update")
           session.currentMode = notification.update.currentModeId
         if (notification.update.sessionUpdate === "config_option_update" && session.model?.control.kind === "config") {
@@ -394,26 +429,33 @@ export class Runtime {
     try {
       const initialized = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
-        // The agent keeps its own file and terminal tools (decision D6 is still open).
+        // Host tools travel over MCP; no ACP file or terminal callbacks are exposed.
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       })
+      if (this.agent.preset === "kiro") AcpKiro.validate(initialized)
       const loadable = initialized.agentCapabilities?.loadSession === true
       slot =
         input.tools?.definitions.length && initialized.agentCapabilities?.mcpCapabilities?.http
           ? new AcpHostTools.Slot(input.tools.catalog, input.tools.definitions)
           : undefined
       const mcpServers = slot ? [await this.endpoint.entry(slot)] : []
+      const request = {
+        cwd: this.host.cwd,
+        mcpServers,
+        ...(this.agent.preset === "kiro" ? { _meta: AcpKiro.metadata(!!slot, this.host.cwd) } : {}),
+      }
       if (slot) this.endpoint.attach(slot)
       // The agent replays a loaded conversation as session updates; they arrive before `opened` is
       // set and are dropped, since the host already holds that transcript.
       const loaded =
         input.resume && loadable
           ? await connection
-              .loadSession({ sessionId: input.resume, cwd: this.host.cwd, mcpServers })
+              .loadSession({ sessionId: input.resume, ...request })
               .then((response) => ({ ...response, sessionId: input.resume! }))
               .catch(() => undefined)
           : undefined
-      const created = loaded ?? (await connection.newSession({ cwd: this.host.cwd, mcpServers }))
+      const created = loaded ?? (await connection.newSession(request))
+      if (this.agent.preset === "kiro") AcpKiro.validateSession(created)
       const models = AcpModels.read(created)
       if (models?.models.length) this.host.onModels?.(models.models)
       if (!loaded && models?.current) this.defaultModel ??= models.current
@@ -609,11 +651,20 @@ export class Runtime {
     if (existing && sameArgs(existing.launch, launch) && existing.catalog === tools.catalog)
       return { session: existing, remembers: true, fresh: false }
     if (existing) this.close(existing)
-    const resume = existing?.acpSessionID ?? (await this.host.cursor?.get(turn.sessionID).catch(() => undefined))
+    const stored = await this.host.cursor?.get(turn.sessionID).catch(() => undefined)
+    const resume =
+      existing?.acpSessionID ??
+      (this.agent.preset === "kiro"
+        ? stored?.startsWith(AcpKiro.CURSOR)
+          ? stored.slice(AcpKiro.CURSOR.length)
+          : undefined
+        : stored)
     const opened = await this.open(turn.sessionID, { launch, tools, ...(resume ? { resume } : {}) })
     this.sessions.set(turn.sessionID, opened.session)
     if (opened.session.acpSessionID !== resume)
-      await this.host.cursor?.set(turn.sessionID, opened.session.acpSessionID).catch(() => {})
+      await this.host.cursor
+        ?.set(turn.sessionID, (this.agent.preset === "kiro" ? AcpKiro.CURSOR : "") + opened.session.acpSessionID)
+        .catch(() => {})
     return { session: opened.session, remembers: opened.resumed || !history, fresh: !opened.resumed }
   }
 
@@ -660,7 +711,8 @@ export class Runtime {
           options.prompt.some((message) => message.role === "assistant"),
         )
     const delta = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
-    const compacting = !oneShot && !!this.agent.compactCommand && delta.trim() === this.agent.compactCommand
+    const compacting =
+      !oneShot && !!this.agent.compactCommand && promptDelta(options.prompt).trim() === this.agent.compactCommand
     const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, fresh)
     const corrections = oneShot || compacting ? [] : session.corrections.splice(0)
     const prompt = AcpContext.wrap(delivery?.text, AcpContext.corrected(corrections, delta))
@@ -672,6 +724,7 @@ export class Runtime {
     })
 
     const state = AcpTranslate.make(session.slot)
+    session.compacted = false
     // The agent's plan becomes the host's todo list through the host's own todowrite, so it is
     // stored and rendered as if the agent had called it. Only when the turn may use todowrite.
     const todowrite =
@@ -764,13 +817,52 @@ export class Runtime {
           options.abortSignal?.addEventListener("abort", cancel, { once: true })
           if (options.abortSignal?.aborted) cancel()
           try {
+            if (compacting && this.agent.preset === "kiro") {
+              session.compacted = false
+              const interrupted = () => this.close(session)
+              controller.signal.addEventListener("abort", interrupted, { once: true })
+              let timedOut = false
+              const timer = setTimeout(() => {
+                timedOut = true
+                this.close(session)
+              }, this.options.compactionTimeoutMs ?? 120_000)
+              try {
+                controller.signal.throwIfAborted()
+                const result = await session.connection.extMethod(AcpKiro.COMPACT, { sessionId: session.acpSessionID })
+                if (result.success !== true) throw new Error("Kiro could not compact its native session history.")
+                if (!controller.signal.aborted)
+                  emit(
+                    AcpTranslate.update(state, {
+                      sessionUpdate: "agent_message_chunk",
+                      content: {
+                        type: "text",
+                        text: session.compacted
+                          ? `${this.agent.name} compacted its native session history.\n`
+                          : `${this.agent.name} did not change its native session history.\n`,
+                      },
+                    }),
+                  )
+                emit(AcpTranslate.finish(state, controller.signal.aborted ? "cancelled" : "end_turn"))
+              } catch (error) {
+                if (timedOut) throw new Error("Timed out waiting for Kiro to compact its native session history.")
+                throw error
+              } finally {
+                clearTimeout(timer)
+                controller.signal.removeEventListener("abort", interrupted)
+              }
+              return
+            }
             if (compacting && this.options.compactionStatus) this.compactionStarted(session)
             const response = await session.connection.prompt({
               sessionId: session.acpSessionID,
               prompt: [{ type: "text", text: prompt }],
             })
             const compacted =
-              response.stopReason !== "cancelled" ? await this.awaitCompaction(session, controller.signal) : undefined
+              response.stopReason !== "cancelled"
+                ? this.agent.preset === "kiro"
+                  ? session.compacted
+                  : await this.awaitCompaction(session, controller.signal)
+                : undefined
             if (response.stopReason === "cancelled" && session.compaction) this.close(session)
             settled = true
             await Promise.all(recording)

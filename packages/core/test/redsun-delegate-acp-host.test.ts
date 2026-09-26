@@ -97,69 +97,89 @@ const next = <A>(type: string) =>
     return seen
   })
 
-const setup = Effect.gen(function* () {
-  yield* registerToolPlugin(QuestionTool.Plugin)
-  yield* registerToolPlugin(ProbeTool)
-  yield* registerToolPlugin(RedsunWorkerModelTool.Plugin)
-  const host = yield* PluginHost.make(yield* Plugin.Service)
-  yield* AcpPlugin.effect({
-    ...host,
-    options: { agents: { fake: { command: process.execPath, args: [fixture], hostTools: "all" } } },
-  })
-  yield* (yield* AgentService.Service).transform((editor) =>
-    editor.update(AGENT as never, (agent) => {
-      agent.mode = "primary"
-      // Probes ask, except the one an explicit rule denies.
-      agent.permissions = [
-        ...agent.permissions,
-        { action: "probe", resource: "*", effect: "ask" },
-        { action: "probe", resource: "secret", effect: "deny" },
-      ]
-    }),
-  )
-  const integrations = yield* Integration.Service
-  const attempt = yield* integrations.oauth.connect({
-    integrationID: Integration.ID.make("fake"),
-    methodID: Integration.MethodID.make("acp-cli-login"),
-  })
-  for (let waited = 0; waited < 10_000; waited += 50) {
-    const status = yield* integrations.oauth.status({
-      integrationID: Integration.ID.make("fake"),
-      attemptID: attempt.attemptID,
+const setup = (v3: boolean) =>
+  Effect.gen(function* () {
+    yield* registerToolPlugin(QuestionTool.Plugin)
+    yield* registerToolPlugin(ProbeTool)
+    yield* registerToolPlugin(RedsunWorkerModelTool.Plugin)
+    const host = yield* PluginHost.make(yield* Plugin.Service)
+    yield* AcpPlugin.effect({
+      ...host,
+      options: {
+        agents: {
+          fake: {
+            command: process.execPath,
+            args: [fixture],
+            hostTools: "all",
+            ...(v3
+              ? {
+                  preset: "kiro",
+                  prompt: "none",
+                  env: { FAKE_ACP_V3: "1" },
+                  integration: { whoami: [fixture, "whoami"] },
+                  home: { path: path.join(host.location.directory, ".fake-kiro-home") },
+                }
+              : {}),
+          },
+        },
+      },
     })
-    if (status.status !== "pending") break
-    yield* sleep(50)
-  }
-  const info = yield* (yield* Model.Service).get("fake" as never, "default" as never)
-  const language = yield* (yield* AISDK.Service).language(info!)
-  const session = yield* host.session.create({ title: "acp host boundary" })
-  let turns = 0
-  /** One primary turn, tagged as core tags it, whose prompt makes the agent call a host tool. */
-  const invoke = (name: string, args: unknown, signal?: AbortSignal) => {
-    const messageID = `msg_${++turns}`
-    return {
-      messageID,
-      parts: Effect.promise(async () =>
-        collect(
-          (
-            await language.doStream({
-              prompt: [{ role: "user", content: [{ type: "text", text: `invoke:${JSON.stringify({ name, args })}` }] }],
-              tools: TOOLS,
-              ...(signal ? { abortSignal: signal } : {}),
-              headers: {
-                [DelegatedRuntime.Headers.session]: session.id,
-                [DelegatedRuntime.Headers.agent]: AGENT,
-                [DelegatedRuntime.Headers.kind]: "primary",
-                [DelegatedRuntime.Headers.message]: messageID,
-              },
-            })
-          ).stream,
-        ),
-      ),
+    yield* (yield* AgentService.Service).transform((editor) =>
+      editor.update(AGENT as never, (agent) => {
+        agent.mode = "primary"
+        // Probes ask, except the one an explicit rule denies.
+        agent.permissions = [
+          ...agent.permissions,
+          { action: "probe", resource: "*", effect: "ask" },
+          { action: "probe", resource: "secret", effect: "deny" },
+        ]
+      }),
+    )
+    const integrations = yield* Integration.Service
+    const attempt = yield* integrations.oauth.connect({
+      integrationID: Integration.ID.make("fake"),
+      methodID: Integration.MethodID.make("acp-cli-login"),
+    })
+    for (let waited = 0; waited < 10_000; waited += 50) {
+      const status = yield* integrations.oauth.status({
+        integrationID: Integration.ID.make("fake"),
+        attemptID: attempt.attemptID,
+      })
+      if (status.status !== "pending") break
+      yield* sleep(50)
     }
-  }
-  return { session, invoke, permission: yield* Permission.Service }
-})
+    const info = yield* (yield* Model.Service).get("fake" as never, "default" as never)
+    const language = yield* (yield* AISDK.Service).language(info!)
+    const session = yield* host.session.create({ title: "acp host boundary" })
+    let turns = 0
+    /** One primary turn, tagged as core tags it, whose prompt makes the agent call a host tool. */
+    const invoke = (name: string, args: unknown, signal?: AbortSignal) => {
+      const messageID = `msg_${++turns}`
+      return {
+        messageID,
+        parts: Effect.promise(async () =>
+          collect(
+            (
+              await language.doStream({
+                prompt: [
+                  { role: "user", content: [{ type: "text", text: `invoke:${JSON.stringify({ name, args })}` }] },
+                ],
+                tools: TOOLS,
+                ...(signal ? { abortSignal: signal } : {}),
+                headers: {
+                  [DelegatedRuntime.Headers.session]: session.id,
+                  [DelegatedRuntime.Headers.agent]: AGENT,
+                  [DelegatedRuntime.Headers.kind]: "primary",
+                  [DelegatedRuntime.Headers.message]: messageID,
+                },
+              })
+            ).stream,
+          ),
+        ),
+      }
+    }
+    return { session, invoke, permission: yield* Permission.Service }
+  })
 
 /** What the agent received back from its host call, as it reported it. */
 const reported = (parts: readonly LanguageModelV3StreamPart[]) => {
@@ -169,119 +189,122 @@ const reported = (parts: readonly LanguageModelV3StreamPart[]) => {
   return JSON.stringify(result.result)
 }
 
-describe("generic ACP host tools through the real host boundary", () => {
-  for (const dismiss of [false, true])
-    it.live(`settles the shared worker picker over ACP (${dismiss ? "dismiss" : "choose"})`, () =>
+for (const v3 of [false, true])
+  describe(`${v3 ? "Kiro v3" : "generic ACP"} host tools through the real host boundary`, () => {
+    for (const dismiss of [false, true])
+      it.live(`settles the shared worker picker over ACP (${dismiss ? "dismiss" : "choose"})`, () =>
+        Effect.gen(function* () {
+          const { session, invoke } = yield* setup(v3)
+          const forms = yield* Form.Service
+          const created = yield* next<{ readonly form: Form.Info }>(Form.Event.Created.type)
+          const fiber = yield* Effect.forkScoped(invoke("worker_model", {}).parts)
+          const { form } = yield* Deferred.await(created)
+          expect(form.sessionID).toBe(session.id)
+          expect(form.metadata).toMatchObject({ kind: "worker-model" })
+          if (dismiss) yield* forms.cancel(form.id)
+          else yield* forms.reply({ id: form.id, answer: { model: "fake/default" } })
+          expect(reported(yield* Fiber.join(fiber))).toContain(
+            dismiss ? "dismissed the worker model picker" : "fake/default",
+          )
+        }),
+      )
+
+    it.live("opens one question form attributed to the agent's call and returns the answer", () =>
       Effect.gen(function* () {
-        const { session, invoke } = yield* setup
+        const { session, invoke } = yield* setup(v3)
         const forms = yield* Form.Service
         const created = yield* next<{ readonly form: Form.Info }>(Form.Event.Created.type)
-        const fiber = yield* Effect.forkScoped(invoke("worker_model", {}).parts)
+        const turn = invoke("question", QUESTION)
+        const fiber = yield* Effect.forkScoped(turn.parts)
         const { form } = yield* Deferred.await(created)
         expect(form.sessionID).toBe(session.id)
-        expect(form.metadata).toMatchObject({ kind: "worker-model" })
-        if (dismiss) yield* forms.cancel(form.id)
-        else yield* forms.reply({ id: form.id, answer: { model: "fake/default" } })
-        expect(reported(yield* Fiber.join(fiber))).toContain(
-          dismiss ? "dismissed the worker model picker" : "fake/default",
-        )
-      }),
-    )
-
-  it.live("opens one question form attributed to the agent's call and returns the answer", () =>
-    Effect.gen(function* () {
-      const { session, invoke } = yield* setup
-      const forms = yield* Form.Service
-      const created = yield* next<{ readonly form: Form.Info }>(Form.Event.Created.type)
-      const turn = invoke("question", QUESTION)
-      const fiber = yield* Effect.forkScoped(turn.parts)
-      const { form } = yield* Deferred.await(created)
-      expect(form.sessionID).toBe(session.id)
-      expect(form.metadata).toEqual({ kind: "question", tool: { messageID: turn.messageID, id: "call_invoke" } })
-      expect(yield* forms.list({ sessionID: session.id })).toHaveLength(1)
-      yield* forms.reply({ id: form.id, answer: { q0: "Yes" } })
-      const parts = yield* Fiber.join(fiber)
-      expect(parts.filter((part) => part.type === "tool-call").map((part) => part.toolCallId)).toEqual(["call_invoke"])
-      expect(reported(parts)).toContain("Yes")
-      expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
-    }),
-  )
-
-  it.live("continues the turn with the refusal when the user dismisses the question", () =>
-    Effect.gen(function* () {
-      const { invoke } = yield* setup
-      const forms = yield* Form.Service
-      const created = yield* next<{ readonly form: Form.Info }>(Form.Event.Created.type)
-      const fiber = yield* Effect.forkScoped(invoke("question", QUESTION).parts)
-      const { form } = yield* Deferred.await(created)
-      yield* forms.cancel(form.id)
-      const parts = yield* Fiber.join(fiber)
-      expect(reported(parts)).toContain("The user dismissed this question")
-      expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
-    }),
-  )
-
-  for (const reply of ["once", "reject", "correct"] as const)
-    it.live(`asks the host policy once for a host tool and relays the ${reply} reply`, () =>
-      Effect.gen(function* () {
-        const { session, invoke, permission } = yield* setup
-        const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
-        const turn = invoke("probe", { target: "src" })
-        const fiber = yield* Effect.forkScoped(turn.parts)
-        const request = yield* Deferred.await(asked)
-        expect(request).toMatchObject({
-          sessionID: session.id,
-          action: "probe",
-          resources: ["src"],
-          source: { type: "tool", messageID: turn.messageID, id: "call_invoke" },
-        })
-        expect(yield* permission.forSession(session.id)).toHaveLength(1)
-        yield* permission.reply(
-          reply === "correct"
-            ? { requestID: request.id, reply: "reject", message: "use the lib directory" }
-            : { requestID: request.id, reply },
-        )
+        expect(form.metadata).toEqual({ kind: "question", tool: { messageID: turn.messageID, id: "call_invoke" } })
+        expect(yield* forms.list({ sessionID: session.id })).toHaveLength(1)
+        yield* forms.reply({ id: form.id, answer: { q0: "Yes" } })
         const parts = yield* Fiber.join(fiber)
-        expect(reported(parts)).toContain(
-          { once: "PROBED", reject: "The user declined this tool call", correct: "feedback: use the lib directory" }[
-            reply
-          ],
-        )
+        expect(parts.filter((part) => part.type === "tool-call").map((part) => part.toolCallId)).toEqual([
+          "call_invoke",
+        ])
+        expect(reported(parts)).toContain("Yes")
         expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
       }),
     )
 
-  it.live("releases a pending host ask when Auto-approve is selected, and still refuses a denied call", () =>
-    Effect.gen(function* () {
-      const { session, invoke, permission } = yield* setup
-      const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
-      const fiber = yield* Effect.forkScoped(invoke("probe", { target: "src" }).parts)
-      yield* Deferred.await(asked)
-      yield* permission.setMode("auto")
-      expect(reported(yield* Fiber.join(fiber))).toContain("PROBED")
-      const denied = yield* invoke("probe", { target: "secret" }).parts
-      expect(reported(denied)).toContain("Permission denied: probe")
-      expect(yield* permission.forSession(session.id)).toEqual([])
-    }),
-  )
+    it.live("continues the turn with the refusal when the user dismisses the question", () =>
+      Effect.gen(function* () {
+        const { invoke } = yield* setup(v3)
+        const forms = yield* Form.Service
+        const created = yield* next<{ readonly form: Form.Info }>(Form.Event.Created.type)
+        const fiber = yield* Effect.forkScoped(invoke("question", QUESTION).parts)
+        const { form } = yield* Deferred.await(created)
+        yield* forms.cancel(form.id)
+        const parts = yield* Fiber.join(fiber)
+        expect(reported(parts)).toContain("The user dismissed this question")
+        expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
+      }),
+    )
 
-  it.live("withdraws a pending host ask when the turn is cancelled, and the next turn recovers", () =>
-    Effect.gen(function* () {
-      const { session, invoke, permission } = yield* setup
-      const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
-      const controller = new AbortController()
-      const fiber = yield* Effect.forkScoped(invoke("probe", { target: "src" }, controller.signal).parts)
-      yield* Deferred.await(asked)
-      controller.abort()
-      yield* Fiber.join(fiber)
-      for (let waited = 0; waited < 2_000 && (yield* permission.forSession(session.id)).length; waited += 20)
-        yield* sleep(20)
-      expect(yield* permission.forSession(session.id)).toEqual([])
-      const again = yield* next<Permission.Request>(Permission.Event.Asked.type)
-      const retry = yield* Effect.forkScoped(invoke("probe", { target: "src" }).parts)
-      const request = yield* Deferred.await(again)
-      yield* permission.reply({ requestID: request.id, reply: "once" })
-      expect(reported(yield* Fiber.join(retry))).toContain("PROBED")
-    }),
-  )
-})
+    for (const reply of ["once", "reject", "correct"] as const)
+      it.live(`asks the host policy once for a host tool and relays the ${reply} reply`, () =>
+        Effect.gen(function* () {
+          const { session, invoke, permission } = yield* setup(v3)
+          const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
+          const turn = invoke("probe", { target: "src" })
+          const fiber = yield* Effect.forkScoped(turn.parts)
+          const request = yield* Deferred.await(asked)
+          expect(request).toMatchObject({
+            sessionID: session.id,
+            action: "probe",
+            resources: ["src"],
+            source: { type: "tool", messageID: turn.messageID, id: "call_invoke" },
+          })
+          expect(yield* permission.forSession(session.id)).toHaveLength(1)
+          yield* permission.reply(
+            reply === "correct"
+              ? { requestID: request.id, reply: "reject", message: "use the lib directory" }
+              : { requestID: request.id, reply },
+          )
+          const parts = yield* Fiber.join(fiber)
+          expect(reported(parts)).toContain(
+            { once: "PROBED", reject: "The user declined this tool call", correct: "feedback: use the lib directory" }[
+              reply
+            ],
+          )
+          expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "stop" } })
+        }),
+      )
+
+    it.live("releases a pending host ask when Auto-approve is selected, and still refuses a denied call", () =>
+      Effect.gen(function* () {
+        const { session, invoke, permission } = yield* setup(v3)
+        const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
+        const fiber = yield* Effect.forkScoped(invoke("probe", { target: "src" }).parts)
+        yield* Deferred.await(asked)
+        yield* permission.setMode("auto")
+        expect(reported(yield* Fiber.join(fiber))).toContain("PROBED")
+        const denied = yield* invoke("probe", { target: "secret" }).parts
+        expect(reported(denied)).toContain("Permission denied: probe")
+        expect(yield* permission.forSession(session.id)).toEqual([])
+      }),
+    )
+
+    it.live("withdraws a pending host ask when the turn is cancelled, and the next turn recovers", () =>
+      Effect.gen(function* () {
+        const { session, invoke, permission } = yield* setup(v3)
+        const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
+        const controller = new AbortController()
+        const fiber = yield* Effect.forkScoped(invoke("probe", { target: "src" }, controller.signal).parts)
+        yield* Deferred.await(asked)
+        controller.abort()
+        yield* Fiber.join(fiber)
+        for (let waited = 0; waited < 2_000 && (yield* permission.forSession(session.id)).length; waited += 20)
+          yield* sleep(20)
+        expect(yield* permission.forSession(session.id)).toEqual([])
+        const again = yield* next<Permission.Request>(Permission.Event.Asked.type)
+        const retry = yield* Effect.forkScoped(invoke("probe", { target: "src" }).parts)
+        const request = yield* Deferred.await(again)
+        yield* permission.reply({ requestID: request.id, reply: "once" })
+        expect(reported(yield* Fiber.join(retry))).toContain("PROBED")
+      }),
+    )
+  })

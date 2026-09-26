@@ -129,6 +129,143 @@ const withRuntime = async (
 }
 
 describe("ACP runtime against a scripted agent", () => {
+  test("v3 restores tracked instructions after compaction and delivers changes/removals", async () => {
+    let files = [{ path: "/project/AGENTS.md", content: "HOST_CONTEXT_ONE" }]
+    await withRuntime(
+      {
+        agent: { preset: "kiro", prompt: "prefix", compactCommand: "/compact", env: { FAKE_ACP_V3: "1" } },
+        host: {
+          system: () => ({ static: ["HOST_BASE"], dynamic: [] }),
+          context: () => ({ agent: { id: "build" }, isWorker: false, files }),
+        },
+      },
+      async (runtime) => {
+        const echo = async () => textOf(await collect((await runtime.turn(TURN, call([user("echo")]))).stream))
+        expect(await echo()).toContain("HOST_CONTEXT_ONE")
+        expect(await echo()).not.toContain("HOST_BASE")
+        await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
+        const restored = await echo()
+        expect(restored).toContain("HOST_BASE")
+        expect(restored).toContain("HOST_CONTEXT_ONE")
+        files = [{ path: "/project/AGENTS.md", content: "HOST_CONTEXT_TWO" }]
+        expect(await echo()).toContain("HOST_CONTEXT_TWO")
+        files = []
+        expect(await echo()).toContain("no longer apply")
+      },
+    )
+  })
+
+  test("v3 replaces legacy cursors and sends a confined wire profile on creation and resume", async () => {
+    const cursors = new Map([[TURN.sessionID, "old-v2-session"]])
+    const config = { agent: { preset: "kiro", env: { FAKE_ACP_V3: "1" } }, host: { cursors } }
+    await withRuntime(config, async (runtime) => {
+      const parts = await collect(
+        (await runtime.turn(TURN, call([assistant("prior conversation"), user("session-requests")]))).stream,
+      )
+      const [request] = JSON.parse(textOf(parts))
+      expect(request.method).toBe("new")
+      expect(request._meta.kiro).toMatchObject({ modeId: "redsun", isEmptyWorkspace: true })
+      expect(request._meta.kiro.customAgents[0]).toMatchObject({
+        tools: [],
+        includeMcpJson: false,
+        includePowers: false,
+        permissions: {
+          rules: [
+            { capability: "builtin", match: ["*"], effect: "deny" },
+            { capability: "mcp", match: ["redsun/*"], effect: "deny" },
+          ],
+        },
+      })
+      expect(cursors.get(TURN.sessionID)).toBe("kiro-v3:acp_1")
+    })
+    await withRuntime(config, async (runtime) => {
+      const [request] = JSON.parse(
+        textOf(await collect((await runtime.turn(TURN, call([user("session-requests")]))).stream)),
+      )
+      expect(request.method).toBe("load")
+      expect(request.sessionId).toBe("acp_1")
+      expect(request._meta.kiro.customAgents[0].id).toBe("redsun")
+    })
+  })
+
+  test("v3 rejects incompatible engines and profile fallback before prompting", async () => {
+    for (const env of [{}, { FAKE_ACP_V3: "1", FAKE_ACP_BAD_PROFILE: "1" }] as Record<string, string>[])
+      await withRuntime({ agent: { preset: "kiro", env } }, async (runtime) => {
+        await expect(runtime.turn(TURN, call([user("hello")]))).rejects.toThrow()
+      })
+  })
+
+  test("v3 tools retain canonical host attribution and host result metadata", async () => {
+    const calls: unknown[] = []
+    await withRuntime(
+      {
+        agent: { preset: "kiro", hostTools: "all", env: { FAKE_ACP_V3: "1" } },
+        host: {
+          tools: () => ({
+            direct: new Set(),
+            definitions: [{ type: "tool", name: "shell", description: "shell", inputSchema: { type: "object" } }],
+            execute: async (args) => {
+              calls.push({ name: args.name, args: args.args, callID: args.callID })
+              return { content: [{ type: "text", text: "host result" }], metadata: { exit: 0 } }
+            },
+          }),
+        },
+      },
+      async (runtime, checks) => {
+        const parts = await collect(
+          (
+            await runtime.turn(
+              { ...TURN, assistantMessageID: "msg_v3" },
+              call([user('invoke:{"name":"shell","args":{"command":"pwd"}}')]),
+            )
+          ).stream,
+        )
+        expect(calls).toEqual([{ name: "shell", args: { command: "pwd" }, callID: "call_invoke" }])
+        expect(parts.filter((p) => p.type === "tool-call")).toHaveLength(1)
+        expect(parts.find((p) => p.type === "tool-result")).toMatchObject({
+          toolName: "shell",
+          result: { output: "host result", metadata: { exit: 0 } },
+        })
+        expect(checks).toEqual([])
+      },
+    )
+  })
+
+  for (const mode of ["complete", "noop", "fail", "hang"])
+    test(`v3 compaction ${mode} uses the extension and reports only confirmed completion`, async () => {
+      await withRuntime(
+        {
+          agent: { preset: "kiro", compactCommand: "/compact", env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_COMPACT: mode } },
+          options: { compactionTimeoutMs: 150 },
+        },
+        async (runtime) => {
+          const parts = await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
+          expect(textOf(parts).includes("compacted its native session history")).toBe(mode === "complete")
+          expect(parts.some((p) => p.type === "error")).toBe(mode === "fail" || mode === "hang")
+          if (mode === "noop") expect(textOf(parts)).toContain("did not change")
+          if (mode === "hang") expect(String(parts.find((p) => p.type === "error")?.error)).toContain("Timed out")
+          expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+            "Hello from the fake agent",
+          )
+        },
+      )
+    })
+
+  test("v3 compaction interruption releases the turn and replaces the process", async () => {
+    await withRuntime(
+      { agent: { preset: "kiro", compactCommand: "/compact", env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_COMPACT: "hang" } } },
+      async (runtime) => {
+        const controller = new AbortController()
+        const stream = (await runtime.turn(TURN, call([user("/compact")], { abortSignal: controller.signal }))).stream
+        controller.abort()
+        expect((await collect(stream)).at(-1)).toMatchObject({ type: "finish", finishReason: { raw: "cancelled" } })
+        expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+          "Hello from the fake agent",
+        )
+      },
+    )
+  })
+
   test("waits for extension compaction completion before releasing the turn", async () => {
     await withRuntime(
       {
