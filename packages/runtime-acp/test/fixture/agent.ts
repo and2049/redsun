@@ -30,6 +30,7 @@ let sessions = 0
 const modes = new Map<string, string>()
 const cancelled = new Set<string>()
 const received: string[] = []
+let compacting = false
 const servers = new Map<string, McpServer[]>()
 // FAKE_ACP_MODELS picks how the agent reports its models: the standard config option or the
 // unstable `models` field with `session/set_model`.
@@ -136,6 +137,25 @@ new AgentSideConnection((connection) => {
       const sessionId = params.sessionId
       const text = params.prompt.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
       received.push(text)
+      if (process.env.FAKE_ACP_ASYNC_COMPACT && text === "/compact") {
+        compacting = true
+        void (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          await connection.extNotification("_kiro.dev/compaction/status", { sessionId, status: { type: "started" } })
+          if (process.env.FAKE_ACP_ASYNC_COMPACT === "hang") return
+          await new Promise((resolve) => setTimeout(resolve, 60))
+          compacting = false
+          await connection.extNotification("_kiro.dev/compaction/status", {
+            sessionId,
+            status:
+              process.env.FAKE_ACP_ASYNC_COMPACT === "fail"
+                ? { type: "failed", message: "fixture compaction failed" }
+                : { type: "completed" },
+          })
+        })()
+        return { stopReason: "end_turn" }
+      }
+      if (compacting) throw new Error("A prompt arrived before compaction completed")
       // The host context may ride ahead of it; the call is the last line.
       if (text.includes("invoke:")) {
         const input = JSON.parse(text.slice(text.lastIndexOf("invoke:") + "invoke:".length))

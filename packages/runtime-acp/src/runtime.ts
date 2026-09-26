@@ -203,11 +203,20 @@ interface Session {
   agent?: string
   listener?: (update: SessionUpdate) => void
   controller?: AbortController
+  compaction?: ReturnType<typeof Promise.withResolvers<void>>
   /** Corrections the user typed into declines; ACP has no channel for them but the next prompt. */
   readonly corrections: string[]
 }
 
 export interface Options {
+  /** Optional agent extension acknowledging asynchronous compaction completion. */
+  readonly compactionStatus?: (
+    method: string,
+    params: Record<string, unknown>,
+  ) =>
+    | { readonly sessionID: string; readonly status: "started" | "completed" | "failed"; readonly error?: string }
+    | undefined
+  readonly compactionTimeoutMs?: number
   readonly spawn?: Spawn
   readonly interruptGraceMs?: number
 }
@@ -230,7 +239,7 @@ export class Runtime {
   constructor(
     private readonly agent: AcpOptions.Agent,
     private readonly host: Host,
-    options: Options = {},
+    private readonly options: Options = {},
   ) {
     this.spawn = options.spawn ?? spawnProcess
     this.interruptGraceMs = options.interruptGraceMs ?? INTERRUPT_GRACE_MS
@@ -305,6 +314,22 @@ export class Runtime {
    */
   private client(current: () => Session | undefined): Client {
     return {
+      extNotification: async (method, params) => {
+        const update = this.options.compactionStatus?.(method, params)
+        const session = current()
+        if (!update || !session || session.exited || update.sessionID !== session.acpSessionID) return
+        if (update.status === "started") {
+          this.compactionStarted(session)
+          return
+        }
+        if (!session.compaction) return
+        if (update.status === "failed") session.compaction.reject(new Error(update.error ?? "Agent compaction failed."))
+        else {
+          this.context.clear(session.sessionID)
+          this.based.delete(session.sessionID)
+          session.compaction.resolve()
+        }
+      },
       sessionUpdate: async (notification: SessionNotification) => {
         const session = current()
         if (!session || session.exited || notification.sessionId !== session.acpSessionID) return
@@ -436,6 +461,7 @@ export class Runtime {
   }
 
   private forget(session: Session) {
+    session.compaction?.reject(new Error("The agent exited during compaction."))
     session.controller?.abort()
     session.listener = undefined
     if (session.slot) this.endpoint.detach(session.slot)
@@ -447,6 +473,39 @@ export class Runtime {
     session.exited = true
     this.forget(session)
     session.process.kill()
+  }
+
+  private compactionStarted(session: Session) {
+    if (!session.compaction) {
+      session.compaction = Promise.withResolvers<void>()
+      // The extension may arrive before the prompt response, when nobody is awaiting it yet.
+      void session.compaction.promise.catch(() => {})
+    }
+    return session.compaction
+  }
+
+  private async awaitCompaction(session: Session, signal: AbortSignal) {
+    const pending = session.compaction
+    if (!pending) return
+    const abort = () => {
+      pending.reject(new Error("Compaction was interrupted."))
+      // An acknowledgement does not mean the process is idle; don't reuse it after interruption.
+      this.close(session)
+    }
+    const timeout = setTimeout(() => {
+      pending.reject(new Error("Timed out waiting for the agent to finish compaction."))
+      this.close(session)
+    }, this.options.compactionTimeoutMs ?? 120_000)
+    signal.addEventListener("abort", abort, { once: true })
+    if (signal.aborted) abort()
+    try {
+      await pending.promise
+      return true
+    } finally {
+      clearTimeout(timeout)
+      signal.removeEventListener("abort", abort)
+      if (session.compaction === pending) session.compaction = undefined
+    }
   }
 
   /** The host session is gone: its agent process goes too (its cursor is the plugin's to remove). */
@@ -705,13 +764,17 @@ export class Runtime {
           options.abortSignal?.addEventListener("abort", cancel, { once: true })
           if (options.abortSignal?.aborted) cancel()
           try {
+            if (compacting && this.options.compactionStatus) this.compactionStarted(session)
             const response = await session.connection.prompt({
               sessionId: session.acpSessionID,
               prompt: [{ type: "text", text: prompt }],
             })
+            const compacted =
+              response.stopReason !== "cancelled" ? await this.awaitCompaction(session, controller.signal) : undefined
+            if (response.stopReason === "cancelled" && session.compaction) this.close(session)
             settled = true
             await Promise.all(recording)
-            if (!controller.signal.aborted && !session.exited && compacting) {
+            if (!controller.signal.aborted && !session.exited && (compacting || compacted)) {
               this.context.clear(turn.sessionID)
               this.based.delete(turn.sessionID)
             } else if (!controller.signal.aborted && !session.exited && response.stopReason !== "cancelled")

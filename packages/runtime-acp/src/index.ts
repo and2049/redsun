@@ -12,6 +12,7 @@ import { Effect, Stream } from "effect"
 import type { AcpModels } from "./models.js"
 import { AcpOptions } from "./options.js"
 import { AcpRuntime } from "./runtime.js"
+import { AcpKiro } from "./kiro.js"
 
 // REDSUN: delegated runtimes for external coding agents that speak ACP (Agent Client Protocol).
 // A plugin in the ordinary sense: it reaches the host only through `ctx`, and core knows nothing
@@ -162,7 +163,9 @@ export default define({
           })
       })
 
-      const runtime = new AcpRuntime.Runtime(agent, host)
+      const runtime = new AcpRuntime.Runtime(agent, host, {
+        ...(agent.preset === "kiro" ? { compactionStatus: AcpKiro.compactionStatus } : {}),
+      })
       yield* Effect.addFinalizer(() => Effect.sync(() => runtime.stop()))
       // A deleted host session releases its agent process and the agent session it remembered.
       yield* ctx.event.subscribe().pipe(

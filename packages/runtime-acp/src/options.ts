@@ -16,6 +16,8 @@ import path from "node:path"
  * A `preset` supplies the settings a known agent needs; the entry's own keys override it.
  */
 export interface Agent {
+  /** Preset provenance, used to install that agent's protocol extensions. */
+  readonly preset?: string
   /** Provider id; also the runtime id and the storage prefix. */
   readonly id: string
   /** Provider display name in pickers. */
@@ -268,6 +270,7 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
         return modelID ? [{ id: modelID, name: string(item?.name) ?? modelID }] : []
       })
     agents.push({
+      ...(presetName ? { preset: presetName } : {}),
       id,
       name,
       command,

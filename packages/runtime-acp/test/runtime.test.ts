@@ -11,6 +11,7 @@ import type {
 } from "@opencode/plugin/effect/delegate"
 import { AcpContext } from "../src/context.js"
 import { AcpHostTools } from "../src/host-tools.js"
+import { AcpKiro } from "../src/kiro.js"
 import type { AcpOptions } from "../src/options.js"
 import { AcpRuntime } from "../src/runtime.js"
 
@@ -128,6 +129,69 @@ const withRuntime = async (
 }
 
 describe("ACP runtime against a scripted agent", () => {
+  test("waits for extension compaction completion before releasing the turn", async () => {
+    await withRuntime(
+      {
+        agent: { compactCommand: "/compact", env: { FAKE_ACP_ASYNC_COMPACT: "complete" } },
+        options: { compactionStatus: AcpKiro.compactionStatus },
+      },
+      async (runtime) => {
+        const compact = await runtime.turn(TURN, call([user("/compact")]))
+        const reader = compact.stream.getReader()
+        await reader.read()
+        await expect(runtime.turn(TURN, call([user("hello")]))).rejects.toThrow()
+        while (!(await reader.read()).done) {}
+        const parts = await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
+        expect(textOf(parts)).toBe("Hello from the fake agent")
+      },
+    )
+  })
+
+  for (const mode of ["fail", "hang"])
+    test(`surfaces asynchronous compaction ${mode} and recovers on the next turn`, async () => {
+      await withRuntime(
+        {
+          agent: { compactCommand: "/compact", env: { FAKE_ACP_ASYNC_COMPACT: mode } },
+          options: { compactionStatus: AcpKiro.compactionStatus, compactionTimeoutMs: 150 },
+        },
+        async (runtime) => {
+          const parts = await collect((await runtime.turn(TURN, call([user("/compact")]))).stream)
+          const error = parts.find((part) => part.type === "error")
+          expect(String(error?.error)).toContain(mode === "fail" ? "fixture compaction failed" : "Timed out")
+          expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+            "Hello from the fake agent",
+          )
+        },
+      )
+    })
+
+  test("interrupts an acknowledged asynchronous compaction and replaces the process", async () => {
+    await withRuntime(
+      {
+        agent: { compactCommand: "/compact", env: { FAKE_ACP_ASYNC_COMPACT: "hang" } },
+        options: { compactionStatus: AcpKiro.compactionStatus },
+      },
+      async (runtime) => {
+        const controller = new AbortController()
+        const reader = (
+          await runtime.turn(TURN, call([user("/compact")], { abortSignal: controller.signal }))
+        ).stream.getReader()
+        await reader.read()
+        controller.abort()
+        const parts: LanguageModelV3StreamPart[] = []
+        for (;;) {
+          const item = await reader.read()
+          if (item.done) break
+          parts.push(item.value)
+        }
+        expect(parts.at(-1)).toMatchObject({ type: "finish", finishReason: { unified: "other", raw: "cancelled" } })
+        expect(textOf(await collect((await runtime.turn(TURN, call([user("hello")]))).stream))).toBe(
+          "Hello from the fake agent",
+        )
+      },
+    )
+  })
+
   test("streams text as one block and finishes with the agent's usage", () =>
     withRuntime({}, async (runtime) => {
       const parts = await collect((await runtime.turn(TURN, call([user("hello")]))).stream)
