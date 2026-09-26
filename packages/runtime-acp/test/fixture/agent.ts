@@ -415,7 +415,16 @@ new AgentSideConnection((connection) => {
         await say(sessionId, `SESSION=${sessionId} TURNS=${received.length} PROMPT=${text}`)
         return { stopReason: "end_turn" }
       }
-      await connection.sessionUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: 1234, size: 200000 } })
+      // As Kiro v3 does: context as a percentage in session-info metadata, never `usage_update`.
+      await connection.sessionUpdate({
+        sessionId,
+        update: v3
+          ? {
+              sessionUpdate: "session_info_update",
+              _meta: { kiro: { kind: "context_usage", contextUsage: { usagePercentage: 2.5 }, usagePercentage: 2.5 } },
+            }
+          : { sessionUpdate: "usage_update", used: 1234, size: 200000 },
+      })
       await say(sessionId, "Hello from ")
       await say(sessionId, "the fake agent")
       return { stopReason: "end_turn" }

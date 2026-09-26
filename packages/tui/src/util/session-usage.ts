@@ -2,6 +2,7 @@ import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode/clie
 import { Locale } from "./locale"
 import { translate, type Translator } from "../i18n/translate"
 import { stringWidth } from "./string-width"
+import { reportedContextPercent } from "./session"
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
 
@@ -19,9 +20,19 @@ export function sessionUsage(input: {
   t?: Translator
 }): SessionUsage | undefined {
   const last = input.messages.findLast(
-    (item): item is SessionMessageAssistant => item.type === "assistant" && (item.tokens?.output ?? 0) > 0,
+    (item): item is SessionMessageAssistant =>
+      item.type === "assistant" && ((item.tokens?.output ?? 0) > 0 || reportedContextPercent(item) !== undefined),
   )
-  if (!last?.tokens) return undefined
+  if (!last) return undefined
+  const cost = input.cost > 0 ? money.format(input.cost) : undefined
+
+  // A runtime that states only a percentage (Kiro) has no token count or cache split to show.
+  const reported = reportedContextPercent(last)
+  if (reported !== undefined) {
+    const percent = `${Math.round(reported)}%`
+    return { context: `(${percent})`, percent, cost }
+  }
+  if (!last.tokens) return undefined
 
   const tokens =
     last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
@@ -49,7 +60,7 @@ export function sessionUsage(input: {
     context: percent ? `${Locale.number(tokens)} (${percent})` : Locale.number(tokens),
     percent,
     cache: ratio === undefined ? undefined : (input.t ?? translate)("session.usage.cache", { percent: ratio }),
-    cost: input.cost > 0 ? money.format(input.cost) : undefined,
+    cost,
   }
 }
 

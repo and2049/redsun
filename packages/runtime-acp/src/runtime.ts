@@ -723,7 +723,7 @@ export class Runtime {
       throw this.failure(session, error)
     })
 
-    const state = AcpTranslate.make(session.slot)
+    const state = AcpTranslate.make(session.slot, this.agent.id)
     session.compacted = false
     // The agent's plan becomes the host's todo list through the host's own todowrite, so it is
     // stored and rendered as if the agent had called it. Only when the turn may use todowrite.
@@ -812,6 +812,8 @@ export class Runtime {
           session.listener = (update) => {
             const todos = todowrite ? AcpPlan.apply(session.plans, update) : undefined
             if (todos) record(todos)
+            const percent = this.agent.preset === "kiro" ? AcpKiro.contextPercent(update) : undefined
+            if (percent !== undefined) state.contextPercent = percent
             emit(AcpTranslate.update(state, update))
           }
           options.abortSignal?.addEventListener("abort", cancel, { once: true })

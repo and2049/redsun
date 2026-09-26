@@ -12,11 +12,22 @@ export interface State {
   blocks: number
   readonly tools: Map<string, { readonly name: string; settled: boolean }>
   usage?: { readonly used: number; readonly size: number }
+  /**
+   * Context use the agent states only as a percentage of its window. It finishes as provider
+   * metadata under `provider`, which the host keeps as the message's `providerState.contextPercent`.
+   */
+  contextPercent?: number
+  readonly provider?: string
   /** The session's host tools: their calls render as the host's own tool rows. */
   readonly host?: AcpHostTools.Slot
 }
 
-export const make = (host?: AcpHostTools.Slot): State => ({ blocks: 0, tools: new Map(), ...(host ? { host } : {}) })
+export const make = (host?: AcpHostTools.Slot, provider?: string): State => ({
+  blocks: 0,
+  tools: new Map(),
+  ...(host ? { host } : {}),
+  ...(provider ? { provider } : {}),
+})
 
 const close = (state: State): LanguageModelV3StreamPart[] => {
   const open = state.open
@@ -193,6 +204,9 @@ export const finish = (state: State, stopReason: StopReason): LanguageModelV3Str
       inputTokens: { total: state.usage?.used, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
       outputTokens: { total: undefined, reasoning: undefined },
     },
+    ...(state.provider && state.contextPercent !== undefined
+      ? { providerMetadata: { [state.provider]: { contextPercent: state.contextPercent } } }
+      : {}),
   } as LanguageModelV3StreamPart)
   return parts
 }

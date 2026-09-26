@@ -6,6 +6,7 @@ import { Keymap } from "../../context/keymap"
 import { useRouteData } from "../../context/route"
 import { useTheme } from "../../context/theme"
 import { Locale } from "../../util/locale"
+import { reportedContextPercent } from "../../util/session"
 import { useLanguage } from "../../i18n"
 
 const AGENT_PATTERN = /@([\w-]+) subagent/
@@ -50,8 +51,12 @@ export function SubagentFooter() {
     const messages = data.session.message.list(route.sessionID) ?? []
     const last = messages.findLast(
       (message): message is SessionMessageAssistant =>
-        message.type === "assistant" && (message.tokens?.output ?? 0) > 0,
+        message.type === "assistant" &&
+        ((message.tokens?.output ?? 0) > 0 || reportedContextPercent(message) !== undefined),
     )
+    const reported = last ? reportedContextPercent(last) : undefined
+    if (reported !== undefined)
+      return { context: `(${Math.round(reported)}%)`, cost: cost > 0 ? money.format(cost) : undefined }
     const tokens = last?.tokens
       ? last.tokens.input +
         last.tokens.output +

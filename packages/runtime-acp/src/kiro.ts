@@ -57,6 +57,18 @@ export const compacted = (update: SessionUpdate) => {
   )
 }
 
+/**
+ * V3 never sends `usage_update`: it reports context only as a percentage of the active model's
+ * window, in `session_info_update` metadata (kind `context_usage`). No ACP field states the window,
+ * and its tokens, cache and cost are not exposed at all.
+ */
+export const contextPercent = (update: SessionUpdate) => {
+  if (update.sessionUpdate !== "session_info_update") return undefined
+  const kiro = record(record(update._meta)?.kiro)
+  if (kiro?.kind !== "context_usage" || typeof kiro.usagePercentage !== "number") return undefined
+  return kiro.usagePercentage
+}
+
 /** Normalize identified v3 host reports; strip only the known incremental-parser bookkeeping shape. */
 export const normalize = (update: SessionUpdate): SessionUpdate => {
   if (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") return update

@@ -55,13 +55,24 @@ export function lastAssistantWithUsage(messages: ReadonlyArray<SessionMessageInf
   )
 }
 
+/**
+ * Context use a delegated runtime states only as a percentage of its model's window (Kiro), kept
+ * as the message's `providerState.contextPercent`. No token count exists for it.
+ */
+export function reportedContextPercent(message: SessionMessageAssistant) {
+  const value = message.providerState?.contextPercent
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
 export function contextUsage(
   messages: ReadonlyArray<SessionMessageInfo>,
   models: ReadonlyArray<ModelInfo> | undefined,
   boundary?: string,
-) {
+): { tokens?: number; percent?: number } | undefined {
   const last = lastAssistantWithUsage(messages, boundary)
   if (!last) return
+  const reported = reportedContextPercent(last)
+  if (reported !== undefined) return { percent: Math.round(reported) }
   const tokens =
     last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
   if (tokens <= 0) return
@@ -72,7 +83,8 @@ export function contextUsage(
   }
 }
 
-export function formatContextUsage(tokens: number, percent?: number) {
+export function formatContextUsage(tokens: number | undefined, percent?: number) {
+  if (tokens === undefined) return percent === undefined ? undefined : `(${percent}%)`
   const value = Locale.number(tokens)
   return percent === undefined ? value : `${value} (${percent}%)`
 }

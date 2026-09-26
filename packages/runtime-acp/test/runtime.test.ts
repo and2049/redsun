@@ -188,6 +188,14 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  test("v3 context percentage finishes as provider metadata, without invented tokens", async () => {
+    await withRuntime({ agent: { preset: "kiro", env: { FAKE_ACP_V3: "1" } } }, async (runtime) => {
+      const finish = (await collect((await runtime.turn(TURN, call([user("hello")]))).stream)).at(-1)
+      expect(finish).toMatchObject({ type: "finish", providerMetadata: { fake: { contextPercent: 2.5 } } })
+      expect(finish).toMatchObject({ usage: { inputTokens: { total: undefined } } })
+    })
+  })
+
   test("v3 rejects incompatible engines and profile fallback before prompting", async () => {
     for (const env of [{}, { FAKE_ACP_V3: "1", FAKE_ACP_BAD_PROFILE: "1" }] as Record<string, string>[])
       await withRuntime({ agent: { preset: "kiro", env } }, async (runtime) => {
