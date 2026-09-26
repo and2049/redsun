@@ -50,13 +50,16 @@ const Replied = ephemeral({
     reply: Reply,
   },
 })
-export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
 
 export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "Permission.Effect" })
 export type Effect = typeof Effect.Type
 
 export const Mode = Schema.Literals(["normal", "auto", "native_auto"]).annotate({ identifier: "Permission.Mode" })
 export type Mode = typeof Mode.Type
+
+// Current server-wide selection, broadcast to every location/client.
+const ModeChanged = ephemeral({ type: "permission.mode.changed", schema: { mode: Mode } })
+export const Event = { Asked, Replied, ModeChanged, Definitions: inventory(Asked, Replied, ModeChanged) }
 
 export interface Rule extends Schema.Schema.Type<typeof Rule> {}
 export const Rule = Schema.Struct({

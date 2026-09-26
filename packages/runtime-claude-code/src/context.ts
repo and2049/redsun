@@ -1,6 +1,7 @@
 export * as ClaudeCodeContext from "./context.js"
 
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk"
+import { AsyncLocalStorage } from "node:async_hooks"
 import { DelegateContext } from "@opencode/plugin/effect/delegate-context"
 import type {
   DelegatedCodeMode,
@@ -22,6 +23,7 @@ export interface Input {
   /** null means execute was removed; omitted means this source was not inspected. */
   readonly codeMode?: DelegatedCodeMode | null
   readonly freshProcess: boolean
+  readonly answers?: string
 }
 
 /** The CLI already loads CLAUDE.md through settingSources; avoid a second delivery. */
@@ -53,16 +55,88 @@ export class Tracker {
 export const commitIfCurrent = <T>(current: () => boolean, commit: () => T): T | undefined =>
   current() ? commit() : undefined
 
+type Commit = (commit: () => void) => void
+const immediate: Commit = (commit) => commit()
+
+// CLI 2.1.283 persists each hook result above 10,000 characters, replacing it with a
+// 2 KB preview. Register a bounded bank at process startup because context can grow on
+// later turns and automatic compaction cannot reconfigure the process's hooks.
+export const CHUNK_SIZE = 8_000
+export const CHUNK_COUNT = 128
+export const partition = (make: (commit: Commit) => HookCallback): HookCallback[] => {
+  type Batch = {
+    result: ReturnType<HookCallback>
+    commits: Array<() => void>
+    seen: Set<number>
+    completed: Set<number>
+    signals: AbortSignal[]
+  }
+  let active: Batch | undefined
+  const collecting = new AsyncLocalStorage<Array<() => void>>()
+  const callback = make((commit) => collecting.getStore()?.push(commit))
+  return Array.from(
+    { length: CHUNK_COUNT },
+    (_, index): HookCallback =>
+      async (event, toolUseID, options) => {
+        // The CLI dispatches a hook bank in registration order (results may finish in any
+        // order). A new leader supersedes an interrupted batch; never reuse partial output.
+        if (index === 0) {
+          const commits: Array<() => void> = []
+          const batch: Batch = {
+            commits,
+            seen: new Set(),
+            completed: new Set(),
+            signals: [],
+            result: Promise.resolve({}),
+          }
+          active = batch
+          batch.result = collecting.run(commits, () => callback(event, toolUseID, options))
+        }
+        const batch = active
+        const stop = () => ({
+          continue: false,
+          stopReason: "Redsun host context delivery was interrupted or exceeded its inline transport capacity.",
+        })
+        if (!batch || batch.seen.has(index)) return stop()
+        batch.seen.add(index)
+        batch.signals.push(options.signal)
+        const result = await batch.result
+        if (active !== batch || batch.signals.some((signal) => signal.aborted)) return {}
+        if ("async" in result && result.async) return result
+        const output = "hookSpecificOutput" in result ? result.hookSpecificOutput : undefined
+        const text = output && "additionalContext" in output ? output.additionalContext : undefined
+        if (text && text.length > CHUNK_SIZE * CHUNK_COUNT) return stop()
+        const start = index * CHUNK_SIZE
+        // Include a split surrogate in the preceding chunk, without changing the text.
+        const boundary = (n: number) =>
+          text && /[\uD800-\uDBFF]/.test(text[n - 1] ?? "") && /[\uDC00-\uDFFF]/.test(text[n] ?? "") ? n + 1 : n
+        const chunk = text?.slice(boundary(start), boundary(start + CHUNK_SIZE))
+        batch.completed.add(index)
+        if (batch.completed.size === CHUNK_COUNT) {
+          for (const commit of batch.commits.splice(0)) commit()
+        }
+        if (!chunk || !output) return index === 0 ? result : {}
+        return { ...result, hookSpecificOutput: { ...output, additionalContext: chunk } }
+      },
+  )
+}
+
 /** SDK hook context is separate from the user's prompt and native transcript text. */
-export const submit = (current: () => ReturnType<Tracker["prepare"]> | undefined): HookCallback => {
+export const submit = (
+  current: () => ReturnType<Tracker["prepare"]> | undefined,
+  commit: Commit = immediate,
+): HookCallback => {
   const submitted = new WeakSet<ReturnType<Tracker["prepare"]>>()
   return async (event, _toolUseID, options) => {
     if (event.hook_event_name !== "UserPromptSubmit" || options.signal.aborted) return {}
     if (event.source && event.source !== "sdk" && event.source !== "user") return {}
     const delivery = current()
     if (!delivery || submitted.has(delivery)) return {}
-    submitted.add(delivery)
-    delivery.delivered()
+    commit(() => {
+      if (options.signal.aborted || current() !== delivery) return
+      submitted.add(delivery)
+      delivery.delivered()
+    })
     return delivery.text
       ? { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: delivery.text } }
       : {}
@@ -75,14 +149,18 @@ export const compact =
     prepare: () => Promise<ReturnType<Tracker["prepare"]> | undefined>,
     acknowledged: () => void,
     current: () => boolean = () => true,
+    commit: Commit = immediate,
   ): HookCallback =>
   async (event, _toolUseID, options) => {
     if (event.hook_event_name !== "SessionStart" || event.source !== "compact" || options.signal.aborted || !current())
       return {}
     const delivery = await prepare()
     if (options.signal.aborted || !current() || !delivery) return {}
-    delivery.delivered()
-    acknowledged()
+    commit(() => {
+      if (options.signal.aborted || !current()) return
+      delivery.delivered()
+      acknowledged()
+    })
     return delivery.text
       ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: delivery.text } }
       : {}
@@ -94,6 +172,7 @@ export const compactForTurn = <T extends { binding?: unknown }>(
   runtime: () => T | undefined,
   prepare: (current: () => boolean) => Promise<ReturnType<Tracker["prepare"]> | undefined>,
   acknowledged: () => void,
+  commit: Commit = immediate,
 ): HookCallback => {
   let generation = 0
   return (event, toolUseID, options) => {
@@ -102,6 +181,6 @@ export const compactForTurn = <T extends { binding?: unknown }>(
     const token = ++generation
     const current = () =>
       !options.signal.aborted && !!binding && runtime() === owner && owner.binding === binding && generation === token
-    return compact(() => prepare(current), acknowledged, current)(event, toolUseID, options)
+    return compact(() => prepare(current), acknowledged, current, commit)(event, toolUseID, options)
   }
 }

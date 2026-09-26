@@ -23,6 +23,59 @@ test("models with native approval cycle through it; others skip it", () => {
   expect(nextPermissionMode("native_auto", false)).toBe("auto")
 })
 
+test("another client's mode event updates the TUI without issuing a write", async () => {
+  let writes = 0
+  await using setup = await renderLocal({
+    fetch: async (url, request) => {
+      if (url.pathname !== "/api/permission/mode") return
+      if (request.method === "GET") return json({ data: { mode: "normal" } })
+      writes++
+      return new Response(null, { status: 204 })
+    },
+  })
+  await until(() => setup.local.permission.hydrated)
+  setup.events.emit({ id: "evt_mode", created: 1, type: "permission.mode.changed", data: { mode: "auto" } })
+  await until(() => setup.local.permission.mode === "auto")
+  setup.events.emit({ id: "evt_manual", created: 2, type: "permission.mode.changed", data: { mode: "normal" } })
+  await until(() => setup.local.permission.mode === "normal")
+  expect(writes).toBe(0)
+})
+
+test("a failed write never displays unconfirmed auto-approval", async () => {
+  let finish!: (response: Response) => void
+  await using setup = await renderLocal({
+    fetch: async (url, request) => {
+      if (url.pathname !== "/api/permission/mode") return
+      if (request.method === "GET") return json({ data: { mode: "normal" } })
+      return new Promise<Response>((resolve) => (finish = resolve))
+    },
+  })
+  await until(() => setup.local.permission.hydrated)
+  const writing = setup.local.permission.set("auto")
+  await until(() => !!finish)
+  expect(setup.local.permission.mode).toBe("normal")
+  finish(new Response("Failed", { status: 500 }))
+  await writing
+  expect(setup.local.permission.mode).toBe("normal")
+})
+
+test("a delayed initial snapshot cannot overwrite a newer mode event", async () => {
+  let finish!: (response: Response) => void
+  await using setup = await renderLocal({
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/permission/mode" && request.method === "GET")
+        return new Promise<Response>((resolve) => (finish = resolve))
+    },
+  })
+  await until(() => !!finish)
+  setup.events.emit({ id: "evt_mode_new", created: 1, type: "permission.mode.changed", data: { mode: "auto" } })
+  await until(() => setup.local.permission.mode === "auto")
+  finish(json({ data: { mode: "normal" } }))
+  await setup.renderOnce()
+  await Bun.sleep(20)
+  expect(setup.local.permission.mode).toBe("auto")
+})
+
 test("local permission follows the selected model's runtime without changing persisted mode on model switch", async () => {
   const writes: string[] = []
   const asked: string[] = []
@@ -91,4 +144,32 @@ test("a toggle pressed before the runtime options arrive waits for them", async 
   expect(setup.local.permission.mode).toBe("native_auto")
   await setup.waitFor(() => writes.length === 1)
   expect(writes).toEqual(["native_auto"])
+})
+
+test("the same model uses the current location's permission capabilities", async () => {
+  const asked: string[] = []
+  await using setup = await renderLocal({
+    models: [{ ...model("sonnet"), providerID: "claude-code" }],
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/permission/mode/options") {
+        const directory = url.searchParams.get("location[directory]") ?? ""
+        asked.push(directory)
+        return json({ data: { native: directory === "/native-profile" } })
+      }
+      if (url.pathname !== "/api/permission/mode") return
+      if (request.method === "GET") return json({ data: { mode: "normal" } })
+      return new Response(null, { status: 204 })
+    },
+  })
+  setup.local.model.set({ providerID: "claude-code", modelID: "sonnet" })
+  setup.location.set({ directory: "/native-profile" })
+  await until(() => setup.local.permission.native())
+  await setup.local.permission.toggle()
+  expect(setup.local.permission.mode).toBe("native_auto")
+  setup.location.set({ directory: "/host-only-profile" })
+  await until(() => !setup.local.permission.native() && asked.includes("/host-only-profile"))
+  expect(setup.local.permission.mode).toBe("normal")
+  setup.location.set({ directory: "/native-profile" })
+  await until(() => setup.local.permission.mode === "native_auto")
+  expect(asked.filter((directory) => directory === "/native-profile")).toHaveLength(1)
 })

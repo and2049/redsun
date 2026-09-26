@@ -111,8 +111,8 @@ export interface Hooks {
   readonly canUseTool?: (sessionID: string) => CanUseTool | undefined
   readonly preToolUse?: (sessionID: string) => HookCallback | undefined
   readonly postToolUse?: (sessionID: string) => HookCallback | undefined
-  readonly userPromptSubmit?: (sessionID: string) => HookCallback | undefined
-  readonly sessionStart?: (sessionID: string) => HookCallback | undefined
+  readonly userPromptSubmit?: (sessionID: string) => HookCallback | HookCallback[] | undefined
+  readonly sessionStart?: (sessionID: string) => HookCallback | HookCallback[] | undefined
   readonly compactRestored?: (sessionID: string) => number
   readonly hostResultMetadata?: (sessionID: string, nativeToolUseID: string) => Tool.Metadata | undefined
   readonly isDirectHostTool?: (sessionID: string, nativeName: string) => boolean
@@ -341,8 +341,8 @@ export const make = (input: {
                 hooks: {
                   ...(preToolUse ? { PreToolUse: [{ hooks: [preToolUse] }] } : {}),
                   ...(postToolUse ? { PostToolUse: [{ hooks: [postToolUse] }] } : {}),
-                  ...(userPromptSubmit ? { UserPromptSubmit: [{ hooks: [userPromptSubmit] }] } : {}),
-                  ...(sessionStart ? { SessionStart: [{ matcher: "compact", hooks: [sessionStart] }] } : {}),
+                  ...(userPromptSubmit ? { UserPromptSubmit: [{ hooks: [userPromptSubmit].flat() }] } : {}),
+                  ...(sessionStart ? { SessionStart: [{ matcher: "compact", hooks: [sessionStart].flat() }] } : {}),
                 },
               }
             : {}),

@@ -1656,6 +1656,15 @@ export type PermissionAsked = {
   }
 }
 
+export type PermissionModeChanged = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "permission.mode.changed"
+  location?: LocationRef
+  data: { mode: PermissionMode }
+}
+
 export type PermissionReplied = {
   id: string
   created: number
@@ -2586,6 +2595,7 @@ export type V2Event =
   | ReferenceUpdated
   | PermissionAsked
   | PermissionReplied
+  | PermissionModeChanged
   | PluginUpdated
   | ProjectUpdated
   | WorktreeUpdated

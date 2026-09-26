@@ -562,6 +562,40 @@ export function Session() {
     current.submit()
   })
   const dialog = useDialog()
+  // The composer (and its interrupt command) is unmounted while an approval/form owns the dock.
+  // Keep interruption available there, targeting the displayed request's session, including workers.
+  const pendingInterrupt = createMemo(() => promptedPermissions()[0] ?? dockForms()[0])
+  let interruptArmed: { id: string; at: number } | undefined
+  const interruptKeys = Keymap.useShortcuts()
+  Keymap.createLayer(() => ({
+    mode: "global",
+    enabled: !!pendingInterrupt() && dialog.stack.length === 0,
+    commands: [
+      {
+        id: "session.interrupt",
+        title: "Interrupt session",
+        group: "Session",
+        run: () => {
+          const pending = pendingInterrupt()
+          if (!pending || pending.sessionID === "global") return
+          const now = Date.now()
+          if (interruptArmed?.id !== pending.id || now - interruptArmed.at > 5_000) {
+            interruptArmed = { id: pending.id, at: now }
+            toast.show({
+              message: `${interruptKeys.get("session.interrupt")} ${language.t("session.againToInterrupt")}`,
+              variant: "info",
+            })
+            return
+          }
+          interruptArmed = undefined
+          void client.api.session
+            .interrupt({ sessionID: pending.sessionID, resume: true })
+            .catch((error) => toast.error(error))
+        },
+      },
+    ],
+    bindings: ["session.interrupt"],
+  }))
   const renderer = useRenderer()
   const runPendingAction = createSingleFlight<string>()
   const mutatePending = async (action: PendingAction, inboxID: string) => {

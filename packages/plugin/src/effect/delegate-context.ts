@@ -21,6 +21,8 @@ export interface Input {
   readonly skills?: readonly DelegatedSkillSummary[]
   /** null means Code Mode was removed; omitted means this source was not inspected. */
   readonly codeMode?: DelegatedCodeMode | null
+  /** Bounded canonical user answers, rendered as historical data rather than instructions. */
+  readonly answers?: string
   /** The agent holds none of the earlier context (a new agent session, or after compaction). */
   readonly fresh: boolean
 }
@@ -46,6 +48,7 @@ interface Snapshot {
   readonly skills?: string
   /** The last delivered Code Mode summary (opaque, JSON-comparable). */
   readonly codeMode?: unknown
+  readonly answers?: string
 }
 
 export class Tracker {
@@ -102,6 +105,12 @@ export class Tracker {
       files: input.files === undefined ? (previous?.files ?? new Map()) : files,
       skills: skillRevision,
       codeMode,
+      answers: input.answers ?? previous?.answers,
+    }
+    if (input.answers !== undefined && input.answers !== previous?.answers) {
+      if (input.answers) parts.push(input.answers)
+      else if (previous?.answers)
+        parts.push("The earlier retained-answer snapshot no longer applies to the current host transcript.")
     }
     return {
       ...(parts.length ? { text: parts.join("\n\n") } : {}),

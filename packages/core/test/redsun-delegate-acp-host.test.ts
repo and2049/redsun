@@ -293,13 +293,21 @@ for (const v3 of [false, true])
         const { session, invoke, permission } = yield* setup(v3)
         const asked = yield* next<Permission.Request>(Permission.Event.Asked.type)
         const controller = new AbortController()
+        const withdrawn = yield* next<{ sessionID: string; requestID: string; reply: string }>(
+          Permission.Event.Replied.type,
+        )
         const fiber = yield* Effect.forkScoped(invoke("probe", { target: "src" }, controller.signal).parts)
-        yield* Deferred.await(asked)
+        const cancelled = yield* Deferred.await(asked)
         controller.abort()
         yield* Fiber.join(fiber)
         for (let waited = 0; waited < 2_000 && (yield* permission.forSession(session.id)).length; waited += 20)
           yield* sleep(20)
         expect(yield* permission.forSession(session.id)).toEqual([])
+        expect(yield* Deferred.await(withdrawn)).toEqual({
+          sessionID: session.id,
+          requestID: cancelled.id,
+          reply: "reject",
+        })
         const again = yield* next<Permission.Request>(Permission.Event.Asked.type)
         const retry = yield* Effect.forkScoped(invoke("probe", { target: "src" }).parts)
         const request = yield* Deferred.await(again)

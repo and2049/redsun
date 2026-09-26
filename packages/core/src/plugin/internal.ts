@@ -218,6 +218,8 @@ const pre = [
   WellKnownPlugin.Plugin,
   VcsGitPlugin.Plugin,
   AgentPlugin.Plugin,
+  // Agent defaults must exist before configuration applies global policy and user overrides.
+  RedsunComposePlugin.Plugin,
   PlanPlugin.Plugin,
   CommandPlugin.Plugin,
   SkillPlugin.Plugin,
@@ -263,7 +265,6 @@ const post = [
   ConfigProviderPlugin.Plugin,
   ConfigWebSearchPlugin.Plugin,
   ConfigPolicyPlugin.Plugin,
-  RedsunComposePlugin.Plugin,
   RedsunWorkerModelTool.Plugin,
   RedsunProjectMemory.Plugin,
   RedsunContextOptimizer.Plugin,

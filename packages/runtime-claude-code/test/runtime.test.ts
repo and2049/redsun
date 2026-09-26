@@ -163,15 +163,19 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
     const sentinel = "HOST_RESTORED_AFTER_COMPACT_SENTINEL"
     const seen: string[] = []
     const tracker = new ClaudeCodeContext.Tracker()
-    const restore = ClaudeCodeContext.compact(
-      async () =>
-        tracker.prepare("ses", {
-          agent: { id: "review", system: "Review carefully." },
-          isWorker: false,
-          freshProcess: true,
-          files: [{ path: "/fixture/AGENTS.md", content: sentinel }],
-        }),
-      () => seen.push("compact"),
+    const restore = ClaudeCodeContext.partition((commit) =>
+      ClaudeCodeContext.compact(
+        async () =>
+          tracker.prepare("ses", {
+            agent: { id: "review", system: "Review carefully." },
+            isWorker: false,
+            freshProcess: true,
+            files: [{ path: "/fixture/AGENTS.md", content: ".".repeat(30_000) + sentinel }],
+          }),
+        () => seen.push("compact"),
+        () => true,
+        commit,
+      ),
     )
     const result = await run({
       binary: compactionExecutable,
@@ -182,7 +186,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
         { block: { type: "text", text: "Final reply." }, stop: "end_turn" },
       ],
       hooks: {
-        SessionStart: [{ matcher: "compact", hooks: [restore] }],
+        SessionStart: [{ matcher: "compact", hooks: restore }],
       },
     })
     expect(seen).toEqual(["compact"])
@@ -196,15 +200,20 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
     const sentinel = "HOST_AUTO_COMPACT_SENTINEL"
     const seen: string[] = []
     const tracker = new ClaudeCodeContext.Tracker()
-    const restore = ClaudeCodeContext.compact(
-      async () =>
-        tracker.prepare("ses", {
-          agent: { id: "review", system: "Review carefully." },
-          isWorker: false,
-          freshProcess: true,
-          files: [{ path: "/fixture/AGENTS.md", content: sentinel }],
-        }),
-      () => seen.push("compact"),
+    const restore = ClaudeCodeContext.partition((commit) =>
+      ClaudeCodeContext.compact(
+        async () =>
+          tracker.prepare("ses", {
+            agent: { id: "review", system: "Review carefully." },
+            isWorker: false,
+            freshProcess: true,
+            files: [{ path: "/fixture/AGENTS.md", content: ".".repeat(30_000) + sentinel }],
+            answers: '<redsun-retained-answers>Historical answer: "Which shape?" = "Circle"</redsun-retained-answers>',
+          }),
+        () => seen.push("compact"),
+        () => true,
+        commit,
+      ),
     )
     const server = ClaudeCodeHostTools.makeServer({
       definitions: [
@@ -231,7 +240,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
         { block: { type: "text", text: "Summary of the conversation." }, stop: "end_turn" },
         { block: { type: "text", text: "Continued." }, stop: "end_turn" },
       ],
-      hooks: { SessionStart: [{ matcher: "compact", hooks: [restore] }] },
+      hooks: { SessionStart: [{ matcher: "compact", hooks: restore }] },
     })
     expect(result.messages.at(-1)?.subtype).toBe("success")
     expect(result.messages.some((item) => item.type === "system" && item.subtype === "compact_boundary")).toBe(true)
@@ -240,6 +249,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
     expect(result.seen).toHaveLength(3)
     expect(JSON.stringify(result.seen[1])).not.toContain(sentinel)
     expect(JSON.stringify(result.seen[2])).toContain(sentinel)
+    expect(JSON.stringify(result.seen[2])).toContain("Circle")
   }, 20_000)
   it("delivers host context through the native prompt-submit hook", async () => {
     let submitted = 0

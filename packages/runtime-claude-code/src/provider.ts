@@ -6,6 +6,8 @@ import { readClaudeUsage } from "./usage.js"
 import { Effect } from "effect"
 import { Model } from "@opencode/schema/model"
 import { Agent } from "@opencode/schema/agent"
+import { Session } from "@opencode/schema/session"
+import { retainedAnswers } from "./answers.js"
 import type { ConfigClaudeCode } from "@opencode/schema/config/claude-code"
 import type { Tool as ToolSchema } from "@opencode/schema/tool"
 import { ClaudeCodeAuth } from "./auth.js"
@@ -308,6 +310,10 @@ export const Plugin = define({
           ? undefined
           : []
       const codeMode = runtime?.codeMode
+      const answers =
+        profile.name === "native"
+          ? undefined
+          : retainedAnswers(await Effect.runPromise(ctx.session.context({ sessionID: Session.ID.make(sessionID) })))
       // Discovery's unavailable result is not an observed removal: keep the last
       // successfully delivered project rules until the canonical source recovers.
       return ClaudeCodeContext.commitIfCurrent(current, () => {
@@ -318,6 +324,7 @@ export const Plugin = define({
           ...(catalog === undefined ? {} : { skills: catalog }),
           ...(codeMode === undefined ? {} : { codeMode }),
           ...(files === undefined ? {} : { files }),
+          ...(answers === undefined ? {} : { answers }),
         })
         if (runtime) runtime.submission = delivery
         return delivery
@@ -326,13 +333,19 @@ export const Plugin = define({
 
     // The callback is registered at process startup but reads the current turn's
     // captured delivery. Do not inspect or reinterpret the user prompt here.
-    const userPromptSubmit = (sessionID: string) => ClaudeCodeContext.submit(() => runtimes.get(sessionID)?.submission)
+    const userPromptSubmit = (sessionID: string) =>
+      ClaudeCodeContext.partition((commit) =>
+        ClaudeCodeContext.submit(() => runtimes.get(sessionID)?.submission, commit),
+      )
     const sessionStart = (sessionID: string) =>
-      ClaudeCodeContext.compactForTurn(
-        runtimes.get(sessionID),
-        () => runtimes.get(sessionID),
-        (current) => turnContext(sessionID, true, current),
-        () => compactRestored.set(sessionID, (compactRestored.get(sessionID) ?? 0) + 1),
+      ClaudeCodeContext.partition((commit) =>
+        ClaudeCodeContext.compactForTurn(
+          runtimes.get(sessionID),
+          () => runtimes.get(sessionID),
+          (current) => turnContext(sessionID, true, current),
+          () => compactRestored.set(sessionID, (compactRestored.get(sessionID) ?? 0) + 1),
+          commit,
+        ),
       )
 
     const permissionMode = async (sessionID: string) => {

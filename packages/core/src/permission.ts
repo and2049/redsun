@@ -295,6 +295,18 @@ const layer = Layer.effect(
               // WITH feedback (CorrectedError) intentionally stays typed so the leaf can turn
               // it into ToolFailure and the model continues.
               Effect.catchTag("Permission.DeclinedError", (error) => Effect.die(error)),
+              Effect.onInterrupt(() =>
+                Effect.gen(function* () {
+                  if (!pending.delete(item.request.id)) return
+                  // Withdraw the client dialog too: deleting only server state strands the dock
+                  // after a cancelled host tool, even though the next turn could otherwise run.
+                  yield* bus.publish(Permission.Event.Replied, {
+                    sessionID: item.request.sessionID,
+                    requestID: item.request.id,
+                    reply: "reject",
+                  })
+                }),
+              ),
               Effect.ensuring(
                 Effect.sync(() => {
                   pending.delete(item.request.id)

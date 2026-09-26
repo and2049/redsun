@@ -1,5 +1,6 @@
-import { createEffect, createSignal, on } from "solid-js"
+import { createEffect, createSignal, on, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
+import type { LocationRef } from "@opencode/client"
 import { useArgs } from "./args"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
@@ -22,21 +23,24 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
   init: () => {
     const args = useArgs()
     const client = useClient()
-    const [store, setStore] = createStore<{ mode: PermissionMode }>({ mode: args.auto ? "auto" : "normal" })
+    const [store, setStore] = createStore<{ mode: PermissionMode }>({ mode: "normal" })
     const [hydrated, setHydrated] = createSignal(false)
     type ModelRef = { readonly providerID: string; readonly modelID: string }
-    // Per model: whether its runtime offers native_auto. Unknown models are fetched once, lazily;
+    // Per location/model: behavior profiles and runtime capabilities are location-scoped.
+    // Unknown models are fetched once, lazily;
     // the cache is dropped on every (re)connect, since runtimes register with the server.
     const [native, setNative] = createStore<Record<string, boolean>>({})
     const pending = new Map<string, Promise<boolean>>()
-    const lookup = (model: ModelRef) => {
-      const key = `${model.providerID}/${model.modelID}`
+    const nativeKey = (model: ModelRef, location?: LocationRef) =>
+      JSON.stringify([location?.directory, model.providerID, model.modelID])
+    const lookup = (model: ModelRef, location?: LocationRef) => {
+      const key = nativeKey(model, location)
       const known = native[key]
       if (known !== undefined) return Promise.resolve(known)
       const inflight = pending.get(key)
       if (inflight) return inflight
       const request = client.api.permission.mode
-        .options({ providerID: model.providerID, modelID: model.modelID })
+        .options({ location, providerID: model.providerID, modelID: model.modelID })
         .then((result) => result.native)
         // An answer the server cannot give (an older server, a dropped connection) is "no" until
         // the next connect, rather than a request on every render.
@@ -50,47 +54,82 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       return request
     }
     /** The answer so far: false while the lookup is still out. */
-    const nativeFor = (model?: ModelRef) => {
+    const nativeFor = (model?: ModelRef, location?: LocationRef) => {
       if (!model) return false
-      const key = `${model.providerID}/${model.modelID}`
+      const key = nativeKey(model, location)
       const known = native[key]
-      if (known === undefined) void lookup(model)
+      if (known === undefined) void lookup(model, location)
       return known === true
     }
     /** The answer once it is known. */
-    const resolveNative = (model?: ModelRef) => (model ? lookup(model) : Promise.resolve(false))
+    const resolveNative = (model?: ModelRef, location?: LocationRef) =>
+      model ? lookup(model, location) : Promise.resolve(false)
 
-    const push = (mode: PermissionMode) =>
-      client.api.permission.mode.set({ mode }).catch((error) => console.error("Failed to set permission mode", error))
+    let revision = 0
+    let connection = 0
+    let launchAuto = !!args.auto
+    let writes = Promise.resolve()
+    onCleanup(
+      client.event.on("permission.mode.changed", (event) => {
+        revision++
+        setStore("mode", event.data.mode)
+        setHydrated(true)
+      }),
+    )
+
+    const refresh = async () => {
+      const before = revision
+      const epoch = connection
+      try {
+        const result = await client.api.permission.mode.get()
+        if (before !== revision || epoch !== connection) return
+        revision++
+        setStore("mode", result.mode)
+        setHydrated(true)
+      } catch (error) {
+        console.error("Failed to read permission mode", error)
+      }
+    }
+    const write = async (mode: PermissionMode) => {
+      const before = revision
+      const epoch = connection
+      try {
+        await client.api.permission.mode.set({ mode })
+        // The event is authoritative. This fallback also supports an older server.
+        if (before === revision && epoch === connection) {
+          revision++
+          setStore("mode", mode)
+          setHydrated(true)
+        }
+      } catch (error) {
+        // Never display an unconfirmed auto-approval selection. The write might have
+        // reached the server before the response failed, so reconcile with a snapshot.
+        console.error("Failed to set permission mode", error)
+        await refresh()
+      }
+    }
+    const enqueue = (selection: () => Promise<PermissionMode> | PermissionMode) => {
+      writes = writes.then(async () => write(await selection()))
+      return writes
+    }
+    const set = (mode: PermissionMode) => enqueue(() => mode)
 
     createEffect(
       on(
         () => client.connection.status(),
         (status) => {
+          connection++
           if (status !== "connected") return
           setNative(reconcile({}))
-          if (args.auto) {
-            setStore("mode", "auto")
-            setHydrated(true)
-            void push("auto")
+          if (launchAuto) {
+            launchAuto = false
+            void set("auto")
             return
           }
-          void client.api.permission.mode
-            .get()
-            .then((result) => {
-              setStore("mode", result.mode === "auto" || result.mode === "native_auto" ? result.mode : "normal")
-              setHydrated(true)
-            })
-            .catch((error) => console.error("Failed to read permission mode", error))
+          void refresh()
         },
       ),
     )
-
-    const set = (mode: PermissionMode) => {
-      if (store.mode === mode) return
-      setStore("mode", mode)
-      void push(mode)
-    }
 
     return {
       get mode() {
@@ -103,8 +142,11 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       nativeFor,
       resolveNative,
       /** Cycles the mode for a model, once its runtime's options are known (a press can beat the lookup). */
-      toggle(model?: ModelRef) {
-        return resolveNative(model).then((native) => set(nextPermissionMode(store.mode, native)))
+      toggle(model?: ModelRef, location?: LocationRef) {
+        return enqueue(async () => {
+          const native = await resolveNative(model, location)
+          return nextPermissionMode(store.mode, native)
+        })
       },
     }
   },
