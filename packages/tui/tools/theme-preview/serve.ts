@@ -10,7 +10,8 @@ import { configDirectories } from "../../src/util/config-directories"
 import { themeMode } from "../../src/theme"
 import { renderScreen, type Frame, type Screen } from "./render"
 
-const ASSETS_DIR = path.join(import.meta.dir, "..", "..", "src", "theme", "assets")
+// Shipped themes live in the theme package (`@opencode/theme/tui` bundles them as DEFAULT_THEMES).
+const ASSETS_DIR = path.join(import.meta.dir, "..", "..", "..", "theme", "src", "tui", "assets")
 const COLS = 100
 const ROWS = 40
 const HEX = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/
