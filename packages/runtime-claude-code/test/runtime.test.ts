@@ -354,7 +354,7 @@ describe.skipIf(!executable)("Claude Code installed CLI / SDK via synthetic upst
       ],
       execute: async ({ nativeToolUseID }) => ({
         content: [{ type: "text", text: "one todo" }],
-        metadata: { todos: [{ content: nativeToolUseID, status: "completed", priority: "low" }] },
+        metadata: { todos: [{ content: nativeToolUseID, status: "completed" }] },
       }),
       onResult: ({ nativeToolUseID, requestId, result }) => completed.push({ nativeToolUseID, requestId, result }),
     })

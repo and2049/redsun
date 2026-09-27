@@ -905,14 +905,14 @@ describe("ACP runtime against a scripted agent", () => {
       expect(bound.calls.map((item) => item.args)).toEqual([
         {
           todos: [
-            { content: "write tests", status: "in_progress", priority: "high" },
-            { content: "ship", status: "pending", priority: "low" },
+            { content: "write tests", status: "in_progress" },
+            { content: "ship", status: "pending" },
           ],
         },
         {
           todos: [
-            { content: "write tests", status: "completed", priority: "high" },
-            { content: "ship", status: "pending", priority: "low" },
+            { content: "write tests", status: "completed" },
+            { content: "ship", status: "pending" },
           ],
         },
       ])

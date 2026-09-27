@@ -2,7 +2,7 @@ import { expect } from "bun:test"
 import { KV } from "@opencode/core/kv"
 import { RedsunTodo, key } from "@opencode/core/plugin/redsun/todo"
 import { Session } from "@opencode/core/session"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 import { host } from "./plugin/host"
 
@@ -21,6 +21,7 @@ it.effect("todowrite registers through the real entry point and persists the lis
     let definition: {
       name: string
       description: string
+      input: Schema.Decoder<unknown>
       execute: (input: unknown, context: { sessionID: Session.ID }) => Effect.Effect<unknown, unknown, never>
     }
     yield* RedsunTodo.Plugin.effect(
@@ -40,9 +41,9 @@ it.effect("todowrite registers through the real entry point and persists the lis
     expect(definition!.description).toContain("task list")
 
     const todos = [
-      { content: "port the extractor", status: "completed", priority: "high" },
-      { content: "wire the strategies", status: "in_progress", priority: "high" },
-      { content: "write the tests", status: "pending", priority: "medium" },
+      { content: "port the extractor", status: "completed" },
+      { content: "wire the strategies", status: "in_progress" },
+      { content: "write the tests", status: "pending" },
     ]
     const result = (yield* definition!.execute({ todos }, { sessionID })) as {
       output: { todos: unknown[] }
@@ -57,13 +58,12 @@ it.effect("todowrite registers through the real entry point and persists the lis
       {
         content: "auth",
         status: "in_progress",
-        priority: "high",
         children: [
-          { content: "login form", status: "completed", priority: "high" },
-          { content: "session cookie", status: "pending", priority: "medium" },
+          { content: "login form", status: "completed" },
+          { content: "session cookie", status: "pending" },
         ],
       },
-      { content: "docs", status: "pending", priority: "low" },
+      { content: "docs", status: "pending" },
     ]
     const grouped = (yield* definition!.execute({ todos: nested }, { sessionID })) as {
       content: string
@@ -72,6 +72,24 @@ it.effect("todowrite registers through the real entry point and persists the lis
     expect(grouped.content).toBe("4 todos (3 open)")
     expect(grouped.metadata.todos).toEqual(nested)
     expect(kvStore.get(key(sessionID))).toEqual(nested)
+
+    // Transcripts from before priority was dropped still carry it; the model may copy it.
+    const legacy = yield* Schema.decodeUnknownEffect(definition!.input)(
+      {
+        todos: [
+          {
+            content: "auth",
+            status: "pending",
+            priority: "high",
+            children: [{ content: "form", status: "pending", priority: "low" }],
+          },
+        ],
+      },
+      { errors: "all" },
+    )
+    expect(legacy).toEqual({
+      todos: [{ content: "auth", status: "pending", children: [{ content: "form", status: "pending" }] }],
+    })
 
     const emptied = (yield* definition!.execute({ todos: [] }, { sessionID })) as { content: string }
     expect(emptied.content).toBe("0 todos (0 open)")
