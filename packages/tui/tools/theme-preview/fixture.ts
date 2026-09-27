@@ -23,20 +23,26 @@ const location = { directory, project: { id: "proj_test", directory: worktree, c
 // "Build · DeepSeek V4 Flash Free OpenCode Zen · high".
 const model = { providerID: "opencode", id: "deepseek-v4-flash-free", variant: "high" }
 
+// All three named primary agents are listed so a theme's agentBuild/agentPlan/
+// agentCompose colours resolve the way they do in the app; the session runs
+// under build, so that is the colour painted on the prompt.
+const agents = [
+  { id: "build", name: "Build" },
+  { id: "plan", name: "Plan" },
+  { id: "compose", name: "Compose" },
+]
+
 const catalog: FetchHandler = (url, request) => {
   if (url.pathname === "/api/agent")
     return json({
       location,
-      data: [
-        {
-          id: "build",
-          name: "Build",
-          mode: "primary",
-          hidden: false,
-          request: {},
-          permissions: {},
-        },
-      ],
+      data: agents.map((agent) => ({
+        ...agent,
+        mode: "primary",
+        hidden: false,
+        request: {},
+        permissions: {},
+      })),
     })
   if (url.pathname === "/api/model")
     return json({
