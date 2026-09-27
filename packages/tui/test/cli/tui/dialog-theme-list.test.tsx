@@ -8,6 +8,21 @@ import { emptyThemeSource, tmpdir } from "../../fixture/fixture"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 
+// Other test files register plugin themes in the module store and bun runs
+// every file in one process, so the picker would list them and scroll the
+// last shipped families out of the dialog's row cap. Hide them for the
+// duration of a test and put them back afterwards.
+async function shippedThemesOnly() {
+  const { DEFAULT_THEMES, allThemes, addTheme, removeTheme } = await import("../../../src/theme")
+  const extra = Object.entries(allThemes()).filter(([name]) => !(name in DEFAULT_THEMES))
+  for (const [name] of extra) removeTheme(name)
+  return {
+    [Symbol.dispose]() {
+      for (const [name, source] of extra) addTheme(name, source)
+    },
+  }
+}
+
 async function renderThemes(root: string) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
@@ -56,6 +71,7 @@ function rowOf(frame: string, text: string) {
 
 test("lists dark/light families on one row each and tab flips the mode in place", async () => {
   await using root = await tmpdir()
+  using _themes = await shippedThemesOnly()
   const app = await renderThemes(root.path)
   try {
     const dark = await app.waitForFrame((frame) => frame.includes("dusk / dawn"))
