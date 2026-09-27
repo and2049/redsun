@@ -36,7 +36,8 @@ const docs = fs
   .map((name) => ({ name, text: fs.readFileSync(path.join(DOCS, name), "utf8") }))
 
 const IDENTITY = /\b(?:You are|powered by)\s+(?:opencode|OpenCode)\b/
-const UPSTREAM_PATH = /opencode\.jsonc?|\.opencode\/|~\/\.config\/opencode|\.local\/share\/opencode/
+// `metadata.opencode/autoinvoke` is a skill frontmatter key, not a directory.
+const UPSTREAM_PATH = /opencode\.jsonc?|(?<![\w-])\.opencode\/|~\/\.config\/opencode|\.local\/share\/opencode/
 const UPSTREAM_REPO = /github\.com\/anomalyco\/opencode/
 
 // Upstream spellings belong in one place only: the translation table in the redsun
@@ -122,6 +123,28 @@ describe("model-facing branding", () => {
       expect(offending(text, UPSTREAM_REPO)).toEqual([])
     },
   )
+
+  // convert.ts drops V1 guidance and features redsun does not ship; a hit here means an
+  // upstream resync brought one back under a heading or wording no rule covers yet.
+  test.each(docs.map((item) => [item.name, item.text] as const))(
+    "docs/%s describes only what redsun ships",
+    (_name, text) => {
+      expect(offending(text, /\bV1\b|[Dd]esktop|redsun mini|`mini`|@opencode\/sdk/)).toEqual([])
+    },
+  )
+
+  test("every docs page the redsun skill names is vendored", () => {
+    const skill = skills.find((item) => item.name === "opencode.md")!.text
+    const pages = new Set(docs.map((item) => item.name.replaceAll(path.sep, "/")))
+    // Sections name pages in full; the page map lists bare names under a directory prefix.
+    const named = [...skill.matchAll(/`([\w/-]+\.md)`/g)].map((match) => match[1])
+    const map = /## Page map\n([\s\S]*?)\nNot vendored:/.exec(skill)![1]
+    const listed = [...map.matchAll(/^- (?:Top level|`([\w/]+\/)`):([\s\S]*?)(?=^- |(?![\s\S]))/gm)].flatMap(
+      ([, prefix = "", items]) => [...items.matchAll(/`([\w/-]+)`/g)].map((match) => `${prefix}${match[1]}.md`),
+    )
+    expect(listed.length).toBeGreaterThanOrEqual(25)
+    expect([...named, ...listed].filter((page) => !pages.has(page))).toEqual([])
+  })
 
   test("the redsun issue tracker is the default in the report skill", () => {
     const report = skills.find((item) => item.name === "report.md")!

@@ -260,55 +260,6 @@ Configure terminal integration:
 
 </div>
 
-## Mini
-
-The `mini` group controls [`redsun mini`](index.md#mini), the minimal interactive interface:
-
-```json title="cli.json"
-{
-  "mini": {
-    "thinking": "show",
-    "tools": "hide",
-    "shell_output": "hide",
-    "turn_summary": "show",
-    "footer": "show",
-    "splash": "show",
-    "work_spinner": "block-soft-slide",
-    "mono": false,
-    "replay": true,
-    "replay_limit": 200
-  }
-}
-```
-
-<div class="docs-table-scroll" role="region" aria-label="Mini settings" tabIndex={0}>
-
-| Setting             | Values           | Description                                                            |
-| ------------------- | ---------------- | ---------------------------------------------------------------------- |
-| `mini.thinking`     | `show` or `hide` | Shows or hides model reasoning.                                        |
-| `mini.tools`        | `show` or `hide` | Shows or hides tool calls and the assistant text that precedes them.   |
-| `mini.shell_output` | `show` or `hide` | Shows or hides raw shell tool output.                                  |
-| `mini.turn_summary` | `show` or `hide` | Shows or hides the agent, model, and duration summary in scrollback.   |
-| `mini.footer`       | `show` or `hide` | Shows or hides persistent activity, model, usage, and context details. |
-| `mini.splash`       | `show` or `hide` | Shows or hides entry and exit splash banners.                          |
-| `mini.work_spinner` | spinner ID       | Selects the work animation in the footer.                              |
-| `mini.mono`         | boolean          | Uses monochrome ASCII output.                                          |
-| `mini.replay`       | boolean          | Restores session history on resume and terminal resize.                |
-| `mini.replay_limit` | positive integer | Limits replay to the newest messages. The default limit is `200`.      |
-
-</div>
-
-Available spinner IDs are:
-
-```text
-block-soft-slide  block-soft-sweep  block-low-comet  block-low-duet
-block-shuttle     block-bridge      block-squeeze    small-toggle
-square-toggle     grow-shrink       quadrant-orbit   crosshatch
-density-wave      seed
-```
-
-Command-line `mini` replay flags override these settings for that invocation.
-
 ## Keybinds
 
 Override a command binding and the leader-key timeout:

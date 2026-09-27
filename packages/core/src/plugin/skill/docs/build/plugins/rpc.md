@@ -103,7 +103,7 @@ errors: {
 }
 ```
 
-Error names beginning with `rpc.` are reserved by OpenCode.
+Error names beginning with `rpc.` are reserved by redsun.
 
 ### Events
 

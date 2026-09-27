@@ -327,4 +327,4 @@ color: "#ff6b6b"
 > **Warning:** The V2 session runner preserves these values but does not yet send them with model requests. Configure active request
 > settings on the provider, model, or model variant instead.
 
-Do not use legacy top-level fields such as `temperature`, `top_p`, `prompt`, `permission`, `tools`, `disable`, or `maxSteps` in new V2 agent configuration.
+Do not use legacy top-level fields such as `temperature`, `top_p`, `prompt`, `permission`, `tools`, `disable`, or `maxSteps` in agent configuration.

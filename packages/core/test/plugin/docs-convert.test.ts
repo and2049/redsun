@@ -1,13 +1,29 @@
 import { describe, expect, test } from "bun:test"
-import { brand, callouts, cards, convert, excluded, frontmatter, links, segments } from "../../script/docs/convert"
+import {
+  brand,
+  callouts,
+  cards,
+  convert,
+  dropSections,
+  excluded,
+  frontmatter,
+  links,
+  patch,
+  segments,
+} from "../../script/docs/convert"
 
 const pages = new Set(["config", "build/plugins/index", "build/plugins/cli", "cli/keybinds"])
 
 describe("docs convert", () => {
-  test("excludes the intro and console pages", () => {
+  test("excludes the intro, console, V1 migration, and SDK pages", () => {
     expect(excluded("index")).toBe(true)
     expect(excluded("console/go")).toBe(true)
     expect(excluded("console")).toBe(true)
+    expect(excluded("migrate-v1")).toBe(true)
+    expect(excluded("build/plugins/migrate-v1")).toBe(true)
+    expect(excluded("build/sdk")).toBe(true)
+    expect(excluded("build/sdk/cloudflare")).toBe(true)
+    expect(excluded("build/plugins")).toBe(false)
     expect(excluded("config")).toBe(false)
     expect(excluded("cli/index")).toBe(false)
   })
@@ -59,6 +75,10 @@ describe("docs convert", () => {
     expect(brand("an OpenCode server")).toBe("a redsun server")
     expect(brand("OpenCode is used by millions every day. Build on it.")).toBe("Build on it.")
     expect(brand('When omitted, `update` defaults to `"notify"`.')).toBe('When omitted, `update` defaults to `"auto"`.')
+    expect(brand("without restarting OpenCode.\nreserved by OpenCode.")).toBe(
+      "without restarting redsun.\nreserved by redsun.",
+    )
+    expect(brand('sqlite3 "$(opencode debug paths db)"')).toBe('sqlite3 "$(redsun debug paths db)"')
   })
 
   test("brand keeps package names, env vars, identifiers, urls, and upstream products", () => {
@@ -68,6 +88,9 @@ describe("docs convert", () => {
       "OpenCode.make OpenCodeClient OpenCodeEvent OpenCode.create",
       "https://opencode.ai/config.json",
       "OpenCode Go and OpenCode Console and OpenCode Zen",
+      "models tested by the OpenCode team",
+      "https://console.opencode.ai",
+      "`metadata.opencode/autoinvoke`",
       "const opencode = await OpenCode.create()\nawait opencode.sessions.list()",
       '"model": "opencode/gpt-5.5"',
       '"plugins": ["-opencode.provider.ollama"]',
@@ -76,6 +99,30 @@ describe("docs convert", () => {
       "opencode.log",
     ]
     for (const text of kept) expect(brand(text)).toBe(text)
+  })
+
+  test("dropSections removes a section through the next heading at its level, ignoring fenced lines", () => {
+    const text = [
+      "# Page",
+      "## Keep",
+      "a",
+      "## Mini",
+      "b",
+      "```sh",
+      "## not a heading",
+      "```",
+      "### Sub",
+      "c",
+      "## Next",
+      "d",
+    ]
+    expect(dropSections(text.join("\n"), ["Mini"])).toBe(["# Page", "## Keep", "a", "## Next", "d"].join("\n"))
+    expect(() => dropSections(text.join("\n"), ["Gone"], "page")).toThrow("sections not found: Gone")
+  })
+
+  test("patch fails when upstream text no longer matches", () => {
+    expect(patch("one two", [["two", "three"]])).toBe("one three")
+    expect(() => patch("one two", [[/four/, "five"]], "page")).toThrow("patch did not match")
   })
 
   test("convert applies prose rules outside code and brand rules everywhere", () => {
@@ -93,7 +140,7 @@ describe("docs convert", () => {
       "<Callout>",
       "```",
     ].join("\n")
-    expect(convert({ id: "cli/keybinds", text, pages })).toBe(
+    expect(convert({ id: "cli/theme", text, pages })).toBe(
       [
         "# Config",
         "",

@@ -67,6 +67,7 @@ import { SkillDiscovery } from "../skill/discovery.js"
 import { Watcher } from "../filesystem/watcher.js"
 import { PatchTool } from "../tool/plugin/patch.js"
 import { RedsunComposePlugin } from "./redsun/compose.js"
+import { RedsunAgentDescriptions } from "./redsun/agent-descriptions.js"
 import { RedsunProjectMemory } from "./redsun/project-memory.js"
 import { RedsunContextOptimizer } from "./redsun/context-optimizer.js"
 import { RedsunAdvisor } from "./redsun/advisor.js"
@@ -220,6 +221,7 @@ const pre = [
   AgentPlugin.Plugin,
   // Agent defaults must exist before configuration applies global policy and user overrides.
   RedsunComposePlugin.Plugin,
+  RedsunAgentDescriptions.Plugin,
   PlanPlugin.Plugin,
   CommandPlugin.Plugin,
   SkillPlugin.Plugin,

@@ -31,16 +31,6 @@ other workflows that need model output directly in the terminal.
 redsun run "Explain this repository"
 ```
 
-## Mini
-
-Use `redsun mini` to start redsun's minimal interactive interface instead of the full-screen TUI.
-
-```bash
-redsun mini
-```
-
-Run `redsun mini --help` to see its session, model, agent, prompt, and replay options.
-
 ## Background service
 
 By default, redsun discovers or starts one shared background server for your user account. Every local redsun client
@@ -61,7 +51,7 @@ Print a specific local path for use with other tools:
 
 ```bash
 redsun debug paths db
-sqlite3 "$(opencode debug paths db)"
+sqlite3 "$(redsun debug paths db)"
 ```
 
 The optional selector accepts `db`, `home`, `data`, `config`, `cache`, `state`, `tmp`, `bin`, `log`, or `repos` and prints
@@ -94,5 +84,4 @@ redsun uninstall --keep-config --keep-data
 - `--keep-config` (`-c`) retains configuration files.
 - `--keep-data` (`-d`) retains session data and snapshots. Cache and state are still removed.
 - `--force` (`-f`) skips confirmation; use it for noninteractive removal.
-- Package-manager installations use the detected package manager. Curl installations print the final command to remove
-  the executable manually.
+- Curl and PowerShell installations print the final command to remove the executable manually.

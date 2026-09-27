@@ -23,7 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm install --global @opencode/cli
+      - run: curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash -s -- --no-modify-path
+      - run: echo "$HOME/.redsun/bin" >> "$GITHUB_PATH"
       - run: redsun run --standalone --model anthropic/claude-sonnet-4-5 "Review this repository for correctness and summarize any issues."
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -63,32 +64,6 @@ View all subcommands and flags.
 
 ```bash
 $ redsun run --help
-```
-
-## mini
-
-Starts the minimal interactive interface instead of the full-screen TUI.
-
-```bash
-$ redsun mini
-```
-
-Continue the last session.
-
-```bash
-$ redsun mini --continue
-```
-
-Start with a model and an initial prompt.
-
-```bash
-$ redsun mini --model anthropic/claude-sonnet-4-5 --prompt "Summarize this repository"
-```
-
-View all subcommands and flags.
-
-```bash
-$ redsun mini --help
 ```
 
 ## session
@@ -533,10 +508,10 @@ Upgrades redsun to the latest or a specific version. Alias: `update`.
 $ redsun upgrade
 ```
 
-Upgrade to a specific version with a specific package manager.
+Upgrade to a specific version with a specific installation method.
 
 ```bash
-$ redsun upgrade 1.18.15 --method bun
+$ redsun upgrade <version> --method curl
 ```
 
 View all subcommands and flags.

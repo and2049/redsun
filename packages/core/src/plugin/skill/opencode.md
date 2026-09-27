@@ -5,7 +5,7 @@ covers the core concepts needed to configure and customize redsun, extend it
 with plugins, and build integrations with its clients and API.
 
 redsun is a fork of OpenCode V2 and keeps its configuration schema, plugin API,
-and HTTP API. The full V2 documentation is installed locally, already
+and HTTP API. The full documentation is installed locally, already
 translated to redsun naming, under:
 
 {{DOCS_DIR}}
@@ -20,53 +20,17 @@ upstream naming, so translate it with the table below.
 
 ## Page map
 
-Paths are relative to the docs directory above.
+Paths are relative to the docs directory above and end in `.md`. The sections
+below name the page for their topic; the other pages are:
 
-- `config.md`: server and project configuration, file locations, precedence, every top-level field
-- `cli/index.md`: the terminal interface, command-line invocation, `run`, terminal providers
-- `cli/config.md`: terminal-only preferences in `cli.json`: themes, keybinds, terminal plugins, scrolling, alerts
-- `cli/keybinds.md`: keybind IDs, defaults, leader key, binding syntax
-- `cli/plugins.md`: loading TUI plugins from the CLI
-- `cli/acp.md`: Agent Client Protocol integrations
-- `cli/commands.md`: command-line commands and options
-- `cli/providers.md`: provider connections from the terminal
-- `cli/theme.md`: terminal theme configuration
-- `cli/tui.md`: interactive terminal usage
-- `cli/web.md`: connecting the web interface
-- `agents.md`: agent definitions, modes, permissions, model preferences
-- `commands.md`: custom commands and prompt templates
-- `skills.md`: skill files, discovery, frontmatter
-- `instructions.md`: AGENTS.md and other instruction files
-- `references.md`: named access to directories outside the project
-- `permissions.md`: permission rules, actions, resources, evaluation order
-- `providers.md`: configuring providers, models, variants, custom endpoints
-- `models.md`: the model catalog and model references
-- `mcp-servers.md`: MCP server configuration and authentication
-- `network.md`: proxies, certificates, and network configuration
-- `tools.md`: built-in tools and their configuration
-- `websearch.md`: web search providers and configuration
-- `formatters.md`: formatter configuration
-- `attachments.md`: file and image attachments
-- `compaction.md`: context compaction behaviour and settings
-- `snapshots.md`: conversation and file rollback
-- `sharing.md`: session sharing status in V2
-- `warming.md`: session warming
-- `themes.md`: theme ownership between server and terminal client
-- `plugins.md`: installing and configuring plugins in `redsun.json(c)`
-- `build/index.md`: overview of extending, running as a server, and embedding
-- `build/plugins/index.md`: the plugin API: hooks, transforms, custom tools, plugin context, packaging
-- `build/plugins/cli.md`: TUI plugins: commands, keymaps, routes, tabs, slots, dialogs, toasts, markdown renderers
-- `build/plugins/rpc.md`: custom methods and events shared with other plugins and clients
-- `build/plugins/effect.md`: the Effect-native plugin API
-- `build/plugins/effect/rpc.md`: RPC with the Effect plugin API
-- `build/plugins/migrate-v1.md`: porting V1 plugin implementations to the V2 plugin API
-- `build/client/index.md`: `@opencode/client`, the TypeScript HTTP client
-- `build/client/effect.md`: `@opencode/client/effect`
-- `build/sdk/index.md`: `@opencode/sdk`, embedding redsun without an HTTP listener
-- `build/sdk/effect.md`: the Effect-native embedded SDK
-- `build/sdk/cloudflare.md`: embedding in a Cloudflare Durable Object
-- `migrate-v1.md`: migrating configuration, agents, commands, skills, and plugins from V1
-- `troubleshooting.md`: service lifecycle, logs, API checks, explicit server connections
+- Top level: `agents`, `commands` (custom commands, prompt templates), `skills`,
+  `instructions` (AGENTS.md), `references` (directories outside the project),
+  `permissions`, `providers`, `models`, `tools`, `websearch`, `formatters`,
+  `attachments`, `compaction`, `snapshots` (rollback), `sharing`, `warming`
+  (session warming), `themes`, `network` (proxies, certificates)
+- `cli/`: `commands` (command-line options), `providers`, `plugins`, `theme`,
+  `tui`, `web` (server access and pairing), `acp`
+- `build/`: `index`, `plugins/effect`, `plugins/effect/rpc`, `client/effect`
 
 Not vendored: the HTTP API reference, which is generated from the running
 server's `/openapi.json`, and the OpenCode Console pages, which describe an
@@ -99,23 +63,12 @@ names keep the `@opencode/` scope, and configuration files still carry the
 upstream `$schema` URL. Never present a path or command in upstream spelling; a
 user following it will not find the file.
 
-## Version policy
-
-redsun tracks OpenCode V2. Always answer for V2 unless the user explicitly
-asks about V1, legacy OpenCode, redsun v0.3.x, or migrating from V1.
+## Sources
 
 The local pages and <https://opencode.ai/v2/docs/> are the only sources of
-truth for V2. Do not use <https://opencode.ai/docs/>, which documents V1, and
-do not use general web search to resolve a V2 documentation question when the
-local pages cover it. The schema served from
-<https://opencode.ai/config.json> may describe V1 even though V2 configuration
-files include that URL for editor integration. Never use it to infer V2 field
-names or shapes. If V2 documentation is missing or contradictory, state the
-uncertainty or ask for clarification instead of falling back to V1.
-
-V1 documentation and syntax may be consulted only when the user explicitly
-asks about V1 or when needed as migration input. Outputs and recommendations
-must still use V2 unless the user specifically requests a V1 result.
+truth; do not use web search when they cover the question. Do not use <https://opencode.ai/docs/> (a different, older product) or
+the schema at <https://opencode.ai/config.json> to infer field names or shapes;
+if the pages are missing or contradictory, say so instead of guessing.
 
 ## CLI
 
@@ -182,7 +135,7 @@ terminal preferences, especially themes and keybindings.
 Do not guess field names or shapes. Read `config.md` and the topic page it
 links to as the source of truth, and preserve unrelated settings when editing
 an existing file. Keep the published `$schema` URL in configuration examples,
-but do not fetch it to determine the V2 configuration shape.
+but do not fetch it to determine the configuration shape.
 
 ## MCP servers
 
@@ -212,26 +165,10 @@ only when OAuth is unavailable or the user explicitly requires them, and use an
 environment substitution such as `{env:MCP_API_KEY}` instead of writing a
 secret into configuration.
 
-## V1 to V2 migration
-
-redsun v0.3.x was built on OpenCode V1, so migrating from it is an OpenCode
-V1 to V2 migration. For any request to migrate configuration, agents, commands,
-skills, plugins, integrations, or other behavior from V1 to V2, read
-`migrate-v1.md` in full before acting.
-
-V1 config files and `.redsun/` definitions are intended to remain compatible.
-The only intentional breaking changes are the server API and plugin API. Native
-V2 config uses more ergonomic shapes, but conversion is optional. When the user
-requests conversion, inspect the complete configuration, preserve behavior and
-unrelated settings, and apply only the relevant migrations from the guide. For
-plugin migrations, read both `migrate-v1.md` and `build/plugins/index.md`. If
-non-API V1 functionality fails in V2, use the `report` skill to file it as a
-compatibility bug.
-
 ## Plugins
 
-For questions about creating, configuring, loading, publishing, or migrating
-plugins, read `build/plugins/index.md` in full before answering. It covers
+For questions about creating, configuring, loading, or publishing plugins,
+read `build/plugins/index.md` in full before answering. It covers
 hooks, transforms, tools, plugin context capabilities, and package entrypoints.
 Installing and enabling plugins in `redsun.json(c)` is covered by `plugins.md`.
 Plugins can also extend the TUI; for those, read `build/plugins/cli.md`, which
@@ -306,15 +243,6 @@ iterables for streaming endpoints. The `@opencode/client/effect` entrypoint
 exposes typed Effects, Streams, and decoded schema values. Its
 `Service` API can discover, start, stop, and authenticate with the local
 background service from a Node application.
-
-## SDK
-
-For questions about embedding redsun directly in an application, read
-`build/sdk/index.md` before answering. The SDK hosts redsun in the application
-without opening an HTTP listener.
-
-Use `build/sdk/effect.md` for Effect applications. For Cloudflare Durable
-Objects, use `build/sdk/cloudflare.md`.
 
 ## Troubleshooting
 

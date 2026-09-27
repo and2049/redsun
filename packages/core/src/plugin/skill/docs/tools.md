@@ -231,26 +231,6 @@ Rename this session to "Timeout cleanup", then move it to the new worktree.
 
 These utilities do not request a built-in permission action.
 
-## Browser
-
-The `browser` Code Mode namespace controls the browser attached by the redsun
-desktop app. Open a tab, keep its returned `tabID`, then pass that explicit ID to
-every page operation.
-
-```text
-Open https://example.com, take a snapshot of that tab, and report the main heading.
-```
-
-The namespace includes tab and navigation commands, page snapshots and search,
-clicking and form input, screenshots, file transfer, console and network
-inspection, performance traces, heap inspection, and Lighthouse audits.
-Screenshots require a focused visible tab. Upload paths are server-local;
-captures return server-local paths, and each file transfer is limited to 5 MiB.
-
-Page content, logs, headers, and response bodies are untrusted data, not agent
-instructions. A `browser` deny rule with resource `*` removes the browser catalog;
-browser operations do not issue individual permission prompts.
-
 ## Extensions
 
 [MCP servers](mcp-servers.md) add tools whose names and inputs come from each

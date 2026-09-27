@@ -8,53 +8,30 @@ export const NAME = "todowrite"
 
 export const key = (sessionID: string) => `redsun.todos/${sessionID}`
 
+// Field names are self-describing; the tool description carries the rules. Each schema byte is
+// resent on every request, and every required field is written on every item of every call.
 const Item = Schema.Struct({
-  content: Schema.String.annotate({ description: "Brief description of the task" }),
-  status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]).annotate({
-    description: "Current status of the task",
-  }),
-  priority: Schema.Literals(["high", "medium", "low"]).annotate({
-    description: "Priority level of the task",
-  }),
+  content: Schema.String,
+  status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]),
 })
 
 export const Todo = Schema.Struct({
   ...Item.fields,
-  children: Schema.optionalKey(Schema.Array(Item)).annotate({
-    description: "Sub-steps nested under this task (one level deep)",
-  }),
+  children: Schema.optionalKey(Schema.Array(Item)),
 })
 export type Todo = typeof Todo.Type
 
 export const flatten = (todos: ReadonlyArray<Todo>) => todos.flatMap((todo) => [todo, ...(todo.children ?? [])])
 
-export const DESCRIPTION = `Create and maintain a structured task list for the current coding session. Tracks progress, organizes multi-step work, and surfaces status to the user. Every call replaces the whole list.
+// A todo-only step resends the whole context, so updates ride along with the next real tool call.
+export const DESCRIPTION = `Maintain the session's task list; the user sees it live. Each call replaces the whole list.
 
-## When to use
-Use proactively when:
-- The task requires 3+ distinct steps or actions (not just 3 tool calls for a single conceptual step)
-- The work is non-trivial and benefits from planning
-- The user provides multiple tasks (numbered or comma-separated) or explicitly asks for a todo list
-- New instructions arrive - capture them as todos
-- You start a task - mark it \`in_progress\` (only one at a time) before working
-- You finish a task - mark it \`completed\` and add any follow-ups discovered during the work
+Use it proactively for work with 3+ steps, multiple user requests, or new instructions mid-task. Skip it for single-step or purely conversational requests. When in doubt, use it.
 
-## When NOT to use
-Skip when:
-- The work is a single, straightforward task (or <3 trivial steps)
-- The request is purely informational or conversational
-- Tracking adds no organizational value
-
-## Rules
-- Update status in real time; don't batch completions
-- Mark \`completed\` only after the required work is actually done, including any required verification. Never based on intent.
-- Keep exactly one \`in_progress\` while work remains
-- If blocked or partial, keep it \`in_progress\` and add a follow-up todo describing the blocker
-- Preserve user-provided commands verbatim (flags, args, order)
-- Items should be specific and actionable; break large work into smaller steps
-- Group the sub-steps of a larger item under it as \`children\` (one level only); a parent stays \`in_progress\` until every child is \`completed\` or \`cancelled\`
-
-When in doubt, use it.`
+- Keep exactly one item \`in_progress\`, set before you start it.
+- Mark \`completed\` only after the work, including verification, is done. If blocked, keep it open and add an item for the blocker.
+- Keep items specific; copy user-given commands verbatim. Nest sub-steps under \`children\` (one level); a parent stays open until its children finish.
+- Never spend a turn only on the list: send each update alongside your next tool call.`
 
 export const Plugin = define({
   id: "redsun.tool.todo",
@@ -68,7 +45,7 @@ export const Plugin = define({
           options: { codemode: false },
           description: DESCRIPTION,
           input: Schema.Struct({
-            todos: Schema.Array(Todo).annotate({ description: "The updated todo list" }),
+            todos: Schema.Array(Todo),
           }),
           output: Schema.Struct({ todos: Schema.Array(Todo) }),
           execute: (input, context) =>

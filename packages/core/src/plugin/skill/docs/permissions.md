@@ -21,9 +21,6 @@ inspection, and always block pushes. Add these ordered rules to `redsun.jsonc`:
 
 The last matching rule wins, so the specific exceptions follow the broad rule.
 
-> **Warning:** V1 uses different field and action names. In V2, use `permissions`, `shell`, and `subagent` instead of `permission`,
-> `bash`, and `task`.
-
 ## Rules
 
 Each rule requires three string fields:
