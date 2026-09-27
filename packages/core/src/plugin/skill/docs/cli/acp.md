@@ -69,7 +69,7 @@ ACP are not supported by this command.
 
 ## Authentication
 
-ACP authentication uses the provider credentials already available to OpenCode. Sign in from a terminal before starting
+ACP authentication uses the provider credentials already available to redsun. Sign in from a terminal before starting
 the ACP client:
 
 ```bash

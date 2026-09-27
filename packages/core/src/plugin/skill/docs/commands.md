@@ -253,4 +253,4 @@ automatically.
 Review only the staged changes: !`git diff --cached`
 ```
 
-Saving this file updates `/review` without restarting OpenCode.
+Saving this file updates `/review` without restarting redsun.

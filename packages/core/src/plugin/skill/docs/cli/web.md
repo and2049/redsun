@@ -1,7 +1,7 @@
 # Web
 
-redsun ships with a web ui that is served from the same server that powers the
-TUI. It's available by default and password protected.
+redsun does not ship a web UI. The server that powers the TUI is password
+protected, and browser or remote clients connect to it over HTTP.
 
 ## Access
 

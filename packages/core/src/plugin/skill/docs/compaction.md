@@ -280,18 +280,3 @@ fixed system prompt and tool schemas:
 ```text
 128k context = 120k fixed instructions and tools + 8k conversation
 ```
-
-## Migration
-
-V1 also used tail-turn and pruning behavior. V2 instead uses checkpoint-based
-compaction and `compaction.keep.tokens`:
-
-```jsonc
-{
-  "compaction": {
-    "keep": { "tokens": 15000 },
-  },
-}
-```
-
-The settings and behavior on this page apply to V2.

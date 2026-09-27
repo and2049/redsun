@@ -1,6 +1,6 @@
 # Config
 
-Create `redsun.jsonc` in your project to configure OpenCode. Add the schema for editor validation, then set only the options you need.
+Create `redsun.jsonc` in your project to configure redsun. Add the schema for editor validation, then set only the options you need.
 
 ```jsonc title="redsun.jsonc"
 {

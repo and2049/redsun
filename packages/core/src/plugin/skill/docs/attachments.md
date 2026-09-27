@@ -2,15 +2,12 @@
 
 ## Attach
 
-Attach a local file, then ask redsun to use it in your prompt. In the desktop
-or web client, choose **Attach file**, paste a file, or drag it into the prompt.
+Attach a local file, then ask redsun to use it in your prompt. In the TUI, paste
+a file or image into the prompt, or mention a file with `@`.
 
 ```text
 Summarize the attached README.md and list the required setup steps.
 ```
-
-Desktop file-picker selections can total up to 20 MiB. Other interfaces may
-apply lower client-side limits.
 
 > **Warning:** Choose a model with image input before attaching an image. redsun can pass supported images to the provider, but the
 > provider and model still enforce their own formats, dimensions, file counts, and sizes. A text-only model may reject the
@@ -144,14 +141,13 @@ security boundary.
 
 ## Limits
 
-| Limit                         | Value or behavior                                        | Example                                     |
-| ----------------------------- | -------------------------------------------------------- | ------------------------------------------- |
-| Direct attachment             | 20 MiB decoded per item; clients may impose lower limits | Two 12 MiB files pass the per-item limit    |
-| Desktop picker selection      | 20 MiB total                                             | Two 12 MiB files exceed the selection limit |
-| `max_base64_bytes`            | Encoded Base64 only, excluding the complete `data:` URL  | `SGVsbG8=` counts as 8 bytes                |
-| Provider image limits         | Apply after redsun processing                            | A provider may reject an accepted image     |
-| Text attachment model support | Does not require a multimodal model                      | `notes.txt` is inserted as prompt text      |
-| `read` text limits            | Uses separate paging and truncation limits               | Read a large log in pages                   |
+| Limit                         | Value or behavior                                        | Example                                  |
+| ----------------------------- | -------------------------------------------------------- | ---------------------------------------- |
+| Direct attachment             | 20 MiB decoded per item; clients may impose lower limits | Two 12 MiB files pass the per-item limit |
+| `max_base64_bytes`            | Encoded Base64 only, excluding the complete `data:` URL  | `SGVsbG8=` counts as 8 bytes             |
+| Provider image limits         | Apply after redsun processing                            | A provider may reject an accepted image  |
+| Text attachment model support | Does not require a multimodal model                      | `notes.txt` is inserted as prompt text   |
+| `read` text limits            | Uses separate paging and truncation limits               | Read a large log in pages                |
 
 A client accepting a file does not guarantee that its contents reach the
 model. The attachment must use a model-visible format and satisfy both redsun

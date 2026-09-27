@@ -126,13 +126,13 @@ metadata:
 Prepare the changelog, version bump, tag, and release notes.
 ```
 
-| Field                        | Behavior                                                           |
-| ---------------------------- | ------------------------------------------------------------------ |
-| `name`                       | Display name; defaults to the path-derived ID                      |
-| `description`                | Summary used to show the skill to the model                        |
-| `slash`                      | Set to `false` to hide the skill from interactive command catalogs |
-| `metadata.redsun/slash`      | Boolean or `"true"`/`"false"`; overrides `slash`                   |
-| `metadata.redsun/autoinvoke` | Set to `false` to omit the skill from the model's available list   |
+| Field                          | Behavior                                                           |
+| ------------------------------ | ------------------------------------------------------------------ |
+| `name`                         | Display name; defaults to the path-derived ID                      |
+| `description`                  | Summary used to show the skill to the model                        |
+| `slash`                        | Set to `false` to hide the skill from interactive command catalogs |
+| `metadata.opencode/slash`      | Boolean or `"true"`/`"false"`; overrides `slash`                   |
+| `metadata.opencode/autoinvoke` | Set to `false` to omit the skill from the model's available list   |
 
 All frontmatter is optional at runtime. Add a clear `description` when the model should discover the skill; skills without one are not advertised.
 

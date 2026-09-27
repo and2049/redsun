@@ -14,8 +14,8 @@ Run `/connect`, choose a provider, and enter its credentials. Then run `/models`
 
 ## Go
 
-[OpenCode Go](console/go.md) is an optional subscription for coding models tested by the redsun team. Subscribe in the
-[console](https://console.redsun.ai), copy your API key, then connect it as **OpenCode Go**.
+[OpenCode Go](https://opencode.ai/v2/docs/console/go) is an optional subscription for coding models tested by the OpenCode team. Subscribe in the
+[console](https://console.opencode.ai), copy your API key, then connect it as **OpenCode Go**.
 
 ```text
 /connect
@@ -23,7 +23,7 @@ Run `/connect`, choose a provider, and enter its credentials. Then run `/models`
 /models
 ```
 
-See the [Go guide](console/go.md) for usage limits, endpoints, and privacy details.
+See the [Go guide](https://opencode.ai/v2/docs/console/go) for usage limits, endpoints, and privacy details.
 
 ## Custom
 

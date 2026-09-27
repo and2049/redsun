@@ -19,7 +19,7 @@ redsun includes four search providers:
 | Parallel  | `parallel`  | `PARALLEL_API_KEY`   |
 | Tavily    | `tavily`    | `TAVILY_API_KEY`     |
 
-Connect an account from the TUI with `/connect`, or set the provider's environment variable before starting OpenCode.
+Connect an account from the TUI with `/connect`, or set the provider's environment variable before starting redsun.
 
 ```bash
 $ TAVILY_API_KEY=your-key opencode

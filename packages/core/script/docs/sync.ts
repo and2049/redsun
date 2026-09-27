@@ -12,11 +12,12 @@ const ids = (await $`git ls-tree -r --name-only ${ref} -- ${ROOT}`.cwd(root).tex
   .split("\n")
   .filter((file) => file.endsWith(".mdx"))
   .map((file) => file.slice(ROOT.length + 1, -".mdx".length))
-const pages = new Set(ids)
+// Links to excluded pages point at the online docs instead of a missing local file.
+const pages = new Set(ids.filter((id) => !excluded(id)))
 const kept: string[] = []
 
 await fs.rm(out, { recursive: true, force: true })
-for (const id of ids.filter((id) => !excluded(id)).toSorted()) {
+for (const id of [...pages].toSorted()) {
   const text = await $`git show ${ref}:${ROOT}/${id}.mdx`.cwd(root).text()
   const content = convert({ id, text, pages })
   if (!content.trim().includes("\n")) continue
