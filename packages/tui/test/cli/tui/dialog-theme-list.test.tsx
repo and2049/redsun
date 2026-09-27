@@ -50,29 +50,63 @@ async function renderThemes(root: string) {
   return app
 }
 
-test("lists dark themes first and swaps to the light tab", async () => {
+function rowOf(frame: string, text: string) {
+  return frame.split("\n").findIndex((line) => line.includes(text))
+}
+
+test("lists dark/light families on one row each and tab flips the mode in place", async () => {
   await using root = await tmpdir()
   const app = await renderThemes(root.path)
   try {
-    const dark = await app.waitForFrame((frame) => frame.includes("dusk"))
+    const dark = await app.waitForFrame((frame) => frame.includes("dusk / dawn"))
     expect(dark).toContain("Dark")
     expect(dark).toContain("Light")
-    expect(dark).toContain("gruvbox")
-    // `tide` also lands here but can scroll out of view when other test files
-    // leak plugin themes into the shared registry, so only `nimbus` is pinned.
-    expect(dark).toContain("nimbus")
-    expect(dark).not.toContain("parchment")
+    // Both siblings share a row, ordered by the dark member's name.
+    expect(dark).toContain("gruvbox / parchment")
+    expect(dark).toContain("nimbus / cloud")
+    expect(dark).toContain("tide / wave")
+    expect(rowOf(dark, "dusk / dawn")).toBeLessThan(rowOf(dark, "everforest / glade"))
+    expect(rowOf(dark, "kanagawa / lotus")).toBeLessThan(rowOf(dark, "nimbus / cloud"))
+    // The configured theme's family is marked current.
+    expect(dark).toMatch(/●\s+dusk \/ dawn/)
+    // Every row carries a preview: the background square, then three distinct
+    // hue squares.
+    const rows = dark.split("\n").filter((line) => line.includes("■"))
+    expect(rows.length).toBeGreaterThanOrEqual(7)
+    for (const row of rows) expect(row).toContain("■ ■ ■ ■")
+    expect(dark).toContain("light themes")
 
     app.mockInput.pressTab()
-    // gruvbox <-> parchment are built-in siblings, so the tab keeps the pair.
-    const light = await app.waitForFrame((frame) => frame.includes("wave"))
-    expect(light).toContain("dawn")
-    // `wave` declares itself light even though it paints light text on mid-blue.
-    expect(light).toContain("wave")
-    expect(light).toContain("cloud")
-    expect(light).not.toContain("gruvbox")
-    expect(light).not.toContain("nimbus")
+    // The mode flips but the rows and the highlight stay where they are.
+    const light = await app.waitForFrame((frame) => frame.includes("dark themes"))
+    expect(light).toMatch(/●\s+dusk \/ dawn/)
+    expect(rowOf(light, "dusk / dawn")).toBe(rowOf(dark, "dusk / dawn"))
+    expect(rowOf(light, "tide / wave")).toBe(rowOf(dark, "tide / wave"))
   } finally {
     app.renderer.destroy()
   }
+})
+
+test("groups custom themes by suffix and keeps unpaired themes as a family of one", async () => {
+  const [{ themeFamilies, familyMember }, { DEFAULT_THEMES }] = await Promise.all([
+    import("../../../src/component/dialog-theme-list"),
+    import("../../../src/theme"),
+  ])
+  // Real shipped documents under custom names; an unparseable source would
+  // report dark regardless of its declared mode.
+  const families = themeFamilies({
+    dusk: DEFAULT_THEMES.dusk,
+    dawn: DEFAULT_THEMES.dawn,
+    "solar-light": DEFAULT_THEMES.dawn,
+    "solar-dark": DEFAULT_THEMES.dusk,
+    mono: DEFAULT_THEMES.dusk,
+  })
+  expect(families).toEqual([
+    { key: "dusk", dark: "dusk", light: "dawn" },
+    { key: "mono", dark: "mono" },
+    { key: "solar", dark: "solar-dark", light: "solar-light" },
+  ])
+  expect(familyMember(families[0]!, "light")).toBe("dawn")
+  // A family of one shows its only member whatever the mode.
+  expect(familyMember(families[1]!, "light")).toBe("mono")
 })

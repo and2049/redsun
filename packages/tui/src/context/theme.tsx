@@ -294,7 +294,8 @@ export function ThemeContextProvider(props: ParentProps<{ context: ContextName |
   )
 }
 
-function loadTheme(source: ThemeDocumentSource, name: string) {
+/** Resolves a theme source in the mode it declares; throws on a malformed document. */
+export function loadTheme(source: ThemeDocumentSource, name: string) {
   const document = parseTheme(source, name)
   const mode = themeMode(source, name)
   return { mode, theme: resolveThemeDocument(document, mode) }
