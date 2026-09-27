@@ -1,0 +1,80 @@
+diff --git a/index.bun.js b/index.bun.js
+index e7dd1a318cd29ad9b59696a27e3fae0064ec1260..c5011f54d3511dc3d94abbd4bd6beb61ffc074f0 100644
+--- a/index.bun.js
++++ b/index.bun.js
+@@ -12298,7 +12298,7 @@ class MarkdownRenderable extends Renderable {
+     return row;
+   }
+   applyListItemRenderable(row, input, previousItem) {
+-    this.applyListItemMarker(row, input);
++    this.applyListItemMarker(row, input, previousItem === undefined);
+     const content = row.getChildren()[1];
+     if (!(content instanceof BoxRenderable))
+       return false;
+@@ -12373,7 +12373,7 @@ class MarkdownRenderable extends Renderable {
+       children[i]?.destroyRecursively();
+     }
+   }
+-  applyListItemMarker(row, input) {
++  applyListItemMarker(row, input, force = false) {
+     const marker = row.getChildren()[0];
+     if (!(marker instanceof TextRenderable))
+       return;
+@@ -12384,7 +12384,7 @@ class MarkdownRenderable extends Renderable {
+       row.marginBottom = marginBottom;
+     if (marker.width !== markerWidth)
+       marker.width = markerWidth;
+-    if (marker.chunks[0]?.text !== markerText) {
++    if (force || marker.chunks[0]?.text !== markerText) {
+       marker.content = new StyledText([this.createChunk(markerText, "markup.list")]);
+     }
+   }
+@@ -13056,7 +13056,7 @@ class MarkdownRenderable extends Renderable {
+           }
+           this.destroyUnusedDefaultRenderable(custom.renderable);
+         }
+-        this.updateBlockRenderable(existing, block.token, blockIndex, blocks[i + 1]?.token);
++        this.updateBlockRenderable(existing, block.token, blockIndex, blocks[i + 1]?.token, forceTableRefresh);
+         existing.renderable.marginBottom = 0;
+         if (existing.marginTop !== block.marginTop) {
+           this.applyMargins(existing.renderable, block.marginTop, 0);
+diff --git a/index.node.js b/index.node.js
+index 77c786b3e49fe6e0ec5e1ca3115cc6a5a22a6307..89c626da128465c73988485585b8f3ed8fb718c6 100644
+--- a/index.node.js
++++ b/index.node.js
+@@ -12297,7 +12297,7 @@ class MarkdownRenderable extends Renderable {
+     return row;
+   }
+   applyListItemRenderable(row, input, previousItem) {
+-    this.applyListItemMarker(row, input);
++    this.applyListItemMarker(row, input, previousItem === undefined);
+     const content = row.getChildren()[1];
+     if (!(content instanceof BoxRenderable))
+       return false;
+@@ -12372,7 +12372,7 @@ class MarkdownRenderable extends Renderable {
+       children[i]?.destroyRecursively();
+     }
+   }
+-  applyListItemMarker(row, input) {
++  applyListItemMarker(row, input, force = false) {
+     const marker = row.getChildren()[0];
+     if (!(marker instanceof TextRenderable))
+       return;
+@@ -12383,7 +12383,7 @@ class MarkdownRenderable extends Renderable {
+       row.marginBottom = marginBottom;
+     if (marker.width !== markerWidth)
+       marker.width = markerWidth;
+-    if (marker.chunks[0]?.text !== markerText) {
++    if (force || marker.chunks[0]?.text !== markerText) {
+       marker.content = new StyledText([this.createChunk(markerText, "markup.list")]);
+     }
+   }
+@@ -13055,7 +13055,7 @@ class MarkdownRenderable extends Renderable {
+           }
+           this.destroyUnusedDefaultRenderable(custom.renderable);
+         }
+-        this.updateBlockRenderable(existing, block.token, blockIndex, blocks[i + 1]?.token);
++        this.updateBlockRenderable(existing, block.token, blockIndex, blocks[i + 1]?.token, forceTableRefresh);
+         existing.renderable.marginBottom = 0;
+         if (existing.marginTop !== block.marginTop) {
+           this.applyMargins(existing.renderable, block.marginTop, 0);

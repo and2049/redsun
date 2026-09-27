@@ -123,7 +123,7 @@ export function sessionFixture(): FetchHandler {
         },
         {
           type: "text",
-          text: "The registry lives in `packages/tui/src/theme/index.ts`. I will add **nimbus** and **tide** next to their light pairs.",
+          text: "The registry lives in `packages/tui/src/theme/index.ts`. I will add **nimbus** and **tide** next to their light pairs.\n\n- List items exercise `markup.list` and inline `code` on a bullet\n- A second item keeps the marker column visible",
         },
         {
           type: "tool",
