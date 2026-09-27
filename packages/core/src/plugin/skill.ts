@@ -20,7 +20,7 @@ export const OpencodeContent = opencodeContent
 export const ReportContent = reportContent
 
 export const OpencodeDescription =
-  "Use this skill for any question about redsun itself, including how redsun works, using or configuring it, migrating from V1 to V2, troubleshooting it, developing plugins or integrations, using its clients, server, or API, and contributing to the redsun codebase. Also use it for redsun agents, commands, skills, tools, permissions, MCP servers, providers, models, themes, keybinds, formatters, the CLI, TUI, desktop app, and web app."
+  "Use for any question about redsun itself: using, configuring, or troubleshooting it, building plugins or integrations on its clients, server, or API, and contributing to its code. Covers agents, commands, skills, tools, permissions, MCP servers, providers, models, themes, keybinds, formatters, the CLI and TUI."
 const REPORT_DESCRIPTION =
   "Use when the user wants to report a redsun issue or bug. Collect standard diagnostics, add user-specific reproduction context, and publish the issue with GitHub CLI."
 

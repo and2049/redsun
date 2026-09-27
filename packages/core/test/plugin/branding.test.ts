@@ -133,6 +133,19 @@ describe("model-facing branding", () => {
     },
   )
 
+  test("every docs page the redsun skill names is vendored", () => {
+    const skill = skills.find((item) => item.name === "opencode.md")!.text
+    const pages = new Set(docs.map((item) => item.name.replaceAll(path.sep, "/")))
+    // Sections name pages in full; the page map lists bare names under a directory prefix.
+    const named = [...skill.matchAll(/`([\w/-]+\.md)`/g)].map((match) => match[1])
+    const map = /## Page map\n([\s\S]*?)\nNot vendored:/.exec(skill)![1]
+    const listed = [...map.matchAll(/^- (?:Top level|`([\w/]+\/)`):([\s\S]*?)(?=^- |(?![\s\S]))/gm)].flatMap(
+      ([, prefix = "", items]) => [...items.matchAll(/`([\w/-]+)`/g)].map((match) => `${prefix}${match[1]}.md`),
+    )
+    expect(listed.length).toBeGreaterThanOrEqual(25)
+    expect([...named, ...listed].filter((page) => !pages.has(page))).toEqual([])
+  })
+
   test("the redsun issue tracker is the default in the report skill", () => {
     const report = skills.find((item) => item.name === "report.md")!
     expect(report.text).toContain("gh issue create --repo and2049/redsun")
