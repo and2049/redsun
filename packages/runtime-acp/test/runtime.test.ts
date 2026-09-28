@@ -715,7 +715,9 @@ describe("ACP runtime against a scripted agent", () => {
     test(`intersects the final request catalog and tool choice under ${mode}`, async () => {
       const bound = binding(["todowrite", "skill"])
       await withRuntime({ agent: { hostTools: mode }, host: { tools: () => bound.tools } }, async (runtime) => {
-        const filtered = { tools: [{ type: "function" as const, name: "skill", inputSchema: { type: "object" } }] }
+        const filtered: Partial<LanguageModelV3CallOptions> = {
+          tools: [{ type: "function", name: "skill", inputSchema: { type: "object" } }],
+        }
         const ask = async (extra: Partial<LanguageModelV3CallOptions>, text = "tools?") =>
           collect((await runtime.turn(HOSTED, call([user(text)], extra))).stream)
         expect(textOf(await ask(filtered))).toBe("TOOLS=skill")
