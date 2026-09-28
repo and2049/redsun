@@ -804,7 +804,7 @@ export function Session() {
   useKeyboard((event) => {
     if (vim.mode !== "normal") return
     if (event.ctrl || event.meta || event.option) return
-    if (dialog.stack.length > 0) return
+    if (dialog.stack.length > 0 || vim.inputCaptured()) return
     if (!scroll || scroll.isDestroyed) return
 
     const borrowed = vim.tempRemaining() !== null

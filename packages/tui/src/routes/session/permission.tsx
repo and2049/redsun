@@ -12,6 +12,7 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { useConfig } from "../../config"
 import { Keymap } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
+import { useVimInputCapture } from "../../context/vim"
 import { usePathFormatter } from "../../context/path-format"
 import { SimulationSemantics } from "../../simulation/semantics"
 import { PatchDiff } from "../../component/patch-diff"
@@ -285,6 +286,7 @@ function RejectPrompt(props: {
 }) {
   let input: TextareaRenderable
   const enabled = useInteractivity()
+  useVimInputCapture(enabled)
   const theme = useTheme("elevated")
   const config = useConfig().data
   const dimensions = useTerminalDimensions()

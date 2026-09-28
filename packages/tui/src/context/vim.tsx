@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { createEffect, createSignal, onCleanup, onMount, useContext, type Accessor, type JSX } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { createSimpleContext } from "./helper"
@@ -9,12 +9,17 @@ import { NORMAL_LETTER_COMMANDS, pushCount, transition, type VimMode } from "../
 const TEMP_DURATION_MS = 3000
 const TICK_INTERVAL_MS = 250
 
-export const { use: useVim, provider: VimProvider } = createSimpleContext({
+export const {
+  use: useVim,
+  provider: VimProvider,
+  context: VimContext,
+} = createSimpleContext({
   name: "Vim",
   init: () => {
     const [mode, setMode] = createSignal<VimMode>("insert")
     const [tempRemaining, setTempRemaining] = createSignal<number | null>(null)
     const [pendingCount, setPendingCount] = createSignal<number | null>(null)
+    const [captures, setCaptures] = createSignal(0)
     let tempEndAt = 0
     let tempTimer: ReturnType<typeof setTimeout> | undefined
     let tempTick: ReturnType<typeof setInterval> | undefined
@@ -61,6 +66,11 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       setMode(next)
     }
 
+    function captureInput() {
+      setCaptures((count) => count + 1)
+      return () => setCaptures((count) => count - 1)
+    }
+
     onCleanup(clearTemp)
 
     return {
@@ -76,9 +86,18 @@ export const { use: useVim, provider: VimProvider } = createSimpleContext({
       pushCountDigit: (digit: number) => setPendingCount((current) => pushCount(current, digit)),
       takeCount,
       clearCount,
+      inputCaptured: () => captures() > 0,
+      captureInput,
     }
   },
 })
+
+export function useVimInputCapture(enabled: Accessor<boolean>) {
+  const vim = useContext(VimContext)
+  createEffect(() => {
+    if (vim && enabled()) onCleanup(vim.captureInput())
+  })
+}
 
 export function VimKeyHandler(props: { children: JSX.Element }) {
   const vim = useVim()
@@ -91,7 +110,7 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
         "key",
         (ctx) => {
           const event = ctx.event
-          if (!event.ctrl || event.name !== "x" || vim.mode === "command") return
+          if (!event.ctrl || event.name !== "x" || vim.mode === "command" || vim.inputCaptured()) return
           ctx.consume()
           keymap.clearPendingSequence()
           vim.enterTempNormal()
@@ -103,7 +122,7 @@ export function VimKeyHandler(props: { children: JSX.Element }) {
 
   useKeyboard((event: KeyEvent) => {
     if (event.ctrl || event.meta) return
-    if (vim.mode === "command") return
+    if (vim.mode === "command" || vim.inputCaptured()) return
     if (dialog.stack.length > 0 && event.name !== "escape") return
 
     if (vim.mode === "normal" && vim.tempRemaining() !== null && event.name === "escape") {
