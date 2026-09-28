@@ -70,3 +70,11 @@ test("binds every normal-mode letter once", () => {
   expect(letters).not.toContain("i")
   expect(letters).not.toContain(":")
 })
+
+test("leaves compaction off the single-letter normal-mode keys", () => {
+  // One stray keypress should not compact a session; `:compact` and a
+  // user-configured `session.compact` keybind remain available.
+  expect(Object.values(NORMAL_LETTER_COMMANDS)).not.toContain("session.compact")
+  expect(TuiKeybind.Definitions["session.compact"]).toBeDefined()
+  expect(resolveCommand("compact")).toBe("session.compact")
+})

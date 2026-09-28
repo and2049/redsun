@@ -91,7 +91,6 @@ export function pushCount(current: number | null, digit: number): number | null 
 export const NORMAL_LETTER_COMMANDS: Record<string, string> = {
   a: "agent.list",
   b: "session.sidebar.toggle",
-  c: "session.compact",
   e: "prompt.editor",
   f: "session.pin",
   g: "session.timeline",
