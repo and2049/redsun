@@ -82,8 +82,12 @@ export const prepare = Effect.fn("InstructionState.prepare")(function* (
   bus: Bus.Interface,
   instructions: Instructions.List,
   sessionID: SessionSchema.ID,
+  options?: { readonly deferUpdates?: boolean },
 ) {
-  yield* commit(db, bus, instructions, yield* observe(db, instructions, sessionID))
+  const observation = yield* observe(db, instructions, sessionID)
+  // A deferred boundary still establishes the baseline; later deltas wait for the next one.
+  if (options?.deferUpdates && !observation.initial) return
+  yield* commit(db, bus, instructions, observation)
 })
 
 export const apply = Effect.fn("InstructionState.apply")(function* (

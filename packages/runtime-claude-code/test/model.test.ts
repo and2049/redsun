@@ -63,6 +63,17 @@ describe("ClaudeCodeLanguageModel.promptDelta", () => {
     expect(text([user("only")])).toBe("only")
   })
 
+  it("sends a runtime command alone and a deferred instruction update with the next prompt", () => {
+    // The host defers instruction updates past a runtime command, so the CLI sees
+    // `/compact` as its whole prompt and can parse it as a slash command.
+    const earlier = [user("earlier"), assistant("reply")]
+    const update = user("<system-update>\nThe instructions changed\n</system-update>")
+    expect(text([...earlier, user("/compact")])).toBe("/compact")
+    expect(text([...earlier, user("/compact"), assistant("Compacted"), update, user("next")])).toBe(
+      "<system-update>\nThe instructions changed\n</system-update>\n\nnext",
+    )
+  })
+
   it("falls back to the last user message when nothing follows the assistant", () => {
     expect(text([user("earlier"), assistant("reply")])).toBe("earlier")
   })

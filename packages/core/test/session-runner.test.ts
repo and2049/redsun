@@ -2931,6 +2931,58 @@ describe("SessionRunnerLLM", () => {
     expect(yield* s.context).toContainEqual(expect.objectContaining({ type: "user", text: "Earlier question" }))
   })
 
+  scenario("defers instruction updates past a delegated runtime command", function* (s) {
+    yield* registerDelegatedRuntime({ notice: "The agent compacts itself.", command: "/compact" })
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Earlier answer", "text-delegated-deferred-first"))
+    yield* s.runPrompt("Earlier question")
+
+    // An instruction file changed during the previous turn, as when an agent
+    // updates project memory just before the user compacts.
+    s.systemBaseline = "Changed context"
+    s.requests.length = 0
+    yield* s.llm.push(TestLLM.text("Compacted", "text-delegated-deferred-compact"))
+    yield* s.llm.push(TestLLM.text("Continued", "text-delegated-deferred-after"))
+    yield* s.session.compact({ sessionID })
+    yield* s.resume
+    yield* s.runPrompt("After compaction")
+
+    // The runtime receives what follows its last reply: the command alone.
+    const tail = (request: LLMRequest) =>
+      request.messages.slice(request.messages.findLastIndex((message) => message.role === "assistant") + 1)
+    expect(s.requests).toHaveLength(2)
+    expect(tail(s.requests[0]!).map((message) => message.role)).toEqual(["user"])
+    expect(userTexts(s.requests[0]!).at(-1)).toBe("/compact")
+    expect(systemTexts(s.requests[0]!)).not.toContain("Changed context")
+    // The next boundary admits the update ahead of the next prompt.
+    expect(tail(s.requests[1]!).map((message) => message.role)).toEqual(["system", "user"])
+    expect(systemTexts(s.requests[1]!)).toContain("Changed context")
+    expect(userTexts(s.requests[1]!).at(-1)).toBe("After compaction")
+  })
+
+  scenario("establishes the instruction baseline when a runtime command is the first input", function* (s) {
+    yield* registerDelegatedRuntime({ notice: "The agent compacts itself.", command: "/compact" })
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Compacted", "text-delegated-first-command"))
+    yield* s.session.compact({ sessionID })
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(1)
+    expect(userTexts(s.requests[0]!)).toEqual(["/compact"])
+    expect(s.requests[0]!.system.map((part) => part.text)).toContain(s.systemBaseline)
+    expect(
+      yield* s.db.select().from(InstructionStateTable).where(eq(InstructionStateTable.session_id, sessionID)).get(),
+    ).toBeDefined()
+  })
+
   scenario("fails a manual compaction when the delegated runtime has no command", function* (s) {
     yield* registerDelegatedRuntime()
     s.currentModel = delegatedCompactModel

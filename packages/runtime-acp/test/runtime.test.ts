@@ -259,6 +259,33 @@ describe("ACP runtime against a scripted agent", () => {
       )
     })
 
+  test("v3 compaction runs when the host defers a pending instruction update past the command", async () => {
+    await withRuntime(
+      {
+        agent: {
+          preset: "kiro",
+          compactCommand: "/compact",
+          env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_COMPACT: "complete" },
+        },
+      },
+      async (runtime) => {
+        const earlier = [user("Earlier question"), assistant("Earlier answer")]
+        const update = user("<system-update>\nThe instructions changed\n</system-update>")
+        const compacted = await collect((await runtime.turn(TURN, call([...earlier, user("/compact")]))).stream)
+        expect(textOf(compacted)).toContain("compacted its native session history")
+        const next = await collect(
+          (
+            await runtime.turn(
+              TURN,
+              call([...earlier, user("/compact"), assistant("Compacted"), update, user("hello")]),
+            )
+          ).stream,
+        )
+        expect(textOf(next)).toBe("Hello from the fake agent")
+      },
+    )
+  })
+
   test("v3 compaction interruption releases the turn and replaces the process", async () => {
     await withRuntime(
       { agent: { preset: "kiro", compactCommand: "/compact", env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_COMPACT: "hang" } } },

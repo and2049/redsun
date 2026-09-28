@@ -49,10 +49,9 @@ export type Promotable = "input" | "steer"
 
 /** REDSUN: a runtime command must reach its parser alone, never joined to steering text. */
 export const RUNTIME_COMMAND = "redsun.runtime-command"
-const runtimeCommand = (row: typeof SessionInboxTable.$inferSelect) => {
-  const entry = fromRow(row)
-  return entry.type === "user" && entry.payload.metadata?.[RUNTIME_COMMAND] === true
-}
+export const isRuntimeCommand = (entry: Info) =>
+  entry.type === "user" && entry.payload.metadata?.[RUNTIME_COMMAND] === true
+const runtimeCommand = (row: typeof SessionInboxTable.$inferSelect) => isRuntimeCommand(fromRow(row))
 const controlRow = (row: typeof SessionInboxTable.$inferSelect) =>
   row.type === "compaction" || row.type === "move" || runtimeCommand(row)
 

@@ -199,9 +199,12 @@ const layer = Layer.effect(
               }
               if (!force && !continuing && (!pending || (pending.delivery === "queue" && promotable === "steer")))
                 return DrainResult.Complete()
+              // REDSUN: like a host compaction, a runtime command does not admit instruction updates;
+              // its parser needs the command alone. The next boundary delivers them.
+              const command = pending !== undefined && SessionInbox.isRuntimeCommand(pending)
               const ready = yield* restore(
                 Effect.gen(function* () {
-                  const selected = yield* prepareContext(sessionID)
+                  const selected = yield* prepareContext(sessionID, command)
                   const promoted = yield* SessionInbox.promote(
                     db,
                     bus,
@@ -215,7 +218,7 @@ const layer = Layer.effect(
                       onlyIfMissing: true,
                     })
                   if (promoted > 0) step = 1
-                  return { _tag: "Ready" as const, context: yield* context.load(selected) }
+                  return { _tag: "Ready" as const, context: yield* context.load(selected), command }
                 }),
               )
               if (ready) return ready
@@ -227,22 +230,29 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step)
+        continuing = yield* runStep(next.context, step, next.command)
         step++
         force = false
         entering = false
       }
     })
 
-    const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (sessionID: SessionSchema.ID) {
+    const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (
+      sessionID: SessionSchema.ID,
+      deferUpdates = false,
+    ) {
       const selected = yield* context.select(sessionID)
       // A blocked initial instruction baseline must leave admitted input pending.
-      yield* InstructionState.prepare(db, bus, selected.instructions, sessionID)
+      yield* InstructionState.prepare(db, bus, selected.instructions, sessionID, { deferUpdates })
       return selected
     })
 
     /** Owns logical Step policy; each attempt owns its streaming, tools, and durable settlement. */
-    const runStep = Effect.fn("SessionRunner.runStep")(function* (first: SessionContext.Loaded, step: number) {
+    const runStep = Effect.fn("SessionRunner.runStep")(function* (
+      first: SessionContext.Loaded,
+      step: number,
+      command = false,
+    ) {
       const sessionID = first.session.id
       let assistantMessageID = SessionMessage.ID.create()
       const retry = yield* SessionRunnerRetry.make(bus, sessionID)
@@ -251,7 +261,7 @@ const layer = Layer.effect(
       let recoverContinuation = true
       while (true) {
         // Reuse boundary preparation once; retries refresh context without delivering more input.
-        const loaded = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
+        const loaded = initial ?? (yield* prepareContext(sessionID, command).pipe(Effect.flatMap(context.load)))
         initial = undefined
         const compactionInput = {
           context: loaded,
