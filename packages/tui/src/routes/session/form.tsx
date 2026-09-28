@@ -18,6 +18,7 @@ import { SplitBorder } from "../../ui/border"
 import { useToast } from "../../ui/toast"
 import { Keymap } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
+import { useVimInputCapture } from "../../context/vim"
 import { useConfig } from "../../config"
 import { errorMessage } from "../../util/error"
 import {
@@ -72,6 +73,7 @@ export function FormPrompt(props: {
   const keymap = Keymap.use()
   const enabled = useInteractivity()
   const active = () => enabled() && keymap.mode.current() === FORM_MODE
+  useVimInputCapture(enabled)
   const config = useConfig().data
   const clipboard = useClipboard()
   const toast = useToast()
