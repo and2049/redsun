@@ -21,40 +21,84 @@ export const SUBSTITUTED_METADATA_KEY = Delegate.MODEL_SUBSTITUTED_METADATA_KEY
 
 export const isDelegated = (model: { readonly providerID: string }) => model.providerID === PROVIDER_ID
 
-const CONTEXT_200K = { context: 200_000, output: 64_000 }
-const CONTEXT_1M = { context: 1_000_000, output: 64_000 }
+const CONTEXT_200K = 200_000
+const CONTEXT_1M = 1_000_000
 
-const model = (id: string, input: { name: string; family: string; limit: { context: number; output: number } }) => ({
+// "claude-sonnet-5" → 5, "claude-haiku-4-5-20251001" → 4.5; the second digit
+// only counts when it is a single one, so a dated snapshot's date never reads
+// as a version.
+const GENERATION = /^claude-([a-z]+)-(\d+)(?:-(\d)(?!\d))?(?:-|$)/
+
+// The first generation of each family that runs with a native 1M window on
+// every plan (Claude Code model-config docs, "Extended context"; matches the
+// windows CLI 2.1.284 reports).
+// Older generations reach 1M only through their `[1m]` variant.
+const NATIVE_1M: Record<string, readonly [major: number, minor: number]> = {
+  fable: [0, 0],
+  opus: [4, 7],
+  sonnet: [5, 0],
+}
+
+/**
+ * The context window Claude Code runs a wire model id with. With
+ * `CLAUDE_CODE_DISABLE_1M_CONTEXT` it holds every model to 200K.
+ */
+export const contextWindow = (id: string, disable1M = false) => {
+  if (disable1M) return CONTEXT_200K
+  if (id.endsWith("[1m]")) return CONTEXT_1M
+  const match = GENERATION.exec(id)
+  const since = match ? NATIVE_1M[match[1]!] : undefined
+  if (!match || !since) return CONTEXT_200K
+  const major = Number(match[2])
+  const minor = Number(match[3] ?? 0)
+  return major > since[0] || (major === since[0] && minor >= since[1]) ? CONTEXT_1M : CONTEXT_200K
+}
+
+const model = (id: string, input: { name: string; family: string; context: number }) => ({
   ...Model.Info.default(PROVIDER_ID, Model.ID.make(id)),
   name: input.name,
   family: Model.Family.make(input.family),
   package: SENTINEL_PACKAGE,
   capabilities: { tools: true, input: ["text", "image", "pdf"], output: ["text"] },
-  limit: input.limit,
+  limit: { context: input.context, output: 64_000 },
 })
 
+const pin = (id: string, name: string, family: string) => model(id, { name, family, context: contextWindow(id) })
+
+// Bare family aliases; each may also take a `[1m]` suffix.
+const FAMILIES = ["fable", "opus", "sonnet", "haiku"] as const
+
 export const MODELS = [
-  model("fable", { name: "Claude Fable", family: "claude-fable", limit: CONTEXT_1M }),
-  model("opus", { name: "Claude Opus", family: "claude-opus", limit: CONTEXT_200K }),
-  model("opus[1m]", { name: "Claude Opus 1M", family: "claude-opus", limit: CONTEXT_1M }),
-  model("sonnet", { name: "Claude Sonnet", family: "claude-sonnet", limit: CONTEXT_200K }),
-  model("sonnet[1m]", { name: "Claude Sonnet 1M", family: "claude-sonnet", limit: CONTEXT_1M }),
-  model("haiku", { name: "Claude Haiku", family: "claude-haiku", limit: CONTEXT_200K }),
+  // Alias windows are those of the Anthropic API resolutions until the CLI's
+  // picker says what an alias runs (see `applyCatalog`).
+  model("fable", { name: "Claude Fable", family: "claude-fable", context: CONTEXT_1M }),
+  model("opus", { name: "Claude Opus", family: "claude-opus", context: CONTEXT_1M }),
+  model("opus[1m]", { name: "Claude Opus 1M", family: "claude-opus", context: CONTEXT_1M }),
+  model("sonnet", { name: "Claude Sonnet", family: "claude-sonnet", context: CONTEXT_1M }),
+  model("sonnet[1m]", { name: "Claude Sonnet 1M", family: "claude-sonnet", context: CONTEXT_1M }),
+  model("haiku", { name: "Claude Haiku", family: "claude-haiku", context: CONTEXT_200K }),
   // Version pins explicitly documented by Claude Code, plus older curated ids.
   // A pin is selectable, not a claim that this subscription can serve it.
   // Aliases stay
   // first: `catalog.model.small` picks the first claude-haiku-family model.
-  model("claude-fable-5-1", { name: "Claude Fable 5.1", family: "claude-fable", limit: CONTEXT_1M }),
-  model("claude-fable-5", { name: "Claude Fable 5", family: "claude-fable", limit: CONTEXT_1M }),
-  model("claude-opus-5-5", { name: "Claude Opus 5.5", family: "claude-opus", limit: CONTEXT_200K }),
-  model("claude-opus-4-8", { name: "Claude Opus 4.8", family: "claude-opus", limit: CONTEXT_1M }),
-  model("claude-sonnet-4-5", { name: "Claude Sonnet 4.5", family: "claude-sonnet", limit: CONTEXT_200K }),
-  model("claude-haiku-4-5", { name: "Claude Haiku 4.5", family: "claude-haiku", limit: CONTEXT_200K }),
+  pin("claude-fable-5-1", "Claude Fable 5.1", "claude-fable"),
+  pin("claude-fable-5", "Claude Fable 5", "claude-fable"),
+  pin("claude-opus-5-5", "Claude Opus 5.5", "claude-opus"),
+  pin("claude-sonnet-5-5", "Claude Sonnet 5.5", "claude-sonnet"),
+  pin("claude-opus-4-8", "Claude Opus 4.8", "claude-opus"),
+  pin("claude-sonnet-4-5", "Claude Sonnet 4.5", "claude-sonnet"),
+  pin("claude-haiku-4-5", "Claude Haiku 4.5", "claude-haiku"),
 ] as const
 
 export const cliModel = (modelID: string) => modelID
 
 const stripVariant = (id: string) => id.replace(/\[[^\]]*\]$/, "")
+
+// The same model, ignoring a `[1m]` variant and a dated snapshot suffix.
+const sameModel = (a: string, b: string) => {
+  const base = (id: string) => stripVariant(id).replace(/-\d{8}$/, "")
+  return base(a) === base(b)
+}
 
 // The CLI accepts any model string and, when the id is unknown or not on the
 // user's plan, silently serves its default instead of failing. A pinned
@@ -174,11 +218,6 @@ export const parseRetired = (value: unknown): Map<string, Retirement> => {
   return result
 }
 
-// "claude-sonnet-5" → 5, "claude-haiku-4-5-20251001" → 4.5; the second digit
-// only counts when it is a single one, so a dated snapshot's date never reads
-// as a version.
-const GENERATION = /^claude-([a-z]+)-(\d+)(?:-(\d)(?!\d))?(?:-|$)/
-
 const isOneMillion = (entry: Discovered) => entry.value.endsWith("[1m]") || (entry.resolvedModel ?? "").endsWith("[1m]")
 
 export const discoveredName = (entry: Discovered): string | undefined => {
@@ -262,6 +301,8 @@ export const applyCatalog = (
   extras?: {
     readonly retired?: ReadonlyMap<string, Retirement>
     readonly discovered?: readonly Discovered[]
+    /** `CLAUDE_CODE_DISABLE_1M_CONTEXT` is set for the CLI. */
+    readonly disable1M?: boolean
   },
 ) => {
   const info = providerInfo()
@@ -270,27 +311,42 @@ export const applyCatalog = (
     provider.activation = info.activation
     provider.package = info.package
   })
+  const disable1M = extras?.disable1M ?? false
   const curated = new Set(MODELS.map((entry) => String(entry.id)))
+  // What each listed id runs on the wire, where known: a pin runs itself, an
+  // alias whatever the CLI resolves it to.
+  const wire = new Map<string, string>()
   for (const entry of MODELS) {
     providers.models.update(PROVIDER_ID, entry.id, (draft) => {
       Object.assign(draft, entry)
     })
+    if (entry.id.startsWith("claude-")) wire.set(entry.id, entry.id)
   }
   // An exact alias row wins. Otherwise a sibling variant, or a newest
-  // unambiguous versioned picker row, labels the missing family alias without
-  // changing its model id or context capabilities.
+  // unambiguous versioned picker row, resolves the missing family alias, and
+  // its `[1m]` variant runs the same model with the 1M window.
   const rows = extras?.discovered ?? []
-  for (const family of ["fable", "opus", "sonnet", "haiku"]) {
-    if (rows.some((entry) => entry.value === family)) continue
-    const resolvedModel = aliasGeneration(family, rows)
-    const name = resolvedModel && discoveredName({ value: family, resolvedModel })
-    if (name) providers.models.update(PROVIDER_ID, Model.ID.make(family), (draft) => void (draft.name = name))
+  const exact = (id: string) => rows.some((entry) => entry.value === id)
+  for (const family of FAMILIES) {
+    const target = rows.find((entry) => entry.value === family)?.resolvedModel ?? aliasGeneration(family, rows)
+    if (!target) continue
+    for (const [id, resolvedModel] of [
+      [family, target],
+      [`${family}[1m]`, `${stripVariant(target)}[1m]`],
+    ] as const) {
+      if (!curated.has(id) || exact(id)) continue
+      wire.set(id, resolvedModel)
+      const name = discoveredName({ value: id, resolvedModel })
+      if (name) providers.models.update(PROVIDER_ID, Model.ID.make(id), (draft) => void (draft.name = name))
+    }
   }
   // The CLI's own picker rows: refresh a curated alias's name to the served
   // generation, append rows the CLI grew that we don't curate. "default"
   // duplicates whatever it resolves to, so it is skipped.
   for (const found of rows) {
     if (found.value === "default") continue
+    const target = found.resolvedModel ?? found.value
+    wire.set(found.value, isOneMillion(found) && !target.endsWith("[1m]") ? `${target}[1m]` : target)
     const name = discoveredName(found)
     if (curated.has(found.value)) {
       if (name) providers.models.update(PROVIDER_ID, Model.ID.make(found.value), (draft) => void (draft.name = name))
@@ -299,10 +355,32 @@ export const applyCatalog = (
     const entry = model(found.value, {
       name: name ?? found.value,
       family: discoveredFamily(found),
-      limit: isOneMillion(found) ? CONTEXT_1M : CONTEXT_200K,
+      context: CONTEXT_200K,
     })
     providers.models.update(PROVIDER_ID, entry.id, (draft) => {
       Object.assign(draft, entry)
+    })
+  }
+  // Size every model by what it runs. A model that runs what a bare alias
+  // runs, with the same window, is that alias's duplicate: `claude-fable-5-1`
+  // while `fable` resolves to it, or `opus[1m]` while `opus` is natively 1M.
+  // It stays resolvable for sessions and config, just not listed.
+  const aliases = FAMILIES.flatMap((family) => {
+    const target = wire.get(family)
+    return target ? [{ family, target, context: contextWindow(target, disable1M) }] : []
+  })
+  for (const id of new Set([...curated, ...rows.map((entry) => entry.value).filter((id) => id !== "default")])) {
+    const target = wire.get(id)
+    const context = target ? contextWindow(target, disable1M) : disable1M ? CONTEXT_200K : undefined
+    const duplicate =
+      target !== undefined &&
+      aliases.some((alias) => alias.family !== id && sameModel(alias.target, target) && alias.context === context)
+    // The CLI drops 1M variants from its picker when 1M context is disabled.
+    const hidden = duplicate || (disable1M && id.endsWith("[1m]"))
+    if (context === undefined && !hidden) continue
+    providers.models.update(PROVIDER_ID, Model.ID.make(id), (draft) => {
+      if (context !== undefined) draft.limit = { ...draft.limit, context }
+      if (hidden) draft.enabled = false
     })
   }
   // A pinned id the CLI was observed substituting is hidden until user config
