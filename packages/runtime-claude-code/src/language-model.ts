@@ -103,10 +103,17 @@ export const promptDelta = (prompt: LanguageModelV3Prompt): PromptContent => {
     : { text: "", blocks: [] }
 }
 
+/** The host's system messages, which a one-shot sends as its whole system prompt. */
+export const systemText = (prompt: LanguageModelV3Prompt): string =>
+  prompt
+    .flatMap((message) => (message.role === "system" && message.content ? [message.content] : []))
+    .join("\n\n")
+
 export const flattenTranscript = (prompt: LanguageModelV3Prompt): string =>
   prompt
+    .filter((message) => message.role !== "system")
     .map((message) => {
-      const line = message.role === "system" ? String(message.content) : partText(message.content)
+      const line = partText(message.content)
       return line ? `${message.role}: ${line}` : ""
     })
     .filter(Boolean)
@@ -258,12 +265,18 @@ export const make = (input: {
     )
 
     if (oneShot) {
+      const system = systemText(options.prompt)
       const run = createQuery({
         prompt: text,
         options: {
           ...baseOptions(config),
           planModeInstructions: PLAN_WORKFLOW,
           model: ClaudeCodeModels.cliModel(modelID),
+          ...(system ? { systemPrompt: system } : {}),
+          // Text reaches the host only through partial messages.
+          includePartialMessages: true,
+          // A title is one short line; thinking only delays it.
+          ...(turn.kind === "title" ? { thinking: { type: "disabled" } } : {}),
           maxTurns: 1,
           // Never load built-in tool definitions for a one-shot.
           tools: [],
