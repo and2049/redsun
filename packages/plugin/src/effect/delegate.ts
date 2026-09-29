@@ -186,8 +186,11 @@ export interface DelegateDomain {
   readonly register: (runtime: DelegatedRuntime) => Effect.Effect<Registration, never, Scope.Scope>
   /** Whether a registered runtime owns this model's agent loop. */
   readonly owns: (model: { readonly providerID: string }) => Effect.Effect<boolean>
-  /** Live read of a top-level config key; the highest-priority document that sets it wins. */
-  readonly config: (key: string) => Effect.Effect<unknown>
+  /**
+   * Live read of a top-level config key, or of a nested field given as a path; the
+   * highest-priority document that sets that exact key or field wins.
+   */
+  readonly config: (key: string | readonly string[]) => Effect.Effect<unknown>
   readonly storage: (runtimeID: string) => DelegatedStorage
   readonly permission: {
     /** The effective decision without prompting; for mandatory policy checks. */

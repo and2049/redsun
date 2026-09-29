@@ -12,6 +12,7 @@ import type {
 } from "@opencode/plugin/effect/delegate"
 import path from "node:path"
 import type { LanguageModelV3Usage } from "@ai-sdk/provider"
+import type { Entry as ConfigEntry } from "@opencode/schema/config"
 import { Cause, Effect, Exit, Option } from "effect"
 import { Usage } from "@opencode/ai"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -171,6 +172,24 @@ export const liveTokens = (usage: LanguageModelV3Usage) =>
     }),
   )
 
+/** The highest-priority document's value at `key` (a top-level key, or a path to a nested field). */
+export const configValue = (entries: readonly ConfigEntry[], key: string | readonly string[]): unknown => {
+  const path = typeof key === "string" ? [key] : key
+  const at = (entry: ConfigEntry) =>
+    entry.type !== "document"
+      ? undefined
+      : path.reduce<unknown>(
+          (value, part) =>
+            value !== null && typeof value === "object" ? (value as Record<string, unknown>)[part] : undefined,
+          entry.info,
+        )
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const value = at(entries[index]!)
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
 export const requirements = LayerNode.group([
   Global.node,
   Config.node,
@@ -225,7 +244,7 @@ export const make = Effect.gen(function* () {
       }),
     owns: delegates.owns,
     config: (key) =>
-      config ? config.entries().pipe(Effect.map((entries) => Config.latest(entries, key as never))) : missing("Config"),
+      config ? config.entries().pipe(Effect.map((entries) => configValue(entries, key))) : missing("Config"),
     storage: (runtimeID) => {
       const prefix = `redsun.${runtimeID}`
       return {

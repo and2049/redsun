@@ -143,7 +143,11 @@ export class Info extends Schema.Class<Info>("Config.Info")({
 
 export class ContextSettings extends Schema.Class<ContextSettings>("Config.ContextSettings")({
   stale_read_deduplication: Info.fields.stale_read_deduplication,
-  compaction: Schema.Struct({ strategy: ConfigCompaction.Info.fields.strategy }).pipe(optional),
+  compaction: Schema.Struct({
+    strategy: ConfigCompaction.Info.fields.strategy,
+    /** `null` is "Auto": no configured threshold. */
+    threshold: Schema.NullOr(ConfigCompaction.Threshold).pipe(optional),
+  }).pipe(optional),
   attribution: Info.fields.attribution,
   chatgpt_context_window: Info.fields.chatgpt_context_window,
 }) {}

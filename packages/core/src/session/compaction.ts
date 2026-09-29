@@ -93,6 +93,8 @@ export type Settings = {
   tokens: number
   strategy: "hybrid" | "algorithmic" | "llm"
   maxToolResults: number
+  /** REDSUN: percentage of the input window (else the total) at which automatic compaction runs. */
+  threshold?: number
 }
 
 export type Editor = {
@@ -434,6 +436,7 @@ export const layer = Layer.effect(
           if (settings.tokens !== undefined) editor.tokens = settings.tokens
           if (settings.strategy !== undefined) editor.strategy = settings.strategy
           if (settings.maxToolResults !== undefined) editor.maxToolResults = settings.maxToolResults
+          if (settings.threshold !== undefined) editor.threshold = settings.threshold
         },
       }),
     })
@@ -838,11 +841,14 @@ export const layer = Layer.effect(
         limit.input === undefined ? Number.POSITIVE_INFINITY : limit.input - config.buffer,
         context - Math.max(output, config.buffer),
       )
+      // REDSUN: a configured percentage lowers the trigger, never raises it past the ceiling.
+      const ceiling =
+        config.threshold === undefined
+          ? promptCeiling
+          : Math.min(promptCeiling, Math.floor(((limit.input || context) * config.threshold) / 100))
       const policy = input.resolved.compaction
       const threshold =
-        policy?.mode === "provider" && policy.threshold !== undefined
-          ? Math.min(policy.threshold, promptCeiling)
-          : promptCeiling
+        policy?.mode === "provider" && policy.threshold !== undefined ? Math.min(policy.threshold, ceiling) : ceiling
       return estimateTokens(input) >= threshold
     }
     const compactManual = Effect.fn("SessionCompaction.compactManual")(function* (input: ManualInput) {

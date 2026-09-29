@@ -3,6 +3,8 @@ export * as AcpKiro from "./kiro.js"
 import type { InitializeResponse, NewSessionResponse, SessionUpdate } from "@agentclientprotocol/sdk"
 
 export const COMPACT = "_kiro/session/compact"
+/** V3 summarizes on its own at this share of its window (KAS 0.66.8), and truncates at 95%. */
+export const AUTO_COMPACT_PERCENT = 80
 export const CURSOR = "kiro-v3:"
 export const PROFILE = "redsun"
 

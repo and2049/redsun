@@ -303,3 +303,54 @@ describe("ClaudeCodeSessions.SessionManager held turns", () => {
     expect(manager.busy("ses_1")).toBe(false)
   })
 })
+
+describe("ClaudeCodeSessions.SessionManager startup settings", () => {
+  it("restarts the process at the next turn when startup-only settings change", async () => {
+    const created: { options: Record<string, unknown>; feed: Feed; closed: boolean }[] = []
+    const createQuery: ClaudeCodeSessions.CreateQuery = (input) => {
+      const feed = new Feed()
+      const entry = { options: input.options as Record<string, unknown>, feed, closed: false }
+      created.push(entry)
+      return {
+        [Symbol.asyncIterator]: () => feed[Symbol.asyncIterator](),
+        interrupt: async () => undefined,
+        setModel: async () => undefined,
+        setPermissionMode: async () => undefined,
+        close: () => {
+          entry.closed = true
+          feed.end()
+        },
+      }
+    }
+    const manager = new ClaudeCodeSessions.SessionManager(createQuery)
+    const turn = async (startup?: string) => {
+      const options = startup ? { settings: { autoCompactWindow: Number(startup) } } : {}
+      const stream = await manager.turn("ses_1", prompt, {
+        model: "sonnet",
+        permissionMode: "default",
+        ...(startup ? { startup } : {}),
+        options,
+      } as never)
+      created.at(-1)!.feed.push(result())
+      for await (const _ of stream) void _
+    }
+
+    await turn("120000")
+    expect(manager.willStart("ses_1", "default", "120000")).toBe(false)
+    expect(manager.willStart("ses_1", "default", "150000")).toBe(true)
+    expect(manager.willStart("ses_1", "default")).toBe(true)
+    await turn("120000")
+    expect(created).toHaveLength(1)
+
+    await turn("150000")
+    expect(created).toHaveLength(2)
+    expect(created[0]!.closed).toBe(true)
+    expect(created[1]!.options.settings).toEqual({ autoCompactWindow: 150_000 })
+
+    // Back to the runtime's own window: the flag layer must not linger.
+    await turn()
+    expect(created).toHaveLength(3)
+    expect(created[2]!.options.settings).toBeUndefined()
+    manager.stopAll()
+  })
+})

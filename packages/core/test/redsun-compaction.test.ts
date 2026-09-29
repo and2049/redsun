@@ -23,7 +23,8 @@ import { ProjectTable } from "@opencode/core/project/sql"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Document, Info as ConfigInfo } from "@opencode/schema/config"
 import { Money } from "@opencode/schema/money"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { DateTime, Effect, Layer, Schema, Stream } from "effect"
+import { Location } from "@opencode/core/location"
 import { testEffect } from "./lib/effect"
 
 const decodeMessage = Schema.decodeUnknownSync(SessionMessage.Info)
@@ -396,3 +397,49 @@ for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
       }),
   )
 }
+
+hybrid.effect("a configured threshold lowers the automatic trigger but never raises it past the ceiling", () =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    const session = Session.Info.make({
+      id: Session.ID.make("ses_threshold"),
+      projectID: Project.ID.global,
+      cost: Money.USD.zero,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
+      location: Location.Ref.make({ directory: AbsolutePath.make("/tmp") }),
+    })
+    const required = (tokens: number, limit: { context: number; input?: number; output: number }) => {
+      const resolved = SessionRunnerModel.resolved(model, { capabilities: resolvedModel.capabilities, cost, limit })
+      const messages = [
+        message({
+          id: "msg_assistant_threshold",
+          type: "assistant",
+          agent: "build",
+          model: { id: "test-model", providerID: "test-provider" },
+          content: [{ type: "text", text: "Done" }],
+          tokens: { input: tokens, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 0, completed: 0 },
+        }),
+      ]
+      return compaction.required({ messages, resolved, context: { ...loaded(session, messages), model: resolved } })
+    }
+    const chatgpt = { context: 400_000, input: 272_000, output: 128_000 }
+    // Default: input − 20K buffer.
+    expect(required(251_999, chatgpt)).toBe(false)
+    expect(required(252_000, chatgpt)).toBe(true)
+
+    yield* configured({ threshold: 60 })
+    // 60% of the input window, the window the meter reads.
+    expect(required(163_199, chatgpt)).toBe(false)
+    expect(required(163_200, chatgpt)).toBe(true)
+    // Without an input limit, the percentage is of the total.
+    expect(required(59_999, { context: 100_000, output: 10_000 })).toBe(false)
+    expect(required(60_000, { context: 100_000, output: 10_000 })).toBe(true)
+
+    yield* configured({ threshold: 95 })
+    // 95% (258,400) is above the buffered ceiling, which still wins.
+    expect(required(251_999, chatgpt)).toBe(false)
+    expect(required(252_000, chatgpt)).toBe(true)
+  }),
+)

@@ -1699,6 +1699,26 @@
       "context": "settings",
       "legacy": ["Asks the agent to end its commit messages with a Co-authored-by trailer for redsun-agent[bot]."]
     },
+    "settings.autoCompactionThreshold": {
+      "message": "Auto-compaction threshold",
+      "context": "settings",
+      "legacy": ["Auto-compaction threshold"]
+    },
+    "settings.autoCompactionThresholdDescription": {
+      "message": "Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default.",
+      "context": "settings",
+      "legacy": ["Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default."]
+    },
+    "settings.needsNewerServer": {
+      "message": "needs a newer server",
+      "context": "settings",
+      "legacy": ["needs a newer server"]
+    },
+    "settings.needsNewerServerDetail": {
+      "message": "The connected redsun server does not support this setting yet. Restart it on a newer version to change it.",
+      "context": "settings",
+      "legacy": ["The connected redsun server does not support this setting yet. Restart it on a newer version to change it."]
+    },
     "settings.chatgptContextWindow": {
       "message": "ChatGPT context window",
       "context": "settings",

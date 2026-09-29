@@ -387,6 +387,7 @@ function normalizeCompaction(
     ["strategy", undefined],
 
     ["max_tool_results", "maxToolResults"],
+    ["threshold", undefined],
   ] as const) {
     const field = ConfigCompaction.Info.fields[key]
     const legacy =

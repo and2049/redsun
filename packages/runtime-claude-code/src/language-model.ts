@@ -153,6 +153,11 @@ export interface Hooks {
   readonly usage?: (sessionID: string, messageID: string, usage: LanguageModelV3Usage) => void
   /** Canonical wire id an alias resolves to, per the CLI's own picker (when known). */
   readonly resolvedModel?: (modelID: string) => string | undefined
+  /**
+   * The `autoCompactWindow` the host's compaction threshold asks for, or undefined to leave Claude
+   * Code's own (the user's settings, else its tuned default). Startup-only in the CLI.
+   */
+  readonly autoCompactWindow?: (modelID: string) => Promise<number | undefined>
 }
 
 export interface Config {
@@ -286,7 +291,9 @@ export const make = (input: {
         ? []
         : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : [])),
     )
-    const freshProcess = manager.willStart(sessionID, permissionMode)
+    const compactWindow = await hooks?.autoCompactWindow?.(modelID).catch(() => undefined)
+    const startup = compactWindow === undefined ? undefined : `autoCompactWindow=${compactWindow}`
+    const freshProcess = manager.willStart(sessionID, permissionMode, startup)
     // Only a starting process takes startup options; compute the prompt before context preparation.
     const host =
       profile.systemPrompt === "preset-host" && freshProcess
@@ -339,8 +346,11 @@ export const make = (input: {
             : undefined,
         holdTurn: hooks?.turnPending ? () => hooks.turnPending!(sessionID) : undefined,
         onExit: hooks?.onExit ? () => hooks.onExit!(sessionID) : undefined,
+        startup,
         options: {
           ...interactiveOptions(config, host),
+          // The flag-settings layer: above the user's own settings, never written to them.
+          ...(compactWindow === undefined ? {} : { settings: { autoCompactWindow: compactWindow } }),
           ...(resume ? { resume } : {}),
           ...(canUseTool ? { canUseTool } : {}),
           ...(preToolUse || postToolUse || userPromptSubmit || sessionStart

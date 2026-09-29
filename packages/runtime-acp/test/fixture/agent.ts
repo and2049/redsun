@@ -31,6 +31,7 @@ const modes = new Map<string, string>()
 const cancelled = new Set<string>()
 const received: string[] = []
 let compacting = false
+let compactions = 0
 const v3 = process.env.FAKE_ACP_V3 === "1"
 const requests: unknown[] = []
 const servers = new Map<string, McpServer[]>()
@@ -133,6 +134,7 @@ new AgentSideConnection((connection) => {
     },
     extMethod: async (method, params) => {
       if (method === "_kiro/session/compact") {
+        compactions++
         if (process.env.FAKE_ACP_V3_COMPACT === "hang") await new Promise(() => {})
         if (process.env.FAKE_ACP_V3_COMPACT === "fail") return { success: false }
         if (process.env.FAKE_ACP_V3_COMPACT !== "noop")
@@ -411,17 +413,28 @@ new AgentSideConnection((connection) => {
         await say(sessionId, `TRUSTED=${trusted} SESSION=${sessionId} TURNS=${received.length}`)
         return { stopReason: "end_turn" }
       }
+      if (text.includes("compactions?")) {
+        await say(sessionId, `COMPACTIONS=${compactions}`)
+        return { stopReason: "end_turn" }
+      }
       if (text.includes("echo")) {
         await say(sessionId, `SESSION=${sessionId} TURNS=${received.length} PROMPT=${text}`)
         return { stopReason: "end_turn" }
       }
       // As Kiro v3 does: context as a percentage in session-info metadata, never `usage_update`.
+      const usage = Number(process.env.FAKE_ACP_V3_USAGE ?? 2.5)
       await connection.sessionUpdate({
         sessionId,
         update: v3
           ? {
               sessionUpdate: "session_info_update",
-              _meta: { kiro: { kind: "context_usage", contextUsage: { usagePercentage: 2.5 }, usagePercentage: 2.5 } },
+              _meta: {
+                kiro: {
+                  kind: "context_usage",
+                  contextUsage: { usagePercentage: usage },
+                  usagePercentage: usage,
+                },
+              },
             }
           : { sessionUpdate: "usage_update", used: 1234, size: 200000 },
       })

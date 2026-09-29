@@ -8,6 +8,7 @@ import { ClaudeCodePermissions } from "../src/permissions.js"
 import { ClaudeCodeProfiles } from "../src/profiles.js"
 import { ClaudeCodeQuery } from "../src/query.js"
 import { ClaudeCodeSessions } from "../src/sessions.js"
+import { ClaudeCodeModels } from "../src/models.js"
 
 const user = (text: string) => ({ role: "user" as const, content: [{ type: "text" as const, text }] })
 const assistant = (text: string) => ({ role: "assistant" as const, content: [{ type: "text" as const, text }] })
@@ -176,6 +177,36 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     // Without a host message (one-shots), there is nothing to update.
     await collect((await created.doStream(call({ prompt: [user("hello")] }))).stream)
     expect(reported).toEqual([])
+  })
+
+  it("starts the CLI with the host's auto-compact window, and leaves Claude's own when unset", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    let window: number | undefined = 173_000
+    const asked: string[] = []
+    const willStart: unknown[][] = []
+    ;(manager as any).willStart = (...args: unknown[]) => (willStart.push(args), true)
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        autoCompactWindow: async (id) => {
+          asked.push(id)
+          return window
+        },
+      },
+    })
+    await collect((await created.doStream(call({ prompt: [user("hello")] }))).stream)
+    expect(asked).toEqual(["sonnet"])
+    expect(calls[0]!.options.startup).toBe("autoCompactWindow=173000")
+    expect(calls[0]!.options.options.settings).toEqual({ autoCompactWindow: 173_000 })
+    expect(willStart[0]).toEqual(["ses_1", "default", "autoCompactWindow=173000"])
+
+    window = undefined
+    await collect((await created.doStream(call({ prompt: [user("again")] }))).stream)
+    expect(calls[1]!.options.startup).toBeUndefined()
+    expect(calls[1]!.options.options.settings).toBeUndefined()
   })
 
   it("lets the manager hold the turn open on what the session still owes", async () => {
@@ -799,5 +830,16 @@ describe("ClaudeCodePermissions", () => {
   it("treats search and todo tools as read-only", () => {
     expect(ClaudeCodePermissions.isReadOnly("Grep")).toBe(true)
     expect(ClaudeCodePermissions.isReadOnly("Bash")).toBe(false)
+  })
+})
+
+describe("ClaudeCodeModels.autoCompactWindow", () => {
+  it("adds Claude's summary reserve so compaction lands at the chosen share of the window", () => {
+    expect(ClaudeCodeModels.autoCompactWindow(200_000, 80)).toBe(193_000)
+    expect(ClaudeCodeModels.autoCompactWindow(1_000_000, 50)).toBe(533_000)
+    // Claude Code accepts 100K–1M and caps at the model's own window itself.
+    expect(ClaudeCodeModels.autoCompactWindow(100_000, 50)).toBe(100_000)
+    expect(ClaudeCodeModels.autoCompactWindow(1_000_000, 95)).toBe(983_000)
+    expect(ClaudeCodeModels.autoCompactWindow(1_050_000, 95)).toBe(1_000_000)
   })
 })
