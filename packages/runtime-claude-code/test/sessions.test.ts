@@ -353,4 +353,48 @@ describe("ClaudeCodeSessions.SessionManager startup settings", () => {
     expect(created[2]!.options.settings).toBeUndefined()
     manager.stopAll()
   })
+
+  it("applies an effort change to the live process after the model switch, null for the default", async () => {
+    const feed = new Feed()
+    const calls: unknown[] = []
+    let starts = 0
+    const createQuery: ClaudeCodeSessions.CreateQuery = () => {
+      starts++
+      return {
+        [Symbol.asyncIterator]: () => feed[Symbol.asyncIterator](),
+        interrupt: async () => undefined,
+        setModel: async (model) => void calls.push(["setModel", model]),
+        setPermissionMode: async () => undefined,
+        applyFlagSettings: async (settings) => void calls.push(["flags", settings]),
+        close: () => feed.end(),
+      }
+    }
+    const manager = new ClaudeCodeSessions.SessionManager(createQuery)
+    const turn = async (model: string, effort?: "high" | "max" | null) => {
+      const stream = await manager.turn("ses_1", prompt, {
+        model,
+        permissionMode: "default",
+        ...(effort === undefined ? {} : { effort }),
+        options: {},
+      } as never)
+      feed.push(result())
+      for await (const _ of stream) void _
+    }
+
+    // A starting process takes its level from its startup options, not a live call.
+    await turn("opus", "high")
+    await turn("opus", "high")
+    expect(calls).toEqual([])
+    await turn("sonnet", "max")
+    expect(calls).toEqual([
+      ["setModel", "sonnet"],
+      ["flags", { effortLevel: "max" }],
+    ])
+    calls.length = 0
+    await turn("sonnet")
+    await turn("sonnet", null)
+    expect(calls).toEqual([["flags", { effortLevel: null }]])
+    expect(starts).toBe(1)
+    manager.stopAll()
+  })
 })

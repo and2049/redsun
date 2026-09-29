@@ -493,6 +493,52 @@ describe("ClaudeCodeModels", () => {
     for (const [, model] of catalog({ disable1M: true })) expect(model.context).toBe(200_000)
   })
 
+  it("offers each model's effort levels as variants, from the row of the model it runs", () => {
+    const FULL = ["low", "medium", "high", "xhigh", "max"] as const
+    // The SDK's rows as `supportedModels()` sends them, before the KV cache's parse.
+    const rows = ClaudeCodeModels.parseDiscovered(
+      PICKER_2_1_284.map((row) =>
+        row.value === "haiku"
+          ? row
+          : {
+              ...row,
+              supportsEffort: true,
+              supportedEffortLevels: ["claude-opus-4-6", "claude-sonnet-4-6"].includes(row.value)
+                ? ["low", "medium", "high", "max"]
+                : FULL,
+            },
+      ),
+    )
+    // The cached form parses back to the same rows.
+    expect(ClaudeCodeModels.parseDiscovered(JSON.parse(JSON.stringify(rows)))).toEqual(rows)
+    const variants = new Map<string, readonly { id: string; settings?: Record<string, unknown> }[]>()
+    ClaudeCodeModels.applyCatalog(
+      {
+        update: (_id: unknown, fn: (draft: Record<string, unknown>) => void) => fn({}),
+        models: {
+          update: (_provider: unknown, id: string, fn: (draft: Record<string, any>) => void) => {
+            const draft = { variants: variants.get(id) ?? [] }
+            fn(draft)
+            variants.set(id, draft.variants)
+          },
+        },
+      } as never,
+      { discovered: rows },
+    )
+    const ids = (id: string) => variants.get(id)?.map((variant) => variant.id)
+    expect(variants.get("opus")?.[0]).toEqual({ id: "low", settings: { effort: "low" } })
+    expect(ids("opus")).toEqual([...FULL])
+    // A `[1m]` id and a hidden pin take the row of the model they run.
+    expect(ids("opus[1m]")).toEqual([...FULL])
+    expect(ids("claude-opus-5-5")).toEqual([...FULL])
+    expect(ids("claude-opus-4-6")).toEqual(["low", "medium", "high", "max"])
+    expect(ids("sonnet")).toEqual([...FULL])
+    // Haiku reports none; a pin the picker doesn't list gets none.
+    expect(ids("haiku")).toEqual([])
+    expect(ids("claude-haiku-4-5")).toEqual([])
+    expect(ids("claude-sonnet-4-5")).toEqual([])
+  })
+
   it("stays visible without a connection", () => {
     // catalog.ts hides an `auto` provider that has an integration with no
     // connections, and auth.ts registers one. Autodetection is the contract:

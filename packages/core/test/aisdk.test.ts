@@ -314,6 +314,29 @@ it.effect("maps package-specific AI SDK provider option keys", () =>
   }),
 )
 
+it.effect("hands a delegated runtime its variant's effort under the provider id, never an effort marker", () =>
+  Effect.gen(function* () {
+    const aisdk = yield* AISDK.Service
+    yield* aisdk.hook.sdk((event) => {
+      event.sdk = { languageModel: () => ({ provider: event.model.providerID }) }
+    })
+    // A runtime sentinel package, with a variant's `{ effort }` overlay merged into the settings.
+    const resolved = yield* aisdk.model({
+      ...model("@redsun/claude-code-delegated", { effort: "high" }),
+      providerID: Provider.ID.make("claude-code"),
+    })
+    const prepared = yield* compileRequest(
+      LLM.request({
+        model: resolved,
+        messages: [Message.user("Hello"), Message.effort({ effort: "high", previous: "low" }), Message.user("Again")],
+      }),
+    )
+    expect(prepared.body.providerOptions).toEqual({ "claude-code": { effort: "high" } })
+    expect(JSON.stringify(prepared.body.prompt)).not.toContain("effort")
+    expect(prepared.body.prompt.map((message: { role: string }) => message.role)).toEqual(["user", "user"])
+  }),
+)
+
 it.effect("forces reasoning and projects both Azure AI SDK namespaces", () =>
   Effect.gen(function* () {
     const aisdk = yield* AISDK.Service

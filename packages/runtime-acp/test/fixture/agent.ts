@@ -40,11 +40,16 @@ const servers = new Map<string, McpServer[]>()
 const modelStyle = process.env.FAKE_ACP_MODELS
 const MODEL_LIST = [
   { id: "auto", name: "Auto" },
-  { id: "fast", name: "Fast" },
+  // As Kiro describes a model's effort levels.
+  { id: "fast", name: "Fast", _meta: { kiro: { effortLevels: ["low", "high", "max"], defaultEffortLevel: "high" } } },
 ]
 const models = new Map<string, string>()
+const efforts = new Map<string, string>()
+/** Every effort the client set, as `session=level`. */
+const effortSets: string[] = []
 const modelFields = (sessionId: string) => {
   const current = models.get(sessionId) ?? "auto"
+  const levels = MODEL_LIST.find((model) => model.id === current)?._meta?.kiro.effortLevels
   if (modelStyle === "legacy")
     return {
       models: {
@@ -61,8 +66,20 @@ const modelFields = (sessionId: string) => {
           category: "model",
           type: "select" as const,
           currentValue: current,
-          options: MODEL_LIST.map((model) => ({ value: model.id, name: model.name })),
+          options: MODEL_LIST.map((model) => ({ value: model.id, name: model.name, _meta: model._meta })),
         },
+        ...(levels
+          ? [
+              {
+                id: "effortLevel",
+                name: "Effort",
+                category: "thought_level",
+                type: "select" as const,
+                currentValue: efforts.get(sessionId)!,
+                options: levels.map((level) => ({ value: level, name: level })),
+              },
+            ]
+          : []),
       ],
     }
   return {}
@@ -129,7 +146,17 @@ new AgentSideConnection((connection) => {
       : {}),
     authenticate: async () => ({}),
     setSessionConfigOption: async (params) => {
-      if (params.configId === "model" && typeof params.value === "string") models.set(params.sessionId, params.value)
+      if (params.configId === "model" && typeof params.value === "string") {
+        models.set(params.sessionId, params.value)
+        // Switching the model resets effort to the model's own level.
+        const kiro = MODEL_LIST.find((model) => model.id === params.value)?._meta?.kiro
+        if (kiro) efforts.set(params.sessionId, kiro.defaultEffortLevel)
+        else efforts.delete(params.sessionId)
+      }
+      if (params.configId === "effortLevel" && typeof params.value === "string") {
+        efforts.set(params.sessionId, params.value)
+        effortSets.push(`${params.sessionId}=${params.value}`)
+      }
       return modelFields(params.sessionId) as { configOptions: [] }
     },
     extMethod: async (method, params) => {
@@ -321,7 +348,11 @@ new AgentSideConnection((connection) => {
         return { stopReason: "end_turn" }
       }
       if (text.includes("model?")) {
-        await say(sessionId, `MODEL=${models.get(sessionId) ?? "auto"}`)
+        const effort = efforts.get(sessionId)
+        await say(
+          sessionId,
+          `MODEL=${models.get(sessionId) ?? "auto"}${effort ? ` EFFORT=${effort} SETS=${effortSets.join(",")}` : ""}`,
+        )
         return { stopReason: "end_turn" }
       }
       if (text.includes("tools?")) {

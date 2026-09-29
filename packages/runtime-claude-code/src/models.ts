@@ -144,6 +144,22 @@ export interface Discovered {
   readonly value: string
   readonly resolvedModel?: string
   readonly displayName?: string
+  /** The effort levels the CLI offers for this row's model, in its order. */
+  readonly efforts?: readonly EffortLevel[]
+}
+
+/** Claude Code's effort levels, lowest first (SDK `EffortLevel`). */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const
+export type EffortLevel = (typeof EFFORT_LEVELS)[number]
+
+export const isEffortLevel = (value: unknown): value is EffortLevel =>
+  typeof value === "string" && (EFFORT_LEVELS as readonly string[]).includes(value)
+
+/** The effort level a variant asked for, or undefined for the CLI's default. */
+export const effortOf = (providerOptions: unknown): EffortLevel | undefined => {
+  const effort = (providerOptions as Record<string, { effort?: unknown } | undefined> | undefined)?.[PROVIDER_ID]
+    ?.effort
+  return isEffortLevel(effort) ? effort : undefined
 }
 
 export const parseDiscovered = (value: unknown): Discovered[] => {
@@ -151,14 +167,25 @@ export const parseDiscovered = (value: unknown): Discovered[] => {
   const result: Discovered[] = []
   for (const item of value) {
     if (!item || typeof item !== "object") continue
-    const record = item as { value?: unknown; resolvedModel?: unknown; displayName?: unknown }
+    const record = item as {
+      value?: unknown
+      resolvedModel?: unknown
+      displayName?: unknown
+      supportsEffort?: unknown
+      supportedEffortLevels?: unknown
+      efforts?: unknown
+    }
     if (typeof record.value !== "string" || !record.value) continue
+    // `efforts` is this module's own cached form of the SDK's pair.
+    const levels = record.supportsEffort === true ? record.supportedEffortLevels : record.efforts
+    const efforts = Array.isArray(levels) ? levels.filter(isEffortLevel) : []
     result.push({
       value: record.value,
       ...(typeof record.resolvedModel === "string" && record.resolvedModel
         ? { resolvedModel: record.resolvedModel }
         : {}),
       ...(typeof record.displayName === "string" && record.displayName ? { displayName: record.displayName } : {}),
+      ...(efforts.length ? { efforts } : {}),
     })
   }
   return result
@@ -299,6 +326,16 @@ const aliasGeneration = (family: string, rows: readonly Discovered[]): string | 
   return best.pin
 }
 
+// The effort levels of the picker row for the model `id` runs: its own row, else
+// any row running the same model (`claude-opus-5-5` through `opus`, `sonnet[1m]`
+// through `sonnet`). Haiku reports none.
+const effortsFor = (id: string, target: string, rows: readonly Discovered[]) => {
+  const row =
+    rows.find((entry) => entry.value === id) ??
+    rows.find((entry) => entry.efforts && sameModel(entry.resolvedModel ?? entry.value, target))
+  return row?.efforts?.length ? row.efforts : undefined
+}
+
 // Structural subset of both the plugin context's ProviderEditor and core's
 // Provider.Editor (method syntax keeps the id brands bivariant), so the same
 // registration runs from provider.ts and from a test driving a real registry.
@@ -390,10 +427,14 @@ export const applyCatalog = (
       aliases.some((alias) => alias.family !== id && sameModel(alias.target, target) && alias.context === context)
     // The CLI drops 1M variants from its picker when 1M context is disabled.
     const hidden = duplicate || (disable1M && id.endsWith("[1m]"))
-    if (context === undefined && !hidden) continue
+    const efforts = target === undefined ? undefined : effortsFor(id, target, rows)
+    if (context === undefined && !hidden && !efforts) continue
     providers.models.update(PROVIDER_ID, Model.ID.make(id), (draft) => {
       if (context !== undefined) draft.limit = { ...draft.limit, context }
       if (hidden) draft.enabled = false
+      // Hidden duplicates keep theirs, so `#high` on a hidden pin still resolves.
+      if (efforts)
+        draft.variants = efforts.map((level) => ({ id: Model.VariantID.make(level), settings: { effort: level } }))
     })
   }
   // A pinned id the CLI was observed substituting is hidden until user config

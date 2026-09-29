@@ -995,12 +995,39 @@ describe("ACP runtime against a scripted agent", () => {
       await withRuntime({ agent: { env: { FAKE_ACP_MODELS: style } }, host: { reported } }, async (runtime) => {
         const ask = async (modelID: string) =>
           textOf(await collect((await runtime.turn({ ...TURN, modelID }, call([user("model?")]))).stream))
-        expect(await ask("fast")).toBe("MODEL=fast")
+        // Switching to a model with effort levels leaves its own level alone.
+        expect(await ask("fast")).toBe(style === "config" ? "MODEL=fast EFFORT=high SETS=" : "MODEL=fast")
         expect(reported).toEqual([["auto", "fast"]])
         // `default` is the model the agent started the session with.
         expect(await ask("default")).toBe("MODEL=auto")
       })
     })
+
+  test("serves the variant's effort after the model switch, and the model's own level without one", () =>
+    withRuntime({ agent: { env: { FAKE_ACP_MODELS: "config" } } }, async (runtime) => {
+      const ask = async (modelID: string, effort?: string) =>
+        textOf(
+          await collect(
+            (
+              await runtime.turn(
+                { ...TURN, modelID },
+                call([user("model?")], effort ? { providerOptions: { fake: { effort } } } : {}),
+              )
+            ).stream,
+          ),
+        )
+      expect(await ask("fast", "low")).toBe("MODEL=fast EFFORT=low SETS=acp_1=low")
+      // Unchanged: no call.
+      expect(await ask("fast", "low")).toBe("MODEL=fast EFFORT=low SETS=acp_1=low")
+      // No variant restores the model's own level.
+      expect(await ask("fast")).toBe("MODEL=fast EFFORT=high SETS=acp_1=low,acp_1=high")
+      // A level the agent doesn't list for the model is never sent.
+      expect(await ask("fast", "xhigh")).toBe("MODEL=fast EFFORT=high SETS=acp_1=low,acp_1=high")
+      // A model without levels has no selector to set.
+      expect(await ask("auto", "low")).toBe("MODEL=auto")
+      // Back on a model with levels, the switch reset effort before the variant's is applied.
+      expect(await ask("fast", "max")).toBe("MODEL=fast EFFORT=max SETS=acp_1=low,acp_1=high,acp_1=max")
+    }))
 
   test("leaves the model alone when the agent reports no selector", () =>
     withRuntime({}, async (runtime) => {

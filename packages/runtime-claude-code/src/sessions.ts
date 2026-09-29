@@ -1,11 +1,12 @@
 export * as ClaudeCodeSessions from "./sessions.js"
 
-import type { Options, PermissionMode, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { EffortLevel, Options, PermissionMode, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 
 export interface QueryLike extends AsyncIterable<SDKMessage> {
   interrupt(): Promise<unknown>
   setModel(model?: string): Promise<void>
   setPermissionMode(mode: PermissionMode): Promise<void>
+  applyFlagSettings?(settings: { effortLevel?: EffortLevel | null }): Promise<void>
   close(): void
   initializationResult?(): Promise<unknown>
   accountInfo?(): Promise<unknown>
@@ -64,6 +65,12 @@ export type HoldReason = "active" | "children" | "queued" | "none"
 export interface SessionOptions {
   readonly model: string
   readonly permissionMode: PermissionMode
+  /**
+   * The session's effort level, null for the model's default. A starting process takes it from
+   * `options.effort`; a live one has it applied to the flag layer after any model switch (null
+   * clears a startup `--effort` too).
+   */
+  readonly effort?: EffortLevel | null
   readonly observer?: (message: SDKMessage, inTurn: boolean) => Promise<void> | void
   /**
    * Consulted when a successful result lands and again on every later frame
@@ -88,6 +95,7 @@ export interface SessionOptions {
 interface LiveSession {
   query: QueryLike
   model: string
+  effort: EffortLevel | null
   permissionMode: PermissionMode
   bypassAllowed: boolean
   startup?: string
@@ -186,6 +194,7 @@ export class SessionManager {
     const session: LiveSession = {
       query,
       model: input.model,
+      effort: input.effort ?? null,
       permissionMode: input.permissionMode,
       bypassAllowed: input.permissionMode === "bypassPermissions",
       startup: input.startup,
@@ -293,6 +302,11 @@ export class SessionManager {
       if (session.model !== input.model) {
         await session.query.setModel(input.model)
         session.model = input.model
+      }
+      const effort = input.effort ?? null
+      if (session.effort !== effort && session.query.applyFlagSettings) {
+        await session.query.applyFlagSettings({ effortLevel: effort })
+        session.effort = effort
       }
       if (session.permissionMode !== input.permissionMode) {
         await session.query.setPermissionMode(input.permissionMode)

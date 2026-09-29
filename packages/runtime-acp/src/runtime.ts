@@ -232,6 +232,8 @@ interface Session {
   currentMode?: string
   /** How to switch the session's model, when the agent reports a selector. */
   readonly model?: { readonly control: AcpModels.Control; readonly initial?: string; current?: string }
+  /** The agent's reasoning-effort selector for the current model, as it last reported it. */
+  effort?: AcpModels.Effort
   /** The agent's plans, mirrored into the host's todo list. */
   readonly plans: AcpPlan.Plans
   agent?: string
@@ -265,6 +267,8 @@ export class Runtime {
   private readonly endpoint = new AcpHostTools.Endpoint()
   /** The model a new agent session starts with; a loaded session reports the one it last used. */
   private defaultModel?: string
+  /** Each model's own effort level, which the agent restores when a session switches to it. */
+  private readonly defaultEfforts = new Map<string, string>()
   private readonly context: DelegateContext.Tracker
   /** The base prompt (its static part) each host session's agent session last received. */
   private readonly based = new Map<string, string>()
@@ -380,9 +384,12 @@ export class Runtime {
         }
         if (notification.update.sessionUpdate === "current_mode_update")
           session.currentMode = notification.update.currentModeId
-        if (notification.update.sessionUpdate === "config_option_update" && session.model?.control.kind === "config") {
-          const current = AcpModels.fromConfig(notification.update.configOptions)?.current
-          if (current) session.model.current = current
+        if (notification.update.sessionUpdate === "config_option_update") {
+          session.effort = AcpModels.effort(notification.update.configOptions)
+          if (session.model?.control.kind === "config") {
+            const current = AcpModels.fromConfig(notification.update.configOptions)?.current
+            if (current) session.model.current = current
+          }
         }
         session.listener?.(notification.update)
       },
@@ -468,6 +475,9 @@ export class Runtime {
       if (this.agent.preset === "kiro") AcpKiro.validateSession(created)
       const models = AcpModels.read(created)
       if (models?.models.length) this.host.onModels?.(models.models)
+      for (const model of models?.models ?? [])
+        if (model.defaultEffort) this.defaultEfforts.set(model.id, model.defaultEffort)
+      const effort = AcpModels.effort(created.configOptions)
       if (!loaded && models?.current) this.defaultModel ??= models.current
       const session: Session = {
         sessionID,
@@ -485,6 +495,7 @@ export class Runtime {
         ...(created.modes
           ? { initialMode: created.modes.currentModeId, currentMode: created.modes.currentModeId }
           : {}),
+        ...(effort ? { effort } : {}),
         ...(models?.control
           ? {
               model: {
@@ -598,15 +609,35 @@ export class Runtime {
     if (!model) return
     const wanted = modelID === "default" ? (this.defaultModel ?? model.initial) : modelID
     if (!wanted || wanted === model.current) return
-    if (model.control.kind === "config")
-      await session.connection.setSessionConfigOption({
+    if (model.control.kind === "config") {
+      const response = await session.connection.setSessionConfigOption({
         sessionId: session.acpSessionID,
         configId: model.control.configId,
         value: wanted,
       })
-    else
+      // The switch resets effort to the new model's own level, or drops the selector.
+      session.effort = AcpModels.effort(response.configOptions)
+    } else
       await session.connection.request(AcpModels.LEGACY_SET_MODEL, { sessionId: session.acpSessionID, modelId: wanted })
     model.current = wanted
+  }
+
+  /**
+   * Serves the variant's reasoning effort, after the model (a switch resets it). No variant is the
+   * current model's own level. A level the live selector doesn't list is never sent.
+   */
+  private async applyEffort(session: Session, level: string | undefined) {
+    const effort = session.effort
+    if (!effort) return
+    const current = session.model?.current
+    const wanted = level ?? (current ? this.defaultEfforts.get(current) : undefined)
+    if (!wanted || wanted === effort.current || !effort.options.includes(wanted)) return
+    const response = await session.connection.setSessionConfigOption({
+      sessionId: session.acpSessionID,
+      configId: effort.configId,
+      value: wanted,
+    })
+    session.effort = AcpModels.effort(response.configOptions) ?? { ...effort, current: wanted }
   }
 
   /**
@@ -730,10 +761,13 @@ export class Runtime {
     const prompt = AcpContext.wrap(delivery?.text, AcpContext.corrected(corrections, delta))
     session.agent = turn.agent
     if (!oneShot) await this.applyMode(session, selection)
-    await this.applyModel(session, turn.modelID).catch((error) => {
-      if (oneShot) this.close(session)
-      throw this.failure(session, error)
-    })
+    const level = (options.providerOptions?.[this.agent.id] as { effort?: unknown } | undefined)?.effort
+    await this.applyModel(session, turn.modelID)
+      .then(() => this.applyEffort(session, typeof level === "string" ? level : undefined))
+      .catch((error) => {
+        if (oneShot) this.close(session)
+        throw this.failure(session, error)
+      })
 
     const state = AcpTranslate.make(session.slot, this.agent.id)
     session.compacted = false

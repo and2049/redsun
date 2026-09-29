@@ -94,6 +94,34 @@ describe("ACP runtime plugin through the real host", () => {
     }),
   )
 
+  it.effect("offers each reported model's effort levels as variants", () =>
+    Effect.gen(function* () {
+      const host = yield* PluginHost.make(yield* Plugin.Service)
+      yield* AcpPlugin.effect({
+        ...host,
+        options: {
+          agents: {
+            fake: { command: process.execPath, args: [fixture], env: { FAKE_ACP_MODELS: "config" } },
+          },
+        },
+      })
+      yield* connect("fake")
+      const models = yield* Model.Service
+      let fast = yield* models.get("fake" as never, "fast" as never)
+      for (let waited = 0; !fast && waited < 10_000; waited += 50) {
+        yield* sleep(50)
+        fast = yield* models.get("fake" as never, "fast" as never)
+      }
+      expect(fast?.variants).toEqual([
+        { id: "low", settings: { effort: "low" } },
+        { id: "high", settings: { effort: "high" } },
+        { id: "max", settings: { effort: "max" } },
+      ] as never)
+      expect((yield* models.get("fake" as never, "auto" as never))?.variants).toEqual([])
+      expect((yield* models.get("fake" as never, "default" as never))?.variants).toEqual([])
+    }),
+  )
+
   it.effect("registers its agent as a delegated provider and answers a tagged request", () =>
     Effect.gen(function* () {
       const host = yield* PluginHost.make(yield* Plugin.Service)
