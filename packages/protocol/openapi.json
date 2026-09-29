@@ -14468,6 +14468,10 @@
               }
             },
             "additionalProperties": false
+          },
+          "chatgpt_context_window": {
+            "type": "string",
+            "enum": ["default", "max"]
           }
         },
         "additionalProperties": false
@@ -14846,6 +14850,10 @@
           },
           "stale_read_deduplication": {
             "type": "boolean"
+          },
+          "chatgpt_context_window": {
+            "type": "string",
+            "enum": ["default", "max"]
           },
           "references": {
             "type": "object",

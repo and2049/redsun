@@ -64,6 +64,14 @@ export function reportedContextPercent(message: SessionMessageAssistant) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
+/**
+ * The window context usage is measured against: the input limit when the model has one, since
+ * that is what the prompt fills and what automatic compaction triggers from; else the total.
+ */
+export function contextWindow(limit: { readonly context: number; readonly input?: number }) {
+  return limit.input || limit.context
+}
+
 export function contextUsage(
   messages: ReadonlyArray<SessionMessageInfo>,
   models: ReadonlyArray<ModelInfo> | undefined,
@@ -77,9 +85,10 @@ export function contextUsage(
     last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
   if (tokens <= 0) return
   const model = models?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)
+  const window = model ? contextWindow(model.limit) : undefined
   return {
     tokens,
-    percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined,
+    percent: window ? Math.round((tokens / window) * 100) : undefined,
   }
 }
 

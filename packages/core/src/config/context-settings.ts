@@ -65,8 +65,12 @@ const layer = Layer.effect(
             files.findLast((file) => file.info.compaction?.strategy !== undefined)?.info.compaction?.strategy ?? "llm",
         },
         attribution: {
-          commit: files.findLast((file) => file.info.attribution?.commit !== undefined)?.info.attribution?.commit ?? false,
+          commit:
+            files.findLast((file) => file.info.attribution?.commit !== undefined)?.info.attribution?.commit ?? false,
         },
+        chatgpt_context_window:
+          files.findLast((file) => file.info.chatgpt_context_window !== undefined)?.info.chatgpt_context_window ??
+          "default",
       })
     const get = () => read().pipe(Effect.map(resolve), Effect.mapError(error))
     const update = Effect.fn("ContextSettings.update")(
@@ -77,6 +81,7 @@ const layer = Layer.effect(
           { path: ["stale_read_deduplication"], value: input.stale_read_deduplication },
           { path: ["compaction", "strategy"], value: input.compaction?.strategy },
           { path: ["attribution", "commit"], value: input.attribution?.commit },
+          { path: ["chatgpt_context_window"], value: input.chatgpt_context_window },
         ].filter((edit) => edit.value !== undefined)
         if (!edits.length) return resolve(files)
         const text = yield* Effect.try(() =>

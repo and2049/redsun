@@ -60,6 +60,18 @@ export const settings: Setting[] = [
     keywords: ["summary", "compression", "context", "hybrid", "algorithmic"],
   },
   {
+    title: "ChatGPT context window",
+    category: "Context",
+    path: ["chatgpt_context_window"],
+    default: "default",
+    values: ["default", "max"],
+    labels: ["Default", "Maximum"],
+    backend: true,
+    description:
+      "OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows.",
+    keywords: ["openai", "codex", "gpt", "subscription", "context", "window", "limit", "compaction"],
+  },
+  {
     title: "Commit attribution",
     category: "Git",
     path: ["attribution", "commit"],
@@ -422,7 +434,9 @@ export function DialogConfig(props: { current?: string }) {
           ? { stale_read_deduplication: next === true }
           : setting.path[0] === "attribution"
             ? { attribution: { commit: next === true } }
-            : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
+            : setting.path[0] === "chatgpt_context_window"
+              ? { chatgpt_context_window: next === "max" ? "max" : "default" }
+              : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
       await client.api.config.context
         .update({ location: ref(), payload: update })
         .then(mutate)
