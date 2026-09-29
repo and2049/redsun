@@ -1,7 +1,7 @@
 export * as AcpTranslate from "./translate.js"
 
 import type { SessionUpdate, StopReason, ToolCallContent, ToolKind } from "@agentclientprotocol/sdk"
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import type { LanguageModelV3StreamPart, LanguageModelV3Usage } from "@ai-sdk/provider"
 import { AcpHostTools } from "./host-tools.js"
 
 // ACP `session/update` notifications become AI SDK V3 stream parts. The agent runs its own tools,
@@ -17,6 +17,8 @@ export interface State {
    * metadata under `provider`, which the host keeps as the message's `providerState.contextPercent`.
    */
   contextPercent?: number
+  /** The live usage last taken by `takeUsage`, serialized, so an unchanged value is not resent. */
+  reportedUsage?: string
   readonly provider?: string
   /** The session's host tools: their calls render as the host's own tool rows. */
   readonly host?: AcpHostTools.Slot
@@ -174,6 +176,31 @@ export const update = (state: State, update: SessionUpdate): LanguageModelV3Stre
   }
 }
 
+/**
+ * ACP `used` is the whole context in use, without a cache breakdown: it reports as uncached input,
+ * the side the host reads context size from.
+ */
+const usage = (state: State): LanguageModelV3Usage => ({
+  inputTokens: { total: state.usage?.used, noCache: state.usage?.used, cacheRead: undefined, cacheWrite: undefined },
+  outputTokens: { total: undefined, text: undefined, reasoning: undefined },
+})
+
+const providerState = (state: State) =>
+  state.provider && state.contextPercent !== undefined ? { contextPercent: state.contextPercent } : undefined
+
+/**
+ * What the turn's `finish` part would report if the turn ended now. Undefined until the agent has
+ * reported context use, or when unchanged since the last take.
+ */
+export const takeUsage = (state: State) => {
+  if (state.usage === undefined && state.contextPercent === undefined) return undefined
+  const live = { usage: usage(state), providerState: providerState(state) }
+  const serialized = JSON.stringify(live)
+  if (serialized === state.reportedUsage) return undefined
+  state.reportedUsage = serialized
+  return live
+}
+
 const REASON: Record<StopReason, "stop" | "length" | "other"> = {
   end_turn: "stop",
   max_tokens: "length",
@@ -197,16 +224,12 @@ export const finish = (state: State, stopReason: StopReason): LanguageModelV3Str
         isError: true,
       } as LanguageModelV3StreamPart)
     }
+  const metadata = providerState(state)
   parts.push({
     type: "finish",
     finishReason: { unified: REASON[stopReason], raw: stopReason },
-    usage: {
-      inputTokens: { total: state.usage?.used, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
-      outputTokens: { total: undefined, reasoning: undefined },
-    },
-    ...(state.provider && state.contextPercent !== undefined
-      ? { providerMetadata: { [state.provider]: { contextPercent: state.contextPercent } } }
-      : {}),
+    usage: usage(state),
+    ...(metadata ? { providerMetadata: { [state.provider!]: metadata } } : {}),
   } as LanguageModelV3StreamPart)
   return parts
 }

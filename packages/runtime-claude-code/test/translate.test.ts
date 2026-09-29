@@ -589,6 +589,36 @@ describe("ClaudeCodeTranslate", () => {
     expect(finish.usage.outputTokens.total).toBe(120)
   })
 
+  it("takes live usage per main-thread call, only when it changed", () => {
+    const { state } = run([])
+    const step = (message: unknown) => {
+      ClaudeCodeTranslate.translate(state, msg(message))
+      return ClaudeCodeTranslate.takeUsage(state)
+    }
+    expect(step(streamEvent({ type: "content_block_stop", index: 0 }))).toBeUndefined()
+    // The input side is known when a call starts, before its output streams.
+    const started = {
+      input_tokens: 3,
+      cache_read_input_tokens: 9000,
+      cache_creation_input_tokens: 40,
+      output_tokens: 1,
+    }
+    expect(step(streamEvent({ type: "message_start", message: { id: "msg_1", usage: started } }))).toEqual({
+      inputTokens: { total: 9043, noCache: 3, cacheRead: 9000, cacheWrite: 40 },
+      outputTokens: { total: 1, text: undefined, reasoning: undefined },
+    })
+    expect(step({ type: "assistant", message: { usage: started, content: [] } })).toBeUndefined()
+    expect(step(streamEvent({ type: "message_delta", usage: { output_tokens: 80 } }))?.outputTokens.total).toBe(80)
+    // Subagent calls are not the main thread's context.
+    expect(
+      step(streamEvent({ type: "message_start", message: { id: "sub", usage: { input_tokens: 1 } } }, "toolu_parent")),
+    ).toBeUndefined()
+    // The next call's output starts over rather than carrying the previous call's.
+    expect(
+      step(streamEvent({ type: "message_start", message: { id: "msg_2", usage: { ...started, input_tokens: 500 } } })),
+    ).toMatchObject({ inputTokens: { total: 9540 }, outputTokens: { total: 1 } })
+  })
+
   it("falls back to the result totals when no assistant frame carried usage", () => {
     const { parts } = run([result({ usage: { input_tokens: 7, output_tokens: 3 } })])
     expect(parts.at(-1)).toMatchObject({

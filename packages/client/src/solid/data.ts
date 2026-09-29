@@ -900,6 +900,15 @@ export function createData(config: CreateDataInput) {
           assistant.time.streamed = event.created
         })
         return
+      case "session.step.usage":
+        message.editAssistant(event.data.sessionID, event.data.assistantMessageID, (assistant) => {
+          // A late live value must not overwrite the step's recorded usage.
+          if (assistant.time.completed !== undefined) return
+          assistant.tokens = event.data.tokens
+          if (event.data.providerState !== undefined)
+            assistant.providerState = { ...assistant.providerState, ...event.data.providerState }
+        })
+        return
       case "session.step.ended": {
         message.editAssistant(event.data.sessionID, event.data.assistantMessageID, (assistant) => {
           assistant.time.completed = event.created

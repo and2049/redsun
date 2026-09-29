@@ -1482,6 +1482,20 @@ export type SessionMessageAssistantReasoning1 = {
   time?: { created: number; completed?: number }
 }
 
+export type SessionStepUsage = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.step.usage"
+  location?: LocationRef
+  data: {
+    sessionID: string
+    assistantMessageID: string
+    tokens: TokenUsageInfo
+    providerState?: SessionMessageProviderState1
+  }
+}
+
 export type ToolContent1 = ToolTextContent | ToolFileContent1
 
 export type FormNumberField = {
@@ -2565,6 +2579,7 @@ export type V2Event =
   | SessionShellEnded
   | SessionStepStarted
   | SessionStepStreamed
+  | SessionStepUsage
   | SessionStepEnded
   | SessionStepFailed
   | SessionTextStarted

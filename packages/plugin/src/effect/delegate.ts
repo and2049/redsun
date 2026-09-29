@@ -1,4 +1,4 @@
-import type { LanguageModelV3, LanguageModelV3CallOptions } from "@ai-sdk/provider"
+import type { LanguageModelV3, LanguageModelV3CallOptions, LanguageModelV3Usage } from "@ai-sdk/provider"
 import type { ToolDefinition } from "@opencode/ai"
 import type { Form } from "@opencode/schema/form"
 import type { Permission } from "@opencode/schema/permission"
@@ -261,6 +261,18 @@ export interface DelegateDomain {
       model: { readonly providerID: string; readonly id: string },
       events: readonly DelegatedTranscriptEvent[],
     ) => Effect.Effect<void>
+    /**
+     * Live context usage for the turn's host assistant message while the runtime's own loop runs,
+     * shaped like the stream's `finish` usage. Not persisted: the `finish` part stays the recorded
+     * value, so publish only what that part would report were the turn to end now.
+     */
+    readonly usage: (input: {
+      readonly sessionID: string
+      readonly messageID: string
+      readonly usage: LanguageModelV3Usage
+      /** The same entries the `finish` part's provider metadata would carry. */
+      readonly providerState?: Record<string, unknown>
+    }) => Effect.Effect<void>
     /**
      * A visible notice row that does not steer the running turn (unlike `session.synthetic`,
      * which is admitted to the inbox and would spend a model call).

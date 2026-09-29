@@ -69,6 +69,12 @@ export interface Host {
   readonly system?: (turn: DelegatedTurn, tools: readonly string[]) => Promise<DelegatedSystemPrompt | undefined>
   /** The agent's own model list, as each new agent session reports it. */
   readonly onModels?: (models: readonly AcpModels.Discovered[]) => void
+  /** Live context use of a running primary turn, as the agent reports it mid-turn. */
+  readonly usage?: (
+    sessionID: string,
+    messageID: string,
+    live: NonNullable<ReturnType<typeof AcpTranslate.takeUsage>>,
+  ) => void
 }
 
 export interface Process {
@@ -815,6 +821,9 @@ export class Runtime {
             const percent = this.agent.preset === "kiro" ? AcpKiro.contextPercent(update) : undefined
             if (percent !== undefined) state.contextPercent = percent
             emit(AcpTranslate.update(state, update))
+            const messageID = turn.assistantMessageID
+            const live = this.host.usage && messageID && !closed ? AcpTranslate.takeUsage(state) : undefined
+            if (live) this.host.usage!(turn.sessionID, messageID!, live)
           }
           options.abortSignal?.addEventListener("abort", cancel, { once: true })
           if (options.abortSignal?.aborted) cancel()

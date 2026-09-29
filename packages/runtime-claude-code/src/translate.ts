@@ -1,7 +1,7 @@
 export * as ClaudeCodeTranslate from "./translate.js"
 
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import type { LanguageModelV3StreamPart, LanguageModelV3Usage } from "@ai-sdk/provider"
 import type { Tool } from "@opencode/schema/tool"
 import { ClaudeCodeNativeTools } from "./native-tools.js"
 
@@ -25,6 +25,8 @@ export interface State {
   result?: SDKResultMessage
   lastCallUsage?: Record<string, unknown>
   lastCallOutput?: number
+  /** The live usage last taken by `takeUsage`, serialized, so an unchanged value is not resent. */
+  reportedUsage?: string
   taskChildren?: ReadonlyMap<string, TaskChild>
   /** Only metadata correlated by the host to this native tool_use_id is trusted. */
   hostResultMetadata?: (toolUseID: string) => Tool.Metadata | undefined
@@ -168,6 +170,11 @@ const streamEvent = (state: State, event: Record<string, any>): LanguageModelV3S
   switch (event.type) {
     case "message_start":
       if (typeof event.message?.id === "string") state.messageId = event.message.id
+      // A new main-thread call: its input side is known before any output streams.
+      if (event.message?.usage && typeof event.message.usage === "object") {
+        state.lastCallUsage = event.message.usage
+        state.lastCallOutput = undefined
+      }
       return []
     case "content_block_start":
       return contentBlockStart(state, event.index, event.content_block ?? {})
@@ -280,9 +287,9 @@ const userMessage = (state: State, message: Record<string, any>): LanguageModelV
   return parts
 }
 
-const turnUsage = (state: State, result: SDKResultMessage) => {
+const turnUsage = (state: State, result?: SDKResultMessage): LanguageModelV3Usage => {
   const resultUsage =
-    "usage" in result && result.usage && typeof result.usage === "object"
+    result && "usage" in result && result.usage && typeof result.usage === "object"
       ? (result.usage as Record<string, unknown>)
       : undefined
   const source = (() => {
@@ -303,8 +310,21 @@ const turnUsage = (state: State, result: SDKResultMessage) => {
       : (noCache ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0)
   return {
     inputTokens: { total: inputTotal, noCache, cacheRead, cacheWrite },
-    outputTokens: { total: outputTotal, reasoning: undefined },
+    outputTokens: { total: outputTotal, text: undefined, reasoning: undefined },
   }
+}
+
+/**
+ * The usage the turn's `finish` part would report if the turn ended now: the latest main-thread
+ * call's. Undefined until a call has reported, or when unchanged since the last take.
+ */
+export const takeUsage = (state: State) => {
+  if (!state.lastCallUsage) return undefined
+  const usage = turnUsage(state)
+  const serialized = JSON.stringify(usage)
+  if (serialized === state.reportedUsage) return undefined
+  state.reportedUsage = serialized
+  return usage
 }
 
 const resultMessage = (state: State, result: SDKResultMessage): LanguageModelV3StreamPart[] => {

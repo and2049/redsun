@@ -40,6 +40,7 @@ const host = (
     context?: (turn: DelegatedTurn) => Awaited<ReturnType<NonNullable<AcpRuntime.Host["context"]>>>
     skillsAsked?: boolean[]
     system?: (turn: DelegatedTurn, tools: readonly string[]) => DelegatedSystemPrompt | undefined
+    usage?: Parameters<NonNullable<AcpRuntime.Host["usage"]>>[]
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -58,6 +59,9 @@ const host = (
         ? { system: async (turn: DelegatedTurn, tools: readonly string[]) => input.system!(turn, tools) }
         : {}),
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
+      ...(input.usage
+        ? { usage: (...args: Parameters<NonNullable<AcpRuntime.Host["usage"]>>) => void input.usage!.push(args) }
+        : {}),
       ...(input.context
         ? {
             context: async (turn: DelegatedTurn, request: { readonly skills: boolean }) => {
@@ -193,6 +197,26 @@ describe("ACP runtime against a scripted agent", () => {
       const finish = (await collect((await runtime.turn(TURN, call([user("hello")]))).stream)).at(-1)
       expect(finish).toMatchObject({ type: "finish", providerMetadata: { fake: { contextPercent: 2.5 } } })
       expect(finish).toMatchObject({ usage: { inputTokens: { total: undefined } } })
+    })
+  })
+
+  test("v3 context percentage reports live, while the turn runs, as the finish part would", async () => {
+    const usage: Parameters<NonNullable<AcpRuntime.Host["usage"]>>[] = []
+    await withRuntime({ agent: { preset: "kiro", env: { FAKE_ACP_V3: "1" } }, host: { usage } }, async (runtime) => {
+      await collect((await runtime.turn({ ...TURN, assistantMessageID: "msg_1" }, call([user("hello")]))).stream)
+      expect(usage).toEqual([
+        [
+          "ses_1",
+          "msg_1",
+          {
+            usage: {
+              inputTokens: { total: undefined, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: undefined, text: undefined, reasoning: undefined },
+            },
+            providerState: { contextPercent: 2.5 },
+          },
+        ],
+      ])
     })
   })
 
@@ -379,9 +403,29 @@ describe("ACP runtime against a scripted agent", () => {
       expect(parts.at(-1)).toMatchObject({
         type: "finish",
         finishReason: { unified: "stop", raw: "end_turn" },
-        usage: { inputTokens: { total: 1234 } },
+        usage: { inputTokens: { total: 1234, noCache: 1234 } },
       })
     }))
+
+  test("reports usage_update live for the turn's message, once per change, and not for one-shots", async () => {
+    const usage: Parameters<NonNullable<AcpRuntime.Host["usage"]>>[] = []
+    await withRuntime({ host: { usage } }, async (runtime) => {
+      const reader = (
+        await runtime.turn({ ...TURN, assistantMessageID: "msg_1" }, call([user("hello")]))
+      ).stream.getReader()
+      // Reported mid-turn: before the agent's text, not with the finish part.
+      for (let part = await reader.read(); !part.done && part.value.type !== "text-delta"; part = await reader.read());
+      expect(usage).toHaveLength(1)
+      while (!(await reader.read()).done);
+      expect(usage).toHaveLength(1)
+      expect(usage[0]!.slice(0, 2)).toEqual(["ses_1", "msg_1"])
+      expect(usage[0]![2]).toMatchObject({ usage: { inputTokens: { total: 1234, noCache: 1234 } } })
+      expect(usage[0]![2].providerState).toBeUndefined()
+      usage.length = 0
+      await collect((await runtime.turn({ ...TURN, kind: "title" }, call([user("hello")]))).stream)
+      expect(usage).toEqual([])
+    })
+  })
 
   test("reports the agent's tools as provider-executed calls settled by the agent", () =>
     withRuntime({}, async (runtime) => {
