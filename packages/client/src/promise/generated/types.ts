@@ -2237,6 +2237,7 @@ export type ConfigEntry =
         instructions?: Array<string>
         instruction_max_chars?: number
         stale_read_deduplication?: boolean
+        chatgpt_context_window?: "default" | "max"
         references?: {
           [x: string]:
             | string
@@ -6671,6 +6672,7 @@ export type ConfigContextGetOutput = {
   stale_read_deduplication?: boolean
   compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
   attribution?: { commit?: boolean | string }
+  chatgpt_context_window?: "default" | "max"
 }
 
 export type ConfigContextUpdateInput = {
@@ -6679,6 +6681,7 @@ export type ConfigContextUpdateInput = {
     readonly stale_read_deduplication?: boolean
     readonly compaction?: { readonly strategy?: "hybrid" | "algorithmic" | "llm" }
     readonly attribution?: { readonly commit?: boolean | string }
+    readonly chatgpt_context_window?: "default" | "max"
   }
 }
 
@@ -6686,6 +6689,7 @@ export type ConfigContextUpdateOutput = {
   stale_read_deduplication?: boolean
   compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
   attribution?: { commit?: boolean | string }
+  chatgpt_context_window?: "default" | "max"
 }
 
 export type ConfigShellsOutput = Array<ConfigShellOption>

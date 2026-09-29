@@ -218,6 +218,7 @@ export function normalize(input: unknown): Result {
     advisor: Info.fields.advisor,
     project_memory: Info.fields.project_memory,
     attribution: Info.fields.attribution,
+    chatgpt_context_window: Info.fields.chatgpt_context_window,
   }
   Object.entries(nativeAtomic).forEach(([key, schema]) => {
     if (!own(input, key)) return

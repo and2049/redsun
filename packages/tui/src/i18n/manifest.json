@@ -1699,6 +1699,21 @@
       "context": "settings",
       "legacy": ["Asks the agent to end its commit messages with a Co-authored-by trailer for redsun-agent[bot]."]
     },
+    "settings.chatgptContextWindow": {
+      "message": "ChatGPT context window",
+      "context": "settings",
+      "legacy": ["ChatGPT context window"]
+    },
+    "settings.chatgptContextWindowDescription": {
+      "message": "OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows.",
+      "context": "settings",
+      "legacy": ["OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows."]
+    },
+    "settings.maximum": {
+      "message": "Maximum",
+      "context": "settings",
+      "legacy": ["Maximum"]
+    },
     "settings.globalDefaultsOtherConfigSourcesCanOverride": {
       "message": "Global defaults; other config sources can override.",
       "context": "settings",

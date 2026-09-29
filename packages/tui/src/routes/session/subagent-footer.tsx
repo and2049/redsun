@@ -6,7 +6,7 @@ import { Keymap } from "../../context/keymap"
 import { useRouteData } from "../../context/route"
 import { useTheme } from "../../context/theme"
 import { Locale } from "../../util/locale"
-import { reportedContextPercent } from "../../util/session"
+import { contextWindow, reportedContextPercent } from "../../util/session"
 import { useLanguage } from "../../i18n"
 
 const AGENT_PATTERN = /@([\w-]+) subagent/
@@ -65,11 +65,12 @@ export function SubagentFooter() {
         last.tokens.cache.write
       : 0
     if (tokens <= 0 && cost <= 0) return undefined
-    const limit = last
+    const model = last
       ? data.location.model
           .list(session()?.location)
-          ?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)?.limit.context
+          ?.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)
       : undefined
+    const limit = model ? contextWindow(model.limit) : undefined
     const percent = limit ? ` (${Math.round((tokens / limit) * 100)}%)` : ""
     return {
       context: tokens > 0 ? `${Locale.number(tokens)}${percent}` : undefined,

@@ -12,6 +12,7 @@ import { useRoute } from "../context/route"
 import { useTheme } from "../context/theme"
 import { SplitBorder } from "../ui/border"
 import { fitSessionUsage, sessionUsage } from "../util/session-usage"
+import { contextWindow } from "../util/session"
 import { useLanguage } from "../i18n"
 
 const MAX_SUGGESTIONS = 10
@@ -47,8 +48,10 @@ export function CommandBar() {
     return sessionUsage({
       t,
       messages: data.session.message.list(id) ?? [],
-      contextLimit: (model) =>
-        models?.find((item) => item.providerID === model.providerID && item.id === model.id)?.limit.context,
+      contextLimit: (model) => {
+        const info = models?.find((item) => item.providerID === model.providerID && item.id === model.id)
+        return info ? contextWindow(info.limit) : undefined
+      },
       cost: data.session.cost(id),
     })
   })
