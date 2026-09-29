@@ -626,6 +626,46 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     expect(oneShot[0].options.settingSources).toBeUndefined()
   })
 
+  it("answers a title one-shot with the host's system prompt and streamed text", async () => {
+    const oneShot: any[] = []
+    const created = model({
+      modelID: "haiku",
+      config,
+      manager: fakeManager([]).manager,
+      createQuery: (input: any) => {
+        oneShot.push(input)
+        return iterable([
+          { type: "stream_event", event: { type: "message_start", message: { id: "m1", usage: {} } } },
+          { type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text" } } },
+          {
+            type: "stream_event",
+            event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Capital of France" } },
+          },
+          { type: "stream_event", event: { type: "content_block_stop", index: 0 } },
+          { type: "assistant", message: { content: [{ type: "text", text: "Capital of France" }] } },
+          { type: "result", subtype: "success", usage: {} },
+        ]) as never
+      },
+    })
+    const parts = await collect(
+      (
+        await created.doStream(
+          call({ prompt: [{ role: "system", content: "Write a title." }, user("What is the capital of France?")] }),
+          { kind: "title", agent: "title" },
+        )
+      ).stream,
+    )
+    expect(oneShot[0].options).toMatchObject({
+      systemPrompt: "Write a title.",
+      includePartialMessages: true,
+      thinking: { type: "disabled" },
+    })
+    expect(oneShot[0].prompt).toBe("user: What is the capital of France?")
+    expect(parts.flatMap((part: any) => (part.type === "text-delta" ? [part.delta] : [])).join("")).toBe(
+      "Capital of France",
+    )
+  })
+
   it("interrupts the CLI when the turn is aborted", async () => {
     // Tearing down this stream only ends redsun's view of the turn. Without the
     // control request the Claude Code process keeps running its loop, editing
