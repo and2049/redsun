@@ -547,6 +547,10 @@ export const Plugin = define({
           onCompacted: (sessionID) => context.clear(sessionID),
           onExit: (sessionID) => mirrors.get(sessionID)?.finalize(),
           onModelSubstituted: notifySubstitution,
+          usage: (sessionID, messageID, usage) =>
+            Effect.runFork(
+              ctx.delegate.transcript.usage({ sessionID, messageID, usage }).pipe(Effect.catch(() => Effect.void)),
+            ),
           resolvedModel: (id) => discovered.find((entry) => entry.value === id)?.resolvedModel,
           permissionMode,
           resumeCursor: (sessionID) => cursors.get(sessionID),

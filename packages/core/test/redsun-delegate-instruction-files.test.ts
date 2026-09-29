@@ -5,6 +5,23 @@ import { RedsunProjectMemory } from "@opencode/core/plugin/redsun/project-memory
 const project = "/repo"
 const long = Array.from({ length: 400 }, (_, index) => `rule ${index}`).join("\n")
 
+describe("DelegateHost.liveTokens", () => {
+  it("normalizes a runtime's live usage as the stream's finish usage is", () => {
+    expect(
+      DelegateHost.liveTokens({
+        inputTokens: { total: 1045, noCache: 5, cacheRead: 1000, cacheWrite: 40 },
+        outputTokens: { total: 30, text: undefined, reasoning: 10 },
+      }),
+    ).toEqual({ input: 5, output: 20, reasoning: 10, cache: { read: 1000, write: 40 } })
+    expect(
+      DelegateHost.liveTokens({
+        inputTokens: { total: undefined, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: undefined, text: undefined, reasoning: undefined },
+      }),
+    ).toEqual({ input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } })
+  })
+})
+
 describe("DelegateHost.instructionFiles", () => {
   it("bounds every delivered file to the configured size with a read pointer", () => {
     const [agents] = DelegateHost.instructionFiles([{ path: "/repo/AGENTS.md", content: long }], {

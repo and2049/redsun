@@ -598,6 +598,102 @@ test("truncates committed revert messages without changing lifetime usage", asyn
   }
 })
 
+test("live step usage updates a running assistant, never a completed one", async () => {
+  const events = createEventStream()
+  const sessionID = "ses_live_usage"
+  const assistantMessageID = "msg_live_usage"
+  const calls = createFetch((url) => {
+    if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
+    if (url.pathname !== `/api/session/${sessionID}`) return
+    return json({
+      data: {
+        id: sessionID,
+        projectID: "proj_test",
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: 0, updated: 0 },
+        title: "Live usage",
+        location: { directory },
+      },
+    })
+  }, events)
+  let data!: ReturnType<typeof useData>
+
+  function Probe() {
+    data = useData()
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <ClientProvider api={createApi(calls.fetch)}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </ClientProvider>
+    </TestTuiContexts>
+  ))
+
+  const assistant = () => {
+    const message = data.session.message.list(sessionID).find((item) => item.id === assistantMessageID)
+    return message?.type === "assistant" ? message : undefined
+  }
+  const live = (id: string, input: number, providerState?: Record<string, unknown>) =>
+    emitEvent(events, {
+      id,
+      created: 2,
+      type: "session.step.usage",
+      data: {
+        sessionID,
+        assistantMessageID,
+        tokens: { input, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        ...(providerState ? { providerState } : {}),
+      },
+    })
+
+  try {
+    await data.session.sync(sessionID)
+    emitEvent(events, {
+      id: "evt_live_usage_started",
+      created: 1,
+      type: "session.step.started",
+      durable: durable(sessionID, 1),
+      data: {
+        started: 1,
+        sessionID,
+        assistantMessageID,
+        agent: "build",
+        model: { providerID: "provider", id: "model" },
+      },
+    })
+    live("evt_live_usage_1", 100, { contextPercent: 3 })
+    await wait(() => assistant()?.tokens?.input === 100)
+    expect(assistant()?.providerState).toEqual({ contextPercent: 3 })
+    expect(assistant()?.cost).toBeUndefined()
+    live("evt_live_usage_2", 200)
+    await wait(() => assistant()?.tokens?.input === 200)
+    expect(assistant()?.providerState).toEqual({ contextPercent: 3 })
+
+    const recorded = { input: 250, output: 9, reasoning: 0, cache: { read: 0, write: 0 } }
+    emitEvent(events, {
+      id: "evt_live_usage_ended",
+      created: 3,
+      type: "session.step.ended",
+      durable: durable(sessionID, 2),
+      data: { sessionID, assistantMessageID, finish: "stop", cost: 0, tokens: recorded },
+    })
+    await wait(() => assistant()?.time.completed !== undefined)
+    // A live value that lands after the recorded one is stale.
+    live("evt_live_usage_late", 300)
+    await Bun.sleep(50)
+    expect(assistant()?.tokens).toEqual(recorded)
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("updates session location when moved", async () => {
   const events = createEventStream()
   const destination = "/tmp/opencode-moved"

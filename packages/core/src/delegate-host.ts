@@ -11,7 +11,9 @@ import type {
   DelegatedToolBinding,
 } from "@opencode/plugin/effect/delegate"
 import path from "node:path"
+import type { LanguageModelV3Usage } from "@ai-sdk/provider"
 import { Cause, Effect, Exit, Option } from "effect"
+import { Usage } from "@opencode/ai"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { Agent } from "./agent.js"
@@ -36,6 +38,7 @@ import { Session } from "./session.js"
 import { SessionEvent } from "./session/event.js"
 import { SessionMessage } from "./session/message.js"
 import { SessionSystemPrompt } from "./session/system-prompt.js"
+import { SessionUsage } from "./session/usage.js"
 import PROMPT_ANTHROPIC from "./plugin/system-prompt/anthropic.txt"
 import { Model } from "./model.js"
 import { Provider } from "./provider.js"
@@ -156,6 +159,18 @@ export const renderBuiltins = (list: Instructions.List) =>
  * host's graph otherwise, so `PluginHost.requirements` includes this group; the optional
  * acquisition keeps hand-built harnesses (which lack them) constructible.
  */
+/** A runtime's live usage, normalized as its stream's `finish` usage is so the two agree. */
+export const liveTokens = (usage: LanguageModelV3Usage) =>
+  SessionUsage.tokens(
+    Usage.from({
+      nonCachedInputTokens: usage.inputTokens.noCache,
+      cacheReadInputTokens: usage.inputTokens.cacheRead,
+      cacheWriteInputTokens: usage.inputTokens.cacheWrite,
+      outputTokens: usage.outputTokens.total,
+      reasoningTokens: usage.outputTokens.reasoning,
+    }),
+  )
+
 export const requirements = LayerNode.group([
   Global.node,
   Config.node,
@@ -324,6 +339,15 @@ export const make = Effect.gen(function* () {
             Effect.mapError((cause) => new Error(`Could not create a child session: ${String(cause)}`)),
           ),
       record: (model, events) => DelegateTranscript.publish(bus, modelRef(model), events),
+      usage: (input) =>
+        bus
+          .publish(SessionEvent.Step.Usage, {
+            sessionID: SessionSchema.ID.make(input.sessionID),
+            assistantMessageID: SessionMessage.ID.make(input.messageID),
+            tokens: liveTokens(input.usage),
+            ...(input.providerState === undefined ? {} : { providerState: input.providerState }),
+          })
+          .pipe(Effect.asVoid),
       notice: (input) =>
         bus
           .publish(SessionEvent.Synthetic, {

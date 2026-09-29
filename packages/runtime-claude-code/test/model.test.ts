@@ -149,6 +149,35 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     expect(parts.map((part) => part.type)).toEqual(["stream-start", "text-start", "text-delta", "finish"])
   })
 
+  it("reports live usage for the turn's message after each call, never after the result", async () => {
+    const usage = { input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 1 }
+    const { manager } = fakeManager([
+      { type: "stream_event", event: { type: "message_start", message: { id: "m1", usage } } },
+      { type: "stream_event", event: { type: "message_delta", usage: { output_tokens: 30 } } },
+      { type: "result", subtype: "success", usage: { input_tokens: 999, output_tokens: 999 } },
+    ])
+    const reported: [string, string, number | undefined, number | undefined][] = []
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: {
+        usage: (sessionID, messageID, live) =>
+          void reported.push([sessionID, messageID, live.inputTokens.total, live.outputTokens.total]),
+      },
+    })
+    await collect((await created.doStream(call({ prompt: [user("hello")] }), { assistantMessageID: "msg_1" })).stream)
+    expect(reported).toEqual([
+      ["ses_1", "msg_1", 105, 1],
+      ["ses_1", "msg_1", 105, 30],
+    ])
+    reported.length = 0
+    // Without a host message (one-shots), there is nothing to update.
+    await collect((await created.doStream(call({ prompt: [user("hello")] }))).stream)
+    expect(reported).toEqual([])
+  })
+
   it("lets the manager hold the turn open on what the session still owes", async () => {
     const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
     const asked: string[] = []

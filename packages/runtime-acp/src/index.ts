@@ -91,6 +91,17 @@ export default define({
               }),
             )
           : Promise.resolve(undefined),
+      usage: (sessionID, messageID, live) =>
+        Effect.runFork(
+          ctx.delegate.transcript
+            .usage({
+              sessionID,
+              messageID,
+              usage: live.usage,
+              ...(live.providerState ? { providerState: live.providerState } : {}),
+            })
+            .pipe(Effect.catch(() => Effect.void)),
+        ),
       system: (turn, tools) =>
         Effect.runPromise(ctx.delegate.context.system({ sessionID: turn.sessionID, agent: turn.agent, tools })),
       context: async (turn, input) => {

@@ -1,6 +1,11 @@
 export * as ClaudeCodeLanguageModel from "./language-model.js"
 
-import type { LanguageModelV3CallOptions, LanguageModelV3Prompt, LanguageModelV3StreamPart } from "@ai-sdk/provider"
+import type {
+  LanguageModelV3CallOptions,
+  LanguageModelV3Prompt,
+  LanguageModelV3StreamPart,
+  LanguageModelV3Usage,
+} from "@ai-sdk/provider"
 import type { DelegatedStreamResult, DelegatedTurn } from "@opencode/plugin/effect/delegate"
 import type {
   CanUseTool,
@@ -144,6 +149,8 @@ export interface Hooks {
   readonly onExit?: (sessionID: string) => Promise<void> | void
   readonly permissionMode?: (sessionID: string) => Promise<PermissionMode>
   readonly onModelSubstituted?: (sessionID: string, input: { requested: string; served: string }) => void
+  /** Live usage of a running primary turn, after each main-thread model call reports it. */
+  readonly usage?: (sessionID: string, messageID: string, usage: LanguageModelV3Usage) => void
   /** Canonical wire id an alias resolves to, per the CLI's own picker (when known). */
   readonly resolvedModel?: (modelID: string) => string | undefined
 }
@@ -357,6 +364,9 @@ export const make = (input: {
     const interrupt = () => {
       void manager.interrupt(sessionID).catch(() => {})
     }
+    const messageID = turn.assistantMessageID
+    const onUsage =
+      hooks?.usage && messageID ? (usage: LanguageModelV3Usage) => hooks.usage!(sessionID, messageID, usage) : undefined
     const onAbort = () => interrupt()
     options.abortSignal?.addEventListener("abort", onAbort, { once: true })
     if (options.abortSignal?.aborted) interrupt()
@@ -381,6 +391,7 @@ export const make = (input: {
         (message) => {
           if (message.type === "system" && message.subtype === "compact_boundary") compacted++
         },
+        onUsage,
       ),
       request: {},
       response: {},
@@ -396,6 +407,7 @@ const toStream = (
   onDone?: (delivered: boolean) => Promise<void> | void,
   onCancel?: () => void,
   onMessage?: (message: SDKMessage) => void,
+  onUsage?: (usage: LanguageModelV3Usage) => void,
 ): ReadableStream<LanguageModelV3StreamPart> => {
   // After the reader cancels, enqueue/close throw — swallow them so the
   // consuming loop keeps draining and onDone still runs exactly once.
@@ -417,6 +429,11 @@ const toStream = (
           onMessage?.(message)
           if (message.type === "result" && message.subtype === "success") delivered = true
           for (const part of ClaudeCodeTranslate.translate(state, message)) safely(() => controller.enqueue(part))
+          // The result's `finish` part records the final value; a live one after it would be stale.
+          if (onUsage && message.type !== "result" && !closed) {
+            const usage = ClaudeCodeTranslate.takeUsage(state)
+            if (usage) onUsage(usage)
+          }
         }
       } catch (error) {
         safely(() => controller.enqueue({ type: "error", error }))

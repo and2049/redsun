@@ -48,6 +48,7 @@ export function host(overrides: Overrides = {}): Plugin.Context {
         messageID: () => "msg_unused",
         createChild: () => Effect.die("unused delegate.transcript.createChild"),
         record: () => Effect.die("unused delegate.transcript.record"),
+        usage: () => Effect.die("unused delegate.transcript.usage"),
         notice: () => Effect.die("unused delegate.transcript.notice"),
       },
       context: {
