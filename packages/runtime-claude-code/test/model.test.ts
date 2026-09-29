@@ -209,6 +209,30 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     expect(calls[1]!.options.options.settings).toBeUndefined()
   })
 
+  it("starts the CLI at the variant's effort and hands it to the manager, outside the startup key", async () => {
+    const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
+    const created = model({
+      modelID: "opus",
+      config,
+      manager,
+      createQuery: () => ({}) as never,
+      hooks: { autoCompactWindow: async () => 173_000 },
+    })
+    const effort = (level?: string) => (level ? { "claude-code": { effort: level } } : undefined)
+    await collect((await created.doStream(call({ prompt: [user("hi")], providerOptions: effort("max") }))).stream)
+    expect(calls[0]!.options.effort).toBe("max")
+    expect(calls[0]!.options.startup).toBe("autoCompactWindow=173000")
+    expect(calls[0]!.options.options.effort).toBe("max")
+    expect(calls[0]!.options.options.settings).toEqual({ autoCompactWindow: 173_000 })
+    // No variant, or one another provider's options name, is the CLI's default.
+    await collect((await created.doStream(call({ prompt: [user("again")] }))).stream)
+    expect(calls[1]!.options.effort).toBeNull()
+    expect(calls[1]!.options.options.effort).toBeUndefined()
+    const foreign = { anthropic: { effort: "high" }, "claude-code": { effort: "extreme" } }
+    await collect((await created.doStream(call({ prompt: [user("more")], providerOptions: foreign as never }))).stream)
+    expect(calls[2]!.options.effort).toBeNull()
+  })
+
   it("lets the manager hold the turn open on what the session still owes", async () => {
     const { manager, calls } = fakeManager([{ type: "result", subtype: "success", usage: {} }])
     const asked: string[] = []
@@ -664,6 +688,26 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     expect(parts.flatMap((part: any) => (part.type === "text-delta" ? [part.delta] : [])).join("")).toBe(
       "Capital of France",
     )
+  })
+
+  it("runs a one-shot at its variant's effort without touching the primary session", async () => {
+    const oneShot: any[] = []
+    const { manager, calls } = fakeManager([])
+    const created = model({
+      modelID: "sonnet",
+      config,
+      manager,
+      createQuery: (input: any) => {
+        oneShot.push(input)
+        return iterable([{ type: "result", subtype: "success", usage: {} }]) as never
+      },
+    })
+    const providerOptions = { "claude-code": { effort: "low" } }
+    await collect((await created.doStream(call({ prompt: [user("hi")], providerOptions }), { kind: "title" })).stream)
+    expect(oneShot[0].options.effort).toBe("low")
+    expect(calls).toHaveLength(0)
+    await collect((await created.doStream(call({ prompt: [user("hi")] }), { kind: "title" })).stream)
+    expect(oneShot[1].options.effort).toBeUndefined()
   })
 
   it("interrupts the CLI when the turn is aborted", async () => {

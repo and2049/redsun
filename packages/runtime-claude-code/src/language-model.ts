@@ -105,9 +105,7 @@ export const promptDelta = (prompt: LanguageModelV3Prompt): PromptContent => {
 
 /** The host's system messages, which a one-shot sends as its whole system prompt. */
 export const systemText = (prompt: LanguageModelV3Prompt): string =>
-  prompt
-    .flatMap((message) => (message.role === "system" && message.content ? [message.content] : []))
-    .join("\n\n")
+  prompt.flatMap((message) => (message.role === "system" && message.content ? [message.content] : [])).join("\n\n")
 
 export const flattenTranscript = (prompt: LanguageModelV3Prompt): string =>
   prompt
@@ -257,6 +255,8 @@ export const make = (input: {
     if (!text && delta.blocks.length === 0)
       return { stream: errorStream("No user prompt to deliver to Claude Code."), request: {}, response: {} }
 
+    // The variant's level; none leaves the CLI's (the user's settings, else the model's default).
+    const effort = ClaudeCodeModels.effortOf(options.providerOptions)
     const children = hooks?.taskChildren?.(sessionID)
     const state = ClaudeCodeTranslate.makeState(
       children,
@@ -273,6 +273,7 @@ export const make = (input: {
           planModeInstructions: PLAN_WORKFLOW,
           model: ClaudeCodeModels.cliModel(modelID),
           ...(system ? { systemPrompt: system } : {}),
+          ...(effort ? { effort } : {}),
           // Text reaches the host only through partial messages.
           includePartialMessages: true,
           // A title is one short line; thinking only delays it.
@@ -350,6 +351,7 @@ export const make = (input: {
       native = await manager.turn(sessionID, content, {
         model: ClaudeCodeModels.cliModel(modelID),
         permissionMode,
+        effort: effort ?? null,
         observer:
           hooks?.observer || hooks?.onModelSubstituted
             ? (message, inTurn) => {
@@ -364,6 +366,9 @@ export const make = (input: {
           ...interactiveOptions(config, host),
           // The flag-settings layer: above the user's own settings, never written to them.
           ...(compactWindow === undefined ? {} : { settings: { autoCompactWindow: compactWindow } }),
+          // `--effort`, not the flag layer's `effortLevel`, which drops `max` at startup (CLI
+          // 2.1.284). Effort changes live too, so it stays out of the startup key.
+          ...(effort ? { effort } : {}),
           ...(resume ? { resume } : {}),
           ...(canUseTool ? { canUseTool } : {}),
           ...(preToolUse || postToolUse || userPromptSubmit || sessionStart

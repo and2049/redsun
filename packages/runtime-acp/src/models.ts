@@ -10,6 +10,17 @@ export interface Discovered {
   readonly id: string
   readonly name: string
   readonly description?: string
+  /** The reasoning-effort levels the agent offers for this model, in its order (Kiro `_meta`). */
+  readonly efforts?: readonly string[]
+  /** The level a session gets when it switches to this model. */
+  readonly defaultEffort?: string
+}
+
+/** A session's live reasoning-effort selector (category `thought_level`), when it has one. */
+export interface Effort {
+  readonly configId: string
+  readonly options: readonly string[]
+  readonly current?: string
 }
 
 export type Control = { readonly kind: "config"; readonly configId: string } | { readonly kind: "legacy" }
@@ -33,6 +44,32 @@ const flat = (options: ReadonlyArray<unknown>): SessionConfigSelectOption[] =>
     return typeof entry?.value === "string" ? [entry as unknown as SessionConfigSelectOption] : []
   })
 
+const strings = (value: unknown) =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item !== "") : []
+
+/** Kiro describes each model option's effort levels in `_meta.kiro`; other agents don't. */
+const efforts = (option: SessionConfigSelectOption) => {
+  const kiro = record(record(option._meta)?.kiro)
+  const levels = strings(kiro?.effortLevels)
+  if (!levels.length) return {}
+  const fallback = kiro?.defaultEffortLevel
+  return {
+    efforts: levels,
+    ...(typeof fallback === "string" && levels.includes(fallback) ? { defaultEffort: fallback } : {}),
+  }
+}
+
+/** The effort selector in a full config-option list; none when the current model has no levels. */
+export const effort = (options: ReadonlyArray<SessionConfigOption> | null | undefined): Effort | undefined => {
+  const selector = options?.find((option) => option.category === "thought_level" && option.type === "select")
+  if (!selector || selector.type !== "select") return undefined
+  return {
+    configId: selector.id,
+    options: flat(selector.options).map((option) => option.value),
+    current: selector.currentValue,
+  }
+}
+
 /** The model selector a session response or config update carries, if any. */
 export const fromConfig = (options: ReadonlyArray<SessionConfigOption> | null | undefined): State | undefined => {
   const selector = options?.find((option) => option.category === "model" && option.type === "select")
@@ -42,6 +79,7 @@ export const fromConfig = (options: ReadonlyArray<SessionConfigOption> | null | 
       id: option.value,
       name: option.name || option.value,
       ...(option.description ? { description: option.description } : {}),
+      ...efforts(option),
     })),
     current: selector.currentValue,
     control: { kind: "config", configId: selector.id },

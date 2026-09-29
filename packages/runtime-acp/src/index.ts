@@ -28,13 +28,25 @@ const cursorKey = (sessionID: string) => `-session/${sessionID}`
 /** The model list the agent last reported. */
 const MODELS_KEY = ".models"
 
-const discovered = (value: unknown): AcpModels.Discovered[] =>
+/** A reported model as stored: `AcpModels.Discovered` without its description. */
+type Stored = { id: string; name: string; efforts?: string[]; defaultEffort?: string }
+
+const discovered = (value: unknown): Stored[] =>
   Array.isArray(value)
-    ? value.flatMap((item) =>
-        typeof item?.id === "string" && item.id
-          ? [{ id: item.id, name: typeof item.name === "string" && item.name ? item.name : item.id }]
-          : [],
-      )
+    ? value.flatMap((item) => {
+        if (typeof item?.id !== "string" || !item.id) return []
+        const efforts = Array.isArray(item.efforts)
+          ? item.efforts.filter((level: unknown): level is string => typeof level === "string" && level !== "")
+          : []
+        return [
+          {
+            id: item.id,
+            name: typeof item.name === "string" && item.name ? item.name : item.id,
+            ...(efforts.length ? { efforts } : {}),
+            ...(typeof item.defaultEffort === "string" ? { defaultEffort: item.defaultEffort } : {}),
+          },
+        ]
+      })
     : []
 
 /** The one connection method: the agent's own CLI sign-in, checked rather than performed. */
@@ -139,7 +151,7 @@ export default define({
       const storage = ctx.delegate.storage(agent.id)
       let reported = discovered(yield* storage.get(MODELS_KEY))
       const onModels = (models: readonly AcpModels.Discovered[]) => {
-        const next = models.map((model) => ({ id: model.id, name: model.name }))
+        const next = discovered(models)
         if (JSON.stringify(next) === JSON.stringify(reported)) return
         reported = next
         Effect.runFork(storage.set(MODELS_KEY, next).pipe(Effect.andThen(ctx.provider.reload())))
@@ -173,6 +185,11 @@ export default define({
               package: PACKAGE,
               capabilities: { tools: true, input: ["text"], output: ["text"] },
               limit: LIMIT,
+              // The agent's own levels; the runtime applies the chosen one (`default` has none).
+              variants: ((model as { efforts?: readonly string[] }).efforts ?? []).map((level) => ({
+                id: Model.VariantID.make(level),
+                settings: { effort: level },
+              })),
             })
           })
       })
