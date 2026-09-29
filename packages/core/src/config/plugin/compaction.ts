@@ -23,6 +23,7 @@ export const Plugin = define({
           ...(entry.info.compaction.max_tool_results === undefined
             ? {}
             : { maxToolResults: entry.info.compaction.max_tool_results }),
+          ...(entry.info.compaction.threshold === undefined ? {} : { threshold: entry.info.compaction.threshold }),
         })
       }
     })

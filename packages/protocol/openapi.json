@@ -14449,6 +14449,18 @@
               "strategy": {
                 "type": "string",
                 "enum": ["hybrid", "algorithmic", "llm"]
+              },
+              "threshold": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 95
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "additionalProperties": false
@@ -14773,6 +14785,11 @@
               "max_tool_results": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "threshold": {
+                "type": "integer",
+                "minimum": 50,
+                "maximum": 95
               }
             },
             "additionalProperties": false

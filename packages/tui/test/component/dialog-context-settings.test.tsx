@@ -126,3 +126,94 @@ test("settings show the cache warning and persist global backend choices with sa
     app.renderer.destroy()
   }
 })
+
+const renderSettings = async (initial: Record<string, unknown>, current: string) => {
+  let state = initial
+  const updates: unknown[] = []
+  const api = createApi(
+    createFetch(async (url, request) => {
+      if (url.pathname !== "/api/config/context") return
+      if (request.method === "PATCH") {
+        const update = (await request.json()) as { compaction?: Record<string, unknown> }
+        updates.push(update)
+        state = { ...state, compaction: { ...(state.compaction as object), ...update.compaction } }
+      }
+      return json(state)
+    }).fetch,
+  )
+  function Fixture() {
+    const dialog = useDialog()
+    onMount(() => dialog.replace(() => <DialogConfig current={current} />))
+    return <Toast />
+  }
+  const app = await testRender(
+    () => (
+      <TestTuiContexts>
+        <ClientProvider api={api}>
+          <DataProvider directory="/default-project">
+            <LocationProvider>
+              <ConfigProvider
+                config={resolve({}, { terminalSuspend: true })}
+                service={{ get: async () => ({}), update: async () => ({}) }}
+              >
+                <Keymap.Provider>
+                  <ThemeProvider source={emptyThemeSource}>
+                    <ToastProvider>
+                      <DialogProvider>
+                        <Fixture />
+                      </DialogProvider>
+                    </ToastProvider>
+                  </ThemeProvider>
+                </Keymap.Provider>
+              </ConfigProvider>
+            </LocationProvider>
+          </DataProvider>
+        </ClientProvider>
+      </TestTuiContexts>
+    ),
+    { width: 110, height: 30, kittyKeyboard: true },
+  )
+  app.renderer.start()
+  return { app, updates, state: () => state }
+}
+
+test("the auto-compaction threshold cycles through auto and percentages, saving null for auto", async () => {
+  const { app, updates, state } = await renderSettings(
+    { stale_read_deduplication: false, compaction: { strategy: "llm", threshold: null } },
+    "compaction.threshold",
+  )
+  try {
+    await app.waitForFrame((frame) => /Auto-compaction threshold\s+auto/.test(frame))
+    await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
+    app.mockInput.pressArrow("right")
+    await app.waitForFrame((frame) => /Auto-compaction threshold\s+50%/.test(frame))
+    app.mockInput.pressArrow("left")
+    await app.waitForFrame((frame) => /Auto-compaction threshold\s+auto/.test(frame))
+    app.mockInput.pressArrow("left")
+    await app.waitForFrame((frame) => /Auto-compaction threshold\s+95%/.test(frame))
+    expect(updates).toEqual([
+      { compaction: { threshold: 50 } },
+      { compaction: { threshold: null } },
+      { compaction: { threshold: 95 } },
+    ])
+    expect((state().compaction as Record<string, unknown>).strategy).toBe("llm")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("a setting the connected server does not return says it needs a newer server and is not saved", async () => {
+  const { app, updates } = await renderSettings(
+    { stale_read_deduplication: false, compaction: { strategy: "llm" } },
+    "compaction.threshold",
+  )
+  try {
+    await app.waitFor(() => /Auto-compaction threshold\s+needs a newer server/.test(app.captureCharFrame()))
+    await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
+    app.mockInput.pressEnter()
+    await app.waitFor(() => app.captureCharFrame().includes("does not support this"))
+    expect(updates).toEqual([])
+  } finally {
+    app.renderer.destroy()
+  }
+})

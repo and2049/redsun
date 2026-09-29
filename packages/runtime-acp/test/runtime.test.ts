@@ -41,6 +41,7 @@ const host = (
     skillsAsked?: boolean[]
     system?: (turn: DelegatedTurn, tools: readonly string[]) => DelegatedSystemPrompt | undefined
     usage?: Parameters<NonNullable<AcpRuntime.Host["usage"]>>[]
+    compactThreshold?: number
   } = {},
 ) => {
   const checks: DelegatedPermissionCheck[] = []
@@ -59,6 +60,7 @@ const host = (
         ? { system: async (turn: DelegatedTurn, tools: readonly string[]) => input.system!(turn, tools) }
         : {}),
       onModels: (models) => void input.reported?.push(models.map((model) => model.id)),
+      ...(input.compactThreshold === undefined ? {} : { compactThreshold: async () => input.compactThreshold }),
       ...(input.usage
         ? { usage: (...args: Parameters<NonNullable<AcpRuntime.Host["usage"]>>) => void input.usage!.push(args) }
         : {}),
@@ -190,6 +192,50 @@ describe("ACP runtime against a scripted agent", () => {
       expect(request.sessionId).toBe("acp_1")
       expect(request._meta.kiro.customAgents[0].id).toBe("redsun")
     })
+  })
+
+  test("v3 compacts at the next turn once Kiro reports the host threshold below its own 80%", async () => {
+    const run = async (threshold: number | undefined, usage: string) => {
+      const texts: string[] = []
+      await withRuntime(
+        {
+          agent: { preset: "kiro", env: { FAKE_ACP_V3: "1", FAKE_ACP_V3_USAGE: usage } },
+          host: {
+            ...(threshold === undefined ? {} : { compactThreshold: threshold }),
+            context: () => ({
+              agent: { id: "build" },
+              isWorker: false,
+              files: [{ path: "/p/AGENTS.md", content: "HOST_CONTEXT_ONE" }],
+            }),
+          },
+        },
+        async (runtime) => {
+          for (const prompt of ["hello", "echo", "compactions?"])
+            texts.push(textOf(await collect((await runtime.turn(TURN, call([user(prompt)]))).stream)))
+        },
+      )
+      return texts
+    }
+    const [, echo, count] = await run(70, "72")
+    expect(echo).toStartWith(
+      "Fake ACP compacted its native session history at 72% of its context window (threshold 70%).",
+    )
+    // The summary dropped the host context, so it is sent again with the next prompt.
+    expect(echo).toContain("HOST_CONTEXT_ONE")
+    // Kiro reported nothing since, so the next turn does not compact again.
+    expect(count).toBe("COMPACTIONS=1")
+
+    for (const [threshold, usage] of [
+      [undefined, "72"],
+      [70, "60"],
+      // Kiro compacts at 80% itself; the host never goes above it.
+      [85, "82"],
+    ] as const) {
+      const [, echo, count] = await run(threshold, usage)
+      expect(echo).not.toContain("compacted")
+      expect(echo).not.toContain("HOST_CONTEXT_ONE")
+      expect(count).toBe("COMPACTIONS=0")
+    }
   })
 
   test("v3 context percentage finishes as provider metadata, without invented tokens", async () => {

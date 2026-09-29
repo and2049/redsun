@@ -22,7 +22,7 @@ type Setting = {
   step?: number
   min?: number
   max?: number
-  format?: (value: unknown) => string
+  format?: (value: unknown, t: (message: string) => string) => string
   keywords?: readonly string[]
   backend?: boolean
   description?: string
@@ -58,6 +58,18 @@ export const settings: Setting[] = [
     backend: true,
     description: "LLM: model summary. Hybrid: adds an inventory. Algorithmic: inventory only, no model call.",
     keywords: ["summary", "compression", "context", "hybrid", "algorithmic"],
+  },
+  {
+    title: "Auto-compaction threshold",
+    category: "Context",
+    path: ["compaction", "threshold"],
+    default: null,
+    values: [null, 50, 60, 70, 75, 80, 85, 90, 95],
+    format: (value, t) => (typeof value === "number" ? `${value}%` : t("settings.auto")),
+    backend: true,
+    description:
+      "Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default.",
+    keywords: ["compaction", "compact", "summary", "context", "window", "limit", "percent", "claude", "kiro"],
   },
   {
     title: "ChatGPT context window",
@@ -369,6 +381,14 @@ export function DialogConfig(props: { current?: string }) {
     }
   })
 
+  // A server older than this client does not return the setting at all: saving it would be dropped.
+  const unsupported = (setting: Setting) =>
+    setting.backend &&
+    backend() !== undefined &&
+    setting.path.reduce<unknown>(
+      (result, key) => (result && typeof result === "object" ? (result as Record<string, unknown>)[key] : undefined),
+      backend(),
+    ) === undefined
   const value = (setting: Setting) => {
     const current = setting.path.reduce<unknown>(
       (result, key) => {
@@ -391,7 +411,7 @@ export function DialogConfig(props: { current?: string }) {
         language.languages().find((item) => item.locale === (current ?? "en"))?.nativeName ??
         String(current ?? "English")
       )
-    if (setting.format) return setting.format(current)
+    if (setting.format) return setting.format(current, t)
     const index = setting.values?.indexOf(current)
     if (settingID(setting) === "theme.name") return String(current)
     return t(index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current)))
@@ -404,7 +424,9 @@ export function DialogConfig(props: { current?: string }) {
       footer:
         setting.backend && !backend()
           ? t(backend.loading ? "settings.loading" : "remote.unavailable")
-          : display(setting),
+          : unsupported(setting)
+            ? t("settings.needsNewerServer")
+            : display(setting),
       value: index,
     })),
   )
@@ -419,6 +441,10 @@ export function DialogConfig(props: { current?: string }) {
     }
     if (setting.backend && !backend()) {
       void refetch()
+      return
+    }
+    if (unsupported(setting)) {
+      toast.show({ variant: "error", message: t("settings.needsNewerServerDetail") })
       return
     }
     const current = value(setting)
@@ -436,7 +462,9 @@ export function DialogConfig(props: { current?: string }) {
             ? { attribution: { commit: next === true } }
             : setting.path[0] === "chatgpt_context_window"
               ? { chatgpt_context_window: next === "max" ? "max" : "default" }
-              : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
+              : setting.path[1] === "threshold"
+                ? { compaction: { threshold: typeof next === "number" ? next : null } }
+                : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
       await client.api.config.context
         .update({ location: ref(), payload: update })
         .then(mutate)

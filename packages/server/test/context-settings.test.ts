@@ -46,7 +46,7 @@ it.live("global context settings persist partial updates without changing projec
     expect(before.status, yield* Effect.promise(() => before.clone().text())).toBe(200)
     expect(yield* Effect.promise(() => before.json())).toEqual({
       stale_read_deduplication: false,
-      compaction: { strategy: "hybrid" },
+      compaction: { strategy: "hybrid", threshold: null },
       attribution: { commit: false },
       chatgpt_context_window: "default",
     })
@@ -56,14 +56,15 @@ it.live("global context settings persist partial updates without changing projec
         update({ compaction: { strategy: "algorithmic" } }),
         update({ attribution: { commit: true } }),
         update({ chatgpt_context_window: "max" }),
+        update({ compaction: { threshold: 70 } }),
       ],
       { concurrency: "unbounded" },
     )
-    expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200])
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200])
     const after = yield* get()
     expect(yield* Effect.promise(() => after.json())).toEqual({
       stale_read_deduplication: true,
-      compaction: { strategy: "algorithmic" },
+      compaction: { strategy: "algorithmic", threshold: 70 },
       attribution: { commit: true },
       chatgpt_context_window: "max",
     })
@@ -71,7 +72,7 @@ it.live("global context settings persist partial updates without changing projec
     expect(saved).toContain("// keep this comment")
     expect(parse(saved)).toEqual({
       stale_read_deduplication: true,
-      compaction: { strategy: "algorithmic", buffer: 1234 },
+      compaction: { strategy: "algorithmic", buffer: 1234, threshold: 70 },
       attribution: { commit: true },
       chatgpt_context_window: "max",
       instruction_max_chars: 12000,
@@ -92,7 +93,7 @@ it.live("global context settings persist partial updates without changing projec
         expect.objectContaining({
           info: expect.objectContaining({
             stale_read_deduplication: true,
-            compaction: { strategy: "algorithmic", buffer: 1234 },
+            compaction: { strategy: "algorithmic", buffer: 1234, threshold: 70 },
           }),
         }),
         expect.objectContaining({ info: { stale_read_deduplication: false, compaction: { strategy: "llm" } } }),
@@ -101,6 +102,15 @@ it.live("global context settings persist partial updates without changing projec
 
     expect((yield* update({ compaction: { strategy: "invalid" } })).status).toBe(400)
     expect((yield* update({ chatgpt_context_window: "huge" })).status).toBe(400)
+    expect((yield* update({ compaction: { threshold: 40 } })).status).toBe(400)
+    // null is "Auto": the key goes, the rest of the file stays.
+    const auto = yield* update({ compaction: { threshold: null } })
+    expect(auto.status).toBe(200)
+    expect((yield* Effect.promise(() => auto.json())).compaction).toEqual({ strategy: "algorithmic", threshold: null })
+    const unset = yield* Effect.promise(() => fs.readFile(file, "utf8"))
+    expect(parse(unset).compaction).toEqual({ strategy: "algorithmic", buffer: 1234 })
+    expect(unset).toContain("// keep this comment")
+    yield* Effect.promise(() => fs.writeFile(file, saved))
     expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe(saved)
     yield* Effect.promise(() => fs.writeFile(file, "{ broken JSONC"))
     expect((yield* update({ stale_read_deduplication: false })).status).toBe(400)
@@ -121,7 +131,7 @@ it.live("context settings start cache-first and create global configuration when
     expect(response.status, yield* Effect.promise(() => response.clone().text())).toBe(200)
     expect(yield* Effect.promise(() => response.json())).toEqual({
       stale_read_deduplication: false,
-      compaction: { strategy: "llm" },
+      compaction: { strategy: "llm", threshold: null },
       attribution: { commit: false },
       chatgpt_context_window: "default",
     })

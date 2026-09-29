@@ -552,6 +552,20 @@ export const Plugin = define({
               ctx.delegate.transcript.usage({ sessionID, messageID, usage }).pipe(Effect.catch(() => Effect.void)),
             ),
           resolvedModel: (id) => discovered.find((entry) => entry.value === id)?.resolvedModel,
+          // Sized from the limit the host meter reads, so the meter shows the chosen percentage.
+          autoCompactWindow: async (id) => {
+            const threshold = await Effect.runPromise(ctx.delegate.config(["compaction", "threshold"]))
+            if (typeof threshold !== "number") return undefined
+            const listed = await Effect.runPromise(
+              ctx.model.list().pipe(
+                Effect.map((result) => result.data),
+                Effect.orElseSucceed(() => []),
+              ),
+            )
+            const info = listed.find((item) => item.providerID === ClaudeCodeModels.PROVIDER_ID && item.id === id)
+            const window = info ? info.limit.input || info.limit.context : undefined
+            return window ? ClaudeCodeModels.autoCompactWindow(window, threshold) : undefined
+          },
           permissionMode,
           resumeCursor: (sessionID) => cursors.get(sessionID),
           onCursor: (sessionID, claudeSessionID) => {

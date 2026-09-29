@@ -74,6 +74,11 @@ export interface SessionOptions {
    */
   readonly holdTurn?: () => HoldReason
   readonly onExit?: () => Promise<void> | void
+  /**
+   * Identifies settings the CLI reads only at startup (the auto-compact window). A turn whose
+   * key differs from the live process's restarts it, resuming the native session.
+   */
+  readonly startup?: string
   readonly options: Omit<
     Options,
     "model" | "permissionMode" | "allowDangerouslySkipPermissions" | "includePartialMessages" | "forwardSubagentText"
@@ -85,6 +90,7 @@ interface LiveSession {
   model: string
   permissionMode: PermissionMode
   bypassAllowed: boolean
+  startup?: string
   prompt: AsyncQueue<SDKUserMessage>
   turn?: AsyncQueue<SDKMessage>
   /** The withheld result of the current turn, pushed when the hold releases without a newer one. */
@@ -182,6 +188,7 @@ export class SessionManager {
       model: input.model,
       permissionMode: input.permissionMode,
       bypassAllowed: input.permissionMode === "bypassPermissions",
+      startup: input.startup,
       prompt,
       interrupted: false,
       observer: input.observer,
@@ -250,9 +257,14 @@ export class SessionManager {
   }
 
   /** Startup-only options, including the system preset, are reapplied on a new process. */
-  willStart(sessionID: string, permissionMode: PermissionMode): boolean {
+  willStart(sessionID: string, permissionMode: PermissionMode, startup?: string): boolean {
     const session = this.sessions.get(sessionID)
-    return !session || session.dead || (permissionMode === "bypassPermissions") !== session.bypassAllowed
+    return (
+      !session ||
+      session.dead ||
+      (permissionMode === "bypassPermissions") !== session.bypassAllowed ||
+      startup !== session.startup
+    )
   }
 
   async turn(
@@ -267,7 +279,7 @@ export class SessionManager {
     }
     if (session?.turn) throw new Error("Claude Code session is already processing a turn")
     const bypassing = input.permissionMode === "bypassPermissions"
-    if (session && bypassing !== session.bypassAllowed) {
+    if (session && (bypassing !== session.bypassAllowed || input.startup !== session.startup)) {
       this.stop(sessionID)
       session = undefined
     }

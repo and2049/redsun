@@ -102,6 +102,10 @@ export default define({
             })
             .pipe(Effect.catch(() => Effect.void)),
         ),
+      compactThreshold: () =>
+        Effect.runPromise(ctx.delegate.config(["compaction", "threshold"])).then((value) =>
+          typeof value === "number" ? value : undefined,
+        ),
       system: (turn, tools) =>
         Effect.runPromise(ctx.delegate.context.system({ sessionID: turn.sessionID, agent: turn.agent, tools })),
       context: async (turn, input) => {

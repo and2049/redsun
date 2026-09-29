@@ -2213,6 +2213,7 @@ export type ConfigEntry =
           buffer?: number
           strategy?: "hybrid" | "algorithmic" | "llm"
           max_tool_results?: number
+          threshold?: number
         }
         attribution?: { commit?: boolean | string }
         advisor?: {
@@ -6670,7 +6671,7 @@ export type ConfigContextGetInput = {
 
 export type ConfigContextGetOutput = {
   stale_read_deduplication?: boolean
-  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
+  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm"; threshold?: number | null }
   attribution?: { commit?: boolean | string }
   chatgpt_context_window?: "default" | "max"
 }
@@ -6679,7 +6680,7 @@ export type ConfigContextUpdateInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
   readonly payload: {
     readonly stale_read_deduplication?: boolean
-    readonly compaction?: { readonly strategy?: "hybrid" | "algorithmic" | "llm" }
+    readonly compaction?: { readonly strategy?: "hybrid" | "algorithmic" | "llm"; readonly threshold?: number | null }
     readonly attribution?: { readonly commit?: boolean | string }
     readonly chatgpt_context_window?: "default" | "max"
   }
@@ -6687,7 +6688,7 @@ export type ConfigContextUpdateInput = {
 
 export type ConfigContextUpdateOutput = {
   stale_read_deduplication?: boolean
-  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm" }
+  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm"; threshold?: number | null }
   attribution?: { commit?: boolean | string }
   chatgpt_context_window?: "default" | "max"
 }

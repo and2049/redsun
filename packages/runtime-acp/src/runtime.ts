@@ -69,6 +69,8 @@ export interface Host {
   readonly system?: (turn: DelegatedTurn, tools: readonly string[]) => Promise<DelegatedSystemPrompt | undefined>
   /** The agent's own model list, as each new agent session reports it. */
   readonly onModels?: (models: readonly AcpModels.Discovered[]) => void
+  /** The host's automatic-compaction threshold, a percentage of the context window; absent for the agent's own. */
+  readonly compactThreshold?: () => Promise<number | undefined>
   /** Live context use of a running primary turn, as the agent reports it mid-turn. */
   readonly usage?: (
     sessionID: string,
@@ -237,6 +239,8 @@ interface Session {
   controller?: AbortController
   compaction?: ReturnType<typeof Promise.withResolvers<void>>
   compacted?: boolean
+  /** The context use the agent last reported, as a percentage of its window (Kiro). */
+  contextPercent?: number
   /** Corrections the user typed into declines; ACP has no channel for them but the next prompt. */
   readonly corrections: string[]
 }
@@ -719,6 +723,8 @@ export class Runtime {
     const delta = remembers ? promptDelta(options.prompt) : flatten(options.prompt)
     const compacting =
       !oneShot && !!this.agent.compactCommand && promptDelta(options.prompt).trim() === this.agent.compactCommand
+    // Before context preparation, so a compaction here has the full host context resent.
+    const autoCompacted = oneShot || compacting ? undefined : await this.autoCompact(turn, session, options.abortSignal)
     const delivery = oneShot || compacting ? undefined : await this.prepareContext(turn, session, binding, fresh)
     const corrections = oneShot || compacting ? [] : session.corrections.splice(0)
     const prompt = AcpContext.wrap(delivery?.text, AcpContext.corrected(corrections, delta))
@@ -765,6 +771,13 @@ export class Runtime {
             }
           }
           emit([{ type: "stream-start", warnings: [] }])
+          if (autoCompacted)
+            emit(
+              AcpTranslate.update(state, {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: autoCompacted },
+              }),
+            )
           const record = (todos: readonly AcpPlan.Todo[]) => {
             const toolCallId = `acp-plan-${turn.assistantMessageID}-${++plans}`
             const input = { todos }
@@ -819,7 +832,7 @@ export class Runtime {
             const todos = todowrite ? AcpPlan.apply(session.plans, update) : undefined
             if (todos) record(todos)
             const percent = this.agent.preset === "kiro" ? AcpKiro.contextPercent(update) : undefined
-            if (percent !== undefined) state.contextPercent = percent
+            if (percent !== undefined) state.contextPercent = session.contextPercent = percent
             emit(AcpTranslate.update(state, update))
             const messageID = turn.assistantMessageID
             const live = this.host.usage && messageID && !closed ? AcpTranslate.takeUsage(state) : undefined
@@ -919,6 +932,44 @@ export class Runtime {
         cancel,
       }),
     }
+  }
+
+  /**
+   * Kiro summarizes on its own once its context reaches 80% and takes no threshold. A lower host
+   * threshold compacts at the next turn boundary instead, once Kiro last reported reaching it.
+   * Returns the notice for the turn, if the agent compacted.
+   */
+  private async autoCompact(turn: DelegatedTurn, session: Session, signal?: AbortSignal) {
+    const percent = session.contextPercent
+    if (this.agent.preset !== "kiro" || percent === undefined) return undefined
+    const threshold = await this.host.compactThreshold?.().catch(() => undefined)
+    if (threshold === undefined || threshold >= AcpKiro.AUTO_COMPACT_PERCENT || percent < threshold) return undefined
+    session.compacted = false
+    session.contextPercent = undefined
+    const interrupted = () => this.close(session)
+    signal?.addEventListener("abort", interrupted, { once: true })
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      this.close(session)
+    }, this.options.compactionTimeoutMs ?? 120_000)
+    try {
+      signal?.throwIfAborted()
+      const result = await session.connection.extMethod(AcpKiro.COMPACT, { sessionId: session.acpSessionID })
+      if (result.success !== true) throw new Error("Kiro could not compact its native session history.")
+    } catch (error) {
+      throw this.failure(
+        session,
+        timedOut ? new Error("Timed out waiting for Kiro to compact its native session history.") : error,
+      )
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener("abort", interrupted)
+    }
+    if (!session.compacted) return undefined
+    this.context.clear(turn.sessionID)
+    this.based.delete(turn.sessionID)
+    return `${this.agent.name} compacted its native session history at ${Math.round(percent)}% of its context window (threshold ${threshold}%).\n\n`
   }
 
   stop() {

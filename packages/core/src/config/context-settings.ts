@@ -63,6 +63,8 @@ const layer = Layer.effect(
         compaction: {
           strategy:
             files.findLast((file) => file.info.compaction?.strategy !== undefined)?.info.compaction?.strategy ?? "llm",
+          threshold:
+            files.findLast((file) => file.info.compaction?.threshold !== undefined)?.info.compaction?.threshold ?? null,
         },
         attribution: {
           commit:
@@ -80,6 +82,11 @@ const layer = Layer.effect(
         const edits = [
           { path: ["stale_read_deduplication"], value: input.stale_read_deduplication },
           { path: ["compaction", "strategy"], value: input.compaction?.strategy },
+          // `null` removes the key, so the runtimes' defaults apply again.
+          {
+            path: ["compaction", "threshold"],
+            value: input.compaction?.threshold === null ? null : input.compaction?.threshold,
+          },
           { path: ["attribution", "commit"], value: input.attribution?.commit },
           { path: ["chatgpt_context_window"], value: input.chatgpt_context_window },
         ].filter((edit) => edit.value !== undefined)
@@ -89,7 +96,7 @@ const layer = Layer.effect(
             (text, edit) =>
               applyEdits(
                 text,
-                modify(text, edit.path, edit.value, {
+                modify(text, edit.path, edit.value === null ? undefined : edit.value, {
                   formattingOptions: { tabSize: 2, insertSpaces: true },
                 }),
               ),

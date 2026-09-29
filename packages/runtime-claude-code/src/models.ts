@@ -54,6 +54,19 @@ export const MODELS = [
 
 export const cliModel = (modelID: string) => modelID
 
+/** Claude Code compacts at its auto-compact window minus this summary reserve (CLI 2.1.284, every model). */
+export const COMPACT_RESERVE = 33_000
+
+/** The auto-compact window range Claude Code accepts; it also caps the window at the model's. */
+const COMPACT_WINDOW = { min: 100_000, max: 1_000_000 }
+
+/**
+ * The `autoCompactWindow` that makes Claude Code compact at `threshold` percent of `window` (the
+ * window the host meter reads), so the meter shows the chosen percentage when compaction runs.
+ */
+export const autoCompactWindow = (window: number, threshold: number) =>
+  Math.min(COMPACT_WINDOW.max, Math.max(COMPACT_WINDOW.min, Math.floor((window * threshold) / 100) + COMPACT_RESERVE))
+
 const stripVariant = (id: string) => id.replace(/\[[^\]]*\]$/, "")
 
 // The CLI accepts any model string and, when the id is unknown or not on the
