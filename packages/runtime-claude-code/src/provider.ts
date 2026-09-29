@@ -122,7 +122,11 @@ export const Plugin = define({
       }
     }
 
-    yield* ctx.provider.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered }))
+    // The CLI runs with this process's environment overlaid by `claude_code.env`.
+    const disable1M = ["1", "true", "yes", "on"].includes(
+      (settings?.env?.CLAUDE_CODE_DISABLE_1M_CONTEXT ?? process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT ?? "").toLowerCase(),
+    )
+    yield* ctx.provider.transform((draft) => ClaudeCodeModels.applyCatalog(draft, { retired, discovered, disable1M }))
 
     yield* ctx.integration.transform((draft) => {
       draft.update(ClaudeCodeModels.PROVIDER_ID, (integration) => {

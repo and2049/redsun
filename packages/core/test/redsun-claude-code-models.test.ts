@@ -17,6 +17,7 @@ describe("ClaudeCodeModels", () => {
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-opus-5-5",
+      "claude-sonnet-5-5",
       "claude-opus-4-8",
       "claude-sonnet-4-5",
       "claude-haiku-4-5",
@@ -52,12 +53,27 @@ describe("ClaudeCodeModels", () => {
     expect(ClaudeCodeModels.SENTINEL_NAME.startsWith("@ai-sdk/")).toBe(false)
   })
 
-  it("gives the 1m variants a larger context than the 200k ones", () => {
+  it("sizes models by the windows Claude Code documents and reports", () => {
+    // Fable, Sonnet 5+ and Opus 4.7+ run natively at 1M on every plan; older
+    // generations only through `[1m]`. Matches `getContextUsage().rawMaxTokens`
+    // from CLI 2.1.284.
+    const window = ClaudeCodeModels.contextWindow
+    expect(window("claude-fable-5")).toBe(1_000_000)
+    expect(window("claude-opus-5-5")).toBe(1_000_000)
+    expect(window("claude-opus-4-7")).toBe(1_000_000)
+    expect(window("claude-sonnet-5")).toBe(1_000_000)
+    expect(window("claude-opus-4-6")).toBe(200_000)
+    expect(window("claude-opus-4-6[1m]")).toBe(1_000_000)
+    expect(window("claude-sonnet-4-6")).toBe(200_000)
+    expect(window("claude-haiku-4-5-20251001")).toBe(200_000)
+    expect(window("something-else")).toBe(200_000)
+    expect(window("claude-fable-5-1", true)).toBe(200_000)
+
     const byID = new Map(ClaudeCodeModels.MODELS.map((model) => [String(model.id), model]))
-    expect(byID.get("sonnet")?.limit.context).toBe(200_000)
-    expect(byID.get("sonnet[1m]")?.limit.context).toBe(1_000_000)
-    expect(byID.get("fable")?.limit.context).toBe(1_000_000)
-    expect(byID.get("claude-opus-4-8")?.limit.context).toBe(1_000_000)
+    expect(byID.get("opus")?.limit.context).toBe(1_000_000)
+    expect(byID.get("sonnet")?.limit.context).toBe(1_000_000)
+    expect(byID.get("haiku")?.limit.context).toBe(200_000)
+    expect(byID.get("claude-opus-5-5")?.limit.context).toBe(1_000_000)
     expect(byID.get("claude-sonnet-4-5")?.limit.context).toBe(200_000)
     expect(byID.get("claude-haiku-4-5")?.limit.context).toBe(200_000)
   })
@@ -363,7 +379,8 @@ describe("ClaudeCodeModels", () => {
       ],
     })
     expect(models.get("fable")).toMatchObject({ name: "Claude Fable 6 (latest)", limit: { context: 1_000_000 } })
-    expect(models.get("opus")).toMatchObject({ name: "Claude Opus 6 (latest)", limit: { context: 200_000 } })
+    // The sibling speaks for the generation; the window is that generation's own.
+    expect(models.get("opus")).toMatchObject({ name: "Claude Opus 6 (latest)", limit: { context: 1_000_000 } })
     expect(models.get("claude-fable-5-1[1m]")?.name).toBe("Claude Fable 5.1 1M")
     // Equal generations with different wire ids cannot establish the target.
     models.clear()
@@ -374,6 +391,106 @@ describe("ClaudeCodeModels", () => {
       ],
     })
     expect(models.get("fable")?.name).toBe("Claude Fable")
+  })
+
+  const catalog = (
+    extras: Parameters<typeof ClaudeCodeModels.applyCatalog>[1],
+  ): Map<string, { name: string; enabled: boolean; context: number }> => {
+    const models = new Map<string, Record<string, any>>()
+    ClaudeCodeModels.applyCatalog(
+      {
+        update: (_id: unknown, fn: (draft: Record<string, unknown>) => void) => fn({}),
+        models: {
+          update: (_provider: unknown, id: string, fn: (draft: Record<string, unknown>) => void) => {
+            const draft = models.get(id) ?? {}
+            fn(draft)
+            models.set(id, draft)
+          },
+        },
+      } as never,
+      extras,
+    )
+    return new Map(
+      [...models].map(([id, model]) => [
+        id,
+        { name: model.name, enabled: model.enabled, context: model.limit.context },
+      ]),
+    )
+  }
+  const listed = (models: ReturnType<typeof catalog>) =>
+    [...models].filter(([, model]) => model.enabled).map(([id, model]) => `${id}: ${model.name} @ ${model.context}`)
+
+  // `supportedModels()` from Claude Code 2.1.284 on the Anthropic API.
+  const PICKER_2_1_284: ClaudeCodeModels.Discovered[] = [
+    { value: "default", resolvedModel: "claude-opus-5-5", displayName: "Default (recommended)" },
+    { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5" },
+    { value: "claude-fable-5-1", resolvedModel: "claude-fable-5-1", displayName: "Fable 5.1" },
+    { value: "sonnet", resolvedModel: "claude-sonnet-5-5", displayName: "Sonnet 5.5" },
+    { value: "haiku", resolvedModel: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5" },
+    { value: "claude-sonnet-5", resolvedModel: "claude-sonnet-5", displayName: "Sonnet 5" },
+    { value: "claude-opus-5", resolvedModel: "claude-opus-5", displayName: "Opus 5" },
+    { value: "claude-fable-5", resolvedModel: "claude-fable-5", displayName: "Fable 5" },
+    { value: "claude-opus-4-8", resolvedModel: "claude-opus-4-8", displayName: "Opus 4.8" },
+    { value: "claude-opus-4-7", resolvedModel: "claude-opus-4-7", displayName: "Opus 4.7" },
+    { value: "claude-opus-4-6", resolvedModel: "claude-opus-4-6", displayName: "Opus 4.6" },
+    { value: "claude-sonnet-4-6", resolvedModel: "claude-sonnet-4-6", displayName: "Sonnet 4.6" },
+  ]
+
+  it("lists each model once, by version, at the window it runs with", () => {
+    const models = catalog({ discovered: PICKER_2_1_284 })
+    expect(listed(models)).toEqual([
+      "fable: Claude Fable 5.1 (latest) @ 1000000",
+      "opus: Claude Opus 5.5 (latest) @ 1000000",
+      "sonnet: Claude Sonnet 5.5 (latest) @ 1000000",
+      "haiku: Claude Haiku 4.5 (latest) @ 200000",
+      "claude-fable-5: Claude Fable 5 @ 1000000",
+      "claude-opus-4-8: Claude Opus 4.8 @ 1000000",
+      "claude-sonnet-4-5: Claude Sonnet 4.5 @ 200000",
+      "claude-sonnet-5: Claude Sonnet 5 @ 1000000",
+      "claude-opus-5: Claude Opus 5 @ 1000000",
+      "claude-opus-4-7: Claude Opus 4.7 @ 1000000",
+      "claude-opus-4-6: Claude Opus 4.6 @ 200000",
+      "claude-sonnet-4-6: Claude Sonnet 4.6 @ 200000",
+    ])
+    // Duplicates of what an alias runs stay resolvable, named by version.
+    expect(models.get("claude-fable-5-1")).toEqual({ name: "Claude Fable 5.1", enabled: false, context: 1_000_000 })
+    expect(models.get("claude-opus-5-5")?.enabled).toBe(false)
+    expect(models.get("claude-haiku-4-5")?.enabled).toBe(false)
+    expect(models.get("opus[1m]")).toEqual({ name: "Claude Opus 5.5 1M (latest)", enabled: false, context: 1_000_000 })
+    expect(models.get("sonnet[1m]")?.name).toBe("Claude Sonnet 5.5 1M (latest)")
+  })
+
+  it("lists a superseded pin once its alias moves to a newer release", () => {
+    const models = catalog({
+      discovered: [
+        { value: "claude-fable-5-5", resolvedModel: "claude-fable-5-5", displayName: "Fable 5.5" },
+        ...PICKER_2_1_284,
+      ],
+    })
+    expect(models.get("fable")).toMatchObject({ name: "Claude Fable 5.5 (latest)", enabled: true })
+    expect(models.get("claude-fable-5-5")?.enabled).toBe(false)
+    expect(models.get("claude-fable-5-1")).toMatchObject({ name: "Claude Fable 5.1", enabled: true })
+  })
+
+  it("lists a 1M variant that adds context over its alias", () => {
+    // Where `sonnet` resolves to Sonnet 4.5, `sonnet[1m]` is a different window.
+    const models = catalog({ discovered: [{ value: "sonnet", resolvedModel: "claude-sonnet-4-5-20250929" }] })
+    expect(models.get("sonnet")).toMatchObject({ enabled: true, context: 200_000 })
+    expect(models.get("sonnet[1m]")).toEqual({
+      name: "Claude Sonnet 4.5 1M (latest)",
+      enabled: true,
+      context: 1_000_000,
+    })
+    expect(models.get("claude-sonnet-4-5")?.enabled).toBe(false)
+  })
+
+  it("holds every model to 200K and drops 1M variants when 1M context is disabled", () => {
+    const models = catalog({ discovered: PICKER_2_1_284, disable1M: true })
+    for (const [, model] of models) expect(model.context).toBe(200_000)
+    expect(models.get("opus[1m]")?.enabled).toBe(false)
+    expect(models.get("opus")?.enabled).toBe(true)
+    // Without picker rows too.
+    for (const [, model] of catalog({ disable1M: true })) expect(model.context).toBe(200_000)
   })
 
   it("stays visible without a connection", () => {
