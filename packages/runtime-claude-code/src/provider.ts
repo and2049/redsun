@@ -429,6 +429,7 @@ export const Plugin = define({
       signal: AbortSignal,
       mode: PermissionMode,
       availableTools: readonly string[],
+      startup?: string,
     ) => {
       if (!messageID) throw new Error("Claude Code turn is missing its assistant message ID for host tool attribution.")
       if (signal.aborted) throw new Error("Claude Code turn was cancelled before host tools were bound.")
@@ -473,7 +474,7 @@ export const Plugin = define({
         runtimes.delete(sessionID)
         runtime = undefined
       }
-      if (!runtime || manager.willStart(sessionID, mode)) {
+      if (!runtime || manager.willStart(sessionID, mode, startup)) {
         runtime?.policy.clear()
         const policy = policyFor(sessionID)
         const next = {
@@ -485,7 +486,9 @@ export const Plugin = define({
           results: new Map<string, ToolSchema.Metadata>(),
           submission: undefined as ReturnType<ClaudeCodeContext.Tracker["prepare"]> | undefined,
         }
-        next.server = ClaudeCodeMcp.makeHostServer(() => next.binding)
+        // A live process keeps the server it started with, so it reads the session's current
+        // runtime: were this runtime replaced without a restart, its own binding would stay empty.
+        next.server = ClaudeCodeMcp.makeHostServer(() => runtimes.get(sessionID)?.binding)
         runtime = next
         runtimes.set(sessionID, runtime)
       }

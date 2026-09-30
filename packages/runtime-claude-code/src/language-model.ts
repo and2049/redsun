@@ -132,6 +132,8 @@ export interface Hooks {
     signal: AbortSignal,
     permissionMode: PermissionMode,
     availableTools: readonly string[],
+    /** The startup key this turn hands the manager; see ClaudeCodeSessions.SessionOptions. */
+    startup?: string,
   ) => Promise<() => void>
   readonly turnOptions?: (sessionID: string) => Partial<Options>
   /**
@@ -296,6 +298,9 @@ export const make = (input: {
       profile.name === "redsun"
         ? "default"
         : ((await hooks?.permissionMode?.(sessionID)) ?? ((config.permissionMode ?? "default") as PermissionMode))
+    // Before prepareTurn: it must reach the same keep-or-restart verdict as the manager below.
+    const compactWindow = await hooks?.autoCompactWindow?.(modelID).catch(() => undefined)
+    const startup = compactWindow === undefined ? undefined : `autoCompactWindow=${compactWindow}`
     const release = await hooks?.prepareTurn?.(
       sessionID,
       turn.assistantMessageID ?? "",
@@ -304,9 +309,8 @@ export const make = (input: {
       options.toolChoice?.type === "none"
         ? []
         : (options.tools ?? []).flatMap((tool) => (tool.type === "function" ? [tool.name] : [])),
+      startup,
     )
-    const compactWindow = await hooks?.autoCompactWindow?.(modelID).catch(() => undefined)
-    const startup = compactWindow === undefined ? undefined : `autoCompactWindow=${compactWindow}`
     const freshProcess = manager.willStart(sessionID, permissionMode, startup)
     // Only a starting process takes startup options; compute the prompt before context preparation.
     const host =
