@@ -184,6 +184,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     let window: number | undefined = 173_000
     const asked: string[] = []
     const willStart: unknown[][] = []
+    const prepared: unknown[] = []
     ;(manager as any).willStart = (...args: unknown[]) => (willStart.push(args), true)
     const created = model({
       modelID: "sonnet",
@@ -194,6 +195,12 @@ describe("ClaudeCodeLanguageModel.stream", () => {
         autoCompactWindow: async (id) => {
           asked.push(id)
           return window
+        },
+        // The provider decides whether to keep the host tool server from this key; a mismatch
+        // with the manager's bound tools to a server the live CLI never calls.
+        prepareTurn: async (_sessionID, _messageID, _signal, _mode, _tools, startup) => {
+          prepared.push(startup)
+          return () => {}
         },
       },
     })
@@ -207,6 +214,7 @@ describe("ClaudeCodeLanguageModel.stream", () => {
     await collect((await created.doStream(call({ prompt: [user("again")] }))).stream)
     expect(calls[1]!.options.startup).toBeUndefined()
     expect(calls[1]!.options.options.settings).toBeUndefined()
+    expect(prepared).toEqual(["autoCompactWindow=173000", undefined])
   })
 
   it("starts the CLI at the variant's effort and hands it to the manager, outside the startup key", async () => {
