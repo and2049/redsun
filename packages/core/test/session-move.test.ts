@@ -210,7 +210,7 @@ describe("Session.move", () => {
           yield* Effect.promise(() => Promise.all([mkdir(source), mkdir(destination)]))
           if (broken)
             yield* Effect.promise(() =>
-              Bun.write(path.join(source, "opencode.json"), JSON.stringify({ instructions: ["{file:./missing.txt}"] })),
+              Bun.write(path.join(source, "redsun.json"), JSON.stringify({ instructions: ["{file:./missing.txt}"] })),
             )
           const session = yield* Session.Service
           const execution = yield* SessionExecution.Service
@@ -267,7 +267,7 @@ describe("Session.move", () => {
           const destination = AbsolutePath.make(path.join(tmp.path, "destination"))
           yield* Effect.promise(() => Promise.all([mkdir(source.directory), mkdir(destination)]))
           const config = JSON.stringify({ instructions: ["{file:./missing.txt}"] })
-          if (!broken) yield* Effect.promise(() => Bun.write(path.join(source.directory, "opencode.json"), config))
+          if (!broken) yield* Effect.promise(() => Bun.write(path.join(source.directory, "redsun.json"), config))
           const selectedID = Session.ID.create()
           const replacements: LayerNode.Replacements = [
             Global.node.replace(tempGlobalLayer),

@@ -1,12 +1,16 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@opencode/tui",
-  "version": "2.0.22",
+  "version": "1.18.4",
   "private": true,
   "type": "module",
   "license": "MIT",
   "scripts": {
     "test": "bun test --timeout 30000 --only-failures",
+    "i18n:manifest": "bun tools/i18n.ts manifest",
+    "i18n:template": "bun tools/i18n.ts template",
+    "i18n:check": "bun tools/i18n.ts check",
+    "theme-preview": "bun tools/theme-preview/serve.ts",
     "typecheck": "tsgo -b"
   },
   "exports": {
@@ -30,8 +34,6 @@
     "./attention": "./src/attention.ts",
     "./editor": "./src/editor.ts",
     "./editor-zed": "./src/editor-zed.ts",
-    "./mini": "./src/mini/index.ts",
-    "./mini/tool": "./src/mini/tool.public.ts",
     "./model-preference": "./src/model-preference.ts",
     "./runtime": "./src/runtime.tsx",
     "./terminal-win32": "./src/terminal-win32.ts",
@@ -47,6 +49,7 @@
     "./util/record": "./src/util/record.ts",
     "./util/session": "./src/util/session.ts",
     "./util/string-width": "./src/util/string-width.ts",
+    "./util/tool-run": "./src/util/tool-run.ts",
     "./logo": "./src/logo.ts",
     "./ui/dialog": "./src/ui/dialog.tsx",
     "./ui/spinner": "./src/ui/spinner.ts",
@@ -95,6 +98,7 @@
     "fuzzysort": "catalog:",
     "get-east-asian-width": "catalog:",
     "opentui-spinner": "catalog:",
+    "redsun-remote-control": "0.3.0",
     "remeda": "catalog:",
     "solid-js": "catalog:",
     "string-width": "catalog:",

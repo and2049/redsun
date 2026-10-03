@@ -41,7 +41,7 @@ const it = testEffect(
   Layer.merge(PluginTestLayer, AppNodeBuilder.build(LayerNode.group([AppProcess.node, ShellSelect.node, Job.node]))),
 )
 const decode = Schema.decodeUnknownSync(Info)
-const document = path.join(import.meta.dir, "opencode.json")
+const document = path.join(import.meta.dir, "redsun.json")
 
 describe("config plugin reloads", () => {
   for (const input of [
@@ -56,7 +56,7 @@ describe("config plugin reloads", () => {
           Effect.gen(function* () {
             const project = path.join(tmp.path, "project")
             const root = path.resolve(project, input.root)
-            const file = path.join(project, "opencode.json")
+            const file = path.join(project, "redsun.json")
             yield* Effect.promise(async () => {
               await fs.mkdir(path.join(project, "home"), { recursive: true })
               await fs.mkdir(path.join(project, "global"))
@@ -100,7 +100,7 @@ describe("config plugin reloads", () => {
             Effect.sync(() => {
               if (input.type === "entries" && input.target === tmp.path) {
                 // No event is emitted: only synchronous readiness can trigger the reload.
-                writeFileSync(path.join(tmp.path, "opencode.json"), JSON.stringify({ references: { docs: "./docs" } }))
+                writeFileSync(path.join(tmp.path, "redsun.json"), JSON.stringify({ references: { docs: "./docs" } }))
               }
               return { unsubscribe: () => Promise.resolve() }
             }),
@@ -121,7 +121,7 @@ describe("config plugin reloads", () => {
     Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
       Effect.flatMap((tmp) =>
         Effect.gen(function* () {
-          const root = path.join(tmp.path, ".opencode")
+          const root = path.join(tmp.path, ".redsun")
           const parent = yield* Deferred.make<(update: Watcher.Update) => void>()
           const starting = yield* Deferred.make<void>()
           const release = yield* Deferred.make<void>()
@@ -149,7 +149,7 @@ describe("config plugin reloads", () => {
             yield* Deferred.await(starting).pipe(Effect.timeout("2 seconds"))
             // No file event: the recursive native watch has not been acquired yet.
             yield* Effect.promise(() =>
-              fs.writeFile(path.join(root, "opencode.json"), JSON.stringify({ references: { docs: "./docs" } })),
+              fs.writeFile(path.join(root, "redsun.json"), JSON.stringify({ references: { docs: "./docs" } })),
             )
             yield* Deferred.succeed(release, undefined)
             yield* waitUntil(references.list().pipe(Effect.map((items) => items.some((item) => item.name === "docs"))))
@@ -161,10 +161,10 @@ describe("config plugin reloads", () => {
   )
 
   for (const input of [
-    { file: "opencode.json", empty: false },
-    { file: "../opencode.jsonc", empty: false },
-    { file: ".opencode/opencode.json", empty: false },
-    { file: "../.opencode/opencode.jsonc", empty: true },
+    { file: "redsun.json", empty: false },
+    { file: "../redsun.jsonc", empty: false },
+    { file: ".redsun/redsun.json", empty: false },
+    { file: "../.redsun/redsun.jsonc", empty: true },
   ]) {
     it.live(`loads references when ${input.file} is first created and keeps watching it`, () =>
       Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
@@ -209,7 +209,7 @@ describe("config plugin reloads", () => {
               )
 
               yield* Effect.promise(() =>
-                fs.rm(input.file.includes(".opencode/") ? path.dirname(target) : target, { recursive: true }),
+                fs.rm(input.file.includes(".redsun/") ? path.dirname(target) : target, { recursive: true }),
               )
               yield* waitUntil(references.list().pipe(Effect.map((items) => items.length === 0)))
               yield* Effect.promise(async () => {
@@ -251,11 +251,11 @@ describe("config plugin reloads", () => {
     }).pipe(
       Effect.provide(
         Config.testLayer([
-          referenceConfig("/config/first/opencode.json", {
+          referenceConfig("/config/first/redsun.json", {
             shared: "./shared",
             first: "./first",
           }),
-          referenceConfig("/config/second/opencode.json", {
+          referenceConfig("/config/second/redsun.json", {
             shared: "./shared",
             second: "./second",
           }),

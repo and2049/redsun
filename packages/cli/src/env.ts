@@ -12,6 +12,13 @@ export const password = Config.redacted("OPENCODE_PASSWORD").pipe(
   Config.withDefault(undefined),
 )
 
+export function client(argv: readonly string[]) {
+  const index = argv.findIndex((item) => item === "--client" || item.startsWith("--client="))
+  if (index === -1) return undefined
+  const item = argv[index]
+  return item.includes("=") ? item.slice(item.indexOf("=") + 1) : argv[index + 1]
+}
+
 export function session() {
   return Object.fromEntries(
     Object.entries(process.env).filter(

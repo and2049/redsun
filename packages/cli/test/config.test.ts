@@ -71,6 +71,32 @@ test("preserves the schema in an existing cli.json", async () => {
   expect(await Bun.file(file).json()).toEqual(config)
 })
 
+test.each(["ko", "de", "pt-BR"])(
+  "persists interface language %s across reloads while preserving JSONC and unrelated preferences",
+  async (language) => {
+    await using directory = await tmpdir()
+    const file = path.join(directory.path, "cli.json")
+    await Bun.write(file, '{\n  // Personal theme\n  "theme": { "name": "dusk" },\n  "mouse": false\n}\n')
+    await run(
+      directory.path,
+      Effect.gen(function* () {
+        const service = yield* Config.Service
+        yield* service.update((draft) => {
+          draft.language = language
+        })
+      }),
+    )
+    const reloaded = await run(
+      directory.path,
+      Effect.gen(function* () {
+        const service = yield* Config.Service
+        return yield* service.get()
+      }),
+    )
+    expect(reloaded).toMatchObject({ language, theme: { name: "dusk" }, mouse: false })
+    expect(await Bun.file(file).text()).toContain("// Personal theme")
+  },
+)
 test("merges inline CLI config content over the global config", async () => {
   await using directory = await tmpdir()
   const file = path.join(directory.path, "cli.json")
@@ -78,14 +104,14 @@ test("merges inline CLI config content over the global config", async () => {
   await Bun.write(
     file,
     JSON.stringify({
-      tabs: { mode: "on", scope: "global" },
+      session: { new_location: "inherit", tps: true },
       keybinds: { "app.exit": "ctrl+q" },
       plugins: ["global"],
       animations: true,
     }),
   )
   process.env.OPENCODE_CLI_CONFIG_CONTENT = JSON.stringify({
-    tabs: { enabled: false },
+    session: { tps: false },
     keybinds: { "help.show": false },
     plugins: ["inline"],
     animations: false,
@@ -105,7 +131,7 @@ test("merges inline CLI config content over the global config", async () => {
       }),
     )
 
-    expect(result.loaded.tabs).toEqual({ mode: "off", scope: "global" })
+    expect(result.loaded.session).toEqual({ new_location: "inherit", tps: false })
     expect(result.loaded.keybinds).toEqual({ "app.exit": "ctrl+q", "help.show": false })
     expect(result.loaded.plugins).toEqual(["inline"])
     expect(result.updated).toMatchObject({ animations: false, mouse: false })
@@ -114,26 +140,6 @@ test("merges inline CLI config content over the global config", async () => {
     if (previous === undefined) delete process.env.OPENCODE_CLI_CONFIG_CONTENT
     else process.env.OPENCODE_CLI_CONFIG_CONTENT = previous
   }
-})
-
-test("reads the legacy tabs toggle without rewriting it", async () => {
-  await using directory = await tmpdir()
-  const file = path.join(directory.path, "cli.json")
-  await Bun.write(file, JSON.stringify({ tabs: { enabled: false } }))
-
-  const config = await run(
-    directory.path,
-    Effect.gen(function* () {
-      const service = yield* Config.Service
-      expect((yield* service.get()).tabs).toEqual({ mode: "off" })
-      return yield* service.update((draft) => {
-        draft.animations = false
-      })
-    }),
-  )
-
-  expect(config.tabs).toEqual({ mode: "off" })
-  expect(await Bun.file(file).json()).toEqual({ tabs: { enabled: false }, animations: false })
 })
 
 test("migrates tui and kv config into cli.json", async () => {
@@ -160,7 +166,6 @@ test("migrates tui and kv config into cli.json", async () => {
   await Bun.write(
     path.join(directory.path, "kv.json"),
     JSON.stringify({
-      theme_mode_lock: "light",
       attention_sound_pack: "custom.pack",
       diff_wrap_mode: "none",
       diff_viewer_show_file_tree: false,
@@ -190,9 +195,8 @@ test("migrates tui and kv config into cli.json", async () => {
 
   expect(config).toMatchObject({
     $schema: "https://opencode.ai/v2/cli.json",
-    theme: { name: "legacy", mode: "light" },
+    theme: { name: "legacy" },
     keybinds: {
-      leader: "ctrl+o",
       "app.exit": "ctrl+q",
       "prompt.paste": { key: "ctrl+v", preventDefault: false },
       "session.delete": false,
@@ -212,7 +216,6 @@ test("migrates tui and kv config into cli.json", async () => {
   expect(config).not.toHaveProperty("which_key")
   expect(config).not.toHaveProperty("hints")
   expect((await Bun.file(path.join(directory.path, "cli.json")).json()).keybinds).toEqual({
-    leader: "ctrl+o",
     "app.exit": "ctrl+q",
     "prompt.paste": { key: "ctrl+v", preventDefault: false },
     "session.delete": false,
@@ -489,24 +492,24 @@ test("updates effective duplicate canonical keybinds", async () => {
   const file = path.join(directory.path, "cli.json")
   await Bun.write(
     file,
-    `{"keybinds":{"session.delete":"first","session.delete":"last","opencode.settings":"off","opencode.settings":"on"}}`,
+    `{"keybinds":{"session.delete":"first","session.delete":"last","permission.mode":"off","permission.mode":"on"}}`,
   )
 
   const config = await run(
     directory.path,
     Effect.gen(function* () {
       const service = yield* Config.Service
-      expect((yield* service.get()).keybinds).toEqual({ "session.delete": "last", "opencode.settings": "on" })
+      expect((yield* service.get()).keybinds).toEqual({ "session.delete": "last", "permission.mode": "on" })
       return yield* service.update((draft) => {
-        draft.keybinds = { ...draft.keybinds, "session.delete": "changed", "opencode.settings": "changed" }
+        draft.keybinds = { ...draft.keybinds, "session.delete": "changed", "permission.mode": "changed" }
       })
     }),
   )
 
-  expect(config.keybinds).toEqual({ "session.delete": "changed", "opencode.settings": "changed" })
+  expect(config.keybinds).toEqual({ "session.delete": "changed", "permission.mode": "changed" })
   expect(parse(await Bun.file(file).text()).keybinds).toEqual({
     "session.delete": "changed",
-    "opencode.settings": "changed",
+    "permission.mode": "changed",
   })
 })
 
@@ -549,14 +552,7 @@ test("updates a config draft while preserving JSONC comments", async () => {
       const service = yield* Config.Service
       return yield* service.update((draft) => {
         draft.prompt = { paste: "compact" }
-        draft.mini = {
-          thinking: "hide",
-          shell_output: "hide",
-          turn_summary: "hide",
-          splash: "hide",
-          work_spinner: "block-low-comet",
-          mono: true,
-        }
+        draft.diffs = { source: "branch" }
       })
     }),
   )
@@ -564,14 +560,7 @@ test("updates a config draft while preserving JSONC comments", async () => {
   expect(config).toEqual({
     animations: true,
     prompt: { paste: "compact" },
-    mini: {
-      thinking: "hide",
-      shell_output: "hide",
-      turn_summary: "hide",
-      splash: "hide",
-      work_spinner: "block-low-comet",
-      mono: true,
-    },
+    diffs: { source: "branch" },
   })
   expect(await Bun.file(path.join(directory.path, "cli.json")).text()).toContain("// Keep this comment")
 })

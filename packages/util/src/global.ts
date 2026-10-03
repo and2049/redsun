@@ -9,7 +9,8 @@ import { roots } from "#global-roots"
 import { Flock } from "./flock.js"
 import { makeGlobalNode } from "./effect/app-node.js"
 
-const app = "opencode"
+// REDSUN: user-facing XDG roots are redsun; OPENCODE_* env names stay for compat.
+const app = "redsun"
 const { data, cache, config, state, tmp } = roots(app)
 
 const paths = {

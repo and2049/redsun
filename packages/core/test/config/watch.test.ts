@@ -5,9 +5,9 @@ import { ConfigWatch } from "@opencode/core/config/watch"
 import { AbsolutePath } from "@opencode/core/schema"
 
 const project = path.resolve("watch-plan-project")
-const root = AbsolutePath.make(path.join(project, ".opencode"))
+const root = AbsolutePath.make(path.join(project, ".redsun"))
 const sources: ConfigDiscovery.Sources = {
-  direct: ["opencode.json", "opencode.jsonc"].map((name) => AbsolutePath.make(path.join(project, name))),
+  direct: ["redsun.json", "redsun.jsonc"].map((name) => AbsolutePath.make(path.join(project, name))),
   project: [{ path: root, present: false }],
   claude: [AbsolutePath.make(path.join(project, ".claude"))],
   agents: [AbsolutePath.make(path.join(project, ".agents"))],
@@ -17,7 +17,7 @@ describe("ConfigWatch.plan", () => {
   test("groups missing candidates and keeps parent watches when roots appear", () => {
     const missing = ConfigWatch.plan(sources)
     expect(Array.from(missing.values())).toEqual([
-      { path: project, type: "entries", names: [".agents", ".claude", ".opencode", "opencode.json", "opencode.jsonc"] },
+      { path: project, type: "entries", names: [".agents", ".claude", ".redsun", "redsun.json", "redsun.jsonc"] },
     ])
     const present = ConfigWatch.plan({ ...sources, project: [{ path: root, present: true }] })
     expect(Array.from(present.values())).toEqual([

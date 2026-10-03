@@ -186,7 +186,7 @@ it.live(
         await fs.mkdir(project)
         await initRepo(project)
         await fs.mkdir(config)
-        await Bun.write(path.join(config, "opencode.json"), JSON.stringify({ worktree: { directory: destination } }))
+        await Bun.write(path.join(config, "redsun.json"), JSON.stringify({ worktree: { directory: destination } }))
       })
       const server = yield* startServer(config)
       const api = OpenCode.make({
@@ -228,9 +228,9 @@ it.live(
         await $`git remote set-url origin https://github.com/example/worktree-fixture.git`.cwd(second).quiet()
         await fs.mkdir(nested)
         await fs.mkdir(config)
-        await Bun.write(path.join(config, "opencode.json"), JSON.stringify({ worktree: { directory: destination } }))
+        await Bun.write(path.join(config, "redsun.json"), JSON.stringify({ worktree: { directory: destination } }))
         await Bun.write(
-          path.join(first, "opencode.json"),
+          path.join(first, "redsun.json"),
           JSON.stringify({
             plugins: [
               { package: path.join(import.meta.dir, "fixture/worktree-plugin"), options: { strategy: "test-copy" } },
@@ -302,7 +302,7 @@ it.live(
           await $`git remote add origin git@github.com:example/delegate-fixture.git`.cwd(directory).quiet()
         }
         await Bun.write(
-          path.join(source, "opencode.json"),
+          path.join(source, "redsun.json"),
           JSON.stringify({
             worktree: { directory: destination },
             plugins: [

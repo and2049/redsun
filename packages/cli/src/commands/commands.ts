@@ -35,13 +35,13 @@ const PermissionParams = {
   ),
 }
 
-const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME : "opencode", {
-  description: "OpenCode command line interface",
+const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME : "redsun", {
+  description: "redsun command line interface",
   params: {
     ...ServerParams,
     ...PermissionParams,
     directory: Argument.string("directory").pipe(
-      Argument.withDescription("Directory to start OpenCode in"),
+      Argument.withDescription("Directory to start redsun in"),
       Argument.optional,
     ),
     continue: Flag.boolean("continue").pipe(
@@ -55,10 +55,34 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       Flag.optional,
     ),
     prompt: Flag.string("prompt").pipe(Flag.withDescription("Prompt to use"), Flag.optional),
+    plugin: Flag.string("plugin").pipe(
+      Flag.withDescription("TUI plugin directory or package to load for this launch only"),
+      Flag.atMost(100),
+    ),
+    client: Flag.string("client").pipe(
+      Flag.withDescription("Client name shown as the terminal title and reported by telemetry"),
+      Flag.optional,
+    ),
   },
   commands: [
+    Spec.make("remote", {
+      description: "Manage local remote-control policy, enrollment, and the companion",
+      params: {
+        action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke"]),
+        handoff: Flag.string("handoff").pipe(
+          Flag.withDescription("New private local handoff file for enrollment"),
+          Flag.optional,
+        ),
+      },
+      commands: [
+        Spec.make("companion", {
+          description: "Run the local remote-control companion",
+          params: { args: Argument.string("args").pipe(Argument.variadic({ min: 0 })) },
+        }),
+      ],
+    }),
     Spec.make("upgrade", {
-      description: "Upgrade OpenCode to the latest or a specific version",
+      description: "Upgrade redsun to the latest or a specific version",
       aliases: ["update"],
       params: {
         target: Argument.string("target").pipe(
@@ -73,7 +97,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       },
     }),
     Spec.make("uninstall", {
-      description: "Uninstall OpenCode and remove all related files",
+      description: "Uninstall redsun and remove all related files",
       params: {
         keepConfig: Flag.boolean("keep-config").pipe(
           Flag.withAlias("c"),
@@ -134,7 +158,9 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
               "log",
               "repos",
             ]).pipe(
-              Argument.withDescription("Print only one path: db, home, data, config, cache, state, tmp, bin, log, repos"),
+              Argument.withDescription(
+                "Print only one path: db, home, data, config, cache, state, tmp, bin, log, repos",
+              ),
               Argument.optional,
             ),
           },
@@ -337,44 +363,8 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         json: Flag.boolean("json").pipe(Flag.withDescription("Output statistics as JSON"), Flag.withDefault(false)),
       },
     }),
-    Spec.make("mini", {
-      description: "Start the minimal interactive interface",
-      params: {
-        ...ServerParams,
-        continue: Flag.boolean("continue").pipe(
-          Flag.withAlias("c"),
-          Flag.withDescription("Continue the last session"),
-          Flag.withDefault(false),
-        ),
-        session: Flag.string("session").pipe(
-          Flag.withAlias("s"),
-          Flag.withDescription("Session ID to continue, or to create if it does not exist"),
-          Flag.optional,
-        ),
-        fork: Flag.boolean("fork").pipe(
-          Flag.withDescription("Fork the session when continuing"),
-          Flag.withDefault(false),
-        ),
-        replay: Flag.boolean("replay").pipe(
-          Flag.withDescription("Restore session history on resume and resize (disable with --no-replay)"),
-          Flag.optional,
-        ),
-        replayLimit: Flag.integer("replay-limit").pipe(
-          Flag.withDescription("Limit replay to the newest N messages (default: 200)"),
-          Flag.optional,
-        ),
-        model: Flag.string("model").pipe(
-          Flag.withAlias("m"),
-          Flag.withDescription("Model to use in the format provider/model"),
-          Flag.optional,
-        ),
-        agent: Flag.string("agent").pipe(Flag.withDescription("Agent to use"), Flag.optional),
-        prompt: Flag.string("prompt").pipe(Flag.withDescription("Prompt to use"), Flag.optional),
-        demo: Flag.boolean("demo").pipe(Flag.withDefault(false), Flag.withHidden),
-      },
-    }),
     Spec.make("run", {
-      description: "Run OpenCode with a message",
+      description: "Run redsun with a message",
       params: {
         ...ServerParams,
         message: Argument.string("message").pipe(

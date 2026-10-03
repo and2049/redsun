@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import { Env } from "./env"
 import { Cause, Effect } from "effect"
 import { getErrorReported } from "effect/Runtime"
 import { Commands } from "./commands/commands"
@@ -28,6 +29,10 @@ const Handlers = Runtime.handlers(Commands, {
   uninstall: () => import("./commands/handlers/uninstall"),
   acp: () => import("./commands/handlers/acp"),
   api: () => import("./commands/handlers/api"),
+  remote: {
+    $: () => import("./commands/handlers/remote"),
+    companion: () => import("./commands/handlers/remote-companion"),
+  },
   auth: {
     list: () => import("./commands/handlers/auth/list"),
     login: () => import("./commands/handlers/auth/login"),
@@ -56,7 +61,6 @@ const Handlers = Runtime.handlers(Commands, {
   },
   models: () => import("./commands/handlers/models"),
   stats: () => import("./commands/handlers/stats"),
-  mini: () => import("./commands/handlers/mini"),
   run: () => import("./commands/handlers/run"),
   pair: () => import("./commands/handlers/pair"),
   reload: () => import("./commands/handlers/reload"),
@@ -102,7 +106,11 @@ Effect.gen(function* () {
     local: OPENCODE_LOCAL,
     args: process.argv.slice(2),
   })
-  return yield* Runtime.run(Commands, Handlers, { version: OPENCODE_VERSION })
+  const args = process.argv.slice(2)
+  return yield* Runtime.run(Commands, Handlers, {
+    version: OPENCODE_VERSION,
+    args: args[0] === "remote" && args[1] === "companion" ? [...args.slice(0, 2), "--", ...args.slice(2)] : args,
+  })
 }).pipe(
   Effect.catchCause((cause) =>
     Effect.logError("cli process failed", {
@@ -126,7 +134,7 @@ Effect.gen(function* () {
     Observability.layer({
       endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
       headers: process.env.OTEL_EXPORTER_OTLP_HEADERS,
-      client: process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
+      client: Env.client(process.argv) ?? process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
       version: OPENCODE_VERSION,
       channel: OPENCODE_CHANNEL,
     }),

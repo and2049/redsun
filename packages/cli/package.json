@@ -1,12 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@opencode/cli",
-  "version": "2.0.22",
+  "version": "1.18.4",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "opencode": "./bin/opencode.cjs",
-    "opencode2": "./bin/opencode2.cjs"
+    "redsun": "./bin/redsun.cjs"
   },
   "files": [
     "bin"
@@ -43,6 +42,7 @@
     "immer": "11.1.4",
     "jsonc-parser": "3.3.1",
     "picocolors": "1.1.1",
+    "redsun-remote-control": "0.3.0",
     "solid-js": "catalog:",
     "tree-sitter-bash": "0.25.0",
     "tree-sitter-powershell": "0.25.10",

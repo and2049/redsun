@@ -27,7 +27,13 @@ describe("web UI", () => {
         },
       })
       const server = yield* ServerProcess.start<never, never>(
-        { hostname: "127.0.0.1", port: 0, password: "secret", database: { path: ":memory:" } },
+        {
+          hostname: "127.0.0.1",
+          port: 0,
+          password: "secret",
+          database: { path: ":memory:" },
+          models: { fetch: false },
+        },
         undefined,
         transform,
       )

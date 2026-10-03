@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import { realpathSync, watch } from "node:fs"
 import os from "os"
 import path from "path"
-import { describe, expect } from "bun:test"
+import { beforeAll, describe, expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Scope, Stream } from "effect"
 import { Money } from "@opencode/schema/money"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -236,7 +236,7 @@ const withScanner = <A, E, R>(
         yield* Effect.promise(() => Promise.all([fs.mkdir(fixture.active), fs.mkdir(fixture.outside)]))
         yield* Effect.promise(() =>
           Bun.write(
-            path.join(fixture.active, "opencode.json"),
+            path.join(fixture.active, "redsun.json"),
             JSON.stringify({ experimental: { portable_shell_scanner: portable } }),
           ),
         )
@@ -287,7 +287,7 @@ const runPermissionCommand = (
     expect(yield* permission.list()).toEqual([])
     expect(yield* Queue.size(queue)).toBe(0)
     return { exit, requests }
-  }).pipe(Effect.scoped, Effect.timeout(Duration.seconds(5)))
+  }).pipe(Effect.scoped, Effect.timeout(Duration.seconds(15)))
 
 // Directory cases still document inherited limitations; fixed scanner cases require matching behavior.
 describe("ShellTool scanner permissions", () => {
@@ -771,6 +771,19 @@ describe("ShellTool ordinary shell syntax", () => {
 
   const pwsh = process.env.SHELL_SCAN_PWSH ?? Bun.which("pwsh") ?? Bun.which("powershell")
   const test = pwsh ? permissionIt.live : permissionIt.live.skip
+  // pwsh pays a one-time .NET cold-start (assembly load) on its first spawn; on a loaded CI runner
+  // that can exceed a single test's timeout. Absorb it here so no timed assertion pays for it.
+  beforeAll(async () => {
+    if (!pwsh) return
+    try {
+      const proc = Bun.spawn([pwsh, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit"], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      })
+      await proc.exited
+    } catch {}
+  }, 60_000)
   for (const portable of [false, true]) {
     for (const command of [
       'Write-Output "$(Write-Output hello)"',
@@ -804,7 +817,9 @@ describe("ShellTool ordinary shell syntax", () => {
                 expect(result.exit.value.content?.[0]).toEqual(Expected.text(isWindows ? "hello\r\n" : "hello\n"))
             }),
           pwsh ?? "pwsh",
-        ))
+        ),
+        { timeout: 15_000 },
+      )
     }
   }
 
@@ -842,7 +857,9 @@ describe("ShellTool ordinary shell syntax", () => {
             })
           }),
         pwsh ?? "pwsh",
-      ))
+      ),
+      { timeout: 45_000 },
+    )
   }
 })
 
@@ -1259,7 +1276,7 @@ describe("ShellTool", () => {
               reset()
               yield* Effect.promise(() =>
                 Bun.write(
-                  path.join(tmp.path, "opencode.json"),
+                  path.join(tmp.path, "redsun.json"),
                   JSON.stringify({ experimental: { portable_shell_scanner: portable } }),
                 ),
               )
@@ -1307,7 +1324,7 @@ describe("ShellTool", () => {
                   reset()
                   yield* Effect.promise(() =>
                     Bun.write(
-                      path.join(tmp.path, "opencode.json"),
+                      path.join(tmp.path, "redsun.json"),
                       JSON.stringify({ experimental: { portable_shell_scanner: portable } }),
                     ),
                   )
@@ -1411,7 +1428,7 @@ describe("ShellTool", () => {
         return Effect.gen(function* () {
           yield* Effect.promise(() =>
             Bun.write(
-              path.join(tmp.path, "opencode.json"),
+              path.join(tmp.path, "redsun.json"),
               JSON.stringify({ tool_output: { max_lines: 2, max_bytes: 1_000 } }),
             ),
           )

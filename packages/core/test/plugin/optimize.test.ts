@@ -127,6 +127,8 @@ describe("OptimizePlugin", () => {
         SessionSystemPrompt.render(PROMPT_GPT, Object.keys(event.tools)),
         "Project instructions",
       ])
+      expect(event.system[0]?.text).toStartWith("You are an AI agent powered by redsun")
+      expect(event.system[0]?.text).toContain("Prefer dedicated tools over shell commands")
       expect(event.system[0]?.text).not.toContain("${OPENCODE_TOOL_GUIDANCE}")
       expect(Object.keys(event.tools).sort()).toEqual(["edit", "glob", "grep", "patch", "read", "shell", "write"])
     }),

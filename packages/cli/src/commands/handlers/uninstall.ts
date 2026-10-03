@@ -14,12 +14,11 @@ import { errorMessage } from "../../util/error"
 export default Runtime.handler(
   Commands.commands.uninstall,
   Effect.fn("cli.uninstall")(function* (input) {
-    intro("Uninstall OpenCode")
+    intro("Uninstall redsun")
     const fs = yield* FileSystem.FileSystem
     const global = yield* Global.Service
     const updater = yield* Updater.Service
     const method = yield* updater.method()
-    const removal = method ? updater.removal(method) : undefined
     const directories = [
       { path: global.data, label: "Data", keep: input.keepData },
       { path: global.cache, label: "Cache", keep: false },
@@ -34,7 +33,7 @@ export default Runtime.handler(
     const shell = method === "curl" ? yield* shellConfigs(global.home) : []
 
     log.info(`Installation method: ${method ?? "unknown"}`)
-    log.message("The following global files will be removed (shared by OpenCode versions and channels):")
+    log.message("The following global files will be removed (shared by redsun versions and channels):")
     yield* Effect.forEach(directories, (directory) =>
       Effect.gen(function* () {
         if (!(yield* fs.exists(directory.path))) return
@@ -45,8 +44,7 @@ export default Runtime.handler(
       log.info(`  Stop background service and persistent terminals: ${path.join(global.state, name)}`),
     )
     shell.forEach((file) => log.info(`  Shell PATH: ${file}`))
-    if (removal) log.info(`  Package: ${removal.command.join(" ")}`)
-    if (method === "curl") log.info(`  Binary (manual removal): ${process.execPath}`)
+    if (method) log.info(`  Binary (manual removal): ${process.execPath}`)
     if (!method) log.warn("Could not detect the installation method. Remove the installation manually after cleanup.")
 
     if (input.dryRun) {
@@ -110,22 +108,13 @@ export default Runtime.handler(
         Effect.catch((error) => Effect.sync(() => errors.push(`Shell config ${file}: ${errorMessage(error)}`))),
       ),
     )
-    if (removal) {
-      progress.start(`Running ${removal.command.join(" ")}...`)
-      yield* removal.run.pipe(
-        Effect.tap(() => Effect.sync(() => progress.stop("Package removed"))),
-        Effect.catch((error) =>
-          Effect.sync(() => {
-            progress.stop("Package manager uninstall failed", 1)
-            errors.push(errorMessage(error))
-            log.warn(`Run manually: ${removal.command.join(" ")}`)
-          }),
-        ),
-      )
-    }
     if (method === "curl") {
       log.message("To finish removing the binary, run:")
       log.info(`  rm '${process.execPath.replaceAll("'", "'\\''")}'`)
+    }
+    if (method === "powershell") {
+      log.message("To finish removing the binary, run in PowerShell:")
+      log.info(`  Remove-Item -LiteralPath '${process.execPath.replaceAll("'", "''")}'`)
     }
     if (errors.length) yield* Effect.fail(new Error(errors.join("\n")))
     outro("Done")
@@ -166,11 +155,11 @@ const shellConfigs = Effect.fnUntraced(function* (home: string) {
   )
 })
 
-function cleanShellConfig(content: string) {
+export function cleanShellConfig(content: string) {
   const lines = content.split("\n")
   const entry = (line: string) =>
-    /^(?:export PATH=|fish_add_path\s)/.test(line.trim()) && line.includes(".opencode/bin")
+    /^(?:export PATH=|fish_add_path\s)/.test(line.trim()) && line.includes(".redsun/bin")
   return lines
-    .filter((line, index) => !entry(line) && !(line.trim() === "# opencode" && entry(lines[index + 1] ?? "")))
+    .filter((line, index) => !entry(line) && !(line.trim() === "# redsun" && entry(lines[index + 1] ?? "")))
     .join("\n")
 }
