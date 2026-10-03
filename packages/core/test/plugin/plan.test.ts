@@ -4,8 +4,8 @@ import { DateTime, Effect, Option, Stream, Types } from "effect"
 import type { SessionContext } from "@opencode/plugin/effect/session"
 import type { ToolHooks } from "@opencode/plugin/effect/tool"
 import { Agent } from "@opencode/core/agent"
-import { Environment } from "@opencode/core/environment/index"
 import { Event } from "@opencode/schema/event"
+import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
 import { PlanPlugin } from "@opencode/core/plugin/plan"
 import { Permission } from "@opencode/core/permission"
@@ -14,17 +14,17 @@ import { Session } from "@opencode/core/session"
 import { SessionEvent } from "@opencode/core/session/event"
 import { SessionInbox } from "@opencode/core/session/inbox"
 import { SessionMessage } from "@opencode/core/session/message"
+import { AbsolutePath } from "@opencode/core/schema"
 import { Tool } from "@opencode/schema/tool"
 import { Global } from "@opencode/util/global"
-import path from "path"
+import path from "node:path"
 import { it } from "../lib/effect"
+import { location } from "../fixture/location"
 import { host } from "./host"
 
 const sessionID = Session.ID.make("ses_plan_test")
 const plan = Agent.ID.make("plan")
 const build = Agent.ID.make("build")
-const home = "/home/plan-test"
-const planDirectory = path.join(home, ".opencode", "plan")
 
 const agentSelected = (agent: Agent.ID, previous: Agent.ID): SessionEvent.AgentSelected => ({
   id: Event.ID.create(),
@@ -34,12 +34,24 @@ const agentSelected = (agent: Agent.ID, previous: Agent.ID): SessionEvent.AgentS
   data: { sessionID, agent, previous },
 })
 
-/** Runs the plan plugin against stubbed domains, capturing persisted reminders and the context hook. */
-const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.AgentSelected> = []) {
+const WORKTREE = AbsolutePath.make(process.platform === "win32" ? "C:\\repo" : "/repo")
+// REDSUN: the plan directory is per-project when a repository exists, global otherwise.
+const planDirectory = path.join(WORKTREE, ".redsun", "plans")
+const globalPlanDirectory = path.join(Global.Path.data, "plans")
+
+type BeforeHook = (input: {
+  tool: string
+  agent: Agent.ID
+  input: unknown
+}) => Effect.Effect<void, { readonly message: string }>
+
+/** Runs the plan plugin against stubbed domains, capturing persisted reminders and both hooks. */
+const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.AgentSelected> = [], repo = true) {
   const persisted = new Array<string>()
   let contextHook: ((input: SessionContext) => Effect.Effect<void>) | undefined
-  let toolHook: ((input: ToolHooks["execute.after"]) => Effect.Effect<void>) | undefined
-  const planAgent = {
+  let beforeHook: BeforeHook | undefined
+  let afterHook: ((input: ToolHooks["execute.after"]) => Effect.Effect<void>) | undefined
+  const planAgent: Types.DeepMutable<Agent.Info> = {
     id: plan,
     name: Agent.Name.make("Plan"),
     request: { settings: {}, headers: {}, body: {} },
@@ -49,8 +61,7 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
       { action: "*", resource: "*", effect: "allow" },
       { action: "external_directory", resource: "*", effect: "ask" },
     ],
-  } satisfies Types.DeepMutable<Agent.Info>
-  const driver = Environment.makeMemoryDriver()
+  }
   yield* PlanPlugin.Plugin.effect(
     host({
       agent: {
@@ -75,10 +86,12 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
         reload: () => Effect.die("unused tool.reload"),
         list: () => Effect.die("unused tool.list"),
         hook: (name, callback) => {
+          // Hook names and callbacks are correlated, but TypeScript does not narrow this generic registration API.
+          // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+          if (name === "execute.before") beforeHook = callback as unknown as BeforeHook
           if (name === "execute.after") {
-            // Hook names and callbacks are correlated, but TypeScript does not narrow this generic registration API.
             // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-            toolHook = callback as unknown as (input: ToolHooks["execute.after"]) => Effect.Effect<void>
+            afterHook = callback as unknown as (input: ToolHooks["execute.after"]) => Effect.Effect<void>
           }
           return Effect.succeed({ dispose: Effect.void })
         },
@@ -107,15 +120,19 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
       },
     }),
   ).pipe(
-    Effect.provideService(Global.Service, Global.Service.of({ ...Global.make(), home })),
     Effect.provideService(
-      Environment.Service,
-      Environment.Service.of({ files: Environment.makeFiles(driver), spawner: driver.spawner }),
+      Location.Service,
+      Location.Service.of(
+        location(Location.Ref.make({ directory: WORKTREE }), {
+          vcs: repo ? { type: "git", store: AbsolutePath.make(`${WORKTREE}/.git`) } : undefined,
+        }),
+      ),
     ),
   )
   if (!contextHook) return yield* Effect.die("plan plugin did not register a context hook")
-  if (!toolHook) return yield* Effect.die("plan plugin did not register a tool hook")
-  return { persisted, contextHook, toolHook, files: Environment.makeFiles(driver), planAgent }
+  if (!beforeHook) return yield* Effect.die("plan plugin did not register an execute.before hook")
+  if (!afterHook) return yield* Effect.die("plan plugin did not register an execute.after hook")
+  return { persisted, contextHook, beforeHook, afterHook, planAgent }
 })
 
 const request = (agent: Agent.ID, messages: Array<Message>): SessionContext => ({
@@ -245,19 +262,17 @@ describe("plan plugin reminders", () => {
 })
 
 describe("plan plugin mutations", () => {
-  it.effect("does not create the Plan directory during activation", () =>
-    Effect.gen(function* () {
-      const { files } = yield* run()
-      expect(Option.isNone(yield* files.stat(planDirectory).pipe(Effect.option))).toBe(true)
-    }),
-  )
-
   it.effect("allows edits only inside the Plan directory", () =>
     Effect.gen(function* () {
       const { planAgent } = yield* run()
       expect(Permission.evaluate("edit", path.join(planDirectory, "work.md"), planAgent.permissions).effect).toBe(
         "allow",
       )
+      // REDSUN: mutation resources inside the Location are Location-relative, so the
+      // relative form is what the edit/write/patch tools actually assert.
+      expect(Permission.evaluate("edit", ".redsun/plans/work.md", planAgent.permissions).effect).toBe("allow")
+      expect(Permission.evaluate("edit", ".redsun/plans/nested/work.md", planAgent.permissions).effect).toBe("allow")
+      expect(Permission.evaluate("edit", ".redsun/other.md", planAgent.permissions).effect).toBe("deny")
       expect(Permission.evaluate("edit", "/workspace/source.ts", planAgent.permissions).effect).toBe("deny")
       expect(Permission.evaluate("edit", "source.ts", planAgent.permissions).effect).toBe("deny")
     }),
@@ -266,12 +281,11 @@ describe("plan plugin mutations", () => {
   it.effect("allows the Plan directory external boundary", () =>
     Effect.gen(function* () {
       const { planAgent } = yield* run()
+      expect(Permission.evaluate("external_directory", path.join(planDirectory, "*"), planAgent.permissions).effect).toBe(
+        "allow",
+      )
       expect(
-        Permission.evaluate("external_directory", path.join(planDirectory, "*"), planAgent.permissions).effect,
-      ).toBe("allow")
-      expect(
-        Permission.evaluate("external_directory", path.join(planDirectory, "nested", "*"), planAgent.permissions)
-          .effect,
+        Permission.evaluate("external_directory", path.join(planDirectory, "nested", "*"), planAgent.permissions).effect,
       ).toBe("allow")
       expect(Permission.evaluate("external_directory", "/outside/*", planAgent.permissions).effect).toBe("ask")
     }),
@@ -279,7 +293,7 @@ describe("plan plugin mutations", () => {
 
   it.effect("rewrites blocked mutation failures with the Plan directory", () =>
     Effect.gen(function* () {
-      const { toolHook } = yield* run()
+      const { afterHook } = yield* run()
       for (const tool of ["edit", "write", "patch"] as const) {
         const event = toolError(
           tool,
@@ -292,7 +306,7 @@ describe("plan plugin mutations", () => {
             }),
           }),
         )
-        yield* toolHook(event)
+        yield* afterHook(event)
         expect(event.error.message).toContain("outside the Plan directory")
         expect(event.error.message).toContain(planDirectory)
       }
@@ -301,11 +315,62 @@ describe("plan plugin mutations", () => {
 
   it.effect("preserves mutation failures unrelated to permissions", () =>
     Effect.gen(function* () {
-      const { toolHook } = yield* run()
+      const { afterHook } = yield* run()
       const error = new ToolFailure({ message: "oldString was not found" })
       const event = toolError("edit", error)
-      yield* toolHook(event)
+      yield* afterHook(event)
       expect(event.error).toBe(error)
+    }),
+  )
+
+  // REDSUN: the plan directory follows the project when a repository exists and falls
+  // back to the global data directory otherwise.
+  it.effect("falls back to the global plan directory without a repository", () =>
+    Effect.gen(function* () {
+      const { planAgent } = yield* run([], false)
+      expect(Permission.evaluate("edit", path.join(globalPlanDirectory, "a.md"), planAgent.permissions).effect).toBe(
+        "allow",
+      )
+      expect(Permission.evaluate("edit", path.join(planDirectory, "a.md"), planAgent.permissions).effect).toBe("deny")
+      expect(Permission.evaluate("edit", ".redsun/plans/a.md", planAgent.permissions).effect).toBe("deny")
+    }),
+  )
+})
+
+// REDSUN: plan mode cannot run commands and cannot be delegated around.
+describe("plan plugin restrictions", () => {
+  const refused = (input: { tool: string; agent: Agent.ID; input: unknown }) =>
+    Effect.gen(function* () {
+      const { beforeHook } = yield* run()
+      return yield* beforeHook(input).pipe(
+        Effect.as(undefined),
+        Effect.catch((error) => Effect.succeed(error.message)),
+      )
+    })
+
+  it.effect("refuses shell outright, whatever the command", () =>
+    Effect.gen(function* () {
+      // Read-only has to include the shell, or `sed -i` walks straight around the
+      // edit/write/patch denies.
+      for (const command of ["ls", "rm -rf build", "sed -i 's/a/b/' src/index.ts"]) {
+        const message = yield* refused({ tool: "shell", agent: plan, input: { command } })
+        expect(message).toContain("read-only mode")
+        expect(message).toContain("shell")
+      }
+    }),
+  )
+
+  it.effect("leaves other agents and other tools alone", () =>
+    Effect.gen(function* () {
+      expect(yield* refused({ tool: "read", agent: plan, input: { path: "src/index.ts" } })).toBe(undefined)
+      expect(yield* refused({ tool: "shell", agent: build, input: { command: "rm -rf build" } })).toBe(undefined)
+    }),
+  )
+
+  it.effect("denies delegation, so read-only cannot be handed to a subagent", () =>
+    Effect.gen(function* () {
+      const { planAgent } = yield* run()
+      expect(planAgent.permissions).toContainEqual({ action: "subagent", resource: "*", effect: "deny" })
     }),
   )
 })

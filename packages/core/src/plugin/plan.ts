@@ -4,18 +4,23 @@ import { Message, ToolFailure } from "@opencode/ai"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Agent } from "@opencode/schema/agent"
 import type { SessionEvent } from "@opencode/schema/session-event"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Effect, Stream } from "effect"
-import path from "path"
+import path from "node:path"
+import { Location } from "../location.js"
 import { Permission } from "../permission.js"
 
 const plan = Agent.ID.make("plan")
+
+const planDirectory = (location: Location.Interface) =>
+  location.vcs ? path.join(location.project.directory, ".redsun", "plans") : path.join(Global.Path.data, "plans")
 
 const enter = (directory: string) => `<system-reminder>
 You are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:
 ${directory}
 
-Do not modify any other files or ask a subagent to do so.
+Do not modify any other files, run shell commands, or ask a subagent to do any of that.
 
 You remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.
 </system-reminder>`
@@ -27,19 +32,44 @@ You are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. 
 export const Plugin = define({
   id: "opencode.plan",
   effect: Effect.fn(function* (ctx) {
-    const global = yield* Global.Service
-    const directory = path.join(global.home, ".opencode", "plan")
-    const enterReminder = enter(directory)
+    const location = yield* Location.Service
+    const plans = planDirectory(location)
+    const enterReminder = enter(plans)
+
     yield* ctx.agent.transform((editor) => {
       editor.update(plan, (item) => {
         item.name = Agent.Name.make("Plan")
         item.description = "Read-only agent for exploring the codebase and planning work before implementation."
         item.mode = "primary"
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
+        item.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
         item.permissions.push({ action: "edit", resource: "*", effect: "deny" })
-        item.permissions.push({ action: "edit", resource: path.join(directory, "*"), effect: "allow" })
-        item.permissions.push({ action: "external_directory", resource: path.join(directory, "*"), effect: "allow" })
+        item.permissions.push({ action: "edit", resource: path.join(plans, "*"), effect: "allow" })
+        // REDSUN: mutation resources are Location-relative for internal paths, so an
+        // absolute rule alone never matches a plans directory inside the Location.
+        if (FSUtil.contains(location.directory, plans))
+          item.permissions.push({
+            action: "edit",
+            resource: path.join(path.relative(location.directory, plans), "*"),
+            effect: "allow",
+          })
+        item.permissions.push({ action: "external_directory", resource: path.join(plans, "*"), effect: "allow" })
       })
+    })
+
+    // REDSUN: a delegated Claude Code session has Bash blocked by the SDK's own
+    // permissionMode: "plan"; a native model had no equivalent, so plan mode was
+    // read-only in name only. Refused here rather than as a permission deny because
+    // the shell scanner yields no resource for some inputs, and a rule that is never
+    // asserted is not a restriction.
+    yield* ctx.tool.hook("execute.before", (event) => {
+      if (event.agent !== plan) return Effect.void
+      if (event.tool === "shell")
+        return new ToolFailure({
+          message:
+            "Cannot use shell in Plan mode. You are in a read-only mode and must not run commands. Use read, grep, and glob to investigate; if you need to run something, tell the user to switch agents.",
+        })
+      return Effect.void
     })
 
     yield* ctx.tool.hook("execute.after", (event) => {
@@ -48,7 +78,7 @@ export const Plugin = define({
       if (event.tool !== "edit" && event.tool !== "write" && event.tool !== "patch") return Effect.void
       if (!(event.error.error instanceof Permission.BlockedError)) return Effect.void
       event.error = new ToolFailure({
-        message: `Cannot use ${event.tool} to modify files outside the Plan directory: ${directory}`,
+        message: `Cannot use ${event.tool} to modify files outside the Plan directory: ${plans}`,
       })
       return Effect.void
     })

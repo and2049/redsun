@@ -12,10 +12,12 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { useConfig } from "../../config"
 import { Keymap } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
+import { useVimInputCapture } from "../../context/vim"
 import { usePathFormatter } from "../../context/path-format"
 import { SimulationSemantics } from "../../simulation/semantics"
 import { PatchDiff } from "../../component/patch-diff"
 import { useToast } from "../../ui/toast"
+import { useLanguage } from "../../i18n"
 
 type PermissionStage = "permission" | "reject"
 
@@ -25,6 +27,7 @@ function EditBody(props: { file?: string; diff?: string; patch?: string }) {
   const syntax = themes.currentSyntax
   const config = useConfig().data
   const dimensions = useTerminalDimensions()
+  const language = useLanguage()
 
   const filepath = createMemo(() => props.file ?? "")
   const diff = createMemo(() => props.diff ?? "")
@@ -79,7 +82,7 @@ function EditBody(props: { file?: string; diff?: string; patch?: string }) {
           when={props.patch}
           fallback={
             <box paddingLeft={1}>
-              <text fg={theme.text.muted}>No diff provided</text>
+              <text fg={theme.text.muted}>{language.t("session.noDiffProvided")}</text>
             </box>
           }
         >
@@ -132,6 +135,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
   })
 
   const theme = useTheme()
+  const language = useLanguage()
 
   function reply(value: PermissionReply, message?: string) {
     void data.session.permission
@@ -201,7 +205,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
             <box flexDirection="column" gap={0}>
               <box flexDirection="row" gap={1} flexShrink={0}>
                 <text fg={theme.text.feedback.warning.base}>{"△"}</text>
-                <text fg={theme.text.base}>Permission required</text>
+                <text fg={theme.text.base}>{language.t("notification.permission.title")}</text>
               </box>
               <Show when={props.request.action !== "shell" && current.title}>
                 <box flexDirection="row" gap={1} paddingLeft={2} flexShrink={0}>
@@ -216,7 +220,7 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
 
           const body = (
             <SessionQuestion
-              title="Permission required"
+              title={language.t("notification.permission.title")}
               semanticLabel={permissionSemanticLabel(props.request.action, current.title)}
               instance={props.request.id}
               header={header()}
@@ -224,7 +228,9 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                 <Show when={option === "always"} fallback={presentationBody()}>
                   <box paddingLeft={1} gap={1}>
                     <For each={permissionAlwaysLines(props.request)}>
-                      {(line, index) => <text fg={index() === 0 ? theme.text.muted : theme.text.base}>{line}</text>}
+                      {(line, index) => (
+                        <text fg={index() === 0 ? theme.text.muted : theme.text.base}>{line}</text>
+                      )}
                     </For>
                   </box>
                 </Show>
@@ -232,11 +238,14 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               options={
                 props.request.save?.length
                   ? {
-                      once: permissionOptionLabel("once"),
-                      always: permissionOptionLabel("always"),
-                      reject: permissionOptionLabel("reject"),
+                      once: language.t(permissionOptionLabel("once")),
+                      always: language.t(permissionOptionLabel("always")),
+                      reject: language.t(permissionOptionLabel("reject")),
                     }
-                  : { once: permissionOptionLabel("once"), reject: permissionOptionLabel("reject") }
+                  : {
+                      once: language.t(permissionOptionLabel("once")),
+                      reject: language.t(permissionOptionLabel("reject")),
+                    }
               }
               escapeKey="reject"
               fullscreen
@@ -277,9 +286,11 @@ function RejectPrompt(props: {
 }) {
   let input: TextareaRenderable
   const enabled = useInteractivity()
+  useVimInputCapture(enabled)
   const theme = useTheme()
   const config = useConfig().data
   const dimensions = useTerminalDimensions()
+  const language = useLanguage()
   const narrow = createMemo(() => dimensions().width < 80)
   Keymap.createLayer(() => ({
     mode: "base",
@@ -322,10 +333,10 @@ function RejectPrompt(props: {
       <box gap={1} paddingLeft={1} paddingRight={3} paddingTop={1} paddingBottom={1}>
         <box flexDirection="row" gap={1} paddingLeft={1}>
           <text fg={theme.text.feedback.error.base}>{"△"}</text>
-          <text fg={theme.text.base}>Reject permission</text>
+          <text fg={theme.text.base}>{language.t("session.rejectPermission")}</text>
         </box>
         <box paddingLeft={1}>
-          <text fg={theme.text.muted}>Tell OpenCode what to do differently</text>
+          <text fg={theme.text.muted}>{language.t("session.tellRedsunWhatToDoDifferently")}</text>
         </box>
       </box>
       <box
@@ -347,7 +358,7 @@ function RejectPrompt(props: {
             SimulationSemantics.bind(() => ({
               instance: props.instance,
               role: "textbox",
-              label: "Rejection reason",
+              label: language.t("session.rejectionReason"),
               focused: val.focused,
               disabled: false,
             }))(val)
@@ -375,13 +386,13 @@ function RejectPrompt(props: {
             ref={SimulationSemantics.bind(() => ({
               instance: props.instance,
               role: "button",
-              label: "Confirm rejection",
+              label: language.t("session.confirmRejection"),
               disabled: false,
             }))}
             onMouseUp={() => props.onConfirm(input.plainText)}
           >
             <text fg={theme.text.base}>
-              enter <span style={{ fg: theme.text.muted }}>confirm</span>
+              enter <span style={{ fg: theme.text.muted }}>{language.t("session.confirm")}</span>
             </text>
           </box>
           <box
@@ -389,13 +400,13 @@ function RejectPrompt(props: {
             ref={SimulationSemantics.bind(() => ({
               instance: props.instance,
               role: "button",
-              label: "Cancel rejection",
+              label: language.t("session.cancelRejection"),
               disabled: false,
             }))}
             onMouseUp={props.onCancel}
           >
             <text fg={theme.text.base}>
-              esc <span style={{ fg: theme.text.muted }}>cancel</span>
+              esc <span style={{ fg: theme.text.muted }}>{language.t("session.cancel")}</span>
             </text>
           </box>
         </box>
@@ -419,6 +430,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
   onSelect: (option: keyof T) => void
 }) {
   const theme = useTheme()
+  const language = useLanguage()
   const dimensions = useTerminalDimensions()
   const keys = Object.keys(props.options) as (keyof T)[]
   const [store, setStore] = createStore({
@@ -444,7 +456,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         ? [
             {
               id: "app.exit",
-              title: "Reject permission",
+              title: language.t("session.rejectPermission"),
               group: group(),
               bind: false as const,
               run: dismiss,
@@ -455,7 +467,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         ? [
             {
               id: "permission.prompt.fullscreen",
-              title: "Toggle permission fullscreen",
+              title: language.t("session.togglePermissionFullscreen"),
               group: group(),
               bind: false as const,
               run: () => setStore("expanded", (value) => !value),
@@ -466,7 +478,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         ? [
             {
               bind: "left,h",
-              title: "Previous option",
+              title: language.t("session.previousOption"),
               group: group(),
               run: () => {
                 const index = keys.indexOf(store.selected)
@@ -475,7 +487,7 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
             },
             {
               bind: "right,l",
-              title: "Next option",
+              title: language.t("session.nextOption"),
               group: group(),
               run: () => {
                 const index = keys.indexOf(store.selected)
@@ -486,11 +498,13 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         : []),
       {
         bind: "return",
-        title: "Select option",
+        title: language.t("session.selectOption"),
         group: group(),
         run: () => props.onSelect(store.selected),
       },
-      ...(props.escapeKey ? [{ bind: "escape", title: "Reject permission", group: group(), run: dismiss }] : []),
+      ...(props.escapeKey
+        ? [{ bind: "escape", title: language.t("session.rejectPermission"), group: group(), run: dismiss }]
+        : []),
     ],
     bindings: [...(props.escapeKey ? ["app.exit"] : []), ...(props.fullscreen ? ["permission.prompt.fullscreen"] : [])],
   }))
@@ -598,16 +612,17 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
         <box flexDirection="row" gap={2} flexShrink={0}>
           <Show when={props.fullscreen}>
             <text fg={theme.text.base}>
-              {shortcuts.get("permission.prompt.fullscreen")} <span style={{ fg: theme.text.muted }}>{hint()}</span>
+              {shortcuts.get("permission.prompt.fullscreen")}{" "}
+              <span style={{ fg: theme.text.muted }}>{language.t(hint())}</span>
             </text>
           </Show>
           <Show when={keys.length > 1}>
             <text fg={theme.text.base}>
-              {"⇆"} <span style={{ fg: theme.text.muted }}>select</span>
+              {"⇆"} <span style={{ fg: theme.text.muted }}>{language.t("settings.select")}</span>
             </text>
           </Show>
           <text fg={theme.text.base}>
-            enter <span style={{ fg: theme.text.muted }}>confirm</span>
+            enter <span style={{ fg: theme.text.muted }}>{language.t("session.confirm")}</span>
           </text>
         </box>
       </box>

@@ -1,4 +1,6 @@
+import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Instance } from "@opencode/core/instance/service"
+import { Plugin } from "@opencode/core/plugin"
 import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
 import { PermissionSaved } from "@opencode/core/permission/saved"
@@ -9,6 +11,7 @@ import { Api } from "../api"
 import { PermissionNotFoundError } from "@opencode/protocol/errors"
 import { response, sessionInfo } from "../location"
 import { missingSession } from "./session-error"
+import { RemoteProjection } from "../remote-projection"
 
 function missingRequest(id: Permission.ID) {
   return new PermissionNotFoundError({ requestID: id, message: `Permission request not found: ${id}` })
@@ -34,6 +37,34 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         Effect.fn(function* () {
           const permission = yield* Permission.Service
           return yield* response(permission.list())
+        }),
+      )
+      .handle(
+        "permission.mode.get",
+        Effect.fn(function* () {
+          const permission = yield* Permission.Service
+          return { data: { mode: yield* permission.mode() } }
+        }),
+      )
+      .handle(
+        "permission.mode.options",
+        Effect.fn(function* (ctx) {
+          // Runtimes register during plugin activation; answering earlier would hide native_auto.
+          yield* Plugin.awaitActivation
+          const delegates = yield* DelegatedRuntime.Service
+          return {
+            data: {
+              native: yield* delegates.nativeApproval({ providerID: ctx.query.providerID, id: ctx.query.modelID }),
+            },
+          }
+        }),
+      )
+      .handle(
+        "permission.mode.set",
+        Effect.fn(function* (ctx) {
+          const permission = yield* Permission.Service
+          yield* permission.setMode(ctx.payload.mode)
+          return HttpApiSchema.NoContent.make()
         }),
       )
       .handle(
@@ -63,14 +94,14 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const requests = yield* Permission.Service.use((permission) =>
             permission.forSession(ctx.params.sessionID),
           ).pipe(instances.provide(session))
-          return { data: requests }
+          return { data: yield* RemoteProjection.project(requests, (items) => items.map(RemoteProjection.permission)) }
         }),
       )
       .handle(
         "session.permission.get",
         Effect.fn(function* (ctx) {
           const owned = yield* requireOwnedRequest(ctx.params.sessionID, ctx.params.requestID)
-          return { data: owned.request }
+          return { data: yield* RemoteProjection.project(owned.request, RemoteProjection.permission) }
         }),
       )
       .handle(

@@ -1,15 +1,17 @@
 export * as Permission from "./permission.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Context, Deferred, Effect, Layer, Schema } from "effect"
+import { Context, Deferred, Effect, Layer, Option, Schema } from "effect"
 import { Permission } from "@opencode/schema/permission"
 import { Bus } from "./bus.js"
+import { DelegatedRuntime } from "./delegate.js"
 import { Location } from "./location.js"
 import { Agent } from "./agent.js"
 import { SessionErrors } from "./session/error.js"
 import { SessionSchema } from "./session/schema.js"
 import { SessionStore } from "./session/store.js"
 import { Wildcard } from "./util/wildcard.js"
+import { PermissionMode } from "./permission/mode.js"
 import { PermissionSaved } from "./permission/saved.js"
 import { PluginHooks } from "./plugin/hooks.js"
 
@@ -65,7 +67,13 @@ export class DeclinedError extends Schema.TaggedError<DeclinedError>()("Permissi
 
 export class CorrectedError extends Schema.TaggedError<CorrectedError>()("Permission.CorrectedError", {
   feedback: Schema.String,
-}) {}
+}) {
+  // REDSUN: leaves let the correction reach the tool runtime, which keeps only the message; without
+  // one the model read an empty failure instead of the user's feedback (the v1 wording).
+  override get message() {
+    return `The user rejected permission to use this specific tool call with the following feedback: ${this.feedback}`
+  }
+}
 
 export class BlockedError extends Schema.TaggedError<BlockedError>()("Permission.BlockedError", {
   rules: Permission.Ruleset,
@@ -100,14 +108,25 @@ export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
   return rulesets.flat()
 }
 
+export const Mode = PermissionMode.Mode
+export type Mode = PermissionMode.Mode
+
+export const storedMode = PermissionMode.stored
+
 export interface Interface {
   readonly close: Effect.Effect<void>
+  /** Evaluate effective host policy without registering an approval request. */
+  readonly inspect: (
+    input: AssertInput,
+  ) => Effect.Effect<{ effect: Permission.Effect; message?: string }, SessionErrors.NotFoundError>
   readonly ask: (input: AssertInput) => Effect.Effect<AskResult, SessionErrors.NotFoundError>
   readonly assert: (input: AssertInput) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
   readonly get: (id: ID) => Effect.Effect<Request | undefined>
   readonly forSession: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<Request>>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
+  readonly mode: () => Effect.Effect<Mode>
+  readonly setMode: (mode: Mode) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
@@ -126,8 +145,25 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
+    const modes = yield* PermissionMode.Service
     const hooks = yield* PluginHooks.Service
+    // REDSUN: optional so the service stays constructible in harnesses without the registry.
+    const delegates = Option.getOrUndefined(yield* Effect.serviceOption(DelegatedRuntime.Service))
     const pending = new Map<ID, Pending>()
+
+    // REDSUN: `auto` approves every host ask. `native_auto` defers to the runtime's own
+    // judgement-based approval (Claude Code's classifier): in a session whose model's runtime
+    // declares one the host adds no prompts of its own, elsewhere it is Manual. The selection is
+    // server-wide (`PermissionMode`); this instance only holds the prompts of its own location.
+    const approvesAll = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      const currentMode = yield* modes.current()
+      if (currentMode === "auto") return true
+      if (currentMode !== "native_auto" || !delegates) return false
+      const model = (yield* sessions.get(sessionID))?.model
+      if (!model) return false
+      return yield* delegates.nativeApproval({ providerID: model.providerID, id: model.id })
+    })
+
     let closed = false
 
     const close = Effect.gen(function* () {
@@ -185,7 +221,15 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
+      if (event.effect === "ask" && (yield* approvesAll(input.sessionID)))
+        return { effect: "allow" as const, message: event.message, rules: all }
       return { effect: event.effect, message: event.message, rules: all }
+    })
+
+    const inspect = Effect.fn("Permission.inspect")(function* (input: AssertInput) {
+      if (closed) return { effect: "deny" as const }
+      const { effect, message } = yield* evaluateInput(input)
+      return { effect, message }
     })
 
     function request(input: AssertInput, message?: string): Request {
@@ -251,6 +295,18 @@ const layer = Layer.effect(
               // WITH feedback (CorrectedError) intentionally stays typed so the leaf can turn
               // it into ToolFailure and the model continues.
               Effect.catchTag("Permission.DeclinedError", (error) => Effect.die(error)),
+              Effect.onInterrupt(() =>
+                Effect.gen(function* () {
+                  if (!pending.delete(item.request.id)) return
+                  // Withdraw the client dialog too: deleting only server state strands the dock
+                  // after a cancelled host tool, even though the next turn could otherwise run.
+                  yield* bus.publish(Permission.Event.Replied, {
+                    sessionID: item.request.sessionID,
+                    requestID: item.request.id,
+                    reply: "reject",
+                  })
+                }),
+              ),
               Effect.ensuring(
                 Effect.sync(() => {
                   pending.delete(item.request.id)
@@ -336,12 +392,51 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
     })
 
-    return Service.of({ ask, assert, reply, get, forSession, list, close })
+    const mode = Effect.fn("Permission.mode")(function* () {
+      return yield* modes.current()
+    })
+
+    // A dialog raised under the old mode would contradict the one the user just chose, whichever
+    // location the selection was made through.
+    const release = Effect.fnUntraced(function* (next: Mode) {
+      if (next === "normal") return
+      for (const [id, item] of [...pending]) {
+        const rules = yield* configured(item.request.sessionID, item.agent).pipe(
+          Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
+        )
+        if (!rules || denied({ ...item.request }, rules)) continue
+        if (!(yield* approvesAll(item.request.sessionID))) continue
+        yield* bus.publish(Permission.Event.Replied, {
+          sessionID: item.request.sessionID,
+          requestID: item.request.id,
+          reply: "once",
+        })
+        yield* Deferred.succeed(item.deferred, undefined)
+        pending.delete(id)
+      }
+    })
+    const unlisten = yield* modes.listen(release)
+    yield* Effect.addFinalizer(() => unlisten)
+
+    const setMode = Effect.fn("Permission.setMode")(function* (next: Mode) {
+      yield* modes.set(next)
+    })
+
+    return Service.of({ inspect, ask, assert, reply, get, forSession, list, mode, setMode, close })
   }),
 )
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Bus.node, Location.node, Agent.node, SessionStore.node, PermissionSaved.node, PluginHooks.node],
+  deps: [
+    Bus.node,
+    PermissionMode.node,
+    Location.node,
+    Agent.node,
+    SessionStore.node,
+    PermissionSaved.node,
+    PluginHooks.node,
+    DelegatedRuntime.node,
+  ],
 })
