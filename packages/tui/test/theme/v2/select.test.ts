@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { selectTheme, selectThemeMode, supportsThemeMode, themeModes } from "@opencode/theme/tui"
-import { getOpenCodeTheme } from "../../../src/theme"
+import { getOpenCodeTheme } from "../../fixture/opencode-v2-theme"
 
 test("selects complete light and dark themes independently", () => {
   const light = selectTheme(getOpenCodeTheme(), "light")

@@ -64,11 +64,7 @@ export function resolveTheme(definition: ThemeDefinition): ResolvedTheme {
 
 function resolveExpandedTheme(definition: ThemeDefinition): ResolvedTheme {
   const hue = resolveHue(definition.hue)
-  const categorical = definition.categorical.map((name) => {
-    const scale = hue[name]
-    if (!scale) throw new Error(`Categorical hue "${name}" was not found`)
-    return scale
-  })
+  const categorical = resolveCategorical(definition.categorical, hue)
   const hueSteps = compileHueSteps(hue)
   const base = tokens(definition)
   const views = {} as Record<SurfaceName, ResolvedTheme>
@@ -82,13 +78,28 @@ function resolveExpandedTheme(definition: ThemeDefinition): ResolvedTheme {
 
 function tokens(definition: ThemeDefinition): ThemeTokensDefinition {
   return {
+    agents: definition.agents ?? {},
     text: definition.text,
     background: definition.background,
     border: definition.border,
     scrollbar: definition.scrollbar,
+    logo: {
+      gradient: { ...defaultLogoGradient(definition.hue), ...definition.logo?.gradient },
+    },
     diff: definition.diff,
     syntax: definition.syntax,
     markdown: definition.markdown,
+  }
+}
+
+// A theme without its own wordmark gradient runs blue into red. Step 400/300
+// sit on the text side of both modes' ramps.
+// Hue names beyond the semantic three are optional, so a theme without blue or red falls back to them.
+function defaultLogoGradient(hue: ThemeDefinition["hue"]) {
+  const scales: Readonly<Record<string, unknown>> = hue
+  return {
+    start: scales.blue === undefined ? "$hue.interactive.400" : "$hue.blue.400",
+    end: scales.red === undefined ? "$hue.accent.300" : "$hue.red.300",
   }
 }
 
@@ -191,6 +202,26 @@ function compileHueSteps(
     increase: (color, amount = 1) => shift(color, amount),
     decrease: (color, amount = 1) => shift(color, -amount),
   }
+}
+
+function resolveCategorical(definition: ThemeDefinition["categorical"], hue: ResolvedHue) {
+  return definition.map((entry) => {
+    if (isHex(entry)) return pinnedScale(RGBA.fromHex(entry))
+    const reference = /^\$hue\.(.+)\.(\d+)$/.exec(entry)
+    const name = reference?.[1] ?? entry
+    const scale = hue[name]
+    if (!scale) throw new Error(`Categorical hue "${name}" was not found`)
+    if (!reference) return scale
+    const step = Number(reference[2])
+    if (!HueStep.literals.some((literal) => literal === step)) throw new Error(`Invalid hue step in "${entry}"`)
+    return pinnedScale(scale[step as HueStep])
+  })
+}
+
+// A pinned categorical entry answers with the same colour at every step, so a
+// consumer that indexes a step still gets the shade the theme named.
+function pinnedScale(color: RGBA): HueScale {
+  return Object.fromEntries(HueStep.literals.map((step) => [step, color])) as HueScale
 }
 
 function resolveHue(definition: ThemeDefinition["hue"]) {

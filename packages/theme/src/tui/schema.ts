@@ -34,18 +34,24 @@ const ColorValue = Schema.Union([
 
 export const HueName = Schema.NonEmptyString
 export type HueName = Schema.Schema.Type<typeof HueName>
-export const CategoricalDefinition = Schema.Array(HueName).check(Schema.isMinLength(1))
-export type CategoricalDefinition = Schema.Schema.Type<typeof CategoricalDefinition>
 const HueColorValue = Schema.Union([
   HexColor,
   Schema.String.check(Schema.isPattern(/^\$hue\..+\.(?:100|200|300|400|500|600|700|800|900)$/)),
 ])
+// A bare hue name contributes its whole scale, so a consumer can pick the step
+// that suits it. A step reference or a literal colour pins one shade -- V1
+// palettes name seven exact colours, several of which round to the same hue.
+export const CategoricalDefinition = Schema.Array(Schema.Union([HueName, HueColorValue])).check(Schema.isMinLength(1))
+export type CategoricalDefinition = Schema.Schema.Type<typeof CategoricalDefinition>
+
+// Per-agent colours keyed by agent id. An agent named here always paints with
+// its declared colour; agents a theme does not name keep their positional
+// assignment from the categorical scale.
+export const AgentsDefinition = Schema.Record(Schema.String, ColorValue)
+export type AgentsDefinition = Schema.Schema.Type<typeof AgentsDefinition>
 
 const HueScaleDefinition = Schema.Record(HueStep, HexColor)
-const HueValueDefinition = Schema.Union([
-  Schema.String.check(Schema.isPattern(/^\$hue\..+$/)),
-  HueScaleDefinition,
-])
+const HueValueDefinition = Schema.Union([Schema.String.check(Schema.isPattern(/^\$hue\..+$/)), HueScaleDefinition])
 type HueValueDefinition = Schema.Schema.Type<typeof HueValueDefinition>
 const HueRecord = Schema.Record(HueName, HueValueDefinition)
 const HueDefinition = HueRecord.check(
@@ -56,8 +62,7 @@ const HueDefinition = HueRecord.check(
     return missing.length ? `Missing required semantic hues: ${missing.join(", ")}` : undefined
   }),
 )
-export type HueDefinition = Schema.Schema.Type<typeof HueDefinition> &
-  Readonly<Record<SemanticHue, HueValueDefinition>>
+export type HueDefinition = Schema.Schema.Type<typeof HueDefinition> & Readonly<Record<SemanticHue, HueValueDefinition>>
 
 const StatefulColorDefinition = Schema.Struct({
   base: Schema.optional(ColorValue),
@@ -189,11 +194,19 @@ const DiffDefinition = Schema.Struct({
 })
 export type DiffDefinition = Schema.Schema.Type<typeof DiffDefinition>
 
+// Redsun's wordmark gradient. Optional everywhere: a theme without one gets the
+// default from `resolve.ts`.
+const LogoDefinition = Schema.Struct({
+  gradient: Schema.optional(Schema.Struct({ start: Schema.optional(ColorValue), end: Schema.optional(ColorValue) })),
+})
+
 const ThemeTokensDefinition = Schema.Struct({
+  agents: Schema.optional(AgentsDefinition),
   text: Schema.optional(TextDefinition),
   background: Schema.optional(BackgroundDefinition),
   border: Schema.optional(Schema.Struct({ base: Schema.optional(ColorValue) })),
   scrollbar: Schema.optional(Schema.Struct({ base: Schema.optional(ColorValue) })),
+  logo: Schema.optional(LogoDefinition),
   diff: Schema.optional(DiffDefinition),
   syntax: Schema.optional(SyntaxDefinition),
   markdown: Schema.optional(MarkdownDefinition),
@@ -219,6 +232,8 @@ const CompleteTextFeedbackDefinition = Schema.Struct({ base: ColorValue, muted: 
 const CompleteBackgroundFeedbackDefinition = Schema.Struct({ base: ColorValue })
 
 const CompleteThemeTokensDefinition = Schema.Struct({
+  agents: Schema.optional(AgentsDefinition),
+  logo: Schema.optional(LogoDefinition),
   text: Schema.Struct({
     base: ColorValue,
     muted: ColorValue,

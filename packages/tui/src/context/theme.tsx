@@ -1,36 +1,30 @@
-import { CliRenderEvents, SyntaxStyle, type TerminalColors } from "@opentui/core"
+import { SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import {
-  generateSyntax,
-  resolveThemeDocument,
-  themeModes,
-  type ResolvedTheme,
-  type SurfaceName,
-} from "@opencode/theme/tui"
+import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
   DEFAULT_THEMES,
   addTheme,
   allThemes,
   hasTheme,
   parseTheme,
+  removeTheme,
   selectedForeground,
   setCustomThemes,
-  setSystemTheme,
   subscribeThemes,
+  themeMode,
   upsertTheme,
   type Theme,
   type ThemeDocumentSource,
 } from "../theme"
-import { generateSystem, terminalMode } from "../theme/system"
 import { discoverThemes } from "../theme/discovery"
 import { createComponentTheme, type ComponentTheme } from "../theme/component"
 import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useConfig } from "../config"
-import { useStorageOptional } from "./storage"
 import { DevTools } from "../devtools"
 import { configDirectories } from "../util/config-directories"
+import { createTerminalBackground } from "../util/terminal-background"
 
 const themePerformance = DevTools.register({ id: "theme-performance", title: "Theme performance" })
 export type ThemeError = { name: string; error: Error }
@@ -88,17 +82,17 @@ export {
   generateSyntax,
   hasTheme,
   selectedForeground,
+  themeMode,
   upsertTheme,
   type Theme,
 } from "../theme"
 
-const THEME_REFRESH_DELAYS = [250, 1000] as const
+const THEME_REFRESH_DELAY = 1000
 
 type State = {
-  mode: "dark" | "light"
-  lock: "dark" | "light" | undefined
   active: string
   ready: boolean
+  locked: number
 }
 
 type Themes = {
@@ -109,14 +103,11 @@ type Themes = {
   has: typeof hasTheme
   currentSyntax: Accessor<SyntaxStyle>
   mode: Accessor<"dark" | "light">
-  modes: Accessor<readonly ("dark" | "light")[]>
-  supports(mode: "dark" | "light"): boolean
-  locked: Accessor<boolean>
-  lock(): void
-  unlock(): void
-  setMode(mode?: "dark" | "light", persist?: boolean): boolean
   set(theme: string): boolean
-  afterPaint(): void
+  select(theme: string): boolean
+  register(name: string, document: unknown): (() => void) | undefined
+  lock(): () => void
+  locked: Accessor<boolean>
   onError(handler: ThemeErrorHandler): () => void
   readonly ready: boolean
 }
@@ -127,11 +118,12 @@ type ThemeContextValue = {
   readonly ready: boolean
 }
 
+const FALLBACK_THEME = "dusk"
+
 const [store, setStore] = createStore<State>({
-  mode: "dark",
-  lock: undefined,
-  active: "opencode",
+  active: FALLBACK_THEME,
   ready: false,
+  locked: 0,
 })
 const [themeSources, setThemeSources] = createSignal(allThemes())
 
@@ -139,38 +131,24 @@ subscribeThemes(setThemeSources)
 
 const themeContext = createSimpleContext({
   name: "Theme",
-  init: (props: { mode: "dark" | "light"; source: ThemeSource }): ThemeContextValue => {
+  init: (props: { source: ThemeSource }): ThemeContextValue => {
     const renderer = useRenderer()
     const configState = useConfig()
     const config = configState.data
     const themes = props.source
-    const cache = useStorageOptional()?.store<{ colors?: TerminalColors }>("system-theme", { initial: {} })
 
     setStore(
       produce((draft) => {
-        const lock = config.theme?.mode === "dark" || config.theme?.mode === "light" ? config.theme.mode : undefined
-        const mode = lock ?? renderer.themeMode ?? props.mode
-        draft.mode = mode
-        draft.lock = lock
-        draft.active = config.theme?.name ?? "opencode"
+        const active = config.theme?.name ?? FALLBACK_THEME
+        draft.active = typeof active === "string" ? active : FALLBACK_THEME
         draft.ready = false
+        draft.locked = 0
       }),
     )
 
     createEffect(() => {
       const theme = config.theme?.name
-      if (!theme) return
-      setStore("active", theme)
-      if (theme === "system") refreshPalette()
-    })
-
-    createEffect(() => {
-      const mode = config.theme?.mode
-      if (mode === "dark" || mode === "light") {
-        pin(mode, false)
-        return
-      }
-      if (mode === "system" && store.lock !== undefined) free(false)
+      if (theme && !store.locked) setStore("active", theme)
     })
 
     function syncCustomThemes() {
@@ -179,145 +157,41 @@ const themeContext = createSimpleContext({
         .then((themes) => {
           setCustomThemes(themes)
         })
-        .catch(() => setStore("active", "opencode"))
+        .catch(() => setStore("active", FALLBACK_THEME))
     }
 
     onMount(() => {
-      // Terminal palette queries serialize with frame output. First paint uses the cached palette or built-in fallback.
       void syncCustomThemes().finally(() => {
         tokens()
         setStore("ready", true)
       })
     })
 
-    const cachedPalette = cache?.[0].colors
-    let palette = usablePalette(cachedPalette) ? cachedPalette : undefined
-    const applyPalette = () => {
-      if (palette) setSystemTheme(generateSystem(palette, store.mode))
-    }
-    if (palette) {
-      const mode = store.lock ?? terminalMode(palette) ?? store.mode
-      if (store.mode !== mode) setStore("mode", mode)
-      applyPalette()
-    } else setSystemTheme(undefined)
-
-    let canProbe = false
-    let probing = false
-    let queued = false
-    let disposed = false
-    function refreshPalette() {
-      if (store.active !== "system") return
-      queued = true
-      if (!canProbe || probing || disposed) return
-
-      queued = false
-      probing = true
-      // Clearing does not cancel a query already owned by the renderer. Share it, then run one fresh query.
-      const retry = renderer.paletteDetectionStatus === "detecting"
-      renderer.clearPaletteCache()
-      void renderer
-        .getPalette({ size: 16 })
-        .then((colors) => {
-          if (disposed || !usablePalette(colors)) return
-          palette = colors
-          const mode = store.lock ?? terminalMode(colors) ?? store.mode
-          if (store.mode !== mode) setStore("mode", mode)
-          applyPalette()
-          void cache?.[1]((draft) => {
-            draft.colors = colors
-          }).catch(() => {})
-        })
-        .catch(() => {})
-        .finally(() => {
-          probing = false
-          if (disposed || (!retry && !queued)) return
-          refreshPalette()
-        })
-    }
-
-    function afterPaint() {
-      canProbe = true
-      refreshPalette()
-    }
-
-    function apply(mode: "dark" | "light") {
-      if (store.mode !== mode) {
-        setStore("mode", mode)
-        applyPalette()
-      }
-      refreshPalette()
-    }
-
-    function pin(mode: "dark" | "light" = store.mode, persist = true) {
-      setStore("lock", mode)
-      apply(mode)
-      if (!persist) return
-      void configState
-        .update((draft) => {
-          draft.theme = { ...draft.theme, mode }
-        })
-        .catch(() => {})
-    }
-
-    function free(persist = true) {
-      setStore("lock", undefined)
-      apply(renderer.themeMode ?? store.mode)
-      if (!persist) return
-      void configState
-        .update((draft) => {
-          draft.theme = { ...draft.theme, mode: "system" }
-        })
-        .catch(() => {})
-    }
-
-    const handleMode = (mode: "dark" | "light") => {
-      if (store.lock) return
-      apply(mode)
-    }
-    renderer.on(CliRenderEvents.THEME_MODE, handleMode)
-
-    const handleThemeNotification = (sequence: string) => {
-      if (sequence !== "\x1b[?997;1n" && sequence !== "\x1b[?997;2n") return false
-      queueMicrotask(refreshPalette)
-      return false
-    }
-    renderer.prependInputHandler(handleThemeNotification)
-
-    let themeRefreshTimeouts: ReturnType<typeof setTimeout>[] = []
+    let themeRefreshTimeout: ReturnType<typeof setTimeout> | undefined
     const refreshThemes = () => {
-      for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
-      themeRefreshTimeouts = THEME_REFRESH_DELAYS.map((delay) =>
-        setTimeout(() => {
-          refreshPalette()
-          if (delay === THEME_REFRESH_DELAYS[THEME_REFRESH_DELAYS.length - 1]) void syncCustomThemes()
-        }, delay),
-      )
+      clearTimeout(themeRefreshTimeout)
+      themeRefreshTimeout = setTimeout(() => void syncCustomThemes(), THEME_REFRESH_DELAY)
     }
     const unsubscribeRefresh = themes.subscribeRefresh?.(refreshThemes)
 
     onCleanup(() => {
-      disposed = true
-      renderer.off(CliRenderEvents.THEME_MODE, handleMode)
-      renderer.removeInputHandler(handleThemeNotification)
       unsubscribeRefresh?.()
-      for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
-      themeRefreshTimeouts.length = 0
+      clearTimeout(themeRefreshTimeout)
     })
 
     const initStarted = performance.now()
     const selected = createMemo(() => {
       const sources = themeSources()
-      const name = sources[store.active] ? store.active : "opencode"
+      const name = sources[store.active] ? store.active : FALLBACK_THEME
       try {
-        return loadTheme(sources[name], name, store.mode)
+        return loadTheme(sources[name], name)
       } catch (error) {
-        if (name === "opencode") throw error
+        if (name === FALLBACK_THEME) throw error
         themeErrors.emit(name, error)
-        setStore("active", "opencode")
-        return loadTheme(sources.opencode, "opencode", store.mode)
+        setStore("active", FALLBACK_THEME)
+        return loadTheme(sources[FALLBACK_THEME], FALLBACK_THEME)
       }
     })
-    const modes = () => selected().modes
     const mode = () => selected().mode
     const tokens = () => selected().theme
     tokens()
@@ -325,6 +199,20 @@ const themeContext = createSimpleContext({
     const current = createComponentTheme(tokens)
 
     createEffect(() => renderer.setBackgroundColor(tokens().background.base))
+
+    if (process.stdout.isTTY && !process.env.OPENCODE_DRIVE) {
+      const background = createTerminalBackground(renderer, (sequence) => {
+        process.stdout.write(sequence)
+      })
+      renderer.on("destroy", background.dispose)
+      onCleanup(() => {
+        renderer.off("destroy", background.dispose)
+        background.dispose()
+      })
+      createEffect(() => {
+        background.update(tokens().background.base)
+      })
+    }
 
     const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens()))
     const service: Themes = {
@@ -337,20 +225,9 @@ const themeContext = createSimpleContext({
       all: allThemes,
       has: hasTheme,
       mode,
-      modes,
-      supports: (requested) => modes().includes(requested),
-      locked: () => store.lock !== undefined,
-      lock: () => pin(mode()),
-      unlock: free,
-      setMode(requested = mode(), persist = true) {
-        if (!modes().includes(requested)) return false
-        pin(requested, persist)
-        return true
-      },
       set(theme: string) {
-        if (!hasTheme(theme)) return false
+        if (store.locked || !hasTheme(theme)) return false
         setStore("active", theme)
-        if (theme === "system") refreshPalette()
         void configState
           .update((draft) => {
             draft.theme = { ...draft.theme, name: theme }
@@ -358,7 +235,25 @@ const themeContext = createSimpleContext({
           .catch(() => {})
         return true
       },
-      afterPaint,
+      select(theme: string) {
+        if (!hasTheme(theme)) return false
+        setStore("active", theme)
+        return true
+      },
+      register(name: string, document: unknown) {
+        if (!upsertTheme(name, document)) return undefined
+        return () => void removeTheme(name)
+      },
+      lock() {
+        setStore("locked", (count) => count + 1)
+        let held = true
+        return () => {
+          if (!held) return
+          held = false
+          setStore("locked", (count) => Math.max(0, count - 1))
+        }
+      },
+      locked: () => store.locked > 0,
       onError: themeErrors.onError,
       get ready() {
         return store.ready
@@ -396,17 +291,11 @@ export function ThemeContextProvider(props: ParentProps<{ context: SurfaceName |
   )
 }
 
-function usablePalette(colors: TerminalColors | undefined): colors is TerminalColors {
-  return Boolean(
-    colors && (colors.defaultBackground ?? colors.palette[0]) && (colors.defaultForeground ?? colors.palette[7]),
-  )
-}
-
-function loadTheme(source: ThemeDocumentSource, name: string, requested: "dark" | "light") {
+/** Resolves a theme source in the mode it declares; throws on a malformed document. */
+export function loadTheme(source: ThemeDocumentSource, name: string) {
   const document = parseTheme(source, name)
-  const modes = themeModes(document)
-  const mode = modes.includes(requested) ? requested : (modes[0] ?? requested)
-  return { modes, mode, theme: resolveThemeDocument(document, mode) }
+  const mode = themeMode(source, name)
+  return { mode, theme: resolveThemeDocument(document, mode) }
 }
 
 export function createSyntaxStyleMemo(factory: () => SyntaxStyle) {

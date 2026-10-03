@@ -10,7 +10,8 @@ import {
   type ResolvedTheme,
   type ThemeDefinition,
 } from "@opencode/theme/tui"
-import { getOpenCodeTheme, parseTheme, type ThemeDocumentSource } from "../../../src/theme"
+import { parseTheme, type ThemeDocumentSource } from "../../../src/theme"
+import { getOpenCodeTheme } from "../../fixture/opencode-v2-theme"
 
 const opencodeLight = selectTheme(getOpenCodeTheme(), "light")
 const opencodeDark = selectTheme(getOpenCodeTheme(), "dark")
@@ -75,6 +76,23 @@ test("validates and resolves categorical hues in configured order", () => {
   expect(() =>
     resolveSource(complete("light", { categorical: ["magenta"] as never }), "light"),
   ).toThrow("Invalid theme")
+})
+
+test("pins categorical entries given as a hue step or a literal color", () => {
+  // A bare hue name still contributes the whole scale so a consumer can index
+  // a step; a pinned entry answers with its one colour at every step.
+  const theme = resolveSource(complete("light", { categorical: ["red", "$hue.blue.400", "#aa00ff"] }), "light")
+
+  const hues = allHues(theme)
+  expect(theme.categorical[0]).toBe(hues.red)
+  expect(theme.categorical[1][200]).toBe(hues.blue[400])
+  expect(theme.categorical[1][800]).toBe(hues.blue[400])
+  expect(theme.categorical[2][200].equals(RGBA.fromHex("#aa00ff"))).toBeTrue()
+  expect(theme.categorical[2][800].equals(RGBA.fromHex("#aa00ff"))).toBeTrue()
+  expect(() => resolveSource(complete("light", { categorical: ["$hue.magenta.400"] }), "light")).toThrow(
+    "Invalid theme",
+  )
+  expect(() => resolveSource(complete("light", { categorical: ["$hue.blue.450"] }), "light")).toThrow("Invalid theme")
 })
 
 test("resolves arbitrary hue names across aliases, categorical colors, and token references", () => {

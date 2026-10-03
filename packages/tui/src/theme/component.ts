@@ -11,8 +11,18 @@ export function createComponentTheme(
     get hue() {
       return view().hue
     },
+    // V1's flat `accent` token: the accent hue at the step that reads as a
+    // foreground. Hue steps run the same way in both modes, so that is 200;
+    // `generateSyntax` picks the same step for its `prompt` rule, so accented
+    // chrome and accented syntax agree.
+    get accent() {
+      return view().hue.accent[200]
+    },
     get categorical() {
       return view().categorical
+    },
+    get agents() {
+      return view().agents
     },
     get text() {
       return view().text
@@ -25,6 +35,9 @@ export function createComponentTheme(
     },
     get scrollbar() {
       return view().scrollbar
+    },
+    get logo() {
+      return view().logo
     },
     get diff() {
       return view().diff
@@ -48,4 +61,7 @@ export function createComponentTheme(
   }
 }
 
-export type ComponentTheme = ResolvedTheme
+export type ComponentTheme = Omit<ResolvedTheme, "surface"> & {
+  readonly accent: RGBA
+  readonly surface: (name: SurfaceName) => ComponentTheme
+}

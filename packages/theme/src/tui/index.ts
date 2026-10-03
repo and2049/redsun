@@ -17,6 +17,7 @@ export {
   SyntaxToken,
   ThemeDefinition,
   ThemeDocument,
+  AgentsDefinition,
   type BackgroundDefinition,
   type DiffDefinition,
   type FormfieldColorDefinition,
@@ -47,3 +48,5 @@ export { migrateV1 } from "./v1-migrate.js"
 export { parseThemeDocument, resolveTheme, resolveThemeDocument, themeDecodeError } from "./resolve.js"
 export { selectTheme, selectThemeMode, supportsThemeMode, themeModes } from "./select.js"
 export { generateSyntax } from "./syntax.js"
+export { DEFAULT_THEMES, isThemeSource, parseTheme, themeMode, type ThemeDocumentSource } from "./source.js"
+export { colorToHex } from "./hex.js"

@@ -3,7 +3,7 @@ import { createSignal } from "solid-js"
 import { RGBA } from "@opentui/core"
 import { resolveTheme, selectTheme } from "@opencode/theme/tui"
 import { createComponentTheme } from "../../../src/theme/component"
-import { getOpenCodeTheme } from "../../../src/theme"
+import { getOpenCodeTheme } from "../../fixture/opencode-v2-theme"
 
 test("provides reactive properties, states, surfaces, and color operations", () => {
   const [resolved, setResolved] = createSignal(resolveTheme(selectTheme(getOpenCodeTheme(), "light")))

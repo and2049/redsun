@@ -1,6 +1,6 @@
 import { selectTheme } from "@opencode/theme/tui"
 import type { BackgroundDefinition, TextDefinition, ThemeDefinition, ThemeDocument } from "@opencode/theme/tui"
-import { getOpenCodeTheme } from "../../../src/theme"
+import { getOpenCodeTheme } from "../../fixture/opencode-v2-theme"
 
 const text = {
   base: "$hue.neutral.900",

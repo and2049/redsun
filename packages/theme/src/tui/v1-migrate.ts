@@ -1,14 +1,22 @@
 import { RGBA } from "@opentui/core"
-import { oklchToHex, rgbToOklch } from "./color.js"
+import { rgbToOklch } from "./color.js"
 import type { BaseThemeDefinition, HueDefinition, Mode, ThemeDefinition, ThemeDocument } from "./index.js"
 import { HueStep } from "./schema.js"
+import { resolveV1, selectedForeground } from "./v1.js"
 import type { Theme, ThemeV1Json } from "./v1.js"
 
-type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
+type ThemeColor = Exclude<
+  keyof Theme,
+  "thinkingOpacity" | "_hasSelectedListItemText" | "agentBuild" | "agentPlan" | "agentCompose"
+>
 type ChromaticHue = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple"
 type V1HueToken = "secondary" | "accent" | "success" | "warning" | "primary" | "error" | "info"
 
 const chromaticHues: readonly ChromaticHue[] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+// The order V1 handed colours to agents, and the order the categorical scale
+// keeps. Entries are emitted as the literal colours rather than the nearest
+// hue name: `secondary` and `warning` collapse onto the same hue in most
+// themes, and rounding them together loses two distinct agent colours.
 const categoricalTokens: readonly V1HueToken[] = [
   "secondary",
   "accent",
@@ -53,11 +61,12 @@ export function migrateV1(theme: ThemeV1Json): ThemeDocument {
   const light = resolveV1(theme, "light")
   const dark = resolveV1(theme, "dark")
   if (light.background.a > 0 && dark.background.a > 0 && light.background.equals(dark.background)) {
-    const lightMode = detectMode(light)
-    const darkMode = detectMode(dark)
-    if (lightMode === darkMode) {
-      const definition = migrateMode(lightMode === "light" ? light : dark, lightMode)
-      if (lightMode === "light") return { base: base(definition), light: { hue: definition.hue } }
+    const declared = theme.mode === "light" || theme.mode === "dark" ? theme.mode : undefined
+    const detected = detectMode(light) === detectMode(dark) ? detectMode(light) : undefined
+    const mode = declared ?? detected
+    if (mode) {
+      const definition = migrateMode(mode === "light" ? light : dark, mode)
+      if (mode === "light") return { base: base(definition), light: { hue: definition.hue } }
       return { base: base(definition), dark: { hue: definition.hue } }
     }
   }
@@ -88,18 +97,32 @@ function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
   const selected = hex(selectedForeground(theme, theme.primary))
   const destructive = hex(selectedForeground(theme, theme.error))
   const hues = inferHues(theme)
+  // A fully transparent semantic colour would hand an agent an invisible label,
+  // so it drops out; a theme that names none of the seven falls back.
   const categorical = categoricalTokens.flatMap((token) => {
-    const hue = hues.byToken[token]
-    return hue ? [hue] : []
+    const color = theme[token]
+    return color && color.toInts()[3] !== 0 ? [hex(color)] : []
   })
-  const uniqueCategorical = categorical.filter((hue, index) => categorical.indexOf(hue) === index)
+  // Declared agent-mode colours; a transparent declaration would paint an
+  // invisible label, so it drops out like a transparent categorical entry.
+  const agents = Object.fromEntries(
+    (
+      [
+        ["build", theme.agentBuild],
+        ["plan", theme.agentPlan],
+        ["compose", theme.agentCompose],
+      ] as const
+    ).flatMap(([id, color]) => (color && color.toInts()[3] !== 0 ? [[id, hex(color)] as const] : [])),
+  )
   const text = "$hue.neutral.200"
   const textMuted = "$hue.neutral.400"
   const primary = "$hue.interactive.200"
   const background = "$hue.neutral.800"
   const backgroundPanel = "$hue.neutral.700"
   const backgroundMenu = "$hue.neutral.600"
-  const backgroundRaisedMax = "$hue.neutral.500"
+  // A migrated ramp never invents a colour, and step 500 of the neutral ramp is
+  // the muted text colour, so the highest raised surface reuses the menu one.
+  const backgroundRaisedMax = backgroundMenu
 
   return referenceHues({
     hue: {
@@ -107,14 +130,15 @@ function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
       ...Object.fromEntries(
         chromaticHues.flatMap((name) => {
           const match = hues.byHue[name]
-          return match ? [[name, hueScale(match.color, mode)]] : []
+          return match ? [[name, hueScale(match.color)]] : []
         }),
       ),
       accent: hues.byToken.accent ? `$hue.${hues.byToken.accent}` : "$hue.gray",
       interactive: hues.byToken.primary ? `$hue.${hues.byToken.primary}` : "$hue.gray",
       neutral: "$hue.gray",
     } as HueDefinition,
-    categorical: uniqueCategorical.length ? uniqueCategorical : ["neutral"],
+    categorical: categorical.length ? categorical : ["neutral"],
+    ...(Object.keys(agents).length ? { agents } : {}),
     text: {
       base: text,
       muted: textMuted,
@@ -175,16 +199,16 @@ function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
         hunkHeader: color("diffHunkHeader"),
       },
       background: {
-        added: color("diffAddedBg"),
-        removed: color("diffRemovedBg"),
-        context: color("diffContextBg"),
+        added: hex(theme.diffAddedBg),
+        removed: hex(theme.diffRemovedBg),
+        context: hex(theme.diffContextBg),
       },
       highlight: { added: color("diffHighlightAdded"), removed: color("diffHighlightRemoved") },
       lineNumber: {
         text: color("diffLineNumber"),
         background: {
-          added: color("diffAddedLineNumberBg"),
-          removed: color("diffRemovedLineNumberBg"),
+          added: hex(theme.diffAddedLineNumberBg),
+          removed: hex(theme.diffRemovedLineNumberBg),
         },
       },
     },
@@ -221,6 +245,11 @@ function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
         action: { primary: { $hovered: "$background.raised.high" } },
       },
     },
+    // Redsun's wordmark gradient. Upstream V1 themes omit it, and a theme with
+    // no gradient of its own falls back to the resolver's default.
+    ...(theme.logoGradientStart && theme.logoGradientEnd
+      ? { logo: { gradient: { start: color("logoGradientStart"), end: color("logoGradientEnd") } } }
+      : {}),
   })
 }
 
@@ -246,14 +275,23 @@ function referenceHues(theme: ThemeDefinition): ThemeDefinition {
     return scale
   }
 
+  // A snapped scale repeats one colour across a run of steps, so the anchor is
+  // indexed first: a token keeps a reference to the step its colour was
+  // actually declared for rather than to whichever duplicate sorts lowest.
+  const anchor: HueStep = 200
+  const order = [anchor, ...HueStep.literals.filter((step) => step !== anchor)]
   const references = new Map<string, string>()
   const index = (name: string, overwrite: boolean) => {
     const scale = resolve(name)
     if (!scale) return
-    HueStep.literals.forEach((step) => {
+    const seen = new Set<string>()
+    order.forEach((step) => {
       const color = scale[step]
-      if (!color || (!overwrite && references.has(color.toLowerCase()))) return
-      references.set(color.toLowerCase(), `$hue.${name}.${step}`)
+      if (!color) return
+      const key = color.toLowerCase()
+      if (seen.has(key) || (!overwrite && references.has(key))) return
+      seen.add(key)
+      references.set(key, `$hue.${name}.${step}`)
     })
   }
   chromaticHues.forEach((name) => index(name, false))
@@ -337,86 +375,20 @@ function ambiguous(color: RGBA, chroma = toOklch(color).c) {
   return color.toInts()[3] === 0 || chroma < minimumChroma
 }
 
-function resolveV1(theme: ThemeV1Json, mode: "dark" | "light"): Theme {
-  const defs = theme.defs ?? {}
-
-  function resolveColor(value: unknown, chain: string[] = []): RGBA {
-    if (value instanceof RGBA) return value
-    if (typeof value === "string") {
-      if (value === "transparent" || value === "none") return RGBA.fromInts(0, 0, 0, 0)
-      if (value.startsWith("#")) return RGBA.fromHex(value)
-      if (chain.includes(value)) throw new Error(`Circular color reference: ${[...chain, value].join(" -> ")}`)
-      const next = defs[value] ?? theme.theme[value as ThemeColor]
-      if (next === undefined) throw new Error(`Color reference "${value}" not found in defs or theme`)
-      return resolveColor(next, [...chain, value])
-    }
-    if (typeof value === "number") return ansi(value)
-    if (!value || typeof value !== "object" || !(mode in value)) throw new Error("Invalid V1 theme color")
-    return resolveColor((value as Record<"dark" | "light", unknown>)[mode], chain)
-  }
-
-  const resolved = Object.fromEntries(
-    Object.entries(theme.theme)
-      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "thinkingOpacity")
-      .map(([key, value]) => [key, resolveColor(value)]),
-  ) as Partial<Record<ThemeColor, RGBA>>
-  const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
-  resolved.selectedListItemText = hasSelectedListItemText
-    ? resolveColor(theme.theme.selectedListItemText)
-    : resolved.background
-  resolved.backgroundMenu = theme.theme.backgroundMenu
-    ? resolveColor(theme.theme.backgroundMenu)
-    : resolved.backgroundElement
-
-  return {
-    ...resolved,
-    _hasSelectedListItemText: hasSelectedListItemText,
-    thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,
-  } as Theme
-}
-
-function selectedForeground(theme: Theme, background: RGBA) {
-  if (theme._hasSelectedListItemText) return theme.selectedListItemText
-  if (theme.background.a !== 0) return theme.background
-  return 0.299 * background.r + 0.587 * background.g + 0.114 * background.b > 0.5
-    ? RGBA.fromInts(0, 0, 0)
-    : RGBA.fromInts(255, 255, 255)
-}
-
-function hueScale(color: RGBA, mode: "light" | "dark") {
-  const value = toOklch(color)
-  const anchor = 200
-  const endpoint = mode === "light" ? Math.max(0.97, value.l) : Math.min(0.18, value.l)
-  const alpha = color.toInts()[3]
-  return Object.fromEntries(
-    HueStep.literals.map((step) => {
-      if (step === anchor) return [step, hex(color)]
-      const progress = (step - anchor) / (900 - anchor)
-      const generated = oklchToHex({
-        l: value.l + (endpoint - value.l) * progress,
-        c: value.c * (1 - progress * 0.5),
-        h: value.h,
-      })
-      return [step, alpha === 255 ? generated : `${generated}${byte(alpha)}`]
-    }),
-  ) as Record<HueStep, string>
+// A migrated ramp only ever answers with a colour the V1 file named. Each step
+// takes the nearest anchor at or below it, and a step below the lowest anchor
+// takes that lowest anchor. A chromatic hue declares exactly one anchor, so its
+// scale is pinned to that colour.
+function hueScale(color: RGBA) {
+  return Object.fromEntries(HueStep.literals.map((step) => [step, hex(color)])) as Record<HueStep, string>
 }
 
 function neutralScale(theme: Theme) {
   const anchors = neutralAnchors(theme)
   return Object.fromEntries(
     HueStep.literals.map((step) => {
-      const exact = anchors.find((anchor) => anchor.step === step)
-      if (exact) return [step, hex(exact.color)]
-      const first = anchors[0]!
-      const last = anchors.at(-1)!
-      const [lower, upper] =
-        step < first.step
-          ? [first, anchors[1]!]
-          : step > last.step
-            ? [anchors.at(-2)!, last]
-            : [anchors.filter((anchor) => anchor.step < step).at(-1)!, anchors.find((anchor) => anchor.step > step)!]
-      return [step, interpolate(lower.color, upper.color, (step - lower.step) / (upper.step - lower.step))]
+      const anchor = anchors.findLast((entry) => entry.step <= step) ?? anchors[0]!
+      return [step, hex(anchor.color)]
     }),
   ) as Record<HueStep, string>
 }
@@ -430,24 +402,6 @@ function neutralAnchors(theme: Theme) {
     { step: 800, color: theme.text },
   ]
   return light.toReversed().map((source) => ({ ...source, step: (1000 - source.step) as HueStep }))
-}
-
-function interpolate(first: RGBA, second: RGBA, amount: number) {
-  const start = toOklch(first)
-  const end = toOklch(second)
-  const startHue = Number.isFinite(start.h) ? start.h : Number.isFinite(end.h) ? end.h : 0
-  const endHue = Number.isFinite(end.h) ? end.h : startHue
-  const hue = ((((endHue - startHue) % 360) + 540) % 360) - 180
-  const generated = oklchToHex({
-    l: start.l + (end.l - start.l) * amount,
-    c: start.c + (end.c - start.c) * amount,
-    h: startHue + hue * amount,
-  })
-  const alpha = Math.max(
-    0,
-    Math.min(255, Math.round(first.toInts()[3] + (second.toInts()[3] - first.toInts()[3]) * amount)),
-  )
-  return alpha === 255 ? generated : `${generated}${byte(alpha)}`
 }
 
 function toOklch(color: RGBA) {
@@ -465,38 +419,4 @@ function hexInts(r: number, g: number, b: number, a: number) {
 
 function byte(value: number) {
   return value.toString(16).padStart(2, "0")
-}
-
-function ansi(code: number) {
-  if (code < 16) {
-    const colors = [
-      "#000000",
-      "#800000",
-      "#008000",
-      "#808000",
-      "#000080",
-      "#800080",
-      "#008080",
-      "#c0c0c0",
-      "#808080",
-      "#ff0000",
-      "#00ff00",
-      "#ffff00",
-      "#0000ff",
-      "#ff00ff",
-      "#00ffff",
-      "#ffffff",
-    ]
-    return RGBA.fromHex(colors[code] ?? "#000000")
-  }
-  if (code < 232) {
-    const index = code - 16
-    const value = (part: number) => (part === 0 ? 0 : part * 40 + 55)
-    return RGBA.fromInts(value(Math.floor(index / 36)), value(Math.floor(index / 6) % 6), value(index % 6))
-  }
-  if (code < 256) {
-    const gray = (code - 232) * 10 + 8
-    return RGBA.fromInts(gray, gray, gray)
-  }
-  return RGBA.fromInts(0, 0, 0)
 }

@@ -2,10 +2,10 @@
 import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
+import { createSignal } from "solid-js"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
-import { getOpenCodeTheme } from "../../../src/theme"
-import opencodeSource from "../../../src/theme/assets/opencode.json" with { type: "json" }
-import type { ThemeV1Json } from "@opencode/theme/tui/v1"
+import { v1Theme } from "../../fixture/fixture"
+import { getOpenCodeTheme } from "../../fixture/opencode-v2-theme"
 import { ConfigProvider } from "../../../src/config"
 import { ThemeContextProvider, ThemeProvider, type ThemeError, useTheme, useThemes } from "../../../src/context/theme"
 
@@ -17,21 +17,20 @@ async function wait(fn: () => boolean) {
   }
 }
 
-test("uses an available mode while retaining the pinned preference", async () => {
-  const opencodeV1 = opencodeSource as ThemeV1Json
-  const lightOnly = structuredClone(opencodeV1)
+test("takes its mode from the selected theme", async () => {
+  const lightOnly = v1Theme()
   lightOnly.theme.background = "#eeeeee"
   lightOnly.theme.text = "#111111"
-  const dual = structuredClone(opencodeV1)
+  const dual = v1Theme()
   dual.theme.background = { light: "#eeeeee", dark: "#111111" }
   dual.theme.text = { light: "#111111", dark: "#eeeeee" }
-  const darkOnly = structuredClone(opencodeV1)
+  const darkOnly = v1Theme()
   darkOnly.theme.background = "#111111"
   darkOnly.theme.text = "#eeeeee"
   const native = {
     base: { ...getOpenCodeTheme().base, text: { ...getOpenCodeTheme().base.text, base: "#abcdef" } },
     dark: { hue: getOpenCodeTheme().dark.hue },
-  } as const
+  }
   let themes: ReturnType<typeof useThemes> | undefined
 
   function Probe() {
@@ -47,9 +46,8 @@ test("uses an available mode while retaining the pinned preference", async () =>
 
   const app = await testRender(
     () => (
-      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "light-only", mode: "dark" } })}>
+      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "light-only" } })}>
         <ThemeProvider
-          mode="dark"
           source={{ discover: () => Promise.resolve({ "light-only": lightOnly, "dark-only": darkOnly, dual, native }) }}
         >
           <Probe />
@@ -63,20 +61,16 @@ test("uses an available mode while retaining the pinned preference", async () =>
   try {
     await wait(() => themes?.ready === true)
     expect(current().mode()).toBe("light")
-    expect(current().modes()).toEqual(["light"])
-    expect(current().supports("dark")).toBeFalse()
-    expect(current().setMode("dark")).toBeFalse()
     expect(current().set("dark-only")).toBeTrue()
     await wait(() => current().mode() === "dark")
-    expect(current().modes()).toEqual(["dark"])
     expect(current().set("light-only")).toBeTrue()
     await wait(() => current().mode() === "light")
+    // A document carrying both modes declares no side of its own, so it reads as dark.
     expect(current().set("dual")).toBeTrue()
     await wait(() => current().mode() === "dark")
-    expect(current().modes()).toEqual(["light", "dark"])
     expect(current().set("native")).toBeTrue()
     await wait(() => current().selected === "native")
-    expect(current().modes()).toEqual(["dark"])
+    expect(current().mode()).toBe("dark")
     expect(current().current.text.base.equals(RGBA.fromHex("#abcdef"))).toBeTrue()
   } finally {
     app.renderer.destroy()
@@ -93,7 +87,7 @@ test.each([
       light: getOpenCodeTheme().light,
     },
   ],
-] as const)("falls back to OpenCode when configured V2 theme %s is invalid", async (_label, source) => {
+] as const)("falls back to the default theme when configured V2 theme %s is invalid", async (_label, source) => {
   let themes: ReturnType<typeof useThemes> | undefined
   let failure: ThemeError | undefined
   let unsubscribe: (() => void) | undefined
@@ -109,7 +103,7 @@ test.each([
   const app = await testRender(
     () => (
       <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "invalid" } })}>
-        <ThemeProvider mode="dark" source={{ discover: () => discovery.promise }}>
+        <ThemeProvider source={{ discover: () => discovery.promise }}>
           <Probe />
         </ThemeProvider>
       </ConfigProvider>
@@ -121,7 +115,7 @@ test.each([
 
   try {
     await wait(() => themes?.ready === true)
-    expect(themes?.selected).toBe("opencode")
+    expect(themes?.selected).toBe("dusk")
     expect(failure?.name).toBe("invalid")
     expect(failure?.error).toBeInstanceOf(Error)
     expect(failure?.error.message.length).toBeGreaterThan(0)
@@ -153,8 +147,8 @@ test("dialog surfaces are absolute and can be inherited through the theme contex
 
   const app = await testRender(
     () => (
-      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "opencode", mode: "dark" } })}>
-        <ThemeProvider mode="dark" source={{ discover: async () => ({}) }}>
+      <ConfigProvider config={createTuiResolvedConfig({ theme: { name: "dusk" } })}>
+        <ThemeProvider source={{ discover: async () => ({}) }}>
           <Probe />
         </ThemeProvider>
       </ConfigProvider>
@@ -172,8 +166,55 @@ test("dialog surfaces are absolute and can be inherited through the theme contex
     expect(dialog.background.base).toBe(themes.currentTokens().background.raised.base)
     expect(contextual.background.base).toBe(dialog.background.base)
     expect(contextual.text.base).toBe(dialog.text.base)
-    expect(dialog.decrease(dialog.background.raised.base)).toBe(themes.currentTokens().hue.neutral[600])
   } finally {
     app.renderer.destroy()
   }
 })
+
+test.each(["dusk", "dawn"] as const)(
+  "reactive %s theme contexts change without remounting their contents",
+  async (name) => {
+    const [context, setContext] = createSignal<"dialog" | undefined>("dialog")
+    const [parent, setParent] = createSignal<"dialog" | undefined>()
+    let theme: ReturnType<typeof useTheme> | undefined
+    let themes: ReturnType<typeof useThemes> | undefined
+    let mounts = 0
+    function Probe() {
+      mounts++
+      theme = useTheme()
+      themes = useThemes()
+      return <text fg={theme.text.base}>probe</text>
+    }
+    const app = await testRender(() => (
+      <ConfigProvider config={createTuiResolvedConfig({ theme: { name } })}>
+        <ThemeProvider source={{ discover: async () => ({}) }}>
+          <ThemeContextProvider context={parent()}>
+            <ThemeContextProvider context={context()}>
+              <Probe />
+            </ThemeContextProvider>
+          </ThemeContextProvider>
+        </ThemeProvider>
+      </ConfigProvider>
+    ))
+    app.renderer.start()
+    try {
+      await wait(() => themes?.ready === true)
+      if (!theme || !themes) throw new Error("Theme provider is not mounted")
+      const view = theme
+      expect(view.background.base).toBe(themes.current.surface("dialog").background.base)
+      setContext(undefined)
+      await app.flush()
+      expect(view.background.base).toBe(themes.current.background.base)
+      setParent("dialog")
+      await app.flush()
+      expect(view.background.base).toBe(themes.current.surface("dialog").background.base)
+      setContext("dialog")
+      await app.flush()
+      expect(view.text.base).toBe(themes.current.surface("dialog").text.base)
+      expect(theme).toBe(view)
+      expect(mounts).toBe(1)
+    } finally {
+      app.renderer.destroy()
+    }
+  },
+)
