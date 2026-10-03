@@ -44,7 +44,7 @@ test("markdown list items follow a theme change like paragraphs do", async () =>
         internalBlockMode="top-level"
         conceal
         fg={theme.markdown.text}
-        bg={theme.background.default}
+        bg={theme.background.base}
       />
     )
   }

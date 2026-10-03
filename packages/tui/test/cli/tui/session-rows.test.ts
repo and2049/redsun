@@ -42,12 +42,13 @@ test("stamps a settled turn with the local completion time", () => {
   expect(completionStamp(lateNight, new Date(2026, 7, 12, 1, 0).getTime())).toBe("yesterday 23:59")
 })
 
-test("measures turn output throughput across model steps without tool time", () => {
+test("measures request throughput including reasoning across model changes without tool time", () => {
   const first = assistant("assistant-1", [])
-  first.time = { created: 8_000, streamed: 10_000, completed: 20_000 }
+  first.time = { created: 6_000, streamed: 10_000, completed: 20_000 }
   first.tokens = { input: 10, output: 20, reasoning: 5, cache: { read: 0, write: 0 } }
   const final = assistant("assistant-2", [])
-  final.time = { created: 27_000, streamed: 30_000, completed: 31_000 }
+  final.model = { id: "other-model", providerID: "other-provider", variant: "other-variant" }
+  final.time = { created: 24_000, streamed: 30_000, completed: 31_000 }
   final.tokens = { input: 20, output: 30, reasoning: 10, cache: { read: 0, write: 0 } }
   const messages: SessionMessageInfo[] = [
     { type: "user", id: "user-1", text: "Question", time: { created: 1_000 } },
@@ -55,7 +56,9 @@ test("measures turn output throughput across model steps without tool time", () 
     final,
   ]
 
-  expect(turnTokensPerSecond(final, messages)).toBe(10)
+  expect(turnTokensPerSecond(final, messages)).toBe(6.5)
+  first.time.streamed = undefined
+  expect(turnTokensPerSecond(final, messages)).toBeUndefined()
 })
 
 test("omits turn throughput when a stream boundary is unavailable", () => {
@@ -96,10 +99,10 @@ test.each([false, true])(
           : [],
       ),
     ).toEqual([
-      [2_000, 5],
-      [3_000, 10],
-      [6_000, 15],
-      [4_000, 6],
+      [2_000, 7],
+      [3_000, 12],
+      [6_000, 17],
+      [4_000, 7],
       [0, undefined],
     ])
   },
@@ -622,10 +625,11 @@ test("blends streamed usage with an in-flight estimate while the turn is live", 
     inflight,
   ]
 
-  // 20 real tokens over 2s plus ~10 estimated (40 chars / 4) over the 2s elapsed so far.
-  expect(turnTokensPerSecond(inflight, messages, undefined, undefined, { now: 29_000 })).toBe(7.5)
+  // 25 real tokens (output plus reasoning) over 2s plus ~10 estimated (40 chars / 4)
+  // over the 2s elapsed so far.
+  expect(turnTokensPerSecond(inflight, messages, undefined, undefined, { now: 29_000 })).toBe(8.75)
   // The estimate moves with the clock even while no new content arrives.
-  expect(turnTokensPerSecond(inflight, messages, undefined, undefined, { now: 33_000 })).toBe(3.75)
+  expect(turnTokensPerSecond(inflight, messages, undefined, undefined, { now: 33_000 })).toBe(4.375)
   expect(turnTokensPerSecond(inflight, messages)).toBeUndefined()
 })
 

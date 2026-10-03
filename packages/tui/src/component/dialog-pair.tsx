@@ -18,7 +18,7 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
   const client = useClient()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const { t } = useLanguage()
   const [loadError, setLoadError] = createSignal<unknown>()
   const [showPassword, setShowPassword] = createSignal(false)
@@ -63,33 +63,33 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
       <box flexDirection={horizontal() ? "row" : "column"} alignItems={horizontal() ? "flex-start" : "center"} gap={2}>
         <box width={horizontal() ? 29 : "100%"} flexShrink={0} gap={1}>
           <box>
-            <text fg={theme.text.subdued}>{t("remote.thisDevice")}</text>
+            <text fg={theme.text.muted}>{t("remote.thisDevice")}</text>
             <Show when={localhost()}>
               {(url) => (
-                <Link href={href(url())} fg={theme.text.default}>
+                <Link href={href(url())} fg={theme.text.base}>
                   {url()}
                 </Link>
               )}
             </Show>
           </box>
           <box>
-            <text fg={theme.text.subdued}>{t("remote.urls")}</text>
+            <text fg={theme.text.muted}>{t("remote.urls")}</text>
             <For each={value.urls}>
               {(url) => (
-                <Link href={href(url)} fg={theme.text.default}>
+                <Link href={href(url)} fg={theme.text.base}>
                   {url}
                 </Link>
               )}
             </For>
           </box>
           <box>
-            <text fg={theme.text.subdued}>{t("remote.username")}</text>
-            <text fg={theme.text.default}>{value.username}</text>
+            <text fg={theme.text.muted}>{t("remote.username")}</text>
+            <text fg={theme.text.base}>{value.username}</text>
           </box>
           <box>
-            <text fg={theme.text.subdued}>{t("remote.password")}</text>
+            <text fg={theme.text.muted}>{t("remote.password")}</text>
             <text
-              fg={passwordHover() ? theme.text.default : theme.text.subdued}
+              fg={passwordHover() ? theme.text.base : theme.text.muted}
               wrapMode="word"
               onMouseOver={() => setPasswordHover(true)}
               onMouseOut={() => setPasswordHover(false)}
@@ -99,7 +99,7 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
             </text>
           </box>
           <Show when={value.urls.some((url) => ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname))}>
-            <text fg={theme.text.subdued} wrapMode="word">
+            <text fg={theme.text.muted} wrapMode="word">
               {t("remote.runRedsunServiceSetHostname000")}
             </text>
           </Show>
@@ -110,7 +110,7 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
           flexShrink={0}
           alignItems={horizontal() ? "flex-end" : "center"}
         >
-          <text fg={theme.text.default}>{renderUnicodeCompact(JSON.stringify(value), { border: 1 })}</text>
+          <text fg={theme.text.base}>{renderUnicodeCompact(JSON.stringify(value), { border: 1 })}</text>
         </box>
       </box>
     )
@@ -119,17 +119,17 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
   return (
     <box paddingLeft={2} paddingRight={2} paddingBottom={1} gap={1}>
       <box flexDirection="row" justifyContent="space-between">
-        <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
+        <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
           {t("remote.pair")}
         </text>
-        <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
+        <text fg={theme.text.muted} onMouseUp={() => dialog.clear()}>
           esc
         </text>
       </box>
       <Show
         when={loadError()}
         fallback={
-          <Show when={info()} fallback={<text fg={theme.text.subdued}>{t("remote.loadingServerInformation")}</text>}>
+          <Show when={info()} fallback={<text fg={theme.text.muted}>{t("remote.loadingServerInformation")}</text>}>
             <Show
               when={dimensions().height >= 36}
               fallback={
@@ -148,11 +148,11 @@ export function DialogPair(props: { credentials?: DialogPairCredentials }) {
       >
         {(error) => (
           <box>
-            <text fg={theme.text.feedback.error.default} attributes={TextAttributes.BOLD}>
+            <text fg={theme.text.feedback.error.base} attributes={TextAttributes.BOLD}>
               {t("remote.couldNotLoadServerInformation")}
             </text>
-            <text fg={theme.text.subdued}>{errorMessage(error())}</text>
-            <text fg={theme.text.subdued}>{t("remote.closeAndReopenPairToTryAgain")}</text>
+            <text fg={theme.text.muted}>{errorMessage(error())}</text>
+            <text fg={theme.text.muted}>{t("remote.closeAndReopenPairToTryAgain")}</text>
           </box>
         )}
       </Show>

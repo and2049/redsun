@@ -212,7 +212,7 @@ console.log(result.ok, result.notification, result.sound, result.skipped)
 Use semantic theme tokens with OpenTUI elements and pass `context.renderer` to renderer-specific helpers.
 
 ```tsx
-const Status = () => <text fg={context.theme.text.default}>Ready</text>
+const Status = () => <text fg={context.theme.text.base}>Ready</text>
 const renderer = context.renderer
 ```
 
@@ -225,7 +225,7 @@ import { usePlugin } from "@opencode/plugin/tui"
 
 function Status() {
   const context = usePlugin()
-  return <text fg={context.theme.text.default}>{context.app.version}</text>
+  return <text fg={context.theme.text.base}>{context.app.version}</text>
 }
 ```
 

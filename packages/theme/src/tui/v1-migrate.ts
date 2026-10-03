@@ -1,7 +1,7 @@
 import { RGBA } from "@opentui/core"
 import { rgbToOklch } from "./color.js"
-import { DEFAULT_CATEGORICAL, DEFAULT_THEME } from "./defaults.js"
-import type { FileThemeDefinition, Mode, ThemeDocument } from "./index.js"
+import { DEFAULT_CATEGORICAL } from "./categorical.js"
+import type { BaseThemeDefinition, HueDefinition, Mode, ThemeDefinition, ThemeDocument } from "./index.js"
 import { HueStep } from "./schema.js"
 import { resolveV1, selectedForeground } from "./v1.js"
 import type { Theme, ThemeV1Json } from "./v1.js"
@@ -29,6 +29,34 @@ const categoricalTokens: readonly V1HueToken[] = [
 ]
 const minimumChroma = 0.03
 const lightThreshold = 0.6
+// Canonical swatches copied from the original default-theme classifier keep V1 migration self-contained.
+const hueReferences = {
+  light: {
+    red: "#fca5a5",
+    orange: "#fdba74",
+    yellow: "#fde047",
+    green: "#86efac",
+    cyan: "#67e8f9",
+    blue: "#93c5fd",
+    purple: "#d8b4fe",
+  },
+  dark: {
+    red: "#b91c1c",
+    orange: "#c2410c",
+    yellow: "#a16207",
+    green: "#15803d",
+    cyan: "#0e7490",
+    blue: "#1d4ed8",
+    purple: "#7e22ce",
+  },
+} satisfies Record<"light" | "dark", Record<ChromaticHue, string>>
+
+const hueAngles = Object.fromEntries(
+  Object.entries(hueReferences).map(([level, colors]) => [
+    level,
+    Object.fromEntries(Object.entries(colors).map(([name, color]) => [name, toOklch(RGBA.fromHex(color)).h])),
+  ]),
+) as Record<"light" | "dark", Record<ChromaticHue, number>>
 
 export function migrateV1(theme: ThemeV1Json): ThemeDocument {
   const light = resolveV1(theme, "light")
@@ -37,15 +65,24 @@ export function migrateV1(theme: ThemeV1Json): ThemeDocument {
     const declared = theme.mode === "light" || theme.mode === "dark" ? theme.mode : undefined
     const detected = detectMode(light) === detectMode(dark) ? detectMode(light) : undefined
     const mode = declared ?? detected
-    if (mode === "light") return { version: 2, standalone: true, light: migrateMode(light, "light") }
-    if (mode === "dark") return { version: 2, standalone: true, dark: migrateMode(dark, "dark") }
+    if (mode) {
+      const definition = migrateMode(mode === "light" ? light : dark, mode)
+      if (mode === "light") return { base: base(definition), light: { hue: definition.hue } }
+      return { base: base(definition), dark: { hue: definition.hue } }
+    }
   }
+  const lightDefinition = migrateMode(light, "light")
+  const darkDefinition = migrateMode(dark, "dark")
   return {
-    version: 2,
-    standalone: true,
-    light: migrateMode(light, "light"),
-    dark: migrateMode(dark, "dark"),
+    base: base(lightDefinition),
+    light: { hue: lightDefinition.hue },
+    dark: darkDefinition,
   }
+}
+
+function base(definition: ThemeDefinition): BaseThemeDefinition {
+  const { hue: _, ...base } = definition
+  return base
 }
 
 function detectMode(theme: Theme): Mode {
@@ -56,11 +93,11 @@ function luminance(color: RGBA) {
   return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b
 }
 
-function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
+function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
   const color = (key: ThemeColor) => hex(theme[key])
   const selected = hex(selectedForeground(theme, theme.primary))
   const destructive = hex(selectedForeground(theme, theme.error))
-  const hues = inferHues(theme, mode)
+  const hues = inferHues(theme)
   // A fully transparent semantic colour would hand an agent an invisible label,
   // so it drops out; a theme that names none of the seven falls back.
   const categorical = categoricalTokens.flatMap((token) => {
@@ -78,16 +115,19 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
       ] as const
     ).flatMap(([id, color]) => (color && color.toInts()[3] !== 0 ? [[id, hex(color)] as const] : [])),
   )
-  const text = mode === "light" ? "$hue.neutral.800" : "$hue.neutral.200"
-  const textMuted = mode === "light" ? "$hue.neutral.600" : "$hue.neutral.400"
-  const primary = mode === "light" ? "$hue.interactive.800" : "$hue.interactive.200"
-  const background = mode === "light" ? "$hue.neutral.200" : "$hue.neutral.800"
-  const backgroundPanel = mode === "light" ? "$hue.neutral.300" : "$hue.neutral.700"
-  const backgroundMenu = mode === "light" ? "$hue.neutral.400" : "$hue.neutral.600"
+  const text = "$hue.neutral.200"
+  const textMuted = "$hue.neutral.400"
+  const primary = "$hue.interactive.200"
+  const background = "$hue.neutral.800"
+  const backgroundPanel = "$hue.neutral.700"
+  const backgroundMenu = "$hue.neutral.600"
+  // A migrated ramp never invents a colour, and step 500 of the neutral ramp is
+  // the muted text colour, so the highest raised surface reuses the menu one.
+  const backgroundRaisedMax = backgroundMenu
 
-  return referenceHues(mode, {
+  return referenceHues({
     hue: {
-      gray: neutralScale(theme, mode),
+      gray: neutralScale(theme),
       ...Object.fromEntries(
         chromaticHues.map((name) => {
           const match = hues.byHue[name]
@@ -97,24 +137,24 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
       accent: hues.byToken.accent ? `$hue.${hues.byToken.accent}` : "$hue.gray",
       interactive: hues.byToken.primary ? `$hue.${hues.byToken.primary}` : "$hue.gray",
       neutral: "$hue.gray",
-    },
+    } as HueDefinition,
     categorical: categorical.length ? categorical : DEFAULT_CATEGORICAL,
     ...(Object.keys(agents).length ? { agents } : {}),
     text: {
-      default: text,
-      subdued: textMuted,
+      base: text,
+      muted: textMuted,
       action: {
         primary: {
-          default: "$text.default",
+          base: "$text.base",
           $disabled: textMuted,
           $focused: selected,
           $selected: primary,
         },
-        secondary: { default: "$text.subdued", $hovered: "$text.default" },
-        destructive: { default: destructive, $disabled: textMuted },
+        secondary: { base: "$text.muted", $hovered: "$text.base" },
+        destructive: { base: destructive, $disabled: textMuted },
       },
       formfield: {
-        default: text,
+        base: text,
         $hovered: primary,
         $focused: primary,
         $pressed: primary,
@@ -122,35 +162,36 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
         $selected: primary,
       },
       feedback: {
-        error: { default: color("error") },
-        warning: { default: color("warning") },
-        success: { default: color("success") },
-        info: { default: color("info") },
+        error: { base: color("error") },
+        warning: { base: color("warning") },
+        success: { base: color("success") },
+        info: { base: color("info") },
       },
     },
     background: {
-      default: background,
-      surface: {
-        offset: backgroundPanel,
-        overlay: backgroundMenu,
+      base: background,
+      raised: {
+        base: backgroundPanel,
+        high: backgroundMenu,
+        max: backgroundRaisedMax,
       },
       action: {
-        primary: { default: "transparent", $hovered: backgroundPanel, $focused: primary, $selected: "transparent" },
-        secondary: { default: "transparent" },
-        destructive: { default: color("error") },
+        primary: { base: "transparent", $hovered: backgroundPanel, $focused: primary, $selected: "transparent" },
+        secondary: { base: "transparent" },
+        destructive: { base: color("error") },
       },
       formfield: {
-        default: "$background.default",
+        base: "$background.base",
       },
       feedback: {
-        error: { default: "$background.default" },
-        warning: { default: "$background.default" },
-        success: { default: "$background.default" },
-        info: { default: "$background.default" },
+        error: { base: "$background.base" },
+        warning: { base: "$background.base" },
+        success: { base: "$background.base" },
+        info: { base: "$background.base" },
       },
     },
-    border: { default: color("border") },
-    scrollbar: { default: color("borderActive") },
+    border: { base: color("border") },
+    scrollbar: { base: color("borderActive") },
     diff: {
       text: {
         added: color("diffAdded"),
@@ -199,22 +240,21 @@ function migrateMode(theme: Theme, mode: Mode): FileThemeDefinition {
       imageText: color("markdownImageText"),
       codeBlock: color("markdownCodeBlock"),
     },
-    "@context:elevated": {
+    "@dialog": {
       background: {
-        default: "$background.surface.offset",
-        action: { primary: { $hovered: "$background.surface.overlay" } },
+        base: "$background.raised.base",
+        action: { primary: { $hovered: "$background.raised.high" } },
       },
     },
-    "@context:overlay": { background: { default: "$background.surface.overlay" } },
     // Redsun's wordmark gradient. Upstream V1 themes omit it, and a theme with
-    // no gradient of its own falls back to the default document's.
+    // no gradient of its own falls back to the resolver's default.
     ...(theme.logoGradientStart && theme.logoGradientEnd
       ? { logo: { gradient: { start: color("logoGradientStart"), end: color("logoGradientEnd") } } }
       : {}),
   })
 }
 
-function referenceHues(mode: Mode, theme: FileThemeDefinition): FileThemeDefinition {
+function referenceHues(theme: ThemeDefinition): ThemeDefinition {
   const definitions = theme.hue as Record<string, string | Partial<Record<HueStep, string>>> | undefined
   if (!definitions) return theme
   const scales = new Map<string, Partial<Record<HueStep, string>>>()
@@ -239,7 +279,7 @@ function referenceHues(mode: Mode, theme: FileThemeDefinition): FileThemeDefinit
   // A snapped scale repeats one colour across a run of steps, so the anchor is
   // indexed first: a token keeps a reference to the step its colour was
   // actually declared for rather than to whichever duplicate sorts lowest.
-  const anchor: HueStep = mode === "light" ? 800 : 200
+  const anchor: HueStep = 200
   const order = [anchor, ...HueStep.literals.filter((step) => step !== anchor)]
   const references = new Map<string, string>()
   const index = (name: string, overwrite: boolean) => {
@@ -269,10 +309,10 @@ function referenceHues(mode: Mode, theme: FileThemeDefinition): FileThemeDefinit
 
   return Object.fromEntries(
     Object.entries(theme).map(([key, value]) => [key, key === "hue" || key === "categorical" ? value : replace(value)]),
-  ) as FileThemeDefinition
+  ) as ThemeDefinition
 }
 
-function inferHues(theme: Theme, mode: "light" | "dark") {
+function inferHues(theme: Theme) {
   const colors: readonly [V1HueToken, RGBA][] = [
     ["accent", theme.accent],
     ["success", theme.success],
@@ -287,7 +327,7 @@ function inferHues(theme: Theme, mode: "light" | "dark") {
     byToken: Partial<Record<V1HueToken, ChromaticHue>>
   }>(
     (result, [token, color]) => {
-      const nearest = inferHue(color, mode)
+      const nearest = inferHue(color)
       if (!nearest) return result
       const current = result.byHue[nearest.name]
       return {
@@ -306,7 +346,7 @@ function inferHues(theme: Theme, mode: "light" | "dark") {
       ["primary", theme.primary],
     ] as const
   ).reduce((result, [token, color]) => {
-    const nearest = inferHue(color, mode)
+    const nearest = inferHue(color)
     if (!nearest) return result
     return {
       byHue: { ...result.byHue, [nearest.name]: { color, distance: nearest.distance } },
@@ -315,20 +355,16 @@ function inferHues(theme: Theme, mode: "light" | "dark") {
   }, inferred)
 }
 
-function inferHue(color: RGBA, mode: Mode) {
+function inferHue(color: RGBA) {
   const value = toOklch(color)
   if (ambiguous(color, value.c)) return
-  const anchor = inferenceAnchor(value.l)
+  const reference = value.l >= lightThreshold ? hueAngles.light : hueAngles.dark
   return chromaticHues
     .map((name) => ({
       name,
-      distance: hueDistance(value.h, toOklch(RGBA.fromHex(DEFAULT_THEME[mode].hue[name][anchor])).h),
+      distance: hueDistance(value.h, reference[name]),
     }))
     .sort((first, second) => first.distance - second.distance)[0]
-}
-
-function inferenceAnchor(lightness: number): HueStep {
-  return lightness >= lightThreshold ? 300 : 700
 }
 
 function hueDistance(first: number, second: number) {
@@ -348,8 +384,8 @@ function hueScale(color: RGBA) {
   return Object.fromEntries(HueStep.literals.map((step) => [step, hex(color)])) as Record<HueStep, string>
 }
 
-function neutralScale(theme: Theme, mode: "light" | "dark") {
-  const anchors = neutralAnchors(theme, mode)
+function neutralScale(theme: Theme) {
+  const anchors = neutralAnchors(theme)
   return Object.fromEntries(
     HueStep.literals.map((step) => {
       const anchor = anchors.findLast((entry) => entry.step <= step) ?? anchors[0]!
@@ -358,7 +394,7 @@ function neutralScale(theme: Theme, mode: "light" | "dark") {
   ) as Record<HueStep, string>
 }
 
-function neutralAnchors(theme: Theme, mode: "light" | "dark") {
+function neutralAnchors(theme: Theme) {
   const light: { step: HueStep; color: RGBA }[] = [
     { step: 200, color: theme.background },
     { step: 300, color: theme.backgroundPanel },
@@ -366,7 +402,6 @@ function neutralAnchors(theme: Theme, mode: "light" | "dark") {
     { step: 600, color: theme.textMuted },
     { step: 800, color: theme.text },
   ]
-  if (mode === "light") return light
   return light.toReversed().map((source) => ({ ...source, step: (1000 - source.step) as HueStep }))
 }
 
@@ -385,38 +420,4 @@ function hexInts(r: number, g: number, b: number, a: number) {
 
 function byte(value: number) {
   return value.toString(16).padStart(2, "0")
-}
-
-function ansi(code: number) {
-  if (code < 16) {
-    const colors = [
-      "#000000",
-      "#800000",
-      "#008000",
-      "#808000",
-      "#000080",
-      "#800080",
-      "#008080",
-      "#c0c0c0",
-      "#808080",
-      "#ff0000",
-      "#00ff00",
-      "#ffff00",
-      "#0000ff",
-      "#ff00ff",
-      "#00ffff",
-      "#ffffff",
-    ]
-    return RGBA.fromHex(colors[code] ?? "#000000")
-  }
-  if (code < 232) {
-    const index = code - 16
-    const value = (part: number) => (part === 0 ? 0 : part * 40 + 55)
-    return RGBA.fromInts(value(Math.floor(index / 36)), value(Math.floor(index / 6) % 6), value(index % 6))
-  }
-  if (code < 256) {
-    const gray = (code - 232) * 10 + 8
-    return RGBA.fromInts(gray, gray, gray)
-  }
-  return RGBA.fromInts(0, 0, 0)
 }

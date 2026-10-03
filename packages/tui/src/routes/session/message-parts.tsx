@@ -69,8 +69,8 @@ export function TextPart(props: {
   const plugins = usePlugin()
   const bg = () =>
     ctx.navigationMessage() === props.message.id
-      ? tint(theme.background.default, theme.accent, NAVIGATION_TINT)
-      : theme.background.default
+      ? tint(theme.background.base, theme.accent, NAVIGATION_TINT)
+      : theme.background.base
   return (
     <Show when={props.part.text.trim()}>
       <box paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
@@ -262,7 +262,7 @@ export function Disclosure(props: {
   const [hover, setHover] = createSignal(false)
   const collapsedLabel = () => `▶ ${props.label}: `
   const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel()))
-  const color = () => props.color ?? theme.text.subdued
+  const color = () => props.color ?? theme.text.muted
   const attributes = () => (props.italic ? TextAttributes.ITALIC : undefined)
 
   return (
@@ -271,7 +271,7 @@ export function Disclosure(props: {
         when={props.done}
         fallback={
           <box flexDirection="row">
-            <Spinner color={theme.text.feedback.warning.default}>
+            <Spinner color={theme.text.feedback.warning.base}>
               {props.title ? `${props.label}: ${props.title}` : props.label}
             </Spinner>
           </box>
@@ -286,7 +286,7 @@ export function Disclosure(props: {
             props.onToggle()
           }}
         >
-          <text fg={hover() ? theme.text.default : color()} wrapMode="none" attributes={attributes()}>
+          <text fg={hover() ? theme.text.base : color()} wrapMode="none" attributes={attributes()}>
             {props.open ? `▼ ${props.label}:` : collapsedLabel() + teaser()}
           </text>
         </box>

@@ -451,7 +451,7 @@ export function turnTokensPerSecond(
   // A settled turn is rated from real usage alone and needs every step to carry it.
   if (!live && settled.length !== steps.length) return
   if (steps.length === 0) return
-  let output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0), 0)
+  let output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0) + (step.tokens?.reasoning ?? 0), 0)
   let duration = settled.reduce((total, step) => total + Math.max(0, (step.time.streamed ?? 0) - step.time.created), 0)
   if (live)
     for (const step of steps) {

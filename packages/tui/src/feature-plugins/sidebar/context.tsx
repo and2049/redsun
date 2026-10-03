@@ -22,7 +22,7 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
   return (
     <Show when={state() || cost() > 0}>
       <box>
-        <text fg={theme.text.default}>
+        <text fg={theme.text.base}>
           <b>{t("command.category.context")}</b>
         </text>
         <Show when={state()}>
@@ -30,19 +30,19 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
             <>
               <Show when={value().tokens}>
                 {(tokens) => (
-                  <text fg={theme.text.subdued}>
+                  <text fg={theme.text.muted}>
                     {t("session.usage.tokenCount", { tokens: tokens().toLocaleString() })}
                   </text>
                 )}
               </Show>
               <Show when={value().percent !== undefined}>
-                <text fg={theme.text.subdued}>{t("activity.used", { percent: value().percent ?? 0 })}</text>
+                <text fg={theme.text.muted}>{t("activity.used", { percent: value().percent ?? 0 })}</text>
               </Show>
             </>
           )}
         </Show>
         <Show when={cost() > 0}>
-          <text fg={theme.text.subdued}>{t("activity.spent", { cost: money.format(cost()) })}</text>
+          <text fg={theme.text.muted}>{t("activity.spent", { cost: money.format(cost()) })}</text>
         </Show>
       </box>
     </Show>

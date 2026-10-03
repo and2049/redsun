@@ -14,7 +14,7 @@ export function WorkspaceStatus() {
   const compact = () => dimensions().width < 80
   const rcState = () => remote.status()?.state
   const rcColor = () =>
-    rcState() === "unavailable" ? theme.text.feedback.warning.default : theme.text.feedback.success.default
+    rcState() === "unavailable" ? theme.text.feedback.warning.base : theme.text.feedback.success.base
 
   return (
     <box flexShrink={0} height={1} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="flex-end">
@@ -30,25 +30,25 @@ export function WorkspaceStatus() {
             <Show
               when={permission.mode === "native_auto"}
               fallback={
-                <span style={{ fg: theme.text.subdued }}>
+                <span style={{ fg: theme.text.muted }}>
                   {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
                 </span>
               }
             >
-              <span style={{ fg: theme.text.feedback.info.default }}>
+              <span style={{ fg: theme.text.feedback.info.base }}>
                 {`⏵⏵ ${compact() ? language.t("permission.claudeAuto.compact") : language.t("permission.claudeAuto.enabled")}`}
               </span>
               <Show when={!compact()}>
-                <span style={{ fg: theme.text.subdued }}>(Shift+Tab)</span>
+                <span style={{ fg: theme.text.muted }}>(Shift+Tab)</span>
               </Show>
             </Show>
           }
         >
-          <span style={{ fg: theme.text.feedback.success.default }}>
+          <span style={{ fg: theme.text.feedback.success.base }}>
             {compact() ? language.t("permission.autoApprove.on") : `⏵⏵ ${language.t("permission.autoApprove.enabled")}`}
           </span>
           <Show when={!compact()}>
-            <span style={{ fg: theme.text.subdued }}>(Shift+Tab)</span>
+            <span style={{ fg: theme.text.muted }}>(Shift+Tab)</span>
           </Show>
         </Show>
       </text>

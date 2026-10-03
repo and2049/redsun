@@ -7,16 +7,20 @@ import type {
   HueAlias,
   HueStep,
   MarkdownToken,
+  SurfaceName,
   SyntaxToken,
 } from "./schema.js"
 
-export type ResolvedActionState = "default" | ActionState
+export type ResolvedActionState = "base" | ActionState
 export type ResolvedFormfieldState = ResolvedActionState
 export type HueScale = Readonly<Record<HueStep, RGBA>>
 export type Hue = Readonly<Record<BaseHue | HueAlias, HueScale>>
 export type HueSource = Readonly<{ hue: BaseHue | HueAlias; step: HueStep }>
 export type Categorical = readonly HueScale[]
-export type StatefulColor = Readonly<Record<ResolvedActionState, RGBA>>
+export type ActionStates = Readonly<Partial<Record<ActionState, boolean>>>
+export type StatefulColor = Readonly<Record<ResolvedActionState, RGBA>> & {
+  readonly state: (states: ActionStates) => RGBA
+}
 export type FormfieldColor = StatefulColor
 
 export type ResolvedThemeTokens = {
@@ -27,30 +31,25 @@ export type ResolvedThemeTokens = {
   readonly increase: (color: RGBA, amount?: number) => RGBA
   readonly decrease: (color: RGBA, amount?: number) => RGBA
   readonly text: {
-    readonly default: RGBA
-    readonly subdued: RGBA
+    readonly base: RGBA
+    readonly muted: RGBA
     readonly action: Readonly<Record<ActionVariant, StatefulColor>>
     readonly formfield: FormfieldColor
-    readonly status: {
-      readonly running: RGBA
-      readonly question: RGBA
-      readonly permission: RGBA
-      readonly unread: RGBA
-    }
-    readonly feedback: Readonly<Record<FeedbackKind, { readonly default: RGBA; readonly subdued: RGBA }>>
+    readonly feedback: Readonly<Record<FeedbackKind, { readonly base: RGBA; readonly muted: RGBA }>>
   }
   readonly background: {
-    readonly default: RGBA
-    readonly surface: {
-      readonly offset: RGBA
-      readonly overlay: RGBA
+    readonly base: RGBA
+    readonly raised: {
+      readonly base: RGBA
+      readonly high: RGBA
+      readonly max: RGBA
     }
     readonly action: Readonly<Record<ActionVariant, StatefulColor>>
     readonly formfield: FormfieldColor
-    readonly feedback: Readonly<Record<FeedbackKind, { readonly default: RGBA }>>
+    readonly feedback: Readonly<Record<FeedbackKind, { readonly base: RGBA }>>
   }
-  readonly border: { readonly default: RGBA }
-  readonly scrollbar: { readonly default: RGBA }
+  readonly border: { readonly base: RGBA }
+  readonly scrollbar: { readonly base: RGBA }
   readonly logo: { readonly gradient: { readonly start: RGBA; readonly end: RGBA } }
   readonly diff: {
     readonly text: {
@@ -70,8 +69,7 @@ export type ResolvedThemeTokens = {
   readonly markdown: Readonly<Record<MarkdownToken, RGBA>>
 }
 
-export type ContextName = "elevated" | "overlay"
-
 export type ResolvedTheme = ResolvedThemeTokens & {
-  readonly contextual: Readonly<Record<ContextName, ResolvedThemeTokens>>
+  /** The same theme re-resolved on a raised surface. Absolute: every view's surfaces are the base theme's. */
+  readonly surface: (name: SurfaceName) => ResolvedTheme
 }

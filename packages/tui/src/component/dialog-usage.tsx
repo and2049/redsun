@@ -38,7 +38,7 @@ export function DialogUsage() {
   const location = useLocation()
   const config = useConfig()
   const toast = useToast()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const dimensions = useTerminalDimensions()
   dialog.setPlacement("bottom")
   const [revision, refresh] = createSignal(0)
@@ -155,11 +155,11 @@ export function DialogUsage() {
               details.push(
                 `${indent}${window.label.padEnd(7)} ${usageBar(window.usedPercent, width)} ${Number(window.usedPercent.toFixed(1))}% used`,
               )
-              if (window.detail) details.push({ text: `${indent}${window.detail}`, color: theme.text.subdued })
+              if (window.detail) details.push({ text: `${indent}${window.detail}`, color: theme.text.muted })
               if (window.reset)
-                details.push({ text: `${indent}Resets ${resetLabel(window.reset)}`, color: theme.text.subdued })
+                details.push({ text: `${indent}Resets ${resetLabel(window.reset)}`, color: theme.text.muted })
             }
-            if (snapshot.message) details.push({ text: `${indent}${snapshot.message}`, color: theme.text.subdued })
+            if (snapshot.message) details.push({ text: `${indent}${snapshot.message}`, color: theme.text.muted })
           }
         }
         return [
@@ -168,7 +168,7 @@ export function DialogUsage() {
             title: providerRowTitle(provider.label, !collapsed(provider.id)),
             description: !collapsed(provider.id) && loading[provider.id] && snapshot ? "refreshing…" : undefined,
             details,
-            detailsColor: theme.text.default,
+            detailsColor: theme.text.base,
             onSelect: () => void change(provider.id),
           },
         ]
@@ -186,7 +186,7 @@ export function DialogUsage() {
       }}
       emptyView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>Connect ChatGPT, Claude Code, or Kiro to view plan usage.</text>
+          <text fg={theme.text.muted}>Connect ChatGPT, Claude Code, or Kiro to view plan usage.</text>
         </box>
       }
       footerHints={[

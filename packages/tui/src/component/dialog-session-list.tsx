@@ -30,7 +30,7 @@ export function DialogSessionList() {
   const dialog = useDialog()
   const route = useRoute()
   const data = useData()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const client = useClient()
   const local = useLocal()
   const config = useConfig().data
@@ -196,11 +196,11 @@ export function DialogSessionList() {
       title={t("home.sessions.search.sessions")}
       titleView={
         <box flexDirection="row">
-          <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
+          <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
             {t("home.sessions.search.sessions")}
           </text>
           <Show when={!allProjects() && currentProjectName()}>
-            <text fg={theme.text.subdued}>{t("ui.for", { project: currentProjectName() })}</text>
+            <text fg={theme.text.muted}>{t("ui.for", { project: currentProjectName() })}</text>
           </Show>
         </box>
       }
@@ -225,14 +225,14 @@ export function DialogSessionList() {
       ]}
       emptyView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={searchState().error ? theme.text.feedback.error.default : theme.text.subdued}>
+          <text fg={searchState().error ? theme.text.feedback.error.base : theme.text.muted}>
             {searchState().message}
           </text>
         </box>
       }
       noMatchView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={searchState().error ? theme.text.feedback.error.default : theme.text.subdued}>
+          <text fg={searchState().error ? theme.text.feedback.error.base : theme.text.muted}>
             {searchState().message}
           </text>
         </box>

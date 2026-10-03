@@ -22,7 +22,7 @@ export function DialogPins(props: { sessionID: string; onJump: (messageID: strin
   const dialog = useDialog()
   const toast = useToast()
   const clipboard = useClipboard()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const { t } = useLanguage()
   const dimensions = useTerminalDimensions()
   const renderer = useRenderer()
@@ -174,10 +174,10 @@ export function DialogPins(props: { sessionID: string; onJump: (messageID: strin
           when={view() === "list"}
           fallback={
             <box paddingLeft={2} paddingRight={2} gap={1}>
-              <text fg={theme.text.default}>{Locale.truncate(title(), Math.max(10, dimensions().width - 8))}</text>
+              <text fg={theme.text.base}>{Locale.truncate(title(), Math.max(10, dimensions().width - 8))}</text>
               <Show
                 when={message()}
-                fallback={<text fg={theme.text.subdued}>{loading() ? t("pins.loading") : t("pins.unavailable")}</text>}
+                fallback={<text fg={theme.text.muted}>{loading() ? t("pins.loading") : t("pins.unavailable")}</text>}
               >
                 {(value) => <PinReader message={value()} />}
               </Show>
@@ -227,7 +227,7 @@ export function DialogPins(props: { sessionID: string; onJump: (messageID: strin
             }}
             onMove={(option) => setSelected(option.value)}
             emptyView={
-              <text fg={theme.text.subdued}>
+              <text fg={theme.text.muted}>
                 {loading() ? t("pins.loading") : failed() ? t("pins.unavailable") : t("pins.empty")}
               </text>
             }
@@ -262,7 +262,7 @@ export function DialogPins(props: { sessionID: string; onJump: (messageID: strin
 
 function PinReader(props: { message: SessionMessageInfo }) {
   const dimensions = useTerminalDimensions()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const { currentSyntax } = useThemes()
   const { t } = useLanguage()
   let scroll: ScrollBoxRenderable | undefined

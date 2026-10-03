@@ -11,7 +11,7 @@ import { Plugin } from "@opencode/plugin/tui"
 
 export default Plugin.define({
   id: "example.skin",
-  api: 1,
+  api: 2,
   setup(context) {
     context.ui.slot({ replace: "home.logo", render: () => <text>Example</text> })
   },
@@ -36,9 +36,10 @@ client tag for the launch. `OPENCODE_CLIENT` remains the environment fallback.
 setup with an error naming both numbers; the entry shows as failed in `/plugins`. Omitting
 `api` skips the check.
 
-| Version | Adds                                                                                                                              |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 1       | `home.logo`, `home.backdrop`, `context.vim`, `context.themes`, `context.ui.dimensions`, `context.app.name`, launch-scoped plugins |
+| Version | Adds                                                                                                                                                                                            |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `home.logo`, `home.backdrop`, `context.vim`, `context.themes`, `context.ui.dimensions`, `context.app.name`, launch-scoped plugins                                                               |
+| 2       | Breaking: OpenCode 2.0.x theme tokens (`text.base`/`muted`, `background.base`/`raised.*`, `border.base`, `surface("dialog")`); V2 documents for `themes.register` are `{ base, light?, dark? }` |
 
 ## Slots
 

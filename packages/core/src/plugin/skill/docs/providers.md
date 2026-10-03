@@ -53,18 +53,16 @@ runtime package, endpoint, and first model together.
 
 The `providers` object is keyed by the provider ID used in model references, such as `acme/qwen3-coder`.
 
-| Field        | Purpose                                                             |
-| ------------ | ------------------------------------------------------------------- |
-| `name`       | Display name.                                                       |
-| `env`        | Ordered environment variable names that can provide the credential. |
-| `package`    | Runtime provider package.                                           |
-| `canonical`  | Built-in provider ID whose catalog defaults this provider inherits. |
-| `settings`   | JSON options passed to the runtime package.                         |
-| `headers`    | String-valued HTTP headers added to requests.                       |
-| `body`       | JSON fields merged into request bodies.                             |
-| `models`     | Models to add or override, keyed by the redsun model ID.            |
-| `transport`  | Provider-level session transport, `"http"` or `"websocket"`.        |
-| `compaction` | Local or provider [compaction](compaction.md) policy.               |
+| Field       | Purpose                                                               |
+| ----------- | --------------------------------------------------------------------- |
+| `name`      | Display name.                                                         |
+| `env`       | Ordered environment variable names that can provide the credential.   |
+| `package`   | Runtime provider package.                                             |
+| `canonical` | Built-in provider ID whose catalog defaults this provider inherits.   |
+| `settings`  | Typed redsun controls and JSON options passed to the runtime package. |
+| `headers`   | String-valued HTTP headers added to requests.                         |
+| `body`      | JSON fields merged into request bodies.                               |
+| `models`    | Models to add or override, keyed by the redsun model ID.              |
 
 ## Endpoint
 
@@ -214,23 +212,21 @@ ID sent to the provider.
 }
 ```
 
-| Field           | Purpose                                                                        |
-| --------------- | ------------------------------------------------------------------------------ |
-| `modelID`       | Model or deployment ID sent to the provider.                                   |
-| `name`          | Display name.                                                                  |
-| `family`        | Model family used for grouping related models.                                 |
-| `package`       | Runtime override for this model.                                               |
-| `settings`      | Package-specific JSON settings.                                                |
-| `headers`       | Additional string-valued request headers.                                      |
-| `body`          | Additional JSON request body fields.                                           |
-| `capabilities`  | Tool support plus accepted input and output media types.                       |
-| `compatibility` | Request and response compatibility overrides.                                  |
-| `variants`      | Named variants with their own `settings`, `headers`, and `body`.               |
-| `cost`          | Input, output, and optional cache pricing per million tokens.                  |
-| `limit`         | Context, input, and output token limits.                                       |
-| `disabled`      | Removes the model from selection when `true`.                                  |
-| `transport`     | Model-level session transport; overrides the provider value.                   |
-| `compaction`    | Model-level [compaction](compaction.md) policy; overrides the provider policy. |
+| Field           | Purpose                                                          |
+| --------------- | ---------------------------------------------------------------- |
+| `modelID`       | Model or deployment ID sent to the provider.                     |
+| `name`          | Display name.                                                    |
+| `family`        | Model family used for grouping related models.                   |
+| `package`       | Runtime override for this model.                                 |
+| `settings`      | Model-level redsun controls and package-specific JSON settings.  |
+| `headers`       | Additional string-valued request headers.                        |
+| `body`          | Additional JSON request body fields.                             |
+| `capabilities`  | Tool support plus accepted input and output media types.         |
+| `compatibility` | Request and response compatibility overrides.                    |
+| `variants`      | Named variants with their own `settings`, `headers`, and `body`. |
+| `cost`          | Input, output, and optional cache pricing per million tokens.    |
+| `limit`         | Context, input, and output token limits.                         |
+| `disabled`      | Removes the model from selection when `true`.                    |
 
 See [Models](models.md) for selection, defaults, capabilities, limits, costs, and variants.
 
@@ -559,10 +555,7 @@ sessions.
   "$schema": "https://opencode.ai/config.json",
   "providers": {
     "openai": {
-      "transport": "http",
-      "models": {
-        "gpt-5.5": { "transport": "websocket" },
-      },
+      "settings": { "transport": "http" },
     },
   },
 }
@@ -570,9 +563,8 @@ sessions.
 
 WebSocket behavior follows these rules:
 
-- Built-in providers opt supported models in according to their own policy.
-- `transport: "websocket"` enables a provider or model; `"http"` disables it.
-- A model value overrides its provider value.
+- Built-in providers opt supported routes in according to their own policy.
+- Provider `settings.transport: "websocket"` enables it; `"http"` disables it.
 - `"websocket"` on a route without a WebSocket channel logs a warning and falls back to HTTP.
 - OpenAI provider compaction uses the same connection.
 - xAI continues from stored responses only. With its default `store: false`, each step is sent in full over the reused

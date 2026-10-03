@@ -342,7 +342,7 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    input.cursorColor = disabled() ? theme.background.surface.offset : theme.text.default
+    input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
     if (config.cursor) input.cursorStyle = config.cursor
   })
 
@@ -1147,7 +1147,17 @@ export function Prompt(props: PromptProps) {
     if (!trimmed && (!props.sessionID || store.mode === "shell" || delivery === "queue"))
       return delivery === "steer" ? (await props.onEmptySubmit?.()) === true : false
     const exitWord = trimmed === "exit" || trimmed === "quit" || trimmed === ":q"
-    const slash = argumentSlash(store.prompt.text, keymapCommands())
+    const inputText = expandTrackedPastedText(
+      store.prompt.text,
+      input.extmarks.getAllForTypeId(promptPartTypeId).flatMap((extmark) => {
+        const ref = store.extmarkToPart.get(extmark.id)
+        if (ref?.type !== "pasted") return []
+        const part = store.prompt.pasted[ref.index]
+        if (!part) return []
+        return [{ start: extmark.start, end: extmark.end, text: part.text }]
+      }),
+    )
+    const slash = argumentSlash(inputText, keymapCommands())
     if (delivery === "queue" && (store.mode === "shell" || exitWord || slash)) {
       toast.show({ message: "This prompt cannot be queued", variant: "warning" })
       return false
@@ -1161,16 +1171,6 @@ export function Prompt(props: PromptProps) {
       await slash.command.run(slash.input)
       return true
     }
-    const inputText = expandTrackedPastedText(
-      store.prompt.text,
-      input.extmarks.getAllForTypeId(promptPartTypeId).flatMap((extmark) => {
-        const ref = store.extmarkToPart.get(extmark.id)
-        if (ref?.type !== "pasted") return []
-        const part = store.prompt.pasted[ref.index]
-        if (!part) return []
-        return [{ start: extmark.start, end: extmark.end, text: part.text }]
-      }),
-    )
     const slashHead = parseSlashHead(inputText, /\s/)
     const isCommand =
       slashHead !== undefined &&
@@ -1587,9 +1587,9 @@ export function Prompt(props: PromptProps) {
     },
   )
   const highlight = createMemo(() => {
-    if (muted()) return theme.border.default
+    if (muted()) return theme.border.base
     if (store.mode === "shell") return theme.text.action.primary.selected
-    return promptDisplay().agentColor ?? theme.border.default
+    return promptDisplay().agentColor ?? theme.border.base
   })
   const agentLabel = createMemo(() => {
     if (store.mode === "shell") return "Shell"
@@ -1638,7 +1638,7 @@ export function Prompt(props: PromptProps) {
     return Locale.truncateWidthWithSuffix(value, Math.max(1, width), suffix).trimEnd()
   })
   const spinnerDef = createMemo(() => {
-    const color = promptDisplay().agentColor ?? theme.border.default
+    const color = promptDisplay().agentColor ?? theme.border.base
     return {
       frames: createFrames({
         color,
@@ -1692,7 +1692,7 @@ export function Prompt(props: PromptProps) {
                           when={!failed()}
                           fallback={
                             <box width="100%" height="100%" alignItems="center" justifyContent="center">
-                              <text fg={theme.text.subdued}>No preview</text>
+                              <text fg={theme.text.muted}>No preview</text>
                             </box>
                           }
                         >
@@ -1724,7 +1724,7 @@ export function Prompt(props: PromptProps) {
                       openImagePreview(visibleImageAttachments().length)
                     }}
                   >
-                    <text fg={theme.text.subdued} wrapMode="none" truncate>
+                    <text fg={theme.text.muted} wrapMode="none" truncate>
                       +{imageAttachments().length - visibleImageAttachments().length} more
                     </text>
                   </box>
@@ -1737,7 +1737,7 @@ export function Prompt(props: PromptProps) {
               flexShrink={0}
               border
               borderStyle="rounded"
-              borderColor={theme.border.default}
+              borderColor={theme.border.base}
               paddingLeft={1}
               paddingRight={1}
             >
@@ -1747,9 +1747,9 @@ export function Prompt(props: PromptProps) {
               <textarea
                 flexGrow={1}
                 placeholder={placeholderText()}
-                placeholderColor={theme.text.subdued}
-                textColor={muted() ? theme.text.subdued : theme.text.default}
-                focusedTextColor={muted() ? theme.text.subdued : theme.text.default}
+                placeholderColor={theme.text.muted}
+                textColor={muted() ? theme.text.muted : theme.text.base}
+                focusedTextColor={muted() ? theme.text.muted : theme.text.base}
                 minHeight={1}
                 maxHeight={maxHeight()}
                 cursorStyle={config.cursor}
@@ -1810,7 +1810,7 @@ export function Prompt(props: PromptProps) {
                   setTimeout(() => {
                     // setTimeout is a workaround and needs to be addressed properly
                     if (!input || input.isDestroyed) return
-                    input.cursorColor = disabled() ? theme.background.surface.offset : theme.text.default
+                    input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
                     if (config.cursor) input.cursorStyle = config.cursor
                   }, 0)
                 }}
@@ -1829,7 +1829,7 @@ export function Prompt(props: PromptProps) {
                   r.stopPropagation()
                 }}
                 focusedBackgroundColor="transparent"
-                cursorColor={disabled() ? theme.background.surface.offset : theme.text.default}
+                cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
                 syntaxStyle={syntax()}
               />
             </box>
@@ -1856,17 +1856,17 @@ export function Prompt(props: PromptProps) {
                 <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
                   <Show when={props.sessionID !== undefined && status() === "running"}>
                     <box flexDirection="row" gap={1} alignItems="center">
-                      <Show when={config.animations ?? true} fallback={<text fg={theme.text.subdued}>[⋯]</text>}>
+                      <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
                         <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
                       </Show>
                       <PromptInterruptStatus
                         armed={store.interrupt > 0}
                         animations={animationsEnabled()}
                         shortcut={interruptShortcut()}
-                        text={theme.text.default}
-                        subdued={theme.text.subdued}
-                        warning={theme.text.feedback.warning.default}
-                        flash={theme.text.feedback.error.default}
+                        text={theme.text.base}
+                        subdued={theme.text.muted}
+                        warning={theme.text.feedback.warning.base}
+                        flash={theme.text.feedback.error.base}
                       />
                     </box>
                   </Show>
@@ -1876,7 +1876,7 @@ export function Prompt(props: PromptProps) {
                         wrapMode="none"
                         truncate
                         flexShrink={1}
-                        fg={editorContextLabelState() === "pending" ? theme.accent : theme.text.subdued}
+                        fg={editorContextLabelState() === "pending" ? theme.accent : theme.text.muted}
                       >
                         {file()}
                       </text>
@@ -1897,7 +1897,7 @@ export function Prompt(props: PromptProps) {
                     <Match when={status() === "running"}>
                       <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
                         <box marginLeft={1}>
-                          <Show when={config.animations ?? true} fallback={<text fg={theme.text.subdued}>[⋯]</text>}>
+                          <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
                             <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
                           </Show>
                         </box>
@@ -1905,10 +1905,10 @@ export function Prompt(props: PromptProps) {
                           armed={store.interrupt > 0}
                           animations={animationsEnabled()}
                           shortcut={interruptShortcut()}
-                          text={theme.text.default}
-                          subdued={theme.text.subdued}
-                          warning={theme.text.feedback.warning.default}
-                          flash={theme.text.feedback.error.default}
+                          text={theme.text.base}
+                          subdued={theme.text.muted}
+                          warning={theme.text.feedback.warning.base}
+                          flash={theme.text.feedback.error.base}
                         />
                       </box>
                     </Match>
@@ -1917,7 +1917,7 @@ export function Prompt(props: PromptProps) {
                         <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
                           <Spinner color={theme.accent}>
                             {progress()}
-                            <span style={{ fg: theme.text.subdued }}>{".".repeat(move.creatingDots())}</span>
+                            <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
                           </Spinner>
                         </box>
                       )}
@@ -1940,7 +1940,7 @@ export function Prompt(props: PromptProps) {
                       wrapMode="none"
                       truncate
                       flexShrink={1}
-                      fg={editorContextLabelState() === "pending" ? theme.accent : theme.text.subdued}
+                      fg={editorContextLabelState() === "pending" ? theme.accent : theme.text.muted}
                     >
                       {file()}
                     </text>

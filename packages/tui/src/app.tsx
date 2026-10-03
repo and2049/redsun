@@ -476,7 +476,7 @@ function App(props: { pair?: DialogPairCredentials }) {
       .catch(() => toast.show({ variant: "error", message: t("ui.failedToRefreshModelCatalog") }))
   const updater = useUpdateNotification()
   const theme = useTheme()
-  const tabsTheme = useTheme("elevated")
+  const tabsTheme = useTheme().surface("dialog")
   const openWorkerModel = useWorkerModelDialog()
   const openWorkerVariant = useWorkerVariantDialog()
   const themes = useThemes()
@@ -1260,7 +1260,7 @@ function App(props: { pair?: DialogPairCredentials }) {
       width={dimensions().width}
       height={dimensions().height}
       flexDirection="column"
-      backgroundColor={theme.background.default}
+      backgroundColor={theme.background.base}
       onMouseDown={(evt) => {
         if (copyOnSelectEnabled()) return
         if (evt.button !== MouseButton.RIGHT) return

@@ -140,7 +140,7 @@ describe("docs convert", () => {
       "<Callout>",
       "```",
     ].join("\n")
-    expect(convert({ id: "cli/theme", text, pages })).toBe(
+    expect(convert({ id: "cli/tui", text, pages })).toBe(
       [
         "# Config",
         "",

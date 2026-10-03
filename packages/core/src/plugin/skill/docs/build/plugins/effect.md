@@ -1012,6 +1012,7 @@ interface ToolEditor {
 }
 
 interface ToolDomain {
+  readonly list: () => Effect.Effect<readonly (Tool.Info & { readonly id: string })[]>
   readonly transform: Transform<ToolEditor>
   readonly reload: () => Effect.Effect<void>
 }

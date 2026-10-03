@@ -32,6 +32,7 @@ it.effect("todowrite registers through the real entry point and persists the lis
             return Effect.void
           }) as never,
           hook: () => Effect.die("unused tool.hook"),
+          list: () => Effect.succeed([]),
           reload: (() => Effect.void) as never,
         },
       }),

@@ -40,8 +40,8 @@ export function SubagentHint(props: { count: number }) {
   const language = useLanguage()
   return (
     <box flexShrink={0} paddingTop={1} paddingLeft={1}>
-      <text fg={theme.text.subdued} wrapMode="none">
-        <span style={{ fg: theme.text.default }}>{shortcuts.get("session.child.list.next") ?? "down"}</span>{" "}
+      <text fg={theme.text.muted} wrapMode="none">
+        <span style={{ fg: theme.text.base }}>{shortcuts.get("session.child.list.next") ?? "down"}</span>{" "}
         {language.t("session.subagents.view", {
           count: props.count,
         })}
@@ -100,17 +100,17 @@ export function SubagentList(props: {
         gap={2}
         paddingLeft={1}
         paddingRight={1}
-        backgroundColor={current() || hover() === row.id ? theme.background.surface.offset : undefined}
+        backgroundColor={current() || hover() === row.id ? theme.background.raised.base : undefined}
         onMouseOver={() => setHover(row.id)}
         onMouseOut={() => setHover(undefined)}
         onMouseUp={() => props.onSelect(row.id)}
       >
-        <text fg={current() ? theme.text.default : theme.text.subdued} wrapMode="none" truncate flexShrink={1}>
+        <text fg={current() ? theme.text.base : theme.text.muted} wrapMode="none" truncate flexShrink={1}>
           {current() ? "●" : "○"}{" "}
           <Show when={row.agent}>
             {(agent) => (
               <>
-                <span style={{ fg: theme.text.subdued }}>{agent()}</span>
+                <span style={{ fg: theme.text.muted }}>{agent()}</span>
                 {"  "}
               </>
             )}
@@ -119,7 +119,7 @@ export function SubagentList(props: {
         </text>
         <Show when={row.detail}>
           {(detail) => (
-            <text fg={theme.text.subdued} wrapMode="none" flexShrink={0}>
+            <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
               {detail()}
             </text>
           )}
@@ -142,7 +142,7 @@ export function SubagentList(props: {
         }}
       </For>
       <Show when={hidden() > 0}>
-        <text fg={theme.text.subdued} paddingLeft={3}>
+        <text fg={theme.text.muted} paddingLeft={3}>
           {language.t("activity.more", { count: hidden() })}
         </text>
       </Show>

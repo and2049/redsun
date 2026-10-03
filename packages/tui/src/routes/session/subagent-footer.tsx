@@ -80,20 +80,20 @@ export function SubagentFooter() {
 
   return (
     <box flexShrink={0}>
-      <box border borderStyle="rounded" borderColor={theme.border.default} paddingLeft={1} paddingRight={1}>
+      <box border borderStyle="rounded" borderColor={theme.border.base} paddingLeft={1} paddingRight={1}>
         <box flexDirection="row" justifyContent="space-between" gap={1}>
           <box flexDirection="row" gap={1}>
-            <text fg={theme.text.default}>
+            <text fg={theme.text.base}>
               <b>{position().label}</b>
             </text>
             <Show when={position().total > 0}>
-              <text fg={theme.text.subdued}>
+              <text fg={theme.text.muted}>
                 ({position().index} of {position().total})
               </text>
             </Show>
             <Show when={usage()}>
               {(item) => (
-                <text fg={theme.text.subdued} wrapMode="none">
+                <text fg={theme.text.muted} wrapMode="none">
                   {[item().context, item().cost].filter(Boolean).join(" · ")}
                 </text>
               )}
@@ -106,11 +106,11 @@ export function SubagentFooter() {
                   onMouseOver={() => setHover(action.key)}
                   onMouseOut={() => setHover(undefined)}
                   onMouseUp={() => keymap.dispatch(action.command)}
-                  backgroundColor={hover() === action.key ? theme.background.surface.offset : undefined}
+                  backgroundColor={hover() === action.key ? theme.background.raised.base : undefined}
                 >
-                  <text fg={theme.text.default}>
+                  <text fg={theme.text.base}>
                     {language.t(action.label)}{" "}
-                    <span style={{ fg: theme.text.subdued }}>{shortcuts.get(action.command)}</span>
+                    <span style={{ fg: theme.text.muted }}>{shortcuts.get(action.command)}</span>
                   </text>
                 </box>
               )}

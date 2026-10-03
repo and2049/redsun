@@ -14,7 +14,7 @@ export function SessionLocationMissing(props: { directory: string; projectID: st
 
 export function SessionLocationUnavailable(props: { directory: string; onMove: () => void }) {
   const paths = useTuiPaths()
-  const theme = useTheme("elevated")
+  const theme = useTheme()
   const language = useLanguage()
   const directory = createMemo(() => Locale.truncateMiddle(abbreviateHome(props.directory, paths.home), 72))
 
@@ -27,8 +27,8 @@ export function SessionLocationUnavailable(props: { directory: string; onMove: (
       title={language.t("session.sessionLocationUnavailable")}
       body={
         <box paddingLeft={1} gap={1}>
-          <text fg={theme.text.subdued}>{directory()}</text>
-          <text fg={theme.text.default}>{language.t("session.chooseAnotherDirectoryToContinueThisSession")}</text>
+          <text fg={theme.text.muted}>{directory()}</text>
+          <text fg={theme.text.base}>{language.t("session.chooseAnotherDirectoryToContinueThisSession")}</text>
         </box>
       }
       options={{ move: language.t("session.chooseDirectory") }}

@@ -15,6 +15,7 @@ import { discoverThemes } from "../src/theme/discovery"
 import { configDirectories } from "../src/util/config-directories"
 import { terminalMode } from "../src/theme/system"
 import { tmpdir, v1Theme } from "./fixture/fixture"
+import { getOpenCodeTheme } from "./fixture/opencode-v2-theme"
 import { resolveThemeDocument } from "@opencode/theme/tui"
 import { DEFAULT_THEMES } from "../src/theme"
 
@@ -37,22 +38,23 @@ test("addTheme keeps first theme for duplicate names", () => {
   expect(allThemes()[name]).toBe(one)
 })
 
-test("addTheme ignores values without a V1 theme or version", () => {
+test("addTheme ignores values without a V1 theme or V2 base", () => {
   const name = `plugin-theme-invalid-${Date.now()}`
   expect(addTheme(name, { defs: { a: "#ffffff" } })).toBe(false)
   expect(addTheme(name, { light: {} })).toBe(false)
+  expect(addTheme(name, { version: 2, light: {} })).toBe(false)
   expect(allThemes()[name]).toBeUndefined()
 })
 
-test("addTheme defers validation of versioned sources", () => {
-  const name = `plugin-theme-versioned-${Date.now()}`
-  expect(addTheme(name, { version: 2 })).toBe(true)
+test("addTheme defers validation of V2 sources", () => {
+  const name = `plugin-theme-v2-deferred-${Date.now()}`
+  expect(addTheme(name, { base: {} })).toBe(true)
   expect(() => parseTheme(allThemes()[name]!, name)).toThrow(`Invalid theme: ${name}`)
 })
 
-test("parseTheme delegates malformed V1 sources and rejects unknown versions", () => {
+test("parseTheme rejects sources that are neither V1 palettes nor V2 documents", () => {
   expect(() => parseTheme({})).toThrow()
-  expect(() => parseTheme({ version: 3 })).toThrow("Unsupported theme version: 3")
+  expect(() => parseTheme({ version: 2, light: {} })).toThrow("Invalid theme")
 })
 
 test("parses unversioned and explicit V1 themes lazily once", () => {
@@ -61,15 +63,18 @@ test("parses unversioned and explicit V1 themes lazily once", () => {
   const first = parseTheme(unversioned, "unversioned")
   const second = parseTheme(explicit, "explicit")
 
-  expect(first.version).toBe(2)
-  expect(second.version).toBe(2)
+  expect(first.base).toBeDefined()
+  expect(second.base).toBeDefined()
   expect(parseTheme(unversioned, "unversioned")).toBe(first)
   expect(parseTheme(explicit, "explicit")).toBe(second)
 })
 
 test("decodes native V2 themes lazily once", () => {
   const name = `plugin-theme-v2-${Date.now()}`
-  const source = { version: 2, light: { categorical: ["red"] } } as const
+  const source = {
+    base: getOpenCodeTheme().base,
+    light: { hue: getOpenCodeTheme().light.hue, categorical: ["red"] },
+  } as const
 
   expect(addTheme(name, source)).toBe(true)
   expect(allThemes()[name]).toBe(source)
@@ -80,7 +85,7 @@ test("decodes native V2 themes lazily once", () => {
 
 test("defers invalid V2 errors until parsing", () => {
   const name = `plugin-theme-invalid-v2-${Date.now()}`
-  expect(addTheme(name, { version: 2, light: { categorical: [] } })).toBe(true)
+  expect(addTheme(name, { base: {}, light: {} })).toBe(true)
   expect(() => parseTheme(allThemes()[name]!, name)).toThrow(`Invalid theme: ${name}`)
 })
 
@@ -197,7 +202,7 @@ test("theme directories include global config before project directories", async
 })
 
 test("ships the fourteen redsun themes, each resolving in the mode it declares", () => {
-  // v0.3.0 split dark/light pairs into standalone single-mode themes rather
+  // v0.3.0 split dark/light pairs into single-mode themes rather
   // than pairing modes inside one document, and the picker is built around
   // that. Each is a flat v1 document run through migrateV1, so this also
   // catches a malformed one.
@@ -220,12 +225,11 @@ test("ships the fourteen redsun themes, each resolving in the mode it declares",
 
   for (const [name, source] of Object.entries(DEFAULT_THEMES)) {
     const document = parseTheme(source, name)
-    expect(document.version, name).toBe(2)
-    expect(document.standalone, name).toBe(true)
+    expect(document.base, name).toBeDefined()
     const modes = [document.light ? "light" : undefined, document.dark ? "dark" : undefined].filter(Boolean)
     expect(modes.length, name).toBe(1)
     const resolved = resolveThemeDocument(document, modes[0] as "light" | "dark")
-    expect(resolved.text.default, name).toBeDefined()
+    expect(resolved.text.base, name).toBeDefined()
     // Every theme names its own wordmark gradient; without it the home screen
     // falls back to the generic default and the theme reads as unfinished.
     expect(resolved.logo.gradient.start, name).toBeDefined()
@@ -239,8 +243,8 @@ test("ships the fourteen redsun themes, each resolving in the mode it declares",
 test("shipped themes resolve only to colours they declare", () => {
   // The TUI must never paint a shade a theme file did not name. Migration snaps
   // every hue step to a declared anchor rather than interpolating between them,
-  // so this covers the whole hue block and every semantic slot in the base,
-  // elevated and overlay views. It is an invariant of the shipped fourteen, not
+  // so this covers the whole hue block and every semantic slot in the base
+  // view (the dialog surface reuses those slots). It is an invariant of the shipped fourteen, not
   // of the format: `selectedForeground` still falls back to pure black or white
   // for a theme that declares a transparent background and no
   // `selectedListItemText`, and none of these do.

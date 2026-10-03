@@ -496,8 +496,8 @@ export function DialogConfig(props: { current?: string }) {
       footer={
         <Show when={items()[selected()]?.backend}>
           <box paddingLeft={4} paddingRight={4} flexDirection="column">
-            <text fg={theme.text.subdued}>{t("settings.globalDefaultsOtherConfigSourcesCanOverride")}</text>
-            <text fg={items()[selected()]?.warning ? theme.text.feedback.warning.default : theme.text.subdued}>
+            <text fg={theme.text.muted}>{t("settings.globalDefaultsOtherConfigSourcesCanOverride")}</text>
+            <text fg={items()[selected()]?.warning ? theme.text.feedback.warning.base : theme.text.muted}>
               {t(items()[selected()]?.warning ?? items()[selected()]?.description ?? "")}
             </text>
           </box>

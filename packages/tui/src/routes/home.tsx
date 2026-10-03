@@ -119,7 +119,7 @@ export function Home() {
         <box height={1} flexShrink={0} />
         <UpdateNotification width={logoWidth()} />
         <box height={1} flexShrink={0} marginTop={1}>
-          <text fg={theme.text.subdued}>
+          <text fg={theme.text.muted}>
             / {language.t("session.commands")} · ! {language.t("session.shell")} · @ {language.t("session.files")}
           </text>
         </box>
@@ -150,7 +150,7 @@ function UpdateNotification(props: { width: number }) {
   const theme = useTheme()
   const language = useLanguage()
   const [hovered, setHovered] = createSignal(false)
-  const backdrop = () => (hovered() ? theme.background.action.primary.hovered : theme.background.default)
+  const backdrop = () => (hovered() ? theme.background.action.primary.hovered : theme.background.base)
   createEffect(() => {
     update.notification()
     setHovered(false)
@@ -178,7 +178,7 @@ function UpdateNotification(props: { width: number }) {
                 update.open?.("notification")
               }}
             >
-              <FadeInText fg={theme.text.subdued} backdrop={backdrop()}>
+              <FadeInText fg={theme.text.muted} backdrop={backdrop()}>
                 <Show when={!remote}>
                   <span style={{ fg: theme.text.action.primary.selected }}>
                     {state.type === "installed" ? "/exit" : "/update"}

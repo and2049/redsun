@@ -103,7 +103,8 @@ test("a plugin declaring a newer API than the host fails setup and names both ve
     maxPasses: 200,
   })
   app.mockInput.pressEnter()
-  await app.waitForFrame((frame) => frame.includes("plugin API 99") && frame.includes("supports 1"), {
+  // The toast wraps its message beside the action button, so match across the line break.
+  await app.waitForFrame((frame) => /plugin API\s+(?:\S+\s+)*?99;/.test(frame) && frame.includes("supports 2"), {
     maxPasses: 200,
   })
 })

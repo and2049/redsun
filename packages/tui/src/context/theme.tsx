@@ -1,6 +1,6 @@
 import { SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
-import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type ContextName } from "@opencode/theme/tui"
+import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
   DEFAULT_THEMES,
   addTheme,
@@ -17,7 +17,7 @@ import {
   type ThemeDocumentSource,
 } from "../theme"
 import { discoverThemes } from "../theme/discovery"
-import { createComponentTheme, createComponentThemeView, type ComponentTheme } from "../theme/component"
+import { createComponentTheme, type ComponentTheme } from "../theme/component"
 import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
@@ -113,7 +113,7 @@ type Themes = {
 }
 
 type ThemeContextValue = {
-  current: ComponentTheme["contextual"][ContextName]
+  current: ComponentTheme
   themes: Themes
   readonly ready: boolean
 }
@@ -196,9 +196,9 @@ const themeContext = createSimpleContext({
     const tokens = () => selected().theme
     tokens()
     themePerformance.set("Init", `${(performance.now() - initStarted).toFixed(2)} ms`)
-    const current = createComponentTheme(tokens, mode)
+    const current = createComponentTheme(tokens)
 
-    createEffect(() => renderer.setBackgroundColor(tokens().background.default))
+    createEffect(() => renderer.setBackgroundColor(tokens().background.base))
 
     if (process.stdout.isTTY && !process.env.OPENCODE_DRIVE) {
       const background = createTerminalBackground(renderer, (sequence) => {
@@ -210,11 +210,11 @@ const themeContext = createSimpleContext({
         background.dispose()
       })
       createEffect(() => {
-        background.update(tokens().background.default)
+        background.update(tokens().background.base)
       })
     }
 
-    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens(), mode()))
+    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens()))
     const service: Themes = {
       current,
       currentTokens: tokens,
@@ -272,21 +272,18 @@ const themeContext = createSimpleContext({
 export function useThemes() {
   return themeContext.use().themes
 }
-export function useTheme(): ComponentTheme
-export function useTheme(context: ContextName): ComponentTheme["contextual"][ContextName]
-export function useTheme(context?: ContextName) {
-  const value = themeContext.use()
-  return context ? value.themes.current.contextual[context] : value.current
+export function useTheme(): ComponentTheme {
+  return themeContext.use().current
 }
 export const ThemeProvider = themeContext.provider
 
-/** Switches context without remounting children; undefined inherits the enclosing view. */
-export function ThemeContextProvider(props: ParentProps<{ context: ContextName | undefined }>) {
+/** Switches the ambient theme surface without remounting children; undefined inherits the enclosing view. */
+export function ThemeContextProvider(props: ParentProps<{ context: SurfaceName | undefined }>) {
   const value = themeContext.use()
-  const current = createComponentThemeView(() => {
+  const current = createComponentTheme(() => {
     const name = props.context
-    return name ? value.themes.currentTokens().contextual[name] : value.current
-  }, value.themes.mode)
+    return name ? value.themes.currentTokens().surface(name) : value.current
+  })
   return (
     <themeContext.context.Provider value={{ current, themes: value.themes, ready: value.ready }}>
       {props.children}

@@ -1,7 +1,7 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { Keymap } from "../context/keymap"
-import { useTheme } from "../context/theme"
+import { ThemeContextProvider, useTheme } from "../context/theme"
 import { applyGain, InputRenderable, MouseButton, Renderable } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
@@ -32,7 +32,7 @@ export function Dialog(
   }>,
 ) {
   const dimensions = useTerminalDimensions()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const renderer = useRenderer()
   const bottom = () => props.placement === "bottom"
 
@@ -43,7 +43,8 @@ export function Dialog(
 
   let dismiss = false
   return (
-    <box
+    <ThemeContextProvider context="dialog">
+      <box
       onMouseDown={() => {
         dismiss = !!renderer.getSelection()
       }}
@@ -79,14 +80,15 @@ export function Dialog(
         maxWidth={bottom() ? dimensions().width : dimensions().width - 2}
         border={bottom() ? SplitBorder.border : false}
         customBorderChars={bottom() ? SplitBorder.customBorderChars : undefined}
-        borderColor={bottom() ? theme.border.default : undefined}
-        backgroundColor={theme.background.default}
+        borderColor={bottom() ? theme.border.base : undefined}
+        backgroundColor={theme.background.base}
       >
-        <box backgroundColor={bottom() ? theme.background.surface.overlay : undefined} paddingTop={1}>
+        <box backgroundColor={bottom() ? theme.background.raised.high : undefined} paddingTop={1}>
           {props.children}
         </box>
       </box>
-    </box>
+      </box>
+    </ThemeContextProvider>
   )
 }
 
