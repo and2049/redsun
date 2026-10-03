@@ -22,7 +22,7 @@ export interface ModelEditor {
   }
 }
 
-export interface ModelDomain extends ModelApi<unknown> {
+export interface ModelDomain extends Omit<ModelApi<unknown>, "refresh"> {
   readonly transform: Transform<ModelEditor>
   readonly reload: () => Effect.Effect<void>
 }

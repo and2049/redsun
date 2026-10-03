@@ -1,9 +1,13 @@
 import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/effect/integration"
 import { define } from "@opencode/plugin/effect/plugin"
 import type { SessionRequest } from "@opencode/plugin/effect/session"
+import { registerUsage } from "@opencode/plugin/effect/usage"
+import { readOpenAIUsage } from "./openai-usage.js"
+import { OpenAIModels } from "./openai-models.js"
 import { Deferred, Effect, Option, Schema, Semaphore, Stream } from "effect"
 import type { Server } from "node:http"
 import { App } from "../../app.js"
+import { Config } from "../../config.js"
 import { Credential } from "../../credential.js"
 import { Bus } from "../../bus.js"
 import { Integration } from "../../integration.js"
@@ -233,8 +237,34 @@ export const OpenAIPlugin = define({
   id: "opencode.provider.openai",
   effect: Effect.fn(function* (ctx) {
     const bus = yield* Bus.Service
+    const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
     const loading = Semaphore.makeUnsafe(1)
     let chatgpt: Credential.OAuth | undefined
+    // REDSUN: ChatGPT-plan input windows follow the backend catalog and `chatgpt_context_window`.
+    let windows: ReadonlyMap<string, OpenAIModels.Window> = new Map()
+    const windowSetting = () =>
+      config
+        ? config.entries().pipe(Effect.map((entries) => Config.latest(entries, "chatgpt_context_window") ?? "default"))
+        : Effect.succeed("default" as const)
+    let setting: OpenAIModels.Setting = yield* windowSetting()
+    // The catalog arrives after startup; until then (or if it never does) models keep the fallback.
+    const loadWindows = Effect.fn("OpenAIPlugin.loadWindows")(function* () {
+      const current = chatgpt
+      if (!current) return
+      const next = yield* Effect.tryPromise({
+        try: (signal) =>
+          OpenAIModels.reader.read(current, codexBaseURL, AbortSignal.any([signal, AbortSignal.timeout(15_000)])),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("ChatGPT model catalog unavailable", { cause }).pipe(Effect.as(undefined)),
+        ),
+      )
+      if (!next || chatgpt !== current) return
+      if (JSON.stringify([...next]) === JSON.stringify([...windows])) return
+      windows = next
+      yield* ctx.provider.reload()
+    })
 
     const load = Effect.fn("OpenAIPlugin.load")(function* () {
       const connection = yield* ctx.integration.connection.active("openai")
@@ -253,6 +283,11 @@ export const OpenAIPlugin = define({
       editor.method.update(headless(ctx.app))
     })
     yield* load()
+    yield* registerUsage(ctx, {
+      providerID: "openai",
+      methods: [browserMethodID, headlessMethodID],
+      read: readOpenAIUsage,
+    })
     yield* ctx.provider.transform((providers) => {
       const item = providers.get(Provider.ID.openai)
       if (!item) return
@@ -293,7 +328,7 @@ export const OpenAIPlugin = define({
           }
           draft.cost = []
           // Match Codex CLI so context consumption and subscription usage stay consistent between clients.
-          draft.limit = { ...draft.limit, context: 400_000, input: 272_000 }
+          draft.limit = { ...draft.limit, ...OpenAIModels.limit(windows.get(apiID), setting) }
         })
       }
     })
@@ -323,7 +358,20 @@ export const OpenAIPlugin = define({
     const refresh = () => loading.withPermit(load().pipe(Effect.andThen(ctx.provider.reload())))
     yield* bus.subscribe(Credential.Event.Switched).pipe(
       Stream.filter((event) => event.data.integrationID === Integration.ID.make("openai")),
-      Stream.runForEach(refresh),
+      Stream.runForEach(() => refresh().pipe(Effect.andThen(loadWindows()))),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    yield* loadWindows().pipe(Effect.forkScoped({ startImmediately: true }))
+    yield* ctx.event.subscribe().pipe(
+      Stream.filter((event) => event.type === "config.updated"),
+      Stream.runForEach(() =>
+        Effect.gen(function* () {
+          const next = yield* windowSetting()
+          if (next === setting) return
+          setting = next
+          yield* ctx.provider.reload()
+        }),
+      ),
       Effect.forkScoped({ startImmediately: true }),
     )
   }),

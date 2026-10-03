@@ -1,0 +1,78 @@
+import type { SessionMessageInfo, SessionMessageAssistant } from "@opencode/client/promise"
+import { Locale } from "./locale"
+import { translate, type Translator } from "../i18n/translate"
+import { stringWidth } from "./string-width"
+import { reportedContextPercent } from "./session"
+
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
+
+export type SessionUsage = {
+  context: string
+  percent?: string
+  cache?: string
+  cost?: string
+}
+
+export function sessionUsage(input: {
+  messages: readonly SessionMessageInfo[]
+  contextLimit?: (model: { providerID: string; id: string }) => number | undefined
+  cost: number
+  t?: Translator
+}): SessionUsage | undefined {
+  const last = input.messages.findLast(
+    (item): item is SessionMessageAssistant =>
+      item.type === "assistant" && ((item.tokens?.output ?? 0) > 0 || reportedContextPercent(item) !== undefined),
+  )
+  if (!last) return undefined
+  const cost = input.cost > 0 ? money.format(input.cost) : undefined
+
+  // A runtime that states only a percentage (Kiro) has no token count or cache split to show.
+  const reported = reportedContextPercent(last)
+  if (reported !== undefined) {
+    const percent = `${Math.round(reported)}%`
+    return { context: `(${percent})`, percent, cost }
+  }
+  if (!last.tokens) return undefined
+
+  const tokens =
+    last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
+  if (tokens <= 0) return undefined
+
+  const limit = input.contextLimit?.(last.model)
+  const percent = limit ? `${Math.round((tokens / limit) * 100)}%` : undefined
+
+  let cumulativeInput = 0
+  let cumulativeRead = 0
+  let cumulativeWrite = 0
+  for (const item of input.messages) {
+    if (item.type !== "assistant" || !item.tokens || item.tokens.output === 0) continue
+    cumulativeInput += item.tokens.input
+    cumulativeRead += item.tokens.cache.read
+    cumulativeWrite += item.tokens.cache.write
+  }
+  const denominator = cumulativeInput + cumulativeRead + cumulativeWrite
+  const ratio =
+    cumulativeRead + cumulativeWrite > 0 && denominator > 0
+      ? Math.round((cumulativeRead / denominator) * 100)
+      : undefined
+
+  return {
+    context: percent ? `${Locale.number(tokens)} (${percent})` : Locale.number(tokens),
+    percent,
+    cache: ratio === undefined ? undefined : (input.t ?? translate)("session.usage.cache", { percent: ratio }),
+    cost,
+  }
+}
+
+export function fitSessionUsage(usage: SessionUsage, width: number) {
+  const compact = usage.percent ?? usage.context
+  return [
+    [usage.context, usage.cache, usage.cost],
+    [compact, usage.cache, usage.cost],
+    [compact, usage.cache],
+    [compact],
+  ]
+    .map((parts) => parts.filter((part): part is string => Boolean(part)).join(" · "))
+    .filter((value, index, values) => value && values.indexOf(value) === index)
+    .find((value) => stringWidth(value) <= width)
+}

@@ -11,6 +11,9 @@ function pluginModel(local: ReturnType<typeof usePluginHost>["local"]) {
     shortcuts: {},
     keymapState: {},
     sessionTabs: {},
+    language: { locale: () => "en", languages: () => [], diagnostics: () => [] },
+    themes: { select: () => false, locked: () => false },
+    vim: {},
     local,
   } as unknown as ReturnType<typeof usePluginHost>
   const registry: Registry = { has: () => false, set() {}, remove() {}, active: () => true }

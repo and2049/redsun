@@ -2,8 +2,12 @@ import { Money } from "@opencode/schema/money"
 import { Agent } from "@opencode/schema/agent"
 import { Session } from "@opencode/core/session"
 import { OpenAIResponses } from "@opencode/ai/protocols/openai-responses"
-import { describe, expect } from "bun:test"
-import { ConfigProvider, DateTime, Effect } from "effect"
+import { afterEach, beforeEach, describe, expect } from "bun:test"
+import { ConfigProvider, DateTime, Effect, Layer, Schema } from "effect"
+import { Document, Event as ConfigEvent, Info as ConfigInfo } from "@opencode/schema/config"
+import { Bus } from "@opencode/core/bus"
+import { Config } from "@opencode/core/config"
+import { OpenAIModels } from "@opencode/core/plugin/provider/openai-models"
 import { Credential } from "@opencode/core/credential"
 import { Integration } from "@opencode/core/integration"
 import { Location } from "@opencode/core/location"
@@ -22,7 +26,7 @@ import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
 
-const it = testEffect(PluginTestLayer)
+const it = testEffect(Layer.merge(PluginTestLayer, Config.testLayer()))
 
 const addPlugin = Effect.fn(function* () {
   const plugin = yield* Plugin.Service
@@ -63,6 +67,31 @@ const request = Effect.fn(function* (
       (yield* hooks.has("session", "http.response", providerID)),
   }
 })
+
+// The ChatGPT model catalog is never fetched in tests: each test states what the backend lists.
+const readWindows = OpenAIModels.reader.read
+let catalog: ReadonlyMap<string, OpenAIModels.Window> = new Map()
+beforeEach(() => {
+  catalog = new Map()
+  OpenAIModels.reader.read = async () => catalog
+})
+afterEach(() => {
+  OpenAIModels.reader.read = readWindows
+})
+
+function eventually<A>(
+  effect: Effect.Effect<A>,
+  predicate: (value: A) => boolean,
+  remaining = 3000,
+): Effect.Effect<A, Error> {
+  return Effect.gen(function* () {
+    const value = yield* effect
+    if (predicate(value)) return value
+    if (remaining === 0) return yield* Effect.fail(new Error("Timed out waiting for value"))
+    yield* Effect.promise(() => Bun.sleep(1))
+    return yield* eventually(effect, predicate, remaining - 1)
+  })
+}
 
 describe("OpenAIPlugin", () => {
   it.effect("registers browser and headless ChatGPT OAuth methods", () =>
@@ -185,6 +214,68 @@ describe("OpenAIPlugin", () => {
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5"))).enabled).toBe(false)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5.04-astra"))).enabled).toBe(false)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-4.99"))).enabled).toBe(false)
+    }),
+  )
+
+  it.effect("sizes ChatGPT-plan windows from the backend catalog and chatgpt_context_window", () =>
+    Effect.gen(function* () {
+      catalog = new Map([
+        ["gpt-6-astra", { default: 272_000, max: 872_000 }],
+        ["gpt-5.5", { default: 272_000, max: 272_000 }],
+      ])
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      const credentials = yield* Credential.Service
+      const config = yield* Config.Test
+      const bus = yield* Bus.Service
+      yield* providers.transform((catalog) => {
+        catalog.update(Provider.ID.openai, (draft) => {
+          draft.package = "@opencode/ai/providers/openai"
+        })
+        for (const id of ["gpt-6-astra", "gpt-5.5", "gpt-6-sol"])
+          catalog.models.update(Provider.ID.openai, Model.ID.make(id), (model) => {
+            model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+          })
+        catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6-astra-fast"), (model) => {
+          model.modelID = Model.ID.make("gpt-6-astra")
+        })
+      })
+      yield* credentials.create({
+        integrationID: Integration.ID.make("openai"),
+        value: Credential.OAuth.make({
+          type: "oauth",
+          methodID: Integration.MethodID.make("chatgpt-browser"),
+          access: "chatgpt-token",
+          refresh: "refresh",
+          expires: Date.now() + 60_000,
+        }),
+      })
+      yield* addPlugin()
+      const limit = (id: string) =>
+        models.get(Provider.ID.openai, Model.ID.make(id)).pipe(Effect.map((model) => model?.limit))
+      const astra = { context: 400_000, input: 272_000, output: 128_000 }
+      expect(yield* limit("gpt-6-astra")).toEqual(astra)
+      // A model the catalog does not list keeps the fallback window.
+      expect(yield* limit("gpt-6-sol")).toEqual(astra)
+
+      yield* config.setEntries([
+        new Document({
+          type: "document",
+          info: Schema.decodeUnknownSync(ConfigInfo)({ chatgpt_context_window: "max" }),
+        }),
+      ])
+      yield* bus.publish(ConfigEvent.Updated, {})
+      const max = { context: 1_000_000, input: 872_000, output: 128_000 }
+      expect(yield* eventually(limit("gpt-6-astra"), (value) => value?.input === 872_000)).toEqual(max)
+      // A variant sizes from the model it serves.
+      expect(yield* limit("gpt-6-astra-fast")).toMatchObject({ context: 1_000_000, input: 872_000 })
+      // No headroom above the default: max keeps the default window.
+      expect(yield* limit("gpt-5.5")).toEqual(astra)
+      expect(yield* limit("gpt-6-sol")).toEqual(astra)
+
+      yield* config.setEntries([])
+      yield* bus.publish(ConfigEvent.Updated, {})
+      expect(yield* eventually(limit("gpt-6-astra"), (value) => value?.input === 272_000)).toEqual(astra)
     }),
   )
 

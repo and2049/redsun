@@ -22,7 +22,7 @@ export interface ModelEditor {
   }
 }
 
-export interface ModelDomain extends ModelApi {
+export interface ModelDomain extends Omit<ModelApi, "refresh"> {
   readonly transform: Transform<ModelEditor>
   readonly reload: () => Promise<void>
 }

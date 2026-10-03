@@ -3,6 +3,12 @@ import { Effect } from "effect"
 import { Provider } from "@opencode/core/provider"
 
 describe("Provider", () => {
+  test("loads native provider paths persisted before the scope migration", async () => {
+    const legacy = "@opencode-ai/ai/providers/openai/responses"
+    expect(Provider.packageName(legacy)).toBe("@opencode/ai/providers/openai/responses")
+    expect((await Effect.runPromise(Provider.loadPackage(legacy))).model).toBeFunction()
+  })
+
   test("loads bundled native provider entrypoints", async () => {
     const packages = [
       "@opencode/ai/providers/baseten",
