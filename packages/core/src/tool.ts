@@ -12,9 +12,11 @@ import { CodeModeTool } from "./codemode/tool.js"
 import { Image } from "./image.js"
 import { Permission } from "./permission.js"
 import { PluginHooks } from "./plugin/hooks.js"
+import { ToolInputRepairPlugin } from "./plugin/tool-input-repair.js"
 import { SessionMessage } from "./session/message.js"
 import { SessionSchema } from "./session/schema.js"
 import { State } from "./state.js"
+import { ToolInputRepair } from "./tool/input-repair.js"
 import { definition, effectiveName, execute, normalizedName, normalizeContent } from "./tool/runtime.js"
 import { Wildcard } from "./util/wildcard.js"
 
@@ -113,9 +115,14 @@ const layer = Layer.effect(
     const executeTool = Effect.fn("Tool.execute")(function* (
       tool: Tool.Info,
       name: string,
-      input: unknown,
+      received: unknown,
       context: Tool.Context,
     ) {
+      // REDSUN: upstream repairs in an execute.before hook against the live registry. Repair
+      // against the definition this request captured instead, and fold the legacy single-edit
+      // shape first: the schema repair prunes unknown keys such as oldString/newString.
+      const schema = definition(tool).inputSchema
+      const input = ToolInputRepairPlugin.repairInput(ToolInputRepair.repair(received, schema) ?? received, schema)
       const execution = yield* execute(tool, input, context).pipe(
         Effect.map((value) => ({ value })),
         Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),

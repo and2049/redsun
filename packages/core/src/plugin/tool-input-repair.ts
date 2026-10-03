@@ -28,12 +28,15 @@ export const Plugin = define({
         if (event.tool === "execute") return
         const tool = (yield* ctx.tool.list()).find((tool) => tool.id === event.tool)
         if (!tool) return
-        const schema = definition(tool).inputSchema
-        if (schema.type !== "object") return
-        event.input = repair(event.input, schema, schema, 0)
+        event.input = repairInput(event.input, definition(tool).inputSchema)
       }),
     ),
 })
+
+/** Repairs `input` against an object input schema; any other schema leaves it untouched. */
+export function repairInput(input: unknown, schema: JsonSchema.JsonSchema): unknown {
+  return schema.type === "object" ? repair(input, schema, schema, 0) : input
+}
 
 function repair(value: unknown, schema: JsonSchema.JsonSchema, root: JsonSchema.JsonSchema, depth: number): unknown {
   if (depth > maxDepth) return value
