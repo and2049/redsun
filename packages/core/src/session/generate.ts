@@ -1,6 +1,7 @@
 export * as SessionGenerate from "./generate.js"
 
 import { LLMClient, Message, type AIError } from "@opencode/ai"
+import type { Model } from "@opencode/schema/model"
 import { Effect } from "effect"
 import { Database } from "../database/database.js"
 import { Instance } from "../instance/service.js"
@@ -20,6 +21,9 @@ export type Error = AgentNotFoundError | Instructions.InitializationBlocked | Se
 export const generate = Effect.fn("SessionGenerate.generate")(function* (input: {
   session: SessionSchema.Info
   prompt: string
+  temperature?: number
+  model?: Model.Ref
+  tools?: boolean
 }) {
   const instances = yield* Instance.Service
   const database = yield* Database.Service
@@ -29,7 +33,9 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
     yield* Plugin.awaitActivation
     const context = yield* SessionContext.Service
     const selection = yield* context.select(input.session.id)
-    const model = yield* context.resolveModel(selection.session)
+    const model = yield* context.resolveModel(
+      input.model ? { ...selection.session, model: input.model } : selection.session,
+    )
     const history = yield* SessionHistory.preview(
       database.db,
       selection.session.id,
@@ -54,13 +60,18 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
         ...(history.instructionUpdate ? [Message.system(history.instructionUpdate)] : []),
         Message.user(input.prompt),
       ],
+      ...(input.tools === false ? { toolChoice: "none" as const } : {}),
     })
     yield* Effect.logInfo("sending session generation request", {
       sessionID: selection.session.id,
       providerID: model.ref.providerID,
       modelID: model.ref.id,
     })
-    const response = yield* llm.generate(prepared.request, prepared.options)
+    const request =
+      input.temperature !== undefined
+        ? { ...prepared.request, generation: { ...prepared.request.generation, temperature: input.temperature } }
+        : prepared.request
+    const response = yield* llm.generate(request, prepared.options)
     yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })
     return response.text
   }).pipe(instances.provide(input.session))

@@ -5,9 +5,14 @@ import { ephemeral, inventory } from "./event.js"
 import { Permission } from "./permission.js"
 import { AbsolutePath, optional } from "./schema.js"
 import { ConfigAgent } from "./config/agent.js"
+import { ConfigAttribution } from "./config/attribution.js"
 import { ConfigMedia } from "./config/media.js"
+import { ConfigAdvisor } from "./config/advisor.js"
+import { ConfigProjectMemory } from "./config/project-memory.js"
 import { ConfigCompaction } from "./config/compaction.js"
 import { ConfigCommand } from "./config/command.js"
+import { ConfigClaudeCode } from "./config/claude-code.js"
+import { ConfigAcp } from "./config/acp.js"
 import { ConfigExperimental } from "./config/experimental.js"
 import { ConfigFormatter } from "./config/formatter.js"
 import { ConfigLSP } from "./config/lsp.js"
@@ -36,7 +41,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description: "Default primary agent to use when no session agent is selected",
   }),
   update: Schema.Literals(["disable", "notify", "auto"]).pipe(optional).annotate({
-    description: "Disable updates, notify when one is available, or install updates automatically",
+    description: "Disable updates, notify when one is available, or install updates automatically (default)",
   }),
   share: Schema.Literals(["manual", "auto", "disabled"]).pipe(optional).annotate({
     description: "Control whether sessions may be shared manually, automatically, or not at all",
@@ -81,6 +86,15 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   compaction: ConfigCompaction.Info.pipe(optional).annotate({
     description: "Conversation compaction behavior",
   }),
+  attribution: ConfigAttribution.Info.pipe(optional).annotate({
+    description: "Attribution added to git commits the agent creates",
+  }),
+  advisor: ConfigAdvisor.Info.pipe(optional).annotate({
+    description: "Redsun watchdog advisor that reviews completed session turns with a second model",
+  }),
+  project_memory: ConfigProjectMemory.Info.pipe(optional).annotate({
+    description: "Project memory (.redsun/memory.md) loading",
+  }),
   skills: Schema.String.pipe(Schema.Array, optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),
@@ -89,6 +103,18 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   instructions: Schema.String.pipe(Schema.Array, optional).annotate({
     description: "Additional paths or URLs supplying ambient instructions",
+  }),
+  instruction_max_chars: Schema.Int.check(Schema.isGreaterThan(0)).pipe(optional).annotate({
+    description:
+      "Maximum characters of each instruction file (AGENTS.md, .redsun/memory.md, ...) included in model context before truncation (default: 24000)",
+  }),
+  stale_read_deduplication: Schema.Boolean.pipe(optional).annotate({
+    description:
+      "Replace superseded read results to reduce context (default: false). Can break prompt-cache reuse and increase costs.",
+  }),
+  chatgpt_context_window: Schema.Literals(["default", "max"]).pipe(optional).annotate({
+    description:
+      "Input window of OpenAI models used through a ChatGPT sign-in: the ChatGPT backend's default for each model, or the largest it allows (default: default)",
   }),
   references: ConfigReference.Info.pipe(optional).annotate({
     description: "Named local directories or Git repositories available as external context",
@@ -107,6 +133,23 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(optional),
   experimental: ConfigExperimental.Info.pipe(optional),
+  claude_code: ConfigClaudeCode.Info.pipe(optional).annotate({
+    description: "Delegated Claude Code provider settings",
+  }),
+  acp: ConfigAcp.Info.pipe(optional).annotate({
+    description: "Delegated agents spoken to over ACP (Kiro is built in when kiro-cli is installed)",
+  }),
+}) {}
+
+export class ContextSettings extends Schema.Class<ContextSettings>("Config.ContextSettings")({
+  stale_read_deduplication: Info.fields.stale_read_deduplication,
+  compaction: Schema.Struct({
+    strategy: ConfigCompaction.Info.fields.strategy,
+    /** `null` is "Auto": no configured threshold. */
+    threshold: Schema.NullOr(ConfigCompaction.Threshold).pipe(optional),
+  }).pipe(optional),
+  attribution: Info.fields.attribution,
+  chatgpt_context_window: Info.fields.chatgpt_context_window,
 }) {}
 
 export const Patch = Schema.Struct({

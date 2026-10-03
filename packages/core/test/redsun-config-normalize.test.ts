@@ -1,0 +1,92 @@
+import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { ConfigNormalize } from "@opencode/core/config/normalize"
+import { Info } from "@opencode/schema/config"
+
+// REDSUN: `claude_code` is carried by normalize's `nativeAtomic` passthrough.
+// Adding the field to the schema alone is not enough - normalize rebuilds the
+// encoded config from that list, so an omission silently drops every setting
+// before it reaches the provider plugin, with no error anywhere.
+
+const options = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
+
+const normalized = (input: unknown) => {
+  const result = ConfigNormalize.normalize(input)
+  expect(result.type).toBe("normalized")
+  if (result.type !== "normalized") throw new Error("expected normalized config")
+  return result.encoded
+}
+
+const decoded = (input: unknown) => Schema.decodeUnknownSync(Info, options)(normalized(input))
+
+test("context settings survive normalization with deduplication omitted or explicitly disabled", () => {
+  expect(decoded({}).stale_read_deduplication).toBeUndefined()
+  for (const enabled of [false, true]) {
+    for (const strategy of ["llm", "hybrid", "algorithmic"]) {
+      expect(decoded({ stale_read_deduplication: enabled, compaction: { strategy } })).toMatchObject({
+        stale_read_deduplication: enabled,
+        compaction: { strategy },
+      })
+    }
+  }
+})
+
+const full = {
+  enabled: true,
+  binary_path: "C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd",
+  config_dir: "/home/me/.claude",
+  permission_mode: "acceptEdits",
+  worker_permission_mode: "plan",
+  extra_args: ["--verbose"],
+  env: { CLAUDE_DEBUG: "1" },
+}
+
+describe("config normalization of claude_code", () => {
+  test("carries every field through normalization", () => {
+    expect(normalized({ claude_code: full })["claude_code"]).toEqual(full)
+  })
+
+  test("survives the decode that follows normalization", () => {
+    expect(decoded({ claude_code: full }).claude_code).toMatchObject(full)
+  })
+
+  test("carries an empty section rather than dropping the key", () => {
+    // The fast-check round-trip property that caught the original bug reduced
+    // to exactly this counterexample.
+    expect(normalized({ claude_code: {} })["claude_code"]).toEqual({})
+  })
+
+  test("leaves the key absent when the user did not set it", () => {
+    expect(normalized({})).not.toHaveProperty("claude_code")
+  })
+
+  test("carries the section alongside other native settings", () => {
+    const result = normalized({ model: "anthropic/claude-sonnet-4", claude_code: { permission_mode: "plan" } })
+    expect(result["model"]).toEqual({ providerID: "anthropic", model: "claude-sonnet-4" })
+    expect(result["claude_code"]).toEqual({ permission_mode: "plan" })
+  })
+})
+
+// REDSUN: `acp` rides the same passthrough list.
+const acp = {
+  agents: {
+    kiro: { preset: "kiro", host_tools: "all", auto_approval_args: ["--trust-all-tools"], env: { A: "1" } },
+    other: { command: "other-agent", args: ["--acp"], native_approval_mode: "smart", models: ["fast"] },
+  },
+}
+
+describe("config normalization of acp", () => {
+  test("carries every field through normalization and the decode that follows", () => {
+    expect(normalized({ acp })["acp"]).toEqual(acp)
+    expect(decoded({ acp }).acp).toMatchObject(acp)
+  })
+
+  test("carries an empty section rather than dropping the key", () => {
+    expect(normalized({ acp: {} })["acp"]).toEqual({})
+    expect(normalized({ acp: { agents: {} } })["acp"]).toEqual({ agents: {} })
+  })
+
+  test("leaves the key absent when the user did not set it", () => {
+    expect(normalized({})).not.toHaveProperty("acp")
+  })
+})

@@ -1,0 +1,439 @@
+import { expect, test } from "bun:test"
+import { LLMClient, LLMEvent, LanguageModel, type LLMRequest } from "@opencode/ai"
+import { OpenAIChat } from "@opencode/ai/protocols"
+import { Agent } from "@opencode/core/agent"
+import { Config } from "@opencode/core/config"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { llmClient } from "@opencode/core/effect/app-node-platform"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { CompactionExtractor } from "@opencode/core/session/compaction-extractor"
+import { SessionCompaction } from "@opencode/core/session/compaction"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionModelRequest } from "@opencode/core/session/model-request"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import type { SessionSchema } from "@opencode/core/session/schema"
+import { SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { Session } from "@opencode/core/session"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Document, Info as ConfigInfo } from "@opencode/schema/config"
+import { Money } from "@opencode/schema/money"
+import { DateTime, Effect, Layer, Schema, Stream } from "effect"
+import { Location } from "@opencode/core/location"
+import { testEffect } from "./lib/effect"
+
+const decodeMessage = Schema.decodeUnknownSync(SessionMessage.Info)
+const decodeConfig = Schema.decodeUnknownSync(ConfigInfo)
+
+let requests: LLMRequest[] = []
+const model = LanguageModel.make({
+  id: "summary-model",
+  provider: "test",
+  route: OpenAIChat.route,
+})
+const cost = [
+  {
+    input: Money.USDPerMillionTokens.make(1),
+    output: Money.USDPerMillionTokens.make(2),
+    cache: {
+      read: Money.USDPerMillionTokens.make(0.1),
+      write: Money.USDPerMillionTokens.make(0.5),
+    },
+  },
+]
+const client = Layer.mock(LLMClient.Service)({
+  stream: (request: LLMRequest) => {
+    requests.push(request)
+    return Stream.make(
+      LLMEvent.textDelta({ id: "summary", text: "## Objective\n- llm summary" }),
+      LLMEvent.finish({ reason: { normalized: "stop" } }),
+    )
+  },
+  generate: () => Effect.die("unused"),
+})
+const resolvedModel = SessionRunnerModel.resolved(model, {
+  capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+  cost,
+  limit: { context: 10_000, output: 1_000 },
+})
+
+const harness = (compaction: Record<string, unknown>) => {
+  const config = Layer.mock(Config.Service)({
+    entries: () => Effect.succeed([new Document({ type: "document", info: decodeConfig({ compaction }) })]),
+  })
+  return testEffect(
+    AppNodeBuilder.build(
+      LayerNode.group([
+        Database.node,
+        Bus.node,
+        SessionProjector.node,
+        SessionStore.node,
+        SessionCompaction.node,
+        SessionModelRequest.node,
+      ]),
+      [Bus.node.replace(Bus.configured({ persist: true })), llmClient.replace(client), Config.node.replace(config)],
+    ),
+  )
+}
+
+// keep.tokens: 0 forces everything except the newest user turn into the head.
+const hybrid = harness({ strategy: "hybrid", keep: { tokens: 0 } })
+const algorithmic = harness({ strategy: "algorithmic", keep: { tokens: 0 } })
+
+// Settings reach the service through ConfigCompactionPlugin's transform in production;
+// these tests drive the same configure seam directly.
+const configured = (settings: Partial<SessionCompaction.Settings>) =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.transform((editor) => editor.configure(settings))
+    return compaction
+  })
+
+const message = (value: Record<string, unknown>) => decodeMessage({ time: { created: 0 }, ...value })
+
+const loaded = (
+  session: SessionSchema.Info,
+  messages: readonly SessionMessage.Info[],
+  resolved: SessionRunnerModel.Resolved = resolvedModel,
+) => ({
+  session,
+  messages,
+  model: resolved,
+  agent: { id: Agent.defaultID, info: Agent.Info.default(Agent.defaultID) },
+  initial: "Session instructions",
+  tools: { definitions: [], execute: () => Effect.die("Compaction must not execute tools") },
+})
+
+/** Opens the compaction's message as the runner does when it delivers `/compact`, then compacts. */
+const compactManually = (session: SessionSchema.Info, messages: readonly SessionMessage.Info[], inputID: string) =>
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const compaction = yield* SessionCompaction.Service
+    const id = SessionMessage.ID.make(inputID)
+    yield* bus.publish(SessionEvent.Compaction.Started, {
+      sessionID: session.id,
+      reason: "manual",
+      recent: "",
+      inputID: id,
+    })
+    return yield* compaction.compact({ reason: "manual", context: loaded(session, messages), inputID: id })
+  })
+
+const conversation = () => [
+  message({
+    id: "msg_user_one",
+    type: "user",
+    text: "Fix the login redirect bug in the auth flow.",
+  }),
+  message({
+    id: "msg_assistant_one",
+    type: "assistant",
+    agent: "build",
+    model: { id: "test-model", providerID: "test-provider" },
+    content: [
+      { type: "text", text: "The redirect drops the query string before validation." },
+      {
+        type: "tool",
+        id: "call_read",
+        name: "read",
+        state: {
+          status: "completed",
+          input: { filePath: "src/auth/redirect.ts" },
+          content: [{ type: "text", text: "export const redirect = () => target" }],
+        },
+        time: { created: 0 },
+      },
+      {
+        type: "tool",
+        id: "call_edit",
+        name: "edit",
+        state: {
+          status: "error",
+          input: { filePath: "src/auth/redirect.ts" },
+          error: { type: "tool.execution", message: "oldString not found" },
+        },
+        time: { created: 0 },
+      },
+    ],
+    time: { created: 0 },
+  }),
+  message({
+    id: "msg_user_two",
+    type: "user",
+    text: "Also keep the fragment intact.",
+  }),
+]
+
+const seedSession = (suffix: string) =>
+  Effect.gen(function* () {
+    const db = (yield* Database.Service).db
+    const store = yield* SessionStore.Service
+    const sessionID = Session.ID.make(`ses_redsun_compaction_${suffix}`)
+    yield* db
+      .insert(ProjectTable)
+      .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+      .onConflictDoNothing()
+      .run()
+      .pipe(Effect.orDie)
+    yield* db
+      .insert(SessionTable)
+      .values({
+        id: sessionID,
+        project_id: Project.ID.global,
+        slug: `redsun-compaction-${suffix}`,
+        directory: "/project",
+        title: "Redsun compaction",
+        version: "test",
+      })
+      .run()
+      .pipe(Effect.orDie)
+    const session = yield* store
+      .get(sessionID)
+      .pipe(Effect.flatMap((found) => (found ? Effect.succeed(found) : Effect.die("session missing"))))
+    return { session, store }
+  })
+
+test("extractor builds the bounded inventory from v2 messages", () => {
+  const state = CompactionExtractor.extract(conversation())
+  expect(state.task).toBe("Fix the login redirect bug in the auth flow.")
+  expect(state.requirements).toEqual(["Also keep the fragment intact."])
+  expect(state.files.get("src/auth/redirect.ts")).toEqual({ read: true, changed: true })
+  expect(state.results).toEqual(["read: export const redirect = () => target"])
+  expect(state.failures).toEqual(["edit: oldString not found"])
+  expect(state.notes).toEqual(["The redirect drops the query string before validation."])
+
+  const serialized = CompactionExtractor.serialize(state)
+  expect(serialized.match(/^## .+$/gm)).toEqual([
+    "## Task",
+    "## User Requirements",
+    "## Files Touched",
+    "## Tool Results",
+    "## Errors & Failures",
+    "## Assistant Notes",
+  ])
+  expect(serialized).toContain("- `src/auth/redirect.ts`: changed; read")
+})
+
+test("extractor caps every category", () => {
+  const long = "x".repeat(1_000)
+  const messages = [
+    message({ id: "msg_task", type: "user", text: long }),
+    ...Array.from({ length: 30 }, (_, index) =>
+      message({ id: `msg_req_${index}`, type: "user", text: `req ${index}` }),
+    ),
+    message({
+      id: "msg_tools",
+      type: "assistant",
+      agent: "build",
+      model: { id: "test-model", providerID: "test-provider" },
+      content: Array.from({ length: 40 }, (_, index) => ({
+        type: "tool",
+        id: `call_${index}`,
+        name: "shell",
+        state: {
+          status: "completed",
+          input: {},
+          content: [{ type: "text", text: `output ${index}` }],
+        },
+        time: { created: 0 },
+      })),
+      time: { created: 0 },
+    }),
+  ]
+  const state = CompactionExtractor.extract(messages, 5)
+  expect(state.task).toHaveLength(500)
+  expect(state.task.endsWith("...")).toBe(true)
+  expect(state.requirements).toHaveLength(25)
+  expect(state.requirements[0]).toBe("req 5")
+  expect(state.results).toHaveLength(5)
+  expect(state.results.at(-1)).toBe("shell: output 39")
+})
+
+test("buildPrompt folds the inventory in ahead of the template rules", () => {
+  const prompt = SessionCompaction.buildPrompt(false, false, "## Task\n\nShip it")
+  expect(prompt).toContain("## Structured Inventory")
+  expect(prompt).toContain("Ship it")
+  expect(prompt.indexOf("## Objective")).toBeLessThan(prompt.indexOf("## Structured Inventory"))
+  expect(SessionCompaction.buildPrompt(false)).not.toContain("## Structured Inventory")
+})
+
+hybrid.effect("hybrid compaction sends the head as transcript plus the inventory", () =>
+  Effect.gen(function* () {
+    requests = []
+    yield* configured({ strategy: "hybrid", keep: 0 })
+    const { session } = yield* seedSession("hybrid")
+    expect(yield* compactManually(session, conversation(), "msg_compact_hybrid")).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    const prompt = JSON.stringify(requests[0]?.messages)
+    expect(prompt).toContain("## Structured Inventory")
+    expect(prompt).toContain("- `src/auth/redirect.ts`: changed; read")
+    // The head rides as real conversation messages, not serialized text.
+    expect(prompt).toContain("Fix the login redirect bug in the auth flow.")
+    expect(prompt).not.toContain("[User]: Fix the login redirect bug in the auth flow.")
+  }),
+)
+
+hybrid.effect("compaction defaults to an LLM summary without an inventory", () =>
+  Effect.gen(function* () {
+    requests = []
+    yield* configured({ keep: 0 })
+    const { session } = yield* seedSession("llm")
+    expect(yield* compactManually(session, conversation(), "msg_compact_llm")).toEqual({ status: "completed" })
+    expect(requests).toHaveLength(1)
+    expect(JSON.stringify(requests[0]?.messages)).not.toContain("## Structured Inventory")
+  }),
+)
+
+algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
+  Effect.gen(function* () {
+    requests = []
+    yield* configured({ strategy: "algorithmic", keep: 0 })
+    const { session, store } = yield* seedSession("algorithmic")
+    expect(yield* compactManually(session, conversation(), "msg_compact_algorithmic")).toEqual({
+      status: "completed",
+    })
+    expect(requests).toHaveLength(0)
+    const context = yield* store.context(session.id)
+    expect(context).toMatchObject([{ type: "compaction", reason: "manual", status: "completed" }])
+    const summary = context[0]?.type === "compaction" && context[0].status === "completed" ? context[0].summary : ""
+    expect(summary).toContain("## Task")
+    expect(summary).toContain("Fix the login redirect bug in the auth flow.")
+    expect(summary).not.toContain("## Previous Summary")
+  }),
+)
+
+algorithmic.effect("algorithmic compaction carries the previous summary forward", () =>
+  Effect.gen(function* () {
+    requests = []
+    yield* configured({ strategy: "algorithmic", keep: 0 })
+    const { session, store } = yield* seedSession("carry")
+    const previous = message({
+      id: "msg_previous_compaction",
+      type: "compaction",
+      status: "completed",
+      reason: "manual",
+      summary: "## Task\n\nEarlier anchored summary.",
+      recent: "",
+    })
+    expect(yield* compactManually(session, [previous, ...conversation()], "msg_compact_carry")).toEqual({
+      status: "completed",
+    })
+    expect(requests).toHaveLength(0)
+    const context = yield* store.context(session.id)
+    const summary = context[0]?.type === "compaction" && context[0].status === "completed" ? context[0].summary : ""
+    expect(summary).toContain("## Previous Summary")
+    expect(summary).toContain("Earlier anchored summary.")
+    expect(summary).toContain("Fix the login redirect bug in the auth flow.")
+  }),
+)
+
+algorithmic.effect("automatic algorithmic compaction opens its own message", () =>
+  Effect.gen(function* () {
+    requests = []
+    yield* configured({ strategy: "algorithmic", keep: 0 })
+    const { session, store } = yield* seedSession("algorithmic-auto")
+    const compaction = yield* SessionCompaction.Service
+    // Overflow skips the due check, like a provider rejection would.
+    expect(yield* compaction.compact({ reason: "overflow", context: loaded(session, conversation()) })).toEqual({
+      status: "completed",
+    })
+    expect(requests).toHaveLength(0)
+    expect(yield* store.context(session.id)).toMatchObject([
+      { type: "compaction", reason: "auto", status: "completed" },
+    ])
+  }),
+)
+
+for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
+  hybrid.effect(
+    `${strategy} compaction ${strategy === "llm" ? "preserves" : "deduplicates"} reads in the retained tail`,
+    () =>
+      Effect.gen(function* () {
+        requests = []
+        // The tail allowance fits the newest three messages but not the long opener, so the
+        // reads land in the retained tail rather than the summarized head.
+        yield* configured({ strategy, keep: 200 })
+        const { session, store } = yield* seedSession("stale-read")
+        const read = (id: string, text: string) => ({
+          type: "tool",
+          id,
+          name: "read",
+          state: { status: "completed", input: { path: "src/auth/redirect.ts" }, content: [{ type: "text", text }] },
+          time: { created: 0 },
+        })
+        const messages = [
+          message({ id: "msg_user_zero", type: "user", text: "x".repeat(4_000) }),
+          message({ id: "msg_user_stale", type: "user", text: "Fix the login redirect bug in the auth flow." }),
+          message({
+            id: "msg_assistant_stale",
+            type: "assistant",
+            agent: "build",
+            model: { id: "test-model", providerID: "test-provider" },
+            content: [read("call_read_old", "OLD_READ_CONTENT"), read("call_read_new", "NEW_READ_CONTENT")],
+            time: { created: 0 },
+          }),
+          message({ id: "msg_user_stale_two", type: "user", text: "Also keep the fragment intact." }),
+        ]
+        expect(yield* compactManually(session, messages, "msg_compact_stale")).toEqual({ status: "completed" })
+        const context = yield* store.context(session.id)
+        const recent = context.at(-1)
+        const tail = recent?.type === "compaction" && recent.status === "completed" ? recent.recent : ""
+        expect(tail).toContain("[Tool result]: NEW_READ_CONTENT")
+        if (strategy === "llm") {
+          expect(tail).toContain("[Tool result]: OLD_READ_CONTENT")
+          expect(tail).not.toContain("superseded by a later read")
+        } else {
+          expect(tail).toContain("[Tool result]: [superseded by a later read of the same file]")
+          expect(tail).not.toContain("[Tool result]: OLD_READ_CONTENT")
+        }
+      }),
+  )
+}
+
+hybrid.effect("a configured threshold lowers the automatic trigger but never raises it past the ceiling", () =>
+  Effect.gen(function* () {
+    const compaction = yield* SessionCompaction.Service
+    const { session } = yield* seedSession("threshold")
+    // An automatic compaction that is not due is skipped; a due one runs.
+    const due = (tokens: number, limit: { context: number; input?: number; output: number }) => {
+      const resolved = SessionRunnerModel.resolved(model, { capabilities: resolvedModel.capabilities, cost, limit })
+      const messages = [
+        message({
+          id: "msg_assistant_threshold",
+          type: "assistant",
+          agent: "build",
+          model: { id: "summary-model", providerID: "test" },
+          content: [{ type: "text", text: "Done" }],
+          tokens: { input: tokens, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 0, completed: 0 },
+        }),
+      ]
+      return compaction
+        .compact({ reason: "auto", context: loaded(session, messages, resolved) })
+        .pipe(Effect.map((outcome) => outcome.status !== "skipped"))
+    }
+    const chatgpt = { context: 400_000, input: 272_000, output: 128_000 }
+    // Default: 10% of the input window kept free.
+    expect(yield* due(244_799, chatgpt)).toBe(false)
+    expect(yield* due(244_800, chatgpt)).toBe(true)
+
+    yield* configured({ threshold: 60 })
+    // 60% of the input window, the window the meter reads.
+    expect(yield* due(163_199, chatgpt)).toBe(false)
+    expect(yield* due(163_200, chatgpt)).toBe(true)
+    // Without an input limit, the percentage is of the total.
+    expect(yield* due(59_999, { context: 100_000, output: 10_000 })).toBe(false)
+    expect(yield* due(60_000, { context: 100_000, output: 10_000 })).toBe(true)
+
+    yield* configured({ threshold: 95 })
+    // 95% (258,400) is above the ceiling, which still wins.
+    expect(yield* due(244_799, chatgpt)).toBe(false)
+    expect(yield* due(244_800, chatgpt)).toBe(true)
+  }),
+)

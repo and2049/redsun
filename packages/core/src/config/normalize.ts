@@ -211,6 +211,14 @@ export function normalize(input: unknown): Result {
     websearch: Info.fields.websearch,
     worktree: Info.fields.worktree,
     warming: Info.fields.warming,
+    claude_code: Info.fields.claude_code,
+    acp: Info.fields.acp,
+    instruction_max_chars: Info.fields.instruction_max_chars,
+    stale_read_deduplication: Info.fields.stale_read_deduplication,
+    advisor: Info.fields.advisor,
+    project_memory: Info.fields.project_memory,
+    attribution: Info.fields.attribution,
+    chatgpt_context_window: Info.fields.chatgpt_context_window,
   }
   Object.entries(nativeAtomic).forEach(([key, schema]) => {
     if (!own(input, key)) return
@@ -371,6 +379,16 @@ function normalizeCompaction(
     : undefined
   const buffer = prefer(legacyBuffer, nativeBuffer, ["compaction", "buffer"], diagnostics)
   if (buffer !== undefined) result.buffer = buffer
+  for (const key of ["strategy", "max_tool_results", "threshold"] as const) {
+    if (!own(input.compaction, key)) continue
+    const value = decodeEncoded(
+      ConfigCompaction.Info.fields[key],
+      input.compaction[key],
+      ["compaction", key],
+      diagnostics,
+    )
+    if (value !== undefined) result[key] = value
+  }
   if (Object.keys(result).length || !Object.keys(input.compaction).length) encoded.compaction = result
 }
 

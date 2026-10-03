@@ -27,6 +27,7 @@ export function latest<K extends keyof Info>(entries: readonly Entry[], key: K):
 export interface Interface {
   /** Returns location config documents and discovery sources from lowest to highest priority. */
   readonly entries: () => Effect.Effect<Entry[]>
+  readonly reload: () => Effect.Effect<void>
   /** Compatibility roots consumed by internal compatibility plugins. */
   readonly compatibility?: () => Effect.Effect<{
     readonly claude: readonly AbsolutePath[]
@@ -77,6 +78,7 @@ export const testLayer = (
       const updates = yield* PubSub.unbounded<Watcher.Update>()
       const service = Test.of({
         entries: () => Ref.get(entries),
+        reload: () => Effect.void,
         compatibility: () => Effect.succeed(compatibility),
         changes: () => Stream.fromPubSub(updates),
         setEntries: (next) => Ref.set(entries, next),
@@ -91,6 +93,7 @@ export const layer = (options?: Options) =>
     Service,
     Effect.gen(function* () {
       const fs = yield* FSUtil.Service
+      const global = yield* Global.Service
       const location = yield* Location.Service
       const watcher = yield* Watcher.Service
       const bus = yield* Bus.Service
@@ -330,7 +333,8 @@ export const layer = (options?: Options) =>
         function* (patch: Patch) {
           const directory = initial.global ?? AbsolutePath.make(globalService.config)
           const candidates = ConfigDiscovery.names.map((name) => path.join(directory, name))
-          const filepath = (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, "opencode.jsonc")
+          const filepath =
+            (yield* Effect.filter(candidates, fs.isFile)).at(-1) ?? path.join(directory, "opencode.jsonc")
           const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
           const updated = yield* Effect.try({
             try: () =>
@@ -352,6 +356,12 @@ export const layer = (options?: Options) =>
         entries: Effect.fnUntraced(function* () {
           return configs
         }),
+        reload: () =>
+          reload().pipe(
+            Effect.provideService(FSUtil.Service, fs),
+            Effect.provideService(Global.Service, global),
+            Effect.provideService(Location.Service, location),
+          ),
         compatibility: () =>
           Effect.all({
             claude: Effect.filter(sources.claude, fs.isDir),

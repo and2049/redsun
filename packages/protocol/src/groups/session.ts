@@ -708,7 +708,12 @@ export const makeSessionGroup = <
     .add(
       HttpApiEndpoint.post("session.generate", "/api/session/:sessionID/generate", {
         params: { sessionID: Session.ID },
-        payload: Schema.Struct({ prompt: Schema.String }),
+        payload: Schema.Struct({
+          prompt: Schema.String,
+          temperature: Schema.Number.pipe(Schema.optional),
+          model: Model.Ref.pipe(Schema.optional),
+          tools: Schema.Boolean.pipe(Schema.optional),
+        }),
         success: Schema.Struct({
           data: Schema.Struct({ text: Schema.String }),
         }).annotate({ identifier: "SessionGenerateResponse" }),

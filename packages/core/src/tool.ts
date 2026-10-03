@@ -12,6 +12,7 @@ import { CodeModeTool } from "./codemode/tool.js"
 import { Image } from "./image.js"
 import { Permission } from "./permission.js"
 import { PluginHooks } from "./plugin/hooks.js"
+import { ToolInputRepairPlugin } from "./plugin/tool-input-repair.js"
 import { SessionMessage } from "./session/message.js"
 import { SessionSchema } from "./session/schema.js"
 import { State } from "./state.js"
@@ -113,9 +114,12 @@ const layer = Layer.effect(
     const executeTool = Effect.fn("Tool.execute")(function* (
       tool: Tool.Info,
       name: string,
-      input: unknown,
+      received: unknown,
       context: Tool.Context,
     ) {
+      // REDSUN: upstream repairs in an execute.before hook against the live registry, which a
+      // reload can change mid-request. Repair against the definition this request captured.
+      const input = ToolInputRepairPlugin.repairInput(received, definition(tool).inputSchema)
       const execution = yield* execute(tool, input, context).pipe(
         Effect.map((value) => ({ value })),
         Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),
@@ -308,7 +312,8 @@ function registrationError(tool: Tool.Info) {
     if (error) return error
   }
   const name = normalizedName(tool)
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) return new RegistrationError({ name, message: `Invalid tool name: ${name}` })
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(name))
+    return new RegistrationError({ name, message: `Invalid tool name: ${name}` })
   const id = effectiveName(tool)
   if (tool.options?.codemode === false && id === "execute")
     return new RegistrationError({ name: id, message: 'Tool name "execute" is reserved for CodeMode' })

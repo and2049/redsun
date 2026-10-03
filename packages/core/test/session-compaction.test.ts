@@ -385,6 +385,8 @@ it.effect("manual compaction summarizes short context instead of no-op", () =>
   Effect.gen(function* () {
     requests = []
     const db = (yield* Database.Service).db
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.transform((editor) => editor.configure({ strategy: "llm" }))
     const bus = yield* Bus.Service
     const store = yield* SessionStore.Service
     const sessionID = Session.ID.make("ses_manual_compaction")

@@ -13,7 +13,7 @@ it.live("returns ordered config entries for the requested directory", () =>
     const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-config-endpoint-")))
     const global = path.join(tmp.path, "global")
     const project = path.join(tmp.path, "project")
-    const config = path.join(project, "opencode.json")
+    const config = path.join(project, "redsun.json")
     yield* Effect.promise(() =>
       Promise.all([fs.mkdir(global, { recursive: true }), fs.mkdir(project, { recursive: true })]),
     )

@@ -24,6 +24,7 @@ import {
 } from "@opencode/protocol/errors"
 import { AbsolutePath } from "@opencode/core/schema"
 import { failedMessageDecode, failedSnapshot, missingMessage, missingSession } from "./session-error"
+import { RemoteProjection } from "../remote-projection"
 
 const DefaultSessionsLimit = 50
 
@@ -39,6 +40,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       const form = yield* Form.Service
       const info = yield* form.get(formID).pipe(Effect.catchTag("Form.NotFoundError", () => missingForm(formID)))
       if (info.sessionID !== sessionID) return yield* missingForm(formID)
+      if ((yield* RemoteProjection.isRemote) && !RemoteProjection.formAllowed(info)) return yield* missingForm(formID)
       return { form, info }
     })
     const busySession = (error: Session.BusyError) =>
@@ -74,7 +76,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const first = sessions[0]
           const last = sessions.at(-1)
           return {
-            data: sessions,
+            data: (yield* RemoteProjection.isRemote) ? sessions.map(RemoteProjection.session) : sessions,
             cursor: {
               previous: first
                 ? SessionsCursor.make({
@@ -137,7 +139,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   ? { location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) } }
                   : { parentID: ctx.payload.parentID }),
               })
-              .pipe(Effect.catchTag("Session.NotFoundError", missingSession)),
+              .pipe(
+                Effect.catchTag("Session.NotFoundError", missingSession),
+                Effect.flatMap((value) =>
+                  RemoteProjection.isRemote.pipe(
+                    Effect.map((remote) => (remote ? RemoteProjection.session(value) : value)),
+                  ),
+                ),
+              ),
           }
         }),
       )
@@ -190,9 +199,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.get",
         Effect.fn(function* (ctx) {
           return {
-            data: yield* session
-              .get(ctx.params.sessionID)
-              .pipe(Effect.catchTag("Session.NotFoundError", missingSession)),
+            data: yield* session.get(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", missingSession),
+              Effect.flatMap((value) =>
+                RemoteProjection.isRemote.pipe(
+                  Effect.map((remote) => (remote ? RemoteProjection.session(value) : value)),
+                ),
+              ),
+            ),
           }
         }),
       )
@@ -335,6 +349,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 Effect.catchTag("Session.SkillNotFoundError", (error) =>
                   Effect.fail(new InvalidRequestError({ message: `Skill not found: ${error.skill}`, field: "skills" })),
                 ),
+                Effect.flatMap((value) => RemoteProjection.project(value, RemoteProjection.user)),
               ),
           }
         }),
@@ -535,9 +550,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.inbox.list",
         Effect.fn(function* (ctx) {
           return {
-            data: yield* session
-              .inbox(ctx.params.sessionID)
-              .pipe(Effect.catchTag("Session.NotFoundError", missingSession)),
+            data: yield* session.inbox(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", missingSession),
+              Effect.flatMap((value) => RemoteProjection.project(value, (items) => items.map(RemoteProjection.inbox))),
+            ),
           }
         }),
       )
@@ -589,7 +605,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.generate",
         Effect.fn(function* (ctx) {
           const text = yield* session
-            .generate({ sessionID: ctx.params.sessionID, prompt: ctx.payload.prompt })
+            .generate({
+              sessionID: ctx.params.sessionID,
+              prompt: ctx.payload.prompt,
+              temperature: ctx.payload.temperature,
+              model: ctx.payload.model,
+              tools: ctx.payload.tools,
+            })
             .pipe(
               Effect.mapError((error) =>
                 error._tag === "Session.NotFoundError"
@@ -627,7 +649,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           yield* session.get(ctx.params.sessionID).pipe(Effect.catchTag("Session.NotFoundError", missingSession))
           const message = yield* session.message(ctx.params)
-          if (message) return { data: message }
+          if (message) return { data: yield* RemoteProjection.project(message, RemoteProjection.message) }
           return yield* new MessageNotFoundError({
             sessionID: ctx.params.sessionID,
             messageID: ctx.params.messageID,
@@ -639,7 +661,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.form.list",
         Effect.fn(function* (ctx) {
           const form = yield* Form.Service
-          return { data: yield* form.list({ sessionID: ctx.params.sessionID }) }
+          const forms = yield* form.list({ sessionID: ctx.params.sessionID })
+          return {
+            data: yield* RemoteProjection.project(forms, (items) =>
+              items.filter(RemoteProjection.formAllowed).map(RemoteProjection.form),
+            ),
+          }
         }),
       )
       .handle(
@@ -671,7 +698,8 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           const state = yield* owned.form
             .state(ctx.params.formID)
             .pipe(Effect.catchTag("Form.NotFoundError", () => missingForm(ctx.params.formID)))
-          return { data: { ...owned.info, state } }
+          const info = yield* RemoteProjection.project(owned.info, RemoteProjection.form)
+          return { data: { ...info, state } }
         }),
       )
       .handle(

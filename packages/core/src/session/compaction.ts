@@ -34,6 +34,8 @@ import { SessionRunnerRetry } from "./runner/retry.js"
 import { toLLMMessages } from "./runner/to-llm-message.js"
 import { toSessionError } from "./to-session-error.js"
 import { SessionUsage } from "./usage.js"
+import { CompactionExtractor } from "./compaction-extractor.js"
+import { ReadLocator } from "../util/read-locator.js"
 
 export type Settings = {
   auto: boolean
@@ -41,6 +43,10 @@ export type Settings = {
   buffer?: number
   /** Tokens of recent conversation kept verbatim beside the summary. */
   keep: number
+  strategy: "hybrid" | "algorithmic" | "llm"
+  maxToolResults: number
+  /** REDSUN: percentage of the input window (else the total) at which automatic compaction runs. */
+  threshold?: number
 }
 
 export type Editor = {
@@ -139,11 +145,16 @@ const SUMMARY_RULES = `Rules:
 - Preserve consequential workflow state, including whether changes are uncommitted, committed, pushed, under review, or merged.
 - Do not mention the summary process or that context was compacted.`
 
-export const buildPrompt = (update: boolean, legacy = false) => {
+export const buildPrompt = (update: boolean, legacy = false, inventory?: string) => {
   const shared = [
     "Summarize only what the user and the assistant said and did. Leave out instructions and setup the assistant was given rather than told by the user: repository conventions, instruction files such as AGENTS.md, and environment details like the session ID. The next agent receives current versions of all of these separately.",
     SUMMARY_TEMPLATE,
     SUMMARY_RULES,
+    ...(inventory
+      ? [
+          `The structured inventory below already records files, tool results, failures, and explicit requirements from the history shown. Fold it into the summary, preserving the semantic context it cannot capture — decisions and reasoning, relationships between work items, constraints, current state, and concrete next steps — without repeating it verbatim.\n\n## Structured Inventory\n\n${inventory}`,
+        ]
+      : []),
     "Do not continue the task or call tools.",
     "Return only the structured summary in the requested format. Do not include a preamble, explanation, or other commentary.",
   ]
@@ -188,7 +199,12 @@ export const layer = Layer.effect(
 
     const state = State.create<Settings, Editor>({
       name: "session-compaction",
-      initial: () => ({ auto: true, keep: 15_000 }),
+      initial: () => ({
+        auto: true,
+        keep: 15_000,
+        strategy: "llm",
+        maxToolResults: CompactionExtractor.DEFAULT_MAX_TOOL_RESULTS,
+      }),
       editor: (settings) => ({
         configure: (update) => {
           Object.assign(settings, update)
@@ -203,7 +219,16 @@ export const layer = Layer.effect(
       // Only the user compacts when automatic compaction is off, overflow included.
       if (trigger.reason !== "manual" && !settings.auto) return { status: "skipped" }
       const ceiling = calculateCeiling(context.model.limit, settings.buffer)
-      if (trigger.reason === "auto" && !due(context, ceiling)) return { status: "skipped" }
+      if (trigger.reason === "auto" && !due(context, lowerCeiling(ceiling, context.model.limit, settings.threshold)))
+        return { status: "skipped" }
+      // REDSUN: the algorithmic strategy publishes a deterministic checkpoint without resolving a model.
+      if (settings.strategy === "algorithmic")
+        return yield* algorithmic(trigger, settings).pipe(
+          Effect.matchEffect({
+            onSuccess: (result) => publish(trigger, result),
+            onFailure: (failure) => publish(trigger, failure),
+          }),
+        )
       // An unknown window never triggers auto compaction, but the compaction request still needs a size to aim for.
       const cap = Number.isFinite(ceiling)
         ? ceiling
@@ -215,7 +240,7 @@ export const layer = Layer.effect(
       const compaction =
         context.model.compaction?.type === "native"
           ? compactNatively(trigger, budget, settings.keep)
-          : summarize(trigger, budget, settings.keep)
+          : summarize(trigger, budget, settings)
       return yield* compaction.pipe(
         Effect.matchEffect({
           onSuccess: (result) => publish(trigger, result),
@@ -257,14 +282,19 @@ export const layer = Layer.effect(
     const summarize = Effect.fnUntraced(function* (
       trigger: Trigger,
       budget: number,
-      keep: number,
+      settings: Settings,
     ): Effect.fn.Return<Result, Failure> {
       const context = trigger.context
-      const split = splitConversation(context.messages, keep)
+      const hybrid = settings.strategy === "hybrid"
+      const split = splitConversation(context.messages, settings.keep, hybrid)
       if (!split) return yield* Effect.fail(NOTHING_TO_COMPACT)
 
       const previous = previousCompaction(context.messages)
-      const prompt = buildPrompt(previous !== undefined, previous?.summary.includes(LEGACY_HEADING) ?? false)
+      const prompt = buildPrompt(
+        previous !== undefined,
+        previous?.summary.includes(LEGACY_HEADING) ?? false,
+        hybrid ? inventory(split.older, settings.maxToolResults) || undefined : undefined,
+      )
       const headings = SUMMARY_TEMPLATE.split("\n").filter((line) => line.startsWith("##"))
       const filled = (text: string) => text.split("\n").some((line) => headings.includes(line.trim()))
       const prepared = yield* prepare(context, split.older, budget)
@@ -294,6 +324,32 @@ export const layer = Layer.effect(
       return yield* deliver(trigger, prepared, split.recent, budget - overhead, send)
     })
 
+    // REDSUN: previous summary + deterministic inventory, through the same Started/Ended pair as the
+    // LLM path, so the projection is identical.
+    const algorithmic = Effect.fnUntraced(function* (
+      trigger: Trigger,
+      settings: Settings,
+    ): Effect.fn.Return<Result, Failure> {
+      const context = trigger.context
+      const split = splitConversation(context.messages, settings.keep, true)
+      const previous = previousCompaction(context.messages)
+      const text = [
+        previous?.summary && `## Previous Summary\n\n${previous.summary}`,
+        split && inventory(split.older, settings.maxToolResults),
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+      if (!split || !text.trim()) return yield* Effect.fail(NOTHING_TO_COMPACT)
+      // The runner opened the manual compaction's message when it delivered the `/compact` item.
+      if (trigger.reason !== "manual")
+        yield* bus.publish(SessionEvent.Compaction.Started, {
+          sessionID: context.session.id,
+          reason: "auto",
+          recent: split.recent,
+        })
+      return { text, recent: split.recent }
+    })
+
     /**
      *   endpoint:  [window]                      →  [U U][item]    the provider picks which messages to keep
      *   trigger:   [window][compaction_trigger]  →  [item]
@@ -312,7 +368,7 @@ export const layer = Layer.effect(
       keep: number,
     ): Effect.fn.Return<Result, Failure> {
       const context = trigger.context
-      if (!context.messages.some(messageToText)) return yield* Effect.fail(NOTHING_TO_COMPACT)
+      if (!context.messages.some((message) => messageToText(message))) return yield* Effect.fail(NOTHING_TO_COMPACT)
       const unsupported = (message: string) =>
         Effect.fail<Failure>({ error: { type: "provider.unsupported-operation", message } })
       const prepared = yield* prepare(context, context.messages, budget, "session")
@@ -687,9 +743,10 @@ const transcript = (context: SessionContext.Loaded, messages: ReadonlyArray<Sess
  * `older` gets summarized; `recent`, the newest messages within `keep` tokens, is kept verbatim as text beside
  * the summary. Undefined when there is nothing to compact.
  */
-const splitConversation = (messages: ReadonlyArray<SessionMessage.Info>, keep: number) => {
+const splitConversation = (messages: ReadonlyArray<SessionMessage.Info>, keep: number, dedupe = false) => {
+  const stale = dedupe ? staleReads(messages) : new Set<string>()
   const entries = messages.flatMap((message, index) => {
-    const text = messageToText(message)
+    const text = messageToText(message, stale)
     return text ? [{ message, text, index }] : []
   })
   if (entries.length === 0) return undefined
@@ -700,6 +757,29 @@ const splitConversation = (messages: ReadonlyArray<SessionMessage.Info>, keep: n
     recent: recent.map((entry) => entry.text).join("\n\n"),
   }
 }
+
+/** REDSUN: reads superseded by a later read of the same file, elided from the verbatim tail. */
+const staleReads = (messages: ReadonlyArray<SessionMessage.Info>) =>
+  ReadLocator.stale(
+    messages.flatMap((message) =>
+      message.type === "assistant"
+        ? message.content.flatMap((part) =>
+            part.type === "tool" && part.state.status === "completed"
+              ? [{ id: part.id, name: part.name, input: part.state.input }]
+              : [],
+          )
+        : [],
+    ),
+  )
+
+/** REDSUN: the deterministic inventory over the history a checkpoint is about to replace. */
+const inventory = (messages: ReadonlyArray<SessionMessage.Info>, maxToolResults: number) =>
+  CompactionExtractor.serialize(
+    CompactionExtractor.extract(
+      messages.filter((message) => message.type !== "compaction" && message.type !== "system"),
+      maxToolResults,
+    ),
+  )
 
 const recentStart = (
   entries: ReadonlyArray<{ readonly message: SessionMessage.Info; readonly text: string }>,
@@ -738,7 +818,7 @@ const oldestToDrop = <T>(items: ReadonlyArray<T>, size: (item: T) => number, bud
 }
 
 /** One message as the recent, verbatim part of a summary shows it. Empty for messages that part leaves out. */
-const messageToText = (message: SessionMessage.Info): string => {
+const messageToText = (message: SessionMessage.Info, stale: ReadonlySet<string> = new Set()): string => {
   switch (message.type) {
     // Earlier summaries and instruction updates are handled outside the recent part.
     case "compaction":
@@ -770,6 +850,7 @@ const messageToText = (message: SessionMessage.Info): string => {
           const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
           const call = `[Assistant tool call]: ${part.name}(${input})`
           if (part.state.status === "completed") {
+            if (stale.has(part.id)) return [call, "[Tool result]: [superseded by a later read of the same file]"]
             return [call, `[Tool result]: ${truncateToolOutput(serializeToolContent(part.state.content))}`]
           }
           if (part.state.status === "error") return [call, `[Tool error]: ${part.state.error.message}`]
@@ -897,6 +978,17 @@ const calculateCeiling = (limit: SessionContext.Loaded["model"]["limit"], buffer
   if (window <= 0) return Number.POSITIVE_INFINITY
   if (buffer !== undefined) return window - buffer
   return window - Math.max(Math.floor(window * 0.1), window >= 2 * RESERVE_MIN ? RESERVE_MIN : 0)
+}
+
+/** REDSUN: a configured percentage lowers the automatic trigger, never raises it past the ceiling. */
+const lowerCeiling = (
+  ceiling: number,
+  limit: SessionContext.Loaded["model"]["limit"],
+  threshold: number | undefined,
+) => {
+  const window = limit.input || limit.context
+  if (threshold === undefined || window <= 0) return ceiling
+  return Math.min(ceiling, Math.floor((window * threshold) / 100))
 }
 
 /**

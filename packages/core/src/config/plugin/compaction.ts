@@ -19,6 +19,11 @@ export const Plugin = define({
           ...(entry.info.compaction.auto === undefined ? {} : { auto: entry.info.compaction.auto }),
           ...(entry.info.compaction.buffer === undefined ? {} : { buffer: entry.info.compaction.buffer }),
           ...(entry.info.compaction.keep?.tokens === undefined ? {} : { keep: entry.info.compaction.keep.tokens }),
+          ...(entry.info.compaction.strategy === undefined ? {} : { strategy: entry.info.compaction.strategy }),
+          ...(entry.info.compaction.max_tool_results === undefined
+            ? {}
+            : { maxToolResults: entry.info.compaction.max_tool_results }),
+          ...(entry.info.compaction.threshold === undefined ? {} : { threshold: entry.info.compaction.threshold }),
         })
       }
     })

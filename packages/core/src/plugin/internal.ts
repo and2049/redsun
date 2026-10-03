@@ -61,6 +61,7 @@ import { Ripgrep } from "../ripgrep.js"
 import { Session } from "../session.js"
 import { SessionCompaction } from "../session/compaction.js"
 import { SessionInstructions } from "../session/instructions.js"
+import { SessionStore } from "../session/store.js"
 import { Shell } from "../shell.js"
 import { ShellSelect } from "../shell/select.js"
 import { Snapshot } from "../snapshot.js"
@@ -68,6 +69,17 @@ import { Skill } from "../skill.js"
 import { SkillDiscovery } from "../skill/discovery.js"
 import { Watcher } from "../filesystem/watcher.js"
 import { PatchTool } from "../tool/plugin/patch.js"
+import { RedsunComposePlugin } from "./redsun/compose.js"
+import { RedsunAgentDescriptions } from "./redsun/agent-descriptions.js"
+import { RedsunProjectMemory } from "./redsun/project-memory.js"
+import { RedsunContextOptimizer } from "./redsun/context-optimizer.js"
+import { RedsunAdvisor } from "./redsun/advisor.js"
+import { RedsunAttribution } from "./redsun/attribution.js"
+import { RedsunTodo } from "./redsun/todo.js"
+import { RedsunMultiedit } from "./redsun/multiedit.js"
+import { RedsunWorkerModelTool } from "./redsun/worker-model-tool.js"
+import { ClaudeCodeProviderPlugin } from "@redsun/runtime-claude-code"
+import AcpRuntimePlugin from "@redsun/runtime-acp"
 import { EditTool } from "../tool/plugin/edit.js"
 import { GlobTool } from "../tool/plugin/glob.js"
 import { GrepTool } from "../tool/plugin/grep.js"
@@ -86,7 +98,6 @@ import { WebSearchTool } from "../tool/plugin/websearch.js"
 import { WellKnown } from "../wellknown.js"
 import { WriteTool } from "../tool/plugin/write.js"
 import { AgentPlugin } from "./agent.js"
-import BrowserPlugin from "@opencode/plugin-browser"
 import { CommandPlugin } from "./command.js"
 import { IdentityPlugin } from "./identity.js"
 import { PlanPlugin } from "./plan.js"
@@ -97,7 +108,6 @@ import { OpencodePlugin } from "./provider/opencode.js"
 import { WebSearchPlugins } from "./websearch/index.js"
 import { SkillPlugin } from "./skill.js"
 import { VcsHgPlugin } from "./vcs/hg.js"
-import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
 import { VcsGitPlugin } from "./vcs/git.js"
 import { VerbosityPlugin } from "./verbosity.js"
@@ -140,6 +150,7 @@ const services = [
   WebSearch.Service,
   Ripgrep.Service,
   Session.Service,
+  SessionStore.Service,
   SessionCompaction.Service,
   SessionInstructions.Service,
   Shell.Service,
@@ -195,6 +206,7 @@ export const requirements = LayerNode.group([
   Session.node,
   SessionCompaction.node,
   SessionInstructions.node,
+  SessionStore.node,
   Shell.node,
   ShellSelect.node,
   Snapshot.node,
@@ -211,18 +223,24 @@ export const requirements = LayerNode.group([
 export type InternalPlugin = Plugin<Requirements | Scope.Scope>
 
 const pre = [
-  ToolInputRepairPlugin.Plugin,
+  // REDSUN: upstream registers ToolInputRepairPlugin here. Its repair runs in Tool.executeTool
+  // instead, against the request's captured definition.
   ConfigWorktreePlugin.Plugin,
   ConfigMcpPlugin.Plugin,
   McpCodeModeDefaultsPlugin.Plugin,
   WellKnownPlugin.Plugin,
   VcsGitPlugin.Plugin,
   AgentPlugin.Plugin,
+  // Agent defaults must exist before configuration applies global policy and user overrides.
+  RedsunComposePlugin.Plugin,
+  RedsunAgentDescriptions.Plugin,
   PlanPlugin.Plugin,
   CommandPlugin.Plugin,
   SkillPlugin.Plugin,
   VcsHgPlugin.Plugin,
   ModelsDevPlugin,
+  ClaudeCodeProviderPlugin.Plugin,
+  AcpRuntimePlugin,
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,
@@ -250,7 +268,6 @@ const post = [
   ConfigInstructionPlugin.Plugin,
   ConfigReferencePlugin.Plugin,
   ConfigAgentPlugin.Plugin,
-  BrowserPlugin,
   ConfigCommandPlugin.Plugin,
   ConfigCompactionPlugin.Plugin,
   ConfigFormatterPlugin.Plugin,
@@ -264,6 +281,14 @@ const post = [
   ConfigProviderPlugin.Plugin,
   ConfigWebSearchPlugin.Plugin,
   ConfigPolicyPlugin.Plugin,
+  RedsunWorkerModelTool.Plugin,
+  RedsunProjectMemory.Plugin,
+  RedsunContextOptimizer.Plugin,
+  RedsunAdvisor.Plugin,
+  RedsunAttribution.Plugin,
+  RedsunTodo.Plugin,
+  RedsunMultiedit.Plugin,
+  RedsunMultiedit.LegacyFoldPlugin,
 ] as const satisfies readonly InternalPlugin[]
 
 // Repository config must not switch off policy enforcement or the Console connection that delivers
