@@ -12,6 +12,7 @@ import { Permission } from "../../permission.js"
 import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentCompletion } from "../../session/subagent-completion.js"
+import { RedsunWorkerModelTool } from "../../plugin/redsun/worker-model-tool.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 
 export const name = "subagent"
@@ -70,6 +71,7 @@ export const Plugin = {
     const config = yield* Config.Service
     const permission = yield* Permission.Service
     const models = yield* Model.Service
+    const workerModel = yield* RedsunWorkerModelTool.make(ctx)
     const subagents = yield* SubagentJob.make
 
     const resolveModel = Effect.fn("SubagentTool.resolveModel")(function* (input: string) {
@@ -181,13 +183,23 @@ export const Plugin = {
                 )
               }
 
-              const model = override ?? agent.model ?? parent.model
+              // REDSUN: session worker model, then config; an unconfigured worker asks the user.
+              const model =
+                override ??
+                existing?.model ??
+                (yield* workerModel.resolve({
+                  agentID: agent.id,
+                  agentModel: agent.model,
+                  parentModel: parent.model,
+                  sessionID: context.sessionID,
+                }))
               const child =
                 existing ??
                 (yield* sessions
                   .create({
                     parentID: context.sessionID,
-                    title: input.description,
+                    // REDSUN: same title format as the Claude Code subagent mirror.
+                    title: `${input.description} (@${input.agent} subagent)`,
                     agent: Agent.ID.make(input.agent),
                     model,
                   })

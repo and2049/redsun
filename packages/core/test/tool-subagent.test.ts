@@ -13,13 +13,14 @@ import { makeGlobalNode, makeLocationNode } from "@opencode/util/effect/app-node
 import { Database } from "@opencode/core/database/database"
 import { Bus } from "@opencode/core/bus"
 import { Config } from "@opencode/core/config"
+import { KV } from "@opencode/core/kv"
+import { Form } from "@opencode/core/form"
 import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Agent } from "@opencode/core/agent"
 import { Job } from "@opencode/core/job"
-import { KV } from "@opencode/core/kv"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { Session } from "@opencode/core/session"
 import { SessionEvent } from "@opencode/core/session/event"
@@ -34,6 +35,12 @@ import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
 import { Permission } from "@opencode/core/permission"
 import { SubagentTool } from "@opencode/core/tool/plugin/subagent"
+import { RedsunWorkerModel } from "@opencode/core/plugin/redsun/worker-model"
+import { RedsunWorkerModelTool } from "@opencode/core/plugin/redsun/worker-model-tool"
+import { Rpc } from "@opencode/core/rpc"
+import { DelegateHost } from "@opencode/core/delegate-host"
+import { AcpRuntime } from "@redsun/runtime-acp/runtime"
+import { AcpOptions } from "@redsun/runtime-acp/options"
 import { Tool } from "@opencode/core/tool"
 import { tmpdir } from "./fixture/tmpdir"
 import { tempGlobalLayer } from "./fixture/global"
@@ -44,7 +51,14 @@ import { executeTool, registerToolPlugin, toolIdentity } from "./lib/tool"
 const childText = "child final response"
 const completedOutput = (sessionID: Session.ID) =>
   `<subagent sessionID="${sessionID}" state="completed">\n${childText}\n</subagent>`
-const childModel = Model.Ref.make({ id: Model.ID.make("child"), providerID: Provider.ID.make("test") })
+// REDSUN: the variant rides inside Model.Ref, so pinning one here makes every
+// assertion below also assert that a resumed or agent-switched child keeps the
+// variant it was created with — v1 tracked this separately as worker_variant.
+const childModel = Model.Ref.make({
+  id: Model.ID.make("child"),
+  providerID: Provider.ID.make("test"),
+  variant: Model.VariantID.make("high"),
+})
 const parentModel = Model.Ref.make({ id: Model.ID.make("parent"), providerID: Provider.ID.make("test") })
 const overrideModel = Model.Ref.make({
   id: Model.ID.make("override"),
@@ -116,14 +130,34 @@ const subagentPluginSupervisor = makeLocationNode({
   layer: Layer.effectDiscard(
     Effect.gen(function* () {
       const hooks = yield* PluginHooks.Service
-      yield* registerToolPlugin(SubagentTool.Plugin, {}, (name, callback) => hooks.register("tool", name, callback))
+      const rpc = yield* Rpc.Service
+      // REDSUN: the subagent leaf stores a picked worker model through the worker-model RPC.
+      const overrides = { rpc: Object.assign(rpc.client, { register: rpc.register }) }
+      yield* registerToolPlugin(RedsunWorkerModelTool.Plugin, overrides)
+      yield* registerToolPlugin(SubagentTool.Plugin, overrides, (name, callback) =>
+        hooks.register("tool", name, callback),
+      )
     }),
   ),
-  deps: [Agent.node, Config.node, Model.node, Permission.node, Session.node, Job.node, Tool.node, PluginHooks.node],
+  deps: [
+    Agent.node,
+    Config.node,
+    Model.node,
+    Form.node,
+    KV.node,
+    Permission.node,
+    Session.node,
+    SessionStore.node,
+    Job.node,
+    Tool.node,
+    PluginHooks.node,
+    Rpc.node,
+  ],
 })
 
 const nodes = LayerNode.group([
   Database.node,
+  KV.node,
   Bus.node,
   Job.node,
   Session.node,
@@ -197,6 +231,145 @@ const withSubagent = (location: Location.Ref) =>
   })
 
 describe("SubagentTool", () => {
+  for (const transport of ["native", "acp", "kiro-v3"] as const)
+    it.live(
+      `picks an unconfigured worker model once and reuses it, including when continuing a child (${transport})`,
+      () =>
+        Effect.acquireRelease(
+          Effect.promise(() => tmpdir()),
+          (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+        ).pipe(
+          Effect.flatMap((dir) =>
+            Effect.gen(function* () {
+              const sessions = yield* Session.Service
+              const parent = yield* sessions.create({
+                location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+                model: parentModel,
+              })
+              yield* withSubagent(parent.location)
+              const locations = yield* LocationServiceMap.Service
+              const registry = yield* Tool.Service.pipe(Effect.provide(locations.get(parent.location)))
+              const forms = yield* Form.Service.pipe(Effect.provide(locations.get(parent.location)))
+              const agents = yield* Agent.Service.pipe(Effect.provide(locations.get(parent.location)))
+              yield* agents.transform((editor) =>
+                editor.update(Agent.ID.make("worker"), (agent) => {
+                  agent.mode = "subagent"
+                  agent.model = undefined
+                }),
+              )
+              let asks = 0
+              let selected = ""
+              const bus = yield* Bus.Service
+              yield* bus.listen((event) => {
+                if (event.type !== Form.Event.Created.type) return Effect.void
+                asks++
+                const form = (event.data as { form: Form.Info }).form
+                expect(form.sessionID).toBe(parent.id)
+                expect(form.metadata).toMatchObject({ kind: "worker-model" })
+                const field = form.fields[0]!
+                if (field.type !== "string" || !field.options?.length)
+                  return Effect.die(new Error("Missing model options"))
+                selected = String(field.options[0]!.value)
+                return forms.reply({ id: form.id, answer: { model: selected } }).pipe(Effect.orDie, Effect.asVoid)
+              })
+              const snapshot = yield* registry.snapshot()
+              const runtime = new AcpRuntime.Runtime(
+                AcpOptions.parse({
+                  agents: {
+                    fake: {
+                      command: process.execPath,
+                      args: [path.join(import.meta.dir, "../../runtime-acp/test/fixture/agent.ts")],
+                      hostTools: "all",
+                      ...(transport === "kiro-v3"
+                        ? {
+                            preset: "kiro",
+                            prompt: "none",
+                            env: { FAKE_ACP_V3: "1" },
+                            home: { path: path.join(dir.path, ".kiro-home") },
+                          }
+                        : {}),
+                    },
+                  },
+                }).agents[0]!,
+                {
+                  cwd: dir.path,
+                  mode: async () => "normal",
+                  approve: async () => ({ ok: true }),
+                  tools: async () =>
+                    DelegateHost.bindSnapshot(snapshot, {
+                      sessionID: parent.id,
+                      agent: toolIdentity.agent,
+                      messageID: toolIdentity.messageID,
+                      direct: new Set(),
+                    }),
+                },
+              )
+              yield* Effect.addFinalizer(() => Effect.sync(() => runtime.stop()))
+              const invoke = (id: string, sessionID?: string) =>
+                transport !== "native"
+                  ? Effect.promise(async () => {
+                      const args = {
+                        agent: "worker",
+                        description: "worker qualification",
+                        prompt: "work",
+                        ...(sessionID ? { sessionID } : {}),
+                      }
+                      const result = await runtime.turn(
+                        {
+                          sessionID: parent.id,
+                          assistantMessageID: toolIdentity.messageID,
+                          agent: toolIdentity.agent,
+                          kind: "primary",
+                          modelID: "default",
+                        },
+                        {
+                          prompt: [
+                            {
+                              role: "user",
+                              content: [{ type: "text", text: `invoke:${JSON.stringify({ name: "subagent", args })}` }],
+                            },
+                          ],
+                          tools: [{ type: "function", name: "subagent", inputSchema: { type: "object" } }],
+                        },
+                      )
+                      let received: { metadata: Record<string, unknown> } | undefined
+                      for await (const part of result.stream) {
+                        if (part.type !== "tool-result") continue
+                        const output = part.result as { metadata: Record<string, unknown> }
+                        // Drain the entire stream before starting the next invocation.
+                        received = output
+                      }
+                      if (!received) throw new Error("Missing ACP subagent result")
+                      return received
+                    })
+                  : executeTool(registry, {
+                      sessionID: parent.id,
+                      ...toolIdentity,
+                      call: {
+                        type: "tool-call",
+                        id,
+                        name: SubagentTool.name,
+                        input: {
+                          agent: "worker",
+                          description: "worker qualification",
+                          prompt: "work",
+                          ...(sessionID ? { sessionID } : {}),
+                        },
+                      },
+                    })
+              const first = yield* invoke("call-worker-first")
+              const childID = outputSessionID(first.metadata)
+              expect((yield* sessions.get(childID)).model).toMatchObject(Model.Ref.parse(selected))
+              yield* invoke("call-worker-second")
+              const kv = yield* KV.Service.pipe(Effect.provide(locations.get(parent.location)))
+              yield* kv.remove(RedsunWorkerModel.key(parent.id))
+              yield* invoke("call-worker-resume", childID)
+              expect(asks).toBe(1)
+            }),
+          ),
+        ),
+    )
+
   completionIt.live("admits one durable completion across live delivery and restart replay", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
@@ -354,7 +527,7 @@ describe("SubagentTool", () => {
       Effect.flatMap((dir) =>
         Effect.gen(function* () {
           yield* Effect.promise(() =>
-            Bun.write(path.join(dir.path, "opencode.json"), JSON.stringify({ experimental: { subagent_depth: 2 } })),
+            Bun.write(path.join(dir.path, "redsun.json"), JSON.stringify({ experimental: { subagent_depth: 2 } })),
           )
           const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
           const sessions = yield* Session.Service
@@ -497,7 +670,8 @@ describe("SubagentTool", () => {
 
           expect(outputSessionID(second.metadata)).toBe(childID)
           expect((yield* sessions.list({ parentID: parent.id })).data).toHaveLength(1)
-          expect((yield* sessions.get(childID)).title).toBe("review")
+          // REDSUN: child sessions carry the same title suffix as the Claude Code mirror.
+          expect((yield* sessions.get(childID)).title).toBe("review (@reviewer subagent)")
           expect(
             (yield* sessions.inbox(childID)).flatMap((message) =>
               message.type === "user" ? [message.payload.text] : [],

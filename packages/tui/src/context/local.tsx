@@ -1,7 +1,7 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { useEvent } from "./event"
 import path from "path"
 import { useTuiPaths } from "./runtime"
@@ -22,9 +22,13 @@ import { useTheme } from "./theme"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { useData } from "./data"
-import { usePermission } from "./permission"
+import { effectivePermissionMode, usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
+import { WorkerModel } from "@opencode/plugin/worker-model"
+import { useClient } from "./client"
+import { errorMessage } from "../util/error"
+import { parseWorkerModelRef } from "../util/worker-model"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -38,6 +42,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const event = useEvent()
     const permission = usePermission()
     const location = useLocation()
+    const client = useClient()
 
     const models = () => data.location.model.list(location.ref)
     const providers = () => data.location.provider.list(location.ref)
@@ -124,11 +129,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         color(id: string) {
           const index = visibleAgents().findIndex((agent) => agent.id === id)
-          if (index === -1) return colors()[0]
+          if (index === -1) return theme.agents[id] ?? colors()[0]
           const agent = visibleAgents()[index]
 
           if (agent?.color) return RGBA.fromHex(agent.color)
-          return colors()[index % colors().length]
+          // A theme that names this agent owns its colour; unnamed agents keep
+          // their positional slot in the categorical scale.
+          return theme.agents[id] ?? colors()[index % colors().length]
         },
       }
     }
@@ -146,9 +153,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const [selectionState, setSelectionState] = createStore<{
         newSessionModelByLocationAgent: Record<string, ModelPreferenceModel | undefined>
         selectionBySessionAgent: Record<string, Record<string, ModelSelection | undefined> | undefined>
+        // REDSUN: each session's server-side worker-model choice, mirrored from the worker-model
+        // RPC; a missing key is not known (yet).
+        workerBySession: Record<string, WorkerModel.Choice | undefined>
+        workerPending: Record<string, { model: string | undefined } | undefined>
       }>({
         newSessionModelByLocationAgent: {},
         selectionBySessionAgent: {},
+        workerBySession: {},
+        workerPending: {},
       })
 
       const repository = createModelPreferenceRepository(path.join(paths.state, "model.json"))
@@ -161,6 +174,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setPreferences("recent", value.recent)
           setPreferences("favorite", value.favorite)
           setPreferences("variant", value.variant)
+          setPreferences("worker", value.worker)
           setPreferences("ready", true)
         })
       }
@@ -341,16 +355,166 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       onCleanup(event.on("session.model.selected", (evt) => reconcileSessionSelection(evt.data.sessionID)))
       onCleanup(event.on("session.agent.selected", (evt) => reconcileSessionSelection(evt.data.sessionID)))
 
+      const workerIntents = new Map<string, number>()
+      const deletedWorkers = new Set<string>()
       onCleanup(
         event.on("session.deleted", (evt) => {
           pendingSelectionCommits.delete(evt.data.sessionID)
           setSelectionState("selectionBySessionAgent", evt.data.sessionID, undefined)
+          // Late worker-model replies for a deleted session are dropped (see confirmWorker).
+          deletedWorkers.add(evt.data.sessionID)
+          workerIntents.delete(evt.data.sessionID)
+          setSelectionState("workerBySession", evt.data.sessionID, undefined)
+          setSelectionState("workerPending", evt.data.sessionID, undefined)
         }),
       )
+
+      const workerRpc = () => client.api.rpc(WorkerModel.rpc)
+      const workerOptions = (sessionID: string) => ({ location: data.session.get(sessionID)?.location ?? location.ref })
+      const workerRef = (value: ModelSelection | undefined) => {
+        if (!value) return undefined
+        const variant = normalizeModelVariant(value.variant)
+        return `${value.providerID}/${value.modelID}${variant ? `#${variant}` : ""}`
+      }
+      // `workerBySession` holds what the server confirmed, ordered by its revision whichever of a
+      // read, reply or event delivers it. The newest local choice still being written shows instead
+      // (`workerPending`) until that write settles, so nothing older can replace it on screen.
+      // Writes to one session run in order.
+      const workerWrites = new Map<string, Promise<unknown>>()
+      function confirmWorker(sessionID: string, choice: WorkerModel.Choice) {
+        if (deletedWorkers.has(sessionID)) return
+        const current = selectionState.workerBySession[sessionID]
+        if (current && current.revision > choice.revision) return
+        // Replace rather than merge: a cleared choice must drop the previous `model`.
+        setSelectionState("workerBySession", { [sessionID]: choice })
+      }
+
+      function fetchWorker(sessionID: string) {
+        void workerRpc()
+          .get({ sessionID }, workerOptions(sessionID))
+          .then((choice) => confirmWorker(sessionID, choice))
+          // An unreadable choice stays unknown; nothing is written on its account.
+          .catch(() => undefined)
+      }
+
+      function queueWorker<T>(sessionID: string, run: () => Promise<T>) {
+        const next = (workerWrites.get(sessionID) ?? Promise.resolve()).catch(() => undefined).then(run)
+        workerWrites.set(sessionID, next)
+        void next
+          .catch(() => undefined)
+          .finally(() => {
+            if (workerWrites.get(sessionID) === next) workerWrites.delete(sessionID)
+          })
+        return next
+      }
+
+      function writeWorker(sessionID: string, input: { model?: string; ifUnset?: boolean }) {
+        return queueWorker(sessionID, async () =>
+          confirmWorker(sessionID, await workerRpc().set({ sessionID, ...input }, workerOptions(sessionID))),
+        )
+      }
+
+      /** Shows the choice at once, then stores it; a failed write falls back to the server's. */
+      function chooseWorker(sessionID: string, model: string | undefined) {
+        if (deletedWorkers.has(sessionID)) return
+        const intent = (workerIntents.get(sessionID) ?? 0) + 1
+        workerIntents.set(sessionID, intent)
+        setSelectionState("workerPending", { [sessionID]: model === undefined ? { model: undefined } : { model } })
+        writeWorker(sessionID, model === undefined ? {} : { model })
+          .catch((error: unknown) => {
+            fetchWorker(sessionID)
+            toast.show({ message: `Could not set the worker model: ${errorMessage(error)}`, variant: "error" })
+          })
+          .finally(() => {
+            if (workerIntents.get(sessionID) === intent) setSelectionState("workerPending", { [sessionID]: undefined })
+          })
+      }
+
+      onCleanup(
+        event.on(WorkerModel.CHANGED, (evt) => {
+          const changed = WorkerModel.Changed.safeParse(evt.data)
+          if (!changed.success) return
+          const { sessionID, ...choice } = changed.data
+          confirmWorker(sessionID, choice)
+        }),
+      )
+
+      // Events are live only, so re-read on entering a session and after a reconnect.
+      createEffect(() => {
+        if (client.connection.status() !== "connected") return
+        if (route.data.type === "session") fetchWorker(route.data.sessionID)
+      })
+
+      const workerSelection = createMemo<ModelSelection | undefined>(() => {
+        const sessionID = route.data.type === "session" ? route.data.sessionID : undefined
+        const pending = sessionID ? selectionState.workerPending[sessionID] : undefined
+        const choice = sessionID ? selectionState.workerBySession[sessionID] : undefined
+        const model = pending ? pending.model : choice?.chosen ? choice.model : undefined
+        const candidate =
+          pending || choice?.chosen ? (model ? parseWorkerModelRef(model) : undefined) : preferences.worker
+        if (!candidate || !isModelValid(candidate)) return undefined
+        return candidate
+      })
+
+      function rememberWorker(selection: ModelSelection | undefined) {
+        setPreferences("worker", selection)
+        void repository.saveWorker(selection).catch(() => undefined)
+      }
+
+      const worker = {
+        current: workerSelection,
+        ref: () => workerRef(workerSelection()),
+        set(model: { providerID: string; modelID: string; variant?: string }) {
+          if (!isModelValid(model)) {
+            toast.show({
+              message: `Model ${model.providerID}/${model.modelID} is not valid`,
+              variant: "warning",
+              duration: 3000,
+            })
+            return
+          }
+          const selection = {
+            providerID: model.providerID,
+            modelID: model.modelID,
+            variant: normalizeModelVariant(model.variant),
+          }
+          rememberWorker(selection)
+          if (route.data.type === "session") chooseWorker(route.data.sessionID, workerRef(selection))
+        },
+        /** Makes `model` this TUI's default without choosing it for the open session. */
+        remember(model: { providerID: string; modelID: string; variant?: string }) {
+          if (isModelValid(model)) rememberWorker({ ...model, variant: normalizeModelVariant(model.variant) })
+        },
+        clear() {
+          rememberWorker(undefined)
+          if (route.data.type === "session") chooseWorker(route.data.sessionID, undefined)
+        },
+        variants(model?: { providerID: string; modelID: string }) {
+          const value = model ?? workerSelection()
+          if (!value) return []
+          const info = models()?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+          return info?.variants?.map((item) => item.id) ?? []
+        },
+        /**
+         * Offers this TUI's default to a session nobody has chosen a worker model for, after any
+         * pending choice for it is stored. Runs before a prompt is admitted.
+         */
+        async sync(sessionID: string) {
+          const fallback = workerRef(
+            preferences.worker && isModelValid(preferences.worker) ? preferences.worker : undefined,
+          )
+          await (
+            fallback === undefined
+              ? queueWorker(sessionID, async () => undefined)
+              : writeWorker(sessionID, { model: fallback, ifUnset: true })
+          ).catch(() => undefined)
+        },
+      }
 
       return {
         current: currentModel,
         selection: currentSelection,
+        worker,
         remember() {
           const current = agent.current()
           const selection = currentSelection()
@@ -543,15 +707,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (state.pending) save()
         })
 
-      const slots = createMemo(() => {
-        const existing = new Set(
-          data.session
-            .list()
-            .filter((x) => x.parentID === undefined)
-            .map((x) => x.id),
-        )
-        return sessionStore.pinned.filter((id) => existing.has(id)).slice(0, 9)
-      })
+      const slots = createMemo(() =>
+        sessionStore.pinned.filter((id) => data.session.get(id)?.parentID === undefined).slice(0, 9),
+      )
 
       function prune(sessionID: string) {
         batch(() => {
@@ -605,7 +763,22 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       model,
       agent,
       session,
-      permission,
+      permission: {
+        get mode() {
+          return effectivePermissionMode(permission.mode, permission.nativeFor(model.current(), location.ref))
+        },
+        /** Whether the current model's runtime offers native_auto ("Approve for me"). */
+        native() {
+          return permission.nativeFor(model.current(), location.ref)
+        },
+        get hydrated() {
+          return permission.hydrated
+        },
+        set: permission.set,
+        toggle() {
+          return permission.toggle(model.current(), location.ref)
+        },
+      },
     }
     return result
   },

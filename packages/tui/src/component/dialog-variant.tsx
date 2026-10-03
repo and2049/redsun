@@ -2,29 +2,39 @@ import { createMemo } from "solid-js"
 import { useLocal } from "../context/local"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
+import { useLanguage } from "../i18n"
 
-export function DialogVariant() {
+export function DialogVariant(props: {
+  title?: string
+  variants?: string[]
+  selected?: string
+  onSelect?: (variant: string) => void
+}) {
   const local = useLocal()
   const dialog = useDialog()
+  const { t } = useLanguage()
+  dialog.setPlacement("bottom")
 
+  const list = createMemo(() => props.variants ?? local.model.variant.list())
   const options = createMemo(() => [
     {
       value: "default",
-      title: "Default",
+      title: t("common.default"),
       onSelect: () => {
         dialog.clear()
-        local.model.variant.set(undefined)
+        if (props.onSelect) props.onSelect("default")
+        else local.model.variant.set(undefined)
       },
     },
-    ...local.model.variant
-      .list()
+    ...list()
       .filter((variant) => variant !== "default")
       .map((variant) => ({
         value: variant,
         title: variant,
         onSelect: () => {
           dialog.clear()
-          local.model.variant.set(variant)
+          if (props.onSelect) props.onSelect(variant)
+          else local.model.variant.set(variant)
         },
       })),
   ])
@@ -32,8 +42,8 @@ export function DialogVariant() {
   return (
     <DialogSelect<string>
       options={options()}
-      title={"Select variant"}
-      current={local.model.variant.current() ?? "default"}
+      title={props.title ?? t("ui.selectVariant")}
+      current={props.selected ?? local.model.variant.current() ?? "default"}
       flat={true}
     />
   )
