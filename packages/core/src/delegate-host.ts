@@ -337,9 +337,7 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const info = yield* agents.get(Agent.ID.make(input.agent))
           if (!info) return yield* Effect.fail(new Error(`Agent is no longer available: ${input.agent}`))
-          const dynamic = builtins
-            ? yield* renderBuiltins(yield* builtins.load(SessionSchema.ID.make(input.sessionID)))
-            : []
+          const dynamic = builtins ? yield* renderBuiltins(yield* builtins.load()) : []
           return { static: systemPrompt(info, input.tools), dynamic }
         }),
     },

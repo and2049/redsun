@@ -3,7 +3,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
 
 const roots = ["../cli/src", "../tui/src"].map((dir) => path.resolve(import.meta.dirname, "..", dir))
-const allowed = [/OpenCode Console/, /Connecting to OpenCode\.\.\./]
+// The `opencode` web search provider is OpenCode's hosted service, a genuinely upstream product.
+const allowed = [/OpenCode Console/, /Connecting to OpenCode\.\.\./, /provider === "opencode"\) return "OpenCode"/]
 const leak = /(["'`>][^"'`<\n]*\bOpenCode\b[^"'`<\n]*["'`<])|\bopencode mini\b|opencode \/ /
 
 function* files(dir: string): Generator<string> {

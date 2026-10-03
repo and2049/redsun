@@ -177,6 +177,26 @@ matching resource.
 
 See the [permissions guide](permissions.md) for rule matching and available actions.
 
+### Policies
+
+Allow or deny use of a provider, or hard-deny a permission check, with ordered
+statements that broader configuration can override.
+
+```jsonc
+{
+  "experimental": {
+    "policies": [
+      { "action": "provider.use", "resource": "*", "effect": "deny" },
+      { "action": "provider.use", "resource": "anthropic", "effect": "allow" },
+      { "action": "permission", "resource": "shell:git push *", "effect": "deny" },
+    ],
+  },
+}
+```
+
+See the [policies guide](policies.md) for matching, precedence across configuration
+files, and Console-managed policy.
+
 ### Agents
 
 Override built-in agents or define specialized agents with their own model,

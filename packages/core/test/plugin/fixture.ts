@@ -16,6 +16,7 @@ import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
+import { ManagedPolicy } from "@opencode/core/managed-policy"
 import { Mcp } from "@opencode/core/mcp/index"
 import { Model } from "@opencode/core/model"
 import { Npm } from "@opencode/util/npm"
@@ -95,6 +96,7 @@ const nodes = LayerNode.group([
   // REDSUN: the delegate domain's host context reads discovered instructions (`PluginHost.requirements`).
   InstructionDiscovery.node,
   KV.node,
+  ManagedPolicy.node,
   Mcp.node,
   Session.node,
   SessionStore.node,

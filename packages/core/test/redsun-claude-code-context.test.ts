@@ -93,7 +93,7 @@ describe("ClaudeCodeContext.Tracker", () => {
     const codeMode = DelegateHost.codeMode(summary)
     const input = { agent, isWorker: false, freshProcess: false, codeMode }
     const initial = tracker.prepare("one", input)
-    expect(initial.text).toContain("The Code Mode tool catalog below")
+    expect(initial.text).toContain("# Code Mode")
     initial.delivered()
     expect(tracker.prepare("one", input).text).toBeUndefined()
     const updated = {

@@ -25,7 +25,7 @@ below name the page for their topic; the other pages are:
 
 - Top level: `agents`, `commands` (custom commands, prompt templates), `skills`,
   `instructions` (AGENTS.md), `references` (directories outside the project),
-  `permissions`, `providers`, `models`, `tools`, `websearch`, `formatters`,
+  `permissions`, `policies` (experimental deny statements), `providers`, `models`, `tools`, `websearch`, `formatters`,
   `attachments`, `compaction`, `snapshots` (rollback), `sharing`, `warming`
   (session warming), `themes`, `network` (proxies, certificates)
 - `cli/`: `commands` (command-line options), `providers`, `plugins`, `theme`,

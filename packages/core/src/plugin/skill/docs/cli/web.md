@@ -8,9 +8,25 @@ protected, and browser or remote clients connect to it over HTTP.
 ```bash
 $ redsun pair
 
-  URLs      http://127.0.0.1:49374
-  Username  opencode
-  Password  ********
+  Open a link to connect. Links work once and expire in 5 minutes.
+
+  http://127.0.0.1:49374/auth/connect/...
+
+  █▀▀▀▀▀█ ...
+```
+
+Opening a link in a browser signs it in with a session cookie and loads the web
+ui. Scanning the QR code from the redsun app, or pasting the link into its
+server address field, connects the app the same way. Sessions last 30 days;
+changing the server password signs every session out.
+
+### Over SSH
+
+When the server listens only on localhost, forward its port from your machine
+and open the printed link locally:
+
+```bash
+$ ssh -L 49374:127.0.0.1:49374 my-server
 ```
 
 By default the server runs on port 49374 and listens only on localhost. You can

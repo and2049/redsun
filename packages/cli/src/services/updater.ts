@@ -1,10 +1,12 @@
 import { Global } from "@opencode/util/global"
 import { AppProcess } from "@opencode/util/process"
+import { EffectFlock } from "@opencode/util/effect-flock"
 import { OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Ref, Schedule } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { parse, type ParseError } from "jsonc-parser"
 import path from "node:path"
+import { stripVTControlCharacters } from "node:util"
 import { action, parseReleaseVersion, type Policy } from "./updater-action"
 
 export const methods = ["curl", "powershell"] as const
@@ -16,6 +18,45 @@ export const REPOSITORY = "and2049/redsun"
 export const RELEASE_API = `https://api.github.com/repos/${REPOSITORY}/releases/latest`
 export const INSTALLER = `https://github.com/${REPOSITORY}/releases/latest/download/install`
 export const INSTALLER_WINDOWS = `https://github.com/${REPOSITORY}/releases/latest/download/install.ps1`
+
+export class UpgradeError extends Error {
+  readonly title: string
+  readonly detail: string
+  readonly command?: string
+  readonly retry: string
+
+  constructor(
+    input: {
+      readonly title: string
+      readonly detail: string
+      readonly command?: string
+      readonly retry: string
+    },
+    options?: ErrorOptions,
+  ) {
+    super(input.detail, options)
+    this.name = "UpgradeError"
+    this.title = input.title
+    this.detail = input.detail
+    this.command = input.command
+    this.retry = input.retry
+  }
+}
+
+function conciseDetail(input: string) {
+  const lines = stripVTControlCharacters(input)
+    .trim()
+    .replaceAll("\r", "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+  const tail = lines.slice(-12).join("\n")
+  const clipped = tail.length > 2_000
+  const detail = clipped ? `…${tail.slice(-1_999)}` : tail
+  if (!detail) return
+  if (lines.length <= 12 && !clipped) return detail
+  return `${detail}\n\nOutput shortened to the last 12 lines.`
+}
 
 export function versionFromRelease(data: unknown): string | undefined {
   if (typeof data !== "object" || data === null || !("tag_name" in data)) return undefined
@@ -78,6 +119,7 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const global = yield* Global.Service
   const appProcess = yield* AppProcess.Service
+  const flock = yield* EffectFlock.Service
   const installedVersion = yield* Ref.make(OPENCODE_VERSION)
 
   const readPolicy = Effect.fnUntraced(function* () {
@@ -130,8 +172,12 @@ const make = Effect.gen(function* () {
   const upgrade = Effect.fnUntraced(function* (method: Method, input: string) {
     if (!parseReleaseVersion(input)) return yield* Effect.fail(new Error(`Invalid version: ${input}`))
     const version = input.trim().replace(/^v/, "")
+    const retry = "Fix the issue above, then run redsun upgrade again."
     const result = yield* Effect.scoped(
       Effect.gen(function* () {
+        // Another redsun process (the service or a client) may be installing at the same time. Wait
+        // longer than the slowest install (a download and an install, 5 minutes each).
+        yield* flock.acquire("cli-upgrade", undefined, { timeoutMs: Duration.toMillis("15 minutes") })
         yield* fs.makeDirectory(global.cache, { recursive: true })
         const directory = yield* Effect.acquireRelease(
           fs.makeTempDirectory({ directory: global.cache, prefix: "update-" }),
@@ -162,12 +208,29 @@ const make = Effect.gen(function* () {
         if (download.code !== 0) return download
         return yield* exec(["bash", installer, "--version", version, "--no-modify-path"], "5 minutes")
       }),
-    ).pipe(Effect.mapError((cause) => new Error(`Failed to update with ${method}`, { cause })))
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new UpgradeError(
+            { title: "Could not prepare the redsun upgrade", detail: `Failed to update with ${method}`, retry },
+            { cause },
+          ),
+      ),
+    )
     if (result.code === 0) return
     // install.ps1 prints its failure reasons to stdout (Write-Host), so fall
     // back to stdout before the generic message.
-    const detail = result.stderr.trim() || result.stdout.trim()
-    return yield* Effect.fail(new Error(detail || `Failed to update with ${method}`))
+    return yield* Effect.fail(
+      new UpgradeError({
+        title: "The redsun installer failed",
+        detail:
+          conciseDetail(result.stderr) ??
+          conciseDetail(result.stdout) ??
+          `The command exited with code ${result.code} without any error output.`,
+        command: `redsun upgrade ${version} --method ${method}`,
+        retry,
+      }),
+    )
   })
 
   const inspect = Effect.fnUntraced(function* () {

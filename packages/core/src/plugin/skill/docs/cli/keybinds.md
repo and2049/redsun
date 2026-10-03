@@ -95,11 +95,10 @@ Unknown command IDs are rejected.
 | `opencode.settings`        | `none`                    | Open settings                       |
 | `server.pair`              | `none`                    | Pair device                         |
 | `service.restart`          | `none`                    | Restart service                     |
-| `permission.mode`          | `none`                    | Toggle auto-approve permissions     |
 
 ## Diff Viewer
 
-Press `d` (`diff.switch_source`) to choose **All**, **Committed**, or **Uncommitted**, or select **Base** to change the comparison branch. Choices are remembered until the TUI exits. Set the initial scope with [`diffs.source` in `cli.json`](config.md#diffs).
+Press `d` (`diff.switch_source`) to choose **All**, **Committed**, **Uncommitted**, or **Last turn** (inside a session), or select **Base** to change the comparison branch. Choices are remembered until the TUI exits. Set the initial scope with [`diffs.source` in `cli.json`](config.md#diffs).
 
 Scrolling, paging, and start/end shortcuts always control the diff. There is no keyboard focus switch: click files to open them, click folders to expand or collapse them, and use the mouse wheel to scroll the file tree.
 
@@ -141,10 +140,11 @@ The retired `diff.toggle`, `diff.expand`, `diff.expand_all`, `diff.collapse`, an
 | ID                         | Default     | Description                              |
 | -------------------------- | ----------- | ---------------------------------------- |
 | `prompt.editor`            | `<leader>e` | Open external editor                     |
-| `theme.switch`             | `<leader>t` | List available themes                    |
+| `theme.switch`             | `none`      | List available themes                    |
 | `theme.switch_mode`        | `none`      | Switch between light and dark theme mode |
 | `theme.mode.lock`          | `none`      | Lock or unlock theme mode                |
 | `session.sidebar.toggle`   | `<leader>b` | Toggle sidebar                           |
+| `terminal.toggle`          | `<leader>t` | Toggle terminal pane                     |
 | `session.toggle.scrollbar` | `none`      | Toggle session scrollbar                 |
 | `opencode.status`          | `<leader>s` | View status                              |
 | `opencode.debug`           | `none`      | View debug info                          |
@@ -179,6 +179,7 @@ The retired `diff.toggle`, `diff.expand`, `diff.expand_all`, `diff.collapse`, an
 | `session.aside`                       | `none`                  | Ask a side question                      |
 | `session.cd`                          | `none`                  | Change working directory                 |
 | `session.queued_prompts`              | `<leader>q`             | Manage queued prompts                    |
+| `queued_prompt.undo`                  | `ctrl+u`                | Undo queued prompt                       |
 | `queued_prompt.delete`                | `ctrl+d`                | Delete queued prompt                     |
 | `session.toggle.exploration_grouping` | `none`                  | Toggle related tool call grouping        |
 | `session.child.first`                 | `down`                  | Toggle subagent picker                   |
@@ -250,16 +251,16 @@ The retired `diff.toggle`, `diff.expand`, `diff.expand_all`, `diff.collapse`, an
 
 ## Prompt Commands
 
-| ID                            | Default      | Description            |
-| ----------------------------- | ------------ | ---------------------- |
-| `prompt.submit`               | `none`       | Submit prompt          |
-| `prompt.queue`                | `alt+return` | Queue prompt           |
-| `prompt.editor_context.clear` | `none`       | Clear editor context   |
-| `prompt.images.view`          | `<leader>i`  | View image attachments |
-| `prompt.skills`               | `none`       | Open skill selector    |
-| `prompt.stash`                | `none`       | Stash prompt           |
-| `prompt.stash.pop`            | `none`       | Pop stashed prompt     |
-| `prompt.stash.list`           | `none`       | List stashed prompts   |
+| ID                            | Default          | Description            |
+| ----------------------------- | ---------------- | ---------------------- |
+| `prompt.submit`               | `none`           | Submit prompt          |
+| `prompt.queue`                | `<leader>return` | Queue prompt           |
+| `prompt.editor_context.clear` | `none`           | Clear editor context   |
+| `prompt.images.view`          | `<leader>i`      | View image attachments |
+| `prompt.skills`               | `none`           | Open skill selector    |
+| `prompt.stash`                | `none`           | Stash prompt           |
+| `prompt.stash.pop`            | `none`           | Pop stashed prompt     |
+| `prompt.stash.list`           | `none`           | List stashed prompts   |
 
 ## Input Editing
 
@@ -268,7 +269,7 @@ The retired `diff.toggle`, `diff.expand`, `diff.expand_all`, `diff.collapse`, an
 | `prompt.clear`                  | `ctrl+c`                                                                      | Clear input field                       |
 | `prompt.paste`                  | `{"key":"ctrl+v","preventDefault":false}` (`ctrl+v`; `preventDefault: false`) | Paste from clipboard                    |
 | `input.submit`                  | `return`                                                                      | Submit input                            |
-| `input.newline`                 | `shift+return,ctrl+return,ctrl+j`                                             | Insert newline in input                 |
+| `input.newline`                 | `shift+return,ctrl+return,alt+return,ctrl+j`                                  | Insert newline in input                 |
 | `input.move.left`               | `left,ctrl+b`                                                                 | Move cursor left in input               |
 | `input.move.right`              | `right,ctrl+f`                                                                | Move cursor right in input              |
 | `input.move.up`                 | `up`                                                                          | Move cursor up in input                 |
@@ -336,7 +337,8 @@ The viewer shows recent output and stays open after exit; output redirected to a
 | `dialog.select.submit`         | `return`      | Submit selected dialog item         |
 | `dialog.prompt.submit`         | `return`      | Submit dialog prompt                |
 | `dialog.worktree.generate`     | `tab`         | Generate worktree name              |
-| `dialog.move_session.new`      | `ctrl+m`      | New worktree                        |
+| `dialog.move_session.new`      | `ctrl+a`      | New worktree                        |
+| `dialog.move_session.move`     | `ctrl+m`      | Move session to worktree            |
 | `dialog.move_session.delete`   | `ctrl+d`      | Delete worktree                     |
 | `dialog.move_session.refresh`  | `ctrl+r`      | Refresh worktrees                   |
 | `prompt.autocomplete.prev`     | `up,ctrl+p`   | Move to previous autocomplete item  |
@@ -345,7 +347,7 @@ The viewer shows recent output and stays open after exit; output redirected to a
 | `prompt.autocomplete.select`   | `return`      | Select autocomplete item            |
 | `prompt.autocomplete.complete` | `tab`         | Complete autocomplete item          |
 | `permission.prompt.fullscreen` | `ctrl+f`      | Toggle permission prompt fullscreen |
-| `plugins.toggle`               | `space`       | Toggle plugin                       |
+| `plugins.toggle`               | `return`      | Toggle plugin                       |
 | `dialog.mcp.toggle`            | `space`       | Toggle MCP server                   |
 | `dialog.plugins.install`       | `shift+i`     | Install plugin from plugin dialog   |
 | `dialog.plugins.update`        | `ctrl+u`      | Update plugin from plugin dialog    |

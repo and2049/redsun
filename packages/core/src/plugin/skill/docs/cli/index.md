@@ -43,6 +43,17 @@ redsun --standalone
 redsun --server http://localhost:4096
 ```
 
+To make private servers the default for CLI commands instead of starting the shared service, disable it:
+
+```bash
+redsun service set disabled true
+opencode
+```
+
+This stops the running background service. `--server` still connects to an explicitly selected server; `redsun service start`
+can still start the shared service explicitly. To return to automatic service use, run `redsun service unset disabled`.
+Pairing requires the shared service and is unavailable while it is disabled.
+
 See [Troubleshooting](../troubleshooting.md) for shared service diagnostics and the [API reference](https://opencode.ai/v2/docs/api) for server endpoints.
 
 ## Paths

@@ -20,11 +20,13 @@ export const DEFAULT_COMPACTION_NOTICE =
 /**
  * Turn identity rides on request headers from `prepare` to the bridge, because the AI SDK call is
  * the only channel through the route. These are core-internal: added only for owned providers and
- * stripped before the runtime sees the options. Session and parent use the upstream headers.
+ * stripped before the runtime sees the options. Session and parent use the upstream namespaced
+ * headers: `x-opencode-session` carries the cache affinity (a child's parent, a fork's source),
+ * not the request's own session.
  */
 export const Headers = {
-  session: "x-opencode-session",
-  parent: "x-parent-session-id",
+  session: "x-opencode-session-id",
+  parent: "x-opencode-parent-session-id",
   agent: "x-redsun-delegate-agent",
   kind: "x-redsun-delegate-kind",
   message: "x-redsun-delegate-message",

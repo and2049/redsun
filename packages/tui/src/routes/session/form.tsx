@@ -9,7 +9,7 @@ import {
   type ScrollBoxRenderable,
   type TextareaRenderable,
 } from "@opentui/core"
-import open from "open"
+import { openUrl } from "@opencode/util/open"
 import { useTheme } from "../../context/theme"
 import type { FormAnswer, FormField, FormValue } from "@opencode/client"
 import { useData, type FormWithLocation } from "../../context/data"
@@ -500,7 +500,7 @@ export function FormPrompt(props: {
     const current = externalField()
     if (!current) return
     setStore("error", "")
-    void open(current.url)
+    void openUrl(current.url)
       .then(() => setStore("externalReady", { ...store.externalReady, [current.key]: true }))
       .catch(() => setStore("error", "Could not open the browser. Copy the URL and continue manually."))
   }

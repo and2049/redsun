@@ -117,6 +117,7 @@ export const Definitions = {
   "session.aside": keybind("none", "Ask a side question"),
   "session.cd": keybind("none", "Change working directory"),
   "session.queued_prompts": keybind("ctrl+shift+q", "Manage queued prompts"),
+  "queued_prompt.undo": keybind("ctrl+u", "Undo queued prompt"),
   "queued_prompt.delete": keybind("ctrl+d", "Delete queued prompt"),
   "session.toggle.exploration_grouping": keybind("none", "Toggle related tool call grouping"),
   "session.child.first": keybind("ctrl+down", "Go to first child session"),
