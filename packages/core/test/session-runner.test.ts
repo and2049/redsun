@@ -27,6 +27,7 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { LayerNodePlatform } from "@opencode/core/effect/app-node-platform"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
+import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Event } from "@opencode/schema/event"
 import { App } from "@opencode/core/app"
 import { Permission } from "@opencode/core/permission"
@@ -125,6 +126,25 @@ const compactModel = testModel("compact", { context: 4_000, output: 50 })
 const fullOutputModel = testModel("full-output", { context: 262_144, output: 262_144 })
 const unknownContextModel = testModel("unknown-context", { context: 0, output: 32_000 })
 const undersizedContextModel = testModel("undersized-context", { context: 1, output: 1_000 })
+// REDSUN: same tiny limits as compactModel, but owned by a delegated runtime, which
+// manages its own context window, so the runner must not compact it.
+const delegatedCompactModel = (() => {
+  modelLimits.set("sonnet", { context: 4_000, output: 50 })
+  return LanguageModel.make({ id: "sonnet", provider: "delegated-agent", route: OpenAIChat.route })
+})()
+const registerDelegatedRuntime = (compaction?: DelegatedRuntime.Runtime["compaction"]) =>
+  Effect.gen(function* () {
+    const { delegates } = yield* RunnerState
+    yield* delegates.transform((editor) =>
+      editor.add({
+        id: "delegated-agent",
+        providerID: "delegated-agent",
+        // The runner test drives TestLLM directly, so the AI SDK bridge never calls the runtime.
+        turn: () => Promise.reject(new Error("unused")),
+        ...(compaction ? { compaction } : {}),
+      }),
+    )
+  })
 const recoveryModel = testModel("recovery", { context: 200_000, output: 1_000 })
 const fittedOutputModel = testModel("fitted-output", { context: 100_000, output: 64_000 })
 const smallWindowModel = testModel("small-window", { context: 64_000, output: 16_000 })
@@ -219,6 +239,7 @@ const makeRunnerState = (compaction?: SessionRunnerModel.Resolved["compaction"])
     authorizations: new Array<Tool.Context>(),
     executions: new Array<string>(),
     closedTransports: new Array<Session.ID>(),
+    delegates: DelegatedRuntime.make(),
     blockTools: (count = 1) =>
       Effect.acquireRelease(
         Effect.all({ started: Deferred.make<void>(), release: Deferred.make<void>() }).pipe(
@@ -411,6 +432,7 @@ const layer = Layer.unwrap(
       small: () => Effect.undefined,
     })
     const replacements: LayerNode.Replacements = [
+      DelegatedRuntime.node.replace(Layer.succeed(DelegatedRuntime.Service, state.delegates)),
       Snapshot.node.replace(Snapshot.noopLayer),
       LayerNodePlatform.llmClient.replace(TestLLM.clientLayer.pipe(Layer.provide(testLLM))),
       SessionRunnerModel.node.replace(models),
@@ -594,6 +616,10 @@ const scenario = (
     name,
     Effect.gen(function* () {
       const s = yield* setup
+      // REDSUN: upstream's runner expectations assume the plain LLM strategy; redsun's
+      // hybrid default (inventory in the compaction prompt) is covered by redsun-compaction.
+      const compaction = yield* SessionCompaction.Service
+      yield* compaction.transform((editor) => editor.configure({ strategy: "llm" }))
       return yield* body(s)
     }),
   )
@@ -3098,6 +3124,128 @@ describe("SessionRunnerLLM", () => {
     })
   })
 
+  scenario("never auto-compacts a session on a delegated runtime", function* (s) {
+    yield* registerDelegatedRuntime()
+    yield* s.llm.push(TestLLM.textWithUsage("Earlier answer", "text-delegated-first", 3_950))
+    yield* s.runPrompt("Earlier question ".repeat(180))
+
+    // Identical limits and usage to "automatically compacts into a completed
+    // summary", which spends an extra request on the summary. The runtime
+    // compacts its own transcript, so a host-side summary would replace a
+    // transcript this model never reads.
+    s.currentModel = delegatedCompactModel
+    s.requests.length = 0
+    yield* s.llm.push(TestLLM.textWithUsage("Continued", "text-delegated-final", 3_950))
+    yield* s.runPrompt("Recent exact request ".repeat(180))
+
+    expect(s.requests).toHaveLength(1)
+    expect(yield* s.context).not.toContainEqual(expect.objectContaining({ type: "compaction" }))
+  })
+
+  scenario("forwards a manual compaction to the delegated runtime's command", function* (s) {
+    yield* registerDelegatedRuntime({ notice: "The agent compacts itself.", command: "/compact" })
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Earlier answer", "text-delegated-manual-first"))
+    yield* s.runPrompt("Earlier question")
+
+    s.requests.length = 0
+    yield* s.llm.push(TestLLM.text("Compacted", "text-delegated-manual-compact"))
+    yield* s.llm.push(TestLLM.text("Continued", "text-delegated-after-compact"))
+    yield* s.session.prompt({ sessionID, text: "Steering waiting for compaction", resume: false })
+    const compaction = yield* s.session.compact({ sessionID })
+    yield* s.resume
+
+    // The runtime's own command goes alone, before waiting steering input. A one-shot
+    // summary process does not own the interactive session's history.
+    expect(s.requests).toHaveLength(2)
+    expect(userTexts(s.requests[0]).at(-1)).toBe("/compact")
+    expect(userTexts(s.requests[0])).not.toContain("Steering waiting for compaction")
+    expect(userTexts(s.requests[1]).at(-1)).toBe("Steering waiting for compaction")
+    expect((yield* s.messages).find((message) => message.id === compaction.id)).toBeUndefined()
+    // Delegation is a command turn, not a failed host compaction or a replacement summary.
+    expect((yield* s.messages).some((message) => message.type === "compaction")).toBe(false)
+    expect(yield* s.context).toContainEqual(expect.objectContaining({ type: "user", text: "Earlier question" }))
+  })
+
+  scenario("defers instruction updates past a delegated runtime command", function* (s) {
+    yield* registerDelegatedRuntime({ notice: "The agent compacts itself.", command: "/compact" })
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Earlier answer", "text-delegated-deferred-first"))
+    yield* s.runPrompt("Earlier question")
+
+    // An instruction file changed during the previous turn, as when an agent
+    // updates project memory just before the user compacts.
+    s.systemBaseline = "Changed context"
+    s.requests.length = 0
+    yield* s.llm.push(TestLLM.text("Compacted", "text-delegated-deferred-compact"))
+    yield* s.llm.push(TestLLM.text("Continued", "text-delegated-deferred-after"))
+    yield* s.session.compact({ sessionID })
+    yield* s.resume
+    yield* s.runPrompt("After compaction")
+
+    // The runtime receives what follows its last reply: the command alone.
+    const tail = (request: LLMRequest) =>
+      request.messages.slice(request.messages.findLastIndex((message) => message.role === "assistant") + 1)
+    expect(s.requests).toHaveLength(2)
+    expect(tail(s.requests[0]!).map((message) => message.role)).toEqual(["user"])
+    expect(userTexts(s.requests[0]!).at(-1)).toBe("/compact")
+    expect(systemTexts(s.requests[0]!)).not.toContain("Changed context")
+    // The next boundary admits the update ahead of the next prompt.
+    expect(tail(s.requests[1]!).map((message) => message.role)).toEqual(["system", "user"])
+    expect(systemTexts(s.requests[1]!)).toContain("Changed context")
+    expect(userTexts(s.requests[1]!).at(-1)).toBe("After compaction")
+  })
+
+  scenario("establishes the instruction baseline when a runtime command is the first input", function* (s) {
+    yield* registerDelegatedRuntime({ notice: "The agent compacts itself.", command: "/compact" })
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Compacted", "text-delegated-first-command"))
+    yield* s.session.compact({ sessionID })
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(1)
+    expect(userTexts(s.requests[0]!)).toEqual(["/compact"])
+    expect(s.requests[0]!.system.map((part) => part.text)).toContain(s.systemBaseline)
+    expect(
+      yield* s.db.select().from(InstructionStateTable).where(eq(InstructionStateTable.session_id, sessionID)).get(),
+    ).toBeDefined()
+  })
+
+  scenario("fails a manual compaction when the delegated runtime has no command", function* (s) {
+    yield* registerDelegatedRuntime()
+    s.currentModel = delegatedCompactModel
+    yield* s.session.switchModel({
+      sessionID,
+      model: { id: ID.make("sonnet"), providerID: Provider.ID.make("delegated-agent") },
+    })
+    yield* s.llm.push(TestLLM.text("Earlier answer", "text-delegated-nocommand-first"))
+    yield* s.runPrompt("Earlier question")
+
+    s.requests.length = 0
+    const compaction = yield* s.session.compact({ sessionID })
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(0)
+    expect((yield* s.messages).find((message) => message.id === compaction.id)).toMatchObject({
+      type: "compaction",
+      status: "failed",
+      reason: "manual",
+      error: { type: "compaction.delegated", message: DelegatedRuntime.DEFAULT_COMPACTION_NOTICE },
+    })
+  })
+
   scenario("automatically persists native windows, retains earlier users, and waits for fresh usage", function* (s) {
     s.currentModel = LanguageModel.make({ id: "native", provider: "openai", route: OpenAIResponses.route })
     modelLimits.set("native", { context: 11_000, output: 1_000 })
@@ -4945,6 +5093,47 @@ describe("SessionRunnerLLM", () => {
       Expected.user("Call corrected"),
       Expected.assistant({}, [
         Expected.failedTool({ id: "call-corrected" }, { error: { message: "Use another tool" } }),
+      ]),
+      { type: "assistant", finish: "stop" },
+    ])
+  })
+
+  // REDSUN: real leaves yield `Permission.assert` without mapping its errors.
+  scenario("returns a correction from a leaf that does not map it", function* (s) {
+    const registry = yield* Tool.Service
+    yield* transformTools(
+      registry,
+      {
+        unmapped: {
+          name: "unmapped",
+          description: "Fail with an unmapped user correction",
+          input: Schema.Struct({}),
+          output: Schema.Struct({}),
+          // Typed as a leaf plugin's error channel reaches the runtime.
+          execute: () => Effect.fail(new Permission.CorrectedError({ feedback: "Use another tool" })) as never,
+        },
+      },
+      { codemode: false },
+    )
+    yield* s.admit("Call unmapped")
+
+    yield* s.llm.push(TestLLM.tool("call-unmapped", "unmapped", {}), TestLLM.stop())
+
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(2)
+    expect(yield* s.context).toMatchObject([
+      Expected.user("Call unmapped"),
+      Expected.assistant({}, [
+        Expected.failedTool(
+          { id: "call-unmapped" },
+          {
+            error: {
+              message:
+                "The user rejected permission to use this specific tool call with the following feedback: Use another tool",
+            },
+          },
+        ),
       ]),
       { type: "assistant", finish: "stop" },
     ])

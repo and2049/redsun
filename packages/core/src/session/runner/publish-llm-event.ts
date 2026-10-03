@@ -61,6 +61,16 @@ const hostedContent = (result: ToolResultValue): NonEmptyContent => {
   return [{ type: "text", text: stringify(result.value) }]
 }
 
+const hostedDisplay = (result: ToolResultValue) => {
+  if (result.type !== "json") return undefined
+  const value = result.value
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  const { output, metadata } = value as Record<string, unknown>
+  if (typeof output !== "string") return undefined
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return undefined
+  return { output, metadata: metadata as Tool.Metadata }
+}
+
 /**
  * Persist one step without executing tools or starting a continuation step.
  *
@@ -501,11 +511,13 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           })
           return
         }
+        const display = hostedDisplay(event.result)
         yield* bus.publish(SessionEvent.Tool.Success, {
           sessionID: input.sessionID,
           assistantMessageID,
           id: event.id,
-          content: hostedContent(event.result),
+          content: display === undefined ? hostedContent(event.result) : [{ type: "text", text: display.output }],
+          ...(display === undefined ? {} : { metadata: display.metadata }),
           executed,
           resultState,
         })

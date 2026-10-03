@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from "node:path"
 import type { ToolCall, ToolCallContent, ToolCallLocation, ToolCallUpdate, ToolKind } from "@agentclientprotocol/sdk"
-import { readDisplayText } from "@opencode/tui/mini/tool"
+import { readDisplayText } from "@opencode/tui/util/tool-run"
 import { Patch } from "@opencode/util/patch"
 import { Result } from "effect"
 

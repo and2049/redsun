@@ -355,6 +355,21 @@ export namespace Step {
   })
   export type Streamed = typeof Streamed.Type
 
+  /**
+   * Live-only context usage for a running step whose model runs its own loop (a delegated
+   * runtime): one provider step spans many model calls. Step.Ended stays the recorded value.
+   */
+  export const Usage = Event.ephemeral({
+    type: "session.step.usage",
+    schema: {
+      ...Base,
+      assistantMessageID: SessionMessage.ID,
+      tokens: TokenUsage.Info,
+      providerState: SessionMessage.ProviderState.pipe(optional),
+    },
+  })
+  export type Usage = typeof Usage.Type
+
   export const Ended = Event.durable({
     type: "session.step.ended",
     ...options,
@@ -679,6 +694,7 @@ export const Definitions = Event.inventory(
   Shell.Ended,
   Step.Started,
   Step.Streamed,
+  Step.Usage,
   Step.Ended,
   Step.Failed,
   Text.Started,

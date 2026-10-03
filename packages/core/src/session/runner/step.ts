@@ -5,6 +5,8 @@ import {
   InvalidProviderOutputError,
   LLMClient,
   LLMEvent,
+  HttpOptions,
+  LLMRequest,
   isContextOverflowFailure,
   type ProviderErrorEvent,
   type ToolCall,
@@ -13,6 +15,7 @@ import type { Agent } from "@opencode/schema/agent"
 import { Cause, Clock, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { SessionError } from "@opencode/schema/session-error"
 import { Bus } from "../../bus.js"
+import { DelegatedRuntime } from "../../delegate.js"
 import { Permission } from "../../permission.js"
 import { Snapshot } from "../../snapshot.js"
 import { Tool } from "../../tool.js"
@@ -47,6 +50,8 @@ interface Input {
   readonly assistantMessageID: SessionMessage.ID
   readonly agent: Agent.ID
   readonly model: SessionRunnerModel.Resolved
+  /** REDSUN: a delegated runtime owns this model's agent loop. */
+  readonly delegated?: boolean
   readonly prepared: Omit<SessionModelRequest.Prepared, "event">
   readonly retry: (
     cause: AIError,
@@ -101,7 +106,21 @@ export const make = Effect.gen(function* () {
     // A local execution starts only after its Tool.Called publication completes.
     let overflowFailure: ProviderErrorEvent | undefined
     // Read to the end, not just the finish event, so the next request can reuse this response.
-    const providerStream = llm.stream(input.prepared.request, input.prepared.options).pipe(
+    // The delegated runtime needs the actual Step's assistant ID to attribute
+    // in-process MCP tools; looking up the latest persisted message races the stream.
+    const request = input.delegated
+      ? LLMRequest.update(input.prepared.request, {
+          http: new HttpOptions({
+            body: input.prepared.request.http?.body,
+            query: input.prepared.request.http?.query,
+            headers: {
+              ...input.prepared.request.http?.headers,
+              [DelegatedRuntime.Headers.message]: input.assistantMessageID,
+            },
+          }),
+        })
+      : input.prepared.request
+    const providerStream = llm.stream(request, input.prepared.options).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           if (overflowFailure || publisher.hasProviderError()) return

@@ -324,6 +324,29 @@ it.effect("maps package-specific AI SDK provider option keys", () =>
   }),
 )
 
+it.effect("hands a delegated runtime its variant's effort under the provider id, never an effort marker", () =>
+  Effect.gen(function* () {
+    const aisdk = yield* AISDK.Service
+    yield* aisdk.hook.sdk((event) => {
+      event.sdk = { languageModel: () => ({ provider: event.model.providerID }) }
+    })
+    // A runtime sentinel package, with a variant's `{ effort }` overlay merged into the settings.
+    const resolved = yield* aisdk.model({
+      ...model("@redsun/claude-code-delegated", { effort: "high" }),
+      providerID: Provider.ID.make("claude-code"),
+    })
+    const prepared = yield* compileRequest(
+      LLM.request({
+        model: resolved,
+        messages: [Message.user("Hello"), Message.effort({ effort: "high", previous: "low" }), Message.user("Again")],
+      }),
+    )
+    expect(prepared.body.providerOptions).toEqual({ "claude-code": { effort: "high" } })
+    expect(JSON.stringify(prepared.body.prompt)).not.toContain("effort")
+    expect(prepared.body.prompt.map((message: { role: string }) => message.role)).toEqual(["user", "user"])
+  }),
+)
+
 it.effect("forces reasoning and projects both Azure AI SDK namespaces", () =>
   Effect.gen(function* () {
     const aisdk = yield* AISDK.Service
@@ -561,11 +584,19 @@ it.effect("normalizes file data across AI SDK prompt parts", () =>
           Message.user([
             { type: "media", media: Media.bytes(bytes, "image/png"), filename: "bytes.png" },
             { type: "media", media: Media.base64("AAAA", "image/png"), filename: "base64.png" },
-            { type: "media", media: Media.fromDataUrl("data:image/png;charset=utf-8;base64,AQID"), filename: "inline.png" },
+            {
+              type: "media",
+              media: Media.fromDataUrl("data:image/png;charset=utf-8;base64,AQID"),
+              filename: "inline.png",
+            },
             { type: "media", media: Media.url("https://example.com/image.png", { mediaType: "image/png" }) },
             { type: "media", media: Media.base64("s3://bucket/image.png", "image/png") },
           ]),
-          Message.assistant({ type: "media", media: Media.url("http://example.com/document.pdf", { mediaType: "application/pdf" }), filename: "document.pdf" }),
+          Message.assistant({
+            type: "media",
+            media: Media.url("http://example.com/document.pdf", { mediaType: "application/pdf" }),
+            filename: "document.pdf",
+          }),
           Message.tool({
             id: "call_1",
             name: "screenshot",
@@ -748,12 +779,7 @@ it.effect("routes AI SDK requests and responses through HTTP hook middleware", (
     expect(sent[0]?.headers.get("x-hook")).toBe("applied")
     expect(sent[0]?.headers.get("authorization")).toBe("Bearer test")
     expect(JSON.parse(sent[0]?.body ?? "")).toMatchObject({ model: "api-model" })
-    expect(seen).toEqual([
-      "POST https://example.test/v1/chat/completions",
-      sent[0]?.body,
-      sent[0]?.body,
-      "status 200",
-    ])
+    expect(seen).toEqual(["POST https://example.test/v1/chat/completions", sent[0]?.body, sent[0]?.body, "status 200"])
     expect(response.events.filter(LLMEvent.is.textDelta).map((event) => event.text)).toEqual(["rewritten"])
   }),
 )

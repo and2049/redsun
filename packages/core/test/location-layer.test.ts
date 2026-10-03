@@ -104,7 +104,7 @@ describe("LocationServiceMap", () => {
           if (failure === "config reference") {
             yield* Effect.promise(() => fs.mkdir(directory))
             yield* Effect.promise(() =>
-              fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ username: "{file:username.txt}" })),
+              fs.writeFile(path.join(directory, "redsun.json"), JSON.stringify({ username: "{file:username.txt}" })),
             )
           }
           const first = yield* Effect.exit(load)
@@ -148,7 +148,7 @@ describe("LocationServiceMap", () => {
         if (failure === "config reference") {
           yield* Effect.promise(() => fs.mkdir(directory))
           yield* Effect.promise(() =>
-            fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ username: "{file:username.txt}" })),
+            fs.writeFile(path.join(directory, "redsun.json"), JSON.stringify({ username: "{file:username.txt}" })),
           )
         }
 
@@ -486,14 +486,17 @@ describe("LocationServiceMap", () => {
             "edit",
             "glob",
             "grep",
+            "multiedit",
             "patch",
             "question",
             "read",
             "shell",
             "skill",
             "subagent",
+            "todowrite",
             "webfetch",
             "websearch",
+            "worker_model",
             "write",
           ])
           const allowedState = yield* update(allowed.path, allowedID)
@@ -505,14 +508,17 @@ describe("LocationServiceMap", () => {
             "edit",
             "glob",
             "grep",
+            "multiedit",
             "patch",
             "question",
             "read",
             "shell",
             "skill",
             "subagent",
+            "todowrite",
             "webfetch",
             "websearch",
+            "worker_model",
             "write",
           ])
         }),
@@ -526,7 +532,7 @@ describe("LocationServiceMap", () => {
         Effect.gen(function* () {
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(dir.path, "opencode.json"),
+              path.join(dir.path, "redsun.json"),
               JSON.stringify({ agents: { plan: { disabled: true } } }),
             ),
           )
@@ -555,7 +561,7 @@ describe("LocationServiceMap", () => {
           const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
           yield* Effect.promise(() =>
             fs.writeFile(
-              path.join(dir.path, "opencode.json"),
+              path.join(dir.path, "redsun.json"),
               JSON.stringify({
                 providers: {
                   unavailable: {

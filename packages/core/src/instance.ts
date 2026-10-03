@@ -40,6 +40,7 @@ import { SessionRunnerModel } from "./session/runner/model.js"
 import { SessionCompaction } from "./session/compaction.js"
 import { SessionTitle } from "./session/title.js"
 import { SessionContext } from "./session/context.js"
+import { DelegatedRuntime } from "./delegate.js"
 import { Skill } from "./skill.js"
 import { SkillInstructions } from "./skill/instructions.js"
 import { Snapshot } from "./snapshot.js"
@@ -63,6 +64,7 @@ const nodes = [
   Config.node,
   Agent.node,
   Command.node,
+  DelegatedRuntime.node,
   Reference.node,
   Rpc.node,
   WebSearch.node,

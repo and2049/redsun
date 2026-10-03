@@ -107,7 +107,7 @@ describe("acp error boundary over the wire", () => {
 
     expect(await rpcError(acp.request("session/list", {}))).toEqual({
       code: -32603,
-      message: "Internal error: OpenCode server is unavailable",
+      message: "Internal error: redsun server is unavailable",
       data: { errorName: "ServerUnavailable" },
     })
     expect(acp.logs).toEqual([])

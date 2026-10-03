@@ -5,6 +5,7 @@ import { and, desc, eq, sql } from "drizzle-orm"
 import { Cause, Effect, Exit, FiberMap, Layer } from "effect"
 import { Database } from "../../database/database.js"
 import { Bus } from "../../bus.js"
+import { DelegatedRuntime } from "../../delegate.js"
 import { LocationLifecycle } from "../../location-lifecycle.js"
 import { InstructionState } from "../instruction-state.js"
 import { SessionCompaction } from "../compaction.js"
@@ -47,6 +48,8 @@ const layer = Layer.effect(
     const compaction = yield* SessionCompaction.Service
     const plugins = yield* Plugin.Service
     const title = yield* SessionTitle.Service
+    const inbox = yield* SessionInbox.Service
+    const delegates = yield* DelegatedRuntime.Service
     const steps = yield* SessionStep.make
     // Title generation starts once input is visible and must not delay model execution.
     const titles = yield* FiberMap.make<SessionSchema.ID, void, never>()
@@ -85,11 +88,19 @@ const layer = Layer.effect(
                     sessionID,
                     entering || !continuing ? "input" : "steer",
                   )
-                  if (next?.type === "compaction")
-                    yield* bus.publishAll([
-                      [SessionEvent.InboxDelivered, { sessionID, inboxID: next.id }],
-                      [SessionEvent.Compaction.Started, { sessionID, reason: "manual", recent: "", inputID: next.id }],
-                    ])
+                  if (next?.type === "compaction") {
+                    const session = yield* store.get(sessionID)
+                    const delegated = session?.model ? yield* delegates.get(session.model) : undefined
+                    // A supported runtime command has its own turn and progress. It does not create
+                    // a host summary/checkpoint, so don't open a host compaction row only to fail it.
+                    if (delegated?.compaction?.command)
+                      yield* bus.publish(SessionEvent.InboxDelivered, { sessionID, inboxID: next.id })
+                    else
+                      yield* bus.publishAll([
+                        [SessionEvent.InboxDelivered, { sessionID, inboxID: next.id }],
+                        [SessionEvent.Compaction.Started, { sessionID, reason: "manual", recent: "", inputID: next.id }],
+                      ])
+                  }
                   if (next?.type === "move")
                     yield* restore(
                       Effect.gen(function* () {
@@ -110,6 +121,37 @@ const layer = Layer.effect(
               if (pending?.type === "move")
                 return DrainResult.Moved({ continuation: continuing ? { step } : undefined })
               if (pending?.type === "compaction") {
+                const session = yield* store.get(sessionID)
+                if (!session) return yield* Effect.die(new Error(`Session not found: ${sessionID}`))
+                // REDSUN: a delegated runtime compacts its own context; forward its command.
+                const delegated = session.model ? yield* delegates.get(session.model) : undefined
+                if (delegated) {
+                  const command = delegated.compaction?.command
+                  if (!command)
+                    yield* bus.publish(SessionEvent.Compaction.Failed, {
+                      sessionID,
+                      reason: "manual",
+                      inputID: pending.id,
+                      error: {
+                        type: "compaction.delegated",
+                        message: delegated.compaction?.notice ?? DelegatedRuntime.DEFAULT_COMPACTION_NOTICE,
+                      },
+                    })
+                  if (command)
+                    yield* inbox
+                      .admit({
+                        id: SessionMessage.ID.create(),
+                        sessionID,
+                        item: {
+                          type: "user",
+                          payload: { text: command, metadata: { [SessionInbox.RUNTIME_COMMAND]: true } },
+                          delivery: "steer",
+                        },
+                      })
+                      .pipe(Effect.orDie)
+                  force = false
+                  continue
+                }
                 const compacted = yield* restore(
                   Effect.gen(function* () {
                     const selected = yield* context.select(sessionID)
@@ -160,9 +202,12 @@ const layer = Layer.effect(
               }
               if (!force && !continuing && (!pending || (pending.delivery === "queue" && promotable === "steer")))
                 return DrainResult.Complete()
+              // REDSUN: like a host compaction, a runtime command does not admit instruction updates;
+              // its parser needs the command alone. The next boundary delivers them.
+              const command = pending !== undefined && SessionInbox.isRuntimeCommand(pending)
               const ready = yield* restore(
                 Effect.gen(function* () {
-                  const selected = yield* prepareContext(sessionID)
+                  const selected = yield* prepareContext(sessionID, command)
                   const promoted = yield* SessionInbox.promote(
                     db,
                     bus,
@@ -176,7 +221,7 @@ const layer = Layer.effect(
                       onlyIfMissing: true,
                     })
                   if (promoted > 0) step = 1
-                  return { _tag: "Ready" as const, context: yield* context.load(selected) }
+                  return { _tag: "Ready" as const, context: yield* context.load(selected), command }
                 }),
               )
               if (ready) return ready
@@ -188,22 +233,29 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step)
+        continuing = yield* runStep(next.context, step, next.command)
         step++
         force = false
         entering = false
       }
     })
 
-    const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (sessionID: SessionSchema.ID) {
+    const prepareContext = Effect.fn("SessionRunner.prepareContext")(function* (
+      sessionID: SessionSchema.ID,
+      deferUpdates = false,
+    ) {
       const selected = yield* context.select(sessionID)
       // A blocked initial instruction baseline must leave admitted input pending.
-      yield* InstructionState.prepare(db, bus, selected.instructions, sessionID)
+      yield* InstructionState.prepare(db, bus, selected.instructions, sessionID, { deferUpdates })
       return selected
     })
 
     /** Owns logical Step policy; each attempt owns its streaming, tools, and durable settlement. */
-    const runStep = Effect.fn("SessionRunner.runStep")(function* (first: SessionContext.Loaded, step: number) {
+    const runStep = Effect.fn("SessionRunner.runStep")(function* (
+      first: SessionContext.Loaded,
+      step: number,
+      command = false,
+    ) {
       const sessionID = first.session.id
       let assistantMessageID = SessionMessage.ID.create()
       const retry = yield* SessionRunnerRetry.make(bus, sessionID)
@@ -212,9 +264,13 @@ const layer = Layer.effect(
       let recoverContinuation = true
       while (true) {
         // Reuse boundary preparation once; retries refresh context without delivering more input.
-        const loaded = initial ?? (yield* prepareContext(sessionID).pipe(Effect.flatMap(context.load)))
+        const loaded = initial ?? (yield* prepareContext(sessionID, command).pipe(Effect.flatMap(context.load)))
         initial = undefined
-        const compacted = yield* compaction.compact({ reason: "auto", context: loaded })
+        // REDSUN: a delegated runtime manages its own context window.
+        const delegated = yield* delegates.owns(loaded.model.ref)
+        const compacted = delegated
+          ? ({ status: "skipped" } as const)
+          : yield* compaction.compact({ reason: "auto", context: loaded })
         if (compacted.status === "failed") return yield* new StepFailedError({ error: compacted.error })
         if (compacted.status === "completed") {
           assistantMessageID = SessionMessage.ID.create()
@@ -248,6 +304,7 @@ const layer = Layer.effect(
           assistantMessageID,
           agent: loaded.agent.id,
           model: loaded.model,
+          delegated,
           prepared,
           retry: (cause, error, proposed) =>
             retry.decide({
@@ -371,5 +428,7 @@ export const node = makeLocationNode({
     Snapshot.node,
     ToolOutput.node,
     Database.node,
+    SessionInbox.node,
+    DelegatedRuntime.node,
   ],
 })
