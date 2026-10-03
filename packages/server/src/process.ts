@@ -19,6 +19,7 @@ import { createRoutes } from "./routes"
 import { ServerInfo } from "./server-info"
 import { Status } from "./service-status"
 import type { ServerOptions } from "./options"
+import { RemoteAccess } from "./remote-access"
 
 export interface Lifecycle<E = never, R = never> {
   readonly onListen: (
@@ -179,6 +180,8 @@ function dispatch(
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, "http://localhost")
+    if (/^Bearer\s/i.test(request.headers.authorization ?? "") && !RemoteAccess.route(request.method, url.pathname))
+      return unauthorizedResponse(request)
     const state = yield* status.current
     const app = yield* Ref.get(application)
     const ready = state.type === "ready" && Option.isSome(app)
@@ -189,6 +192,11 @@ function dispatch(
     if (
       !isPairingConnectURL(url) &&
       (!ready || (!hasPtyConnectTicketURL(url) && !hasPersistentPtyConnectTicketURL(url))) &&
+      !(
+        ready &&
+        /^Bearer\s/i.test(request.headers.authorization ?? "") &&
+        RemoteAccess.route(request.method, url.pathname)
+      ) &&
       !(yield* authorizedRequest(request, auth))
     )
       return unauthorizedResponse(request)

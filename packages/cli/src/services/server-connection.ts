@@ -53,6 +53,7 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
 function managedService(options: EnsureOptions) {
   const reconnectOptions = { ...options, version: undefined }
   return {
+    registration: `${options.file}.remote`,
     reconnect: () => Service.ensure(reconnectOptions),
     restart: () =>
       Effect.gen(function* () {

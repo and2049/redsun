@@ -7,12 +7,14 @@ import { useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { Link } from "../ui/link"
 import { errorMessage } from "../util/error"
+import { useLanguage } from "../i18n"
 
 export function DialogPair() {
   const client = useClient()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
   const theme = useTheme().surface("dialog")
+  const { t } = useLanguage()
   const [loadError, setLoadError] = createSignal<unknown>()
 
   dialog.setSize("large")
@@ -49,7 +51,7 @@ export function DialogPair() {
           <Show when={value.localhost}>
             {(url) => (
               <box>
-                <text fg={theme.text.muted}>This device</text>
+                <text fg={theme.text.muted}>{t("remote.thisDevice")}</text>
                 <Link href={url()} fg={theme.text.base}>
                   {url()}
                 </Link>
@@ -68,7 +70,7 @@ export function DialogPair() {
           </box>
           <Show when={value.loopback}>
             <text fg={theme.text.muted} wrapMode="word">
-              Run `opencode service set hostname 0.0.0.0` to access the service remotely.
+              {t("remote.runRedsunServiceSetHostname000")}
             </text>
           </Show>
         </box>

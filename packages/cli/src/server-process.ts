@@ -14,6 +14,8 @@ import { Env } from "./env"
 import { ServiceConfig } from "./services/service-config"
 import { RetainedImage } from "./services/retained-image"
 import { ServiceRegistration } from "./services/service-registration"
+import { Updater } from "./services/updater"
+import { EffectFlock } from "@opencode/util/effect-flock"
 import { WebUi } from "./services/web-ui"
 import { databasePath } from "./database-path"
 
@@ -26,11 +28,13 @@ export type Options = {
   readonly cors?: readonly string[]
 }
 
+export { INSTALLED_DATABASE, LOCAL_DATABASE, databaseFilename } from "./database-path"
+
 // The process effect lives until server shutdown; tracing it would parent every request to one process-lifetime trace.
 export const run = Effect.fnUntraced(function* (options: Options) {
   return yield* processEffect(options).pipe(
     Effect.provide(
-      LayerNode.compile(LayerNode.group([Global.node, AppProcess.node]), {
+      LayerNode.compile(LayerNode.group([Global.node, AppProcess.node, EffectFlock.node]), {
         replacements: [
           Global.node.replace(
             Global.layerWith(process.env.OPENCODE_CONFIG_DIR ? { config: process.env.OPENCODE_CONFIG_DIR } : {}),
@@ -95,6 +99,8 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           port,
           cors: options.cors ?? config.cors,
           password,
+          remoteControl:
+            options.mode === "service" ? { file: yield* ServiceConfig.configPath, processID: instanceID } : undefined,
           pty: { handoff },
           simulation: truthy(process.env.OPENCODE_SIMULATE),
           database: {
@@ -162,6 +168,21 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
       const url = HttpServer.formatAddress(server.address)
       console.log(options.mode === "stdio" ? JSON.stringify({ url }) : `server listening on ${url}`)
       if (foreground && !environmentPassword) console.log(`server password ${password}`)
+      yield* Updater.Service.pipe(
+        Effect.flatMap((updater) =>
+          Updater.pollUpdates({
+            check: updater.run().pipe(
+              Effect.flatMap((result) => {
+                if (!result) return Effect.void
+                if (result.type === "available") return server.updateAvailable(result.version)
+                return server.updated(result.version)
+              }),
+            ),
+          }),
+        ),
+        Effect.provide(Updater.layer),
+        Effect.forkScoped,
+      )
       return yield* options.mode === "service"
         ? server.shutdown
         : options.mode === "stdio"

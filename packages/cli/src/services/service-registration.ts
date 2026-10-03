@@ -5,6 +5,7 @@ import path from "node:path"
 import { Effect, FileSystem, Schedule, Schema } from "effect"
 import { HttpServer } from "effect/unstable/http"
 import { OPENCODE_VERSION } from "../version"
+import { createPrivateFile } from "@opencode/util/private-file"
 
 const infoJson = Schema.fromJsonString(Service.Info)
 const encodeInfo = Schema.encodeEffect(infoJson)
@@ -36,6 +37,11 @@ export const register = Effect.fnUntraced(function* (options: {
     found.pid === info.pid &&
     found.password === info.password
   yield* fs.writeFileString(temp, encoded, { mode: 0o600 }).pipe(Effect.andThen(fs.rename(temp, options.file)))
+  const remoteFile = `${options.file}.remote`
+  yield* fs.remove(remoteFile).pipe(Effect.ignore)
+  yield* Effect.tryPromise(() =>
+    createPrivateFile(remoteFile, JSON.stringify({ id: info.id, version: info.version, url: info.url, pid: info.pid })),
+  )
   yield* current.pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("managed service registration check failed; shutting down", {
@@ -65,7 +71,9 @@ export const register = Effect.fnUntraced(function* (options: {
     Effect.forkScoped,
   )
   return current.pipe(
-    Effect.flatMap((found) => (owns(found) ? fs.remove(options.file) : Effect.void)),
+    Effect.flatMap((found) =>
+      owns(found) ? fs.remove(options.file).pipe(Effect.andThen(fs.remove(remoteFile))) : Effect.void,
+    ),
     Effect.ignore,
   )
 })

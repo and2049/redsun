@@ -15,6 +15,7 @@ it.live("authenticates API requests behind the frontend transform while allowing
         cors: ["http://192.168.1.10:3001", "https://example.com"],
         app: { version: "test-version" },
         database: { path: ":memory:" },
+        models: { fetch: false },
       },
       undefined,
       (api) =>
@@ -175,6 +176,7 @@ it.live("pairing links sign in browsers with a cookie and API clients with a tok
       password: "secret",
       app: { version: "test-version" },
       database: { path: ":memory:" },
+      models: { fetch: false },
     })
     const base = HttpServer.formatAddress(server.address)
     const request = (pathname: string, init?: RequestInit) =>
