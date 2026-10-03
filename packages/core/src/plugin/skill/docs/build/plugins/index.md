@@ -765,9 +765,22 @@ const synthetic = await ctx.session.synthetic({ sessionID, text: "Deployment com
 Rename, interrupt, or wait for a session.
 
 ```ts
-await ctx.session.rename({ sessionID, title: "Review" })
+await ctx.session.update({ sessionID, title: "Review" })
 await ctx.session.interrupt({ sessionID, continue: false })
 await ctx.session.wait({ sessionID })
+```
+
+Remove a temporary session with `remove`. Removal stops active execution and recursively deletes child sessions.
+
+```ts
+await ctx.session.remove({ sessionID })
+```
+
+Request compaction with `compact`. It returns the admitted inbox item, not a completed summary; compaction runs at
+the next step boundary by default. Pass `delivery: "queue"` to preserve queue order instead.
+
+```ts
+const compaction = await ctx.session.compact({ sessionID })
 ```
 
 #### Reference
@@ -779,15 +792,18 @@ Schemas: [`Session.Info`](https://opencode.ai/v2/docs/api#schema-Session.Info), 
 interface SessionContext {
   create(input?: SessionCreateInput, requestOptions?: RequestOptions): Promise<SessionInfo>
   get(input: SessionGetInput, requestOptions?: RequestOptions): Promise<SessionInfo>
+  remove(input: SessionRemoveInput, requestOptions?: RequestOptions): Promise<void>
   context(input: SessionContextInput, requestOptions?: RequestOptions): Promise<readonly SessionMessageInfo[]>
   switchAgent(input: SessionSwitchAgentInput, requestOptions?: RequestOptions): Promise<void>
   switchModel(input: SessionSwitchModelInput, requestOptions?: RequestOptions): Promise<void>
+  update(input: SessionUpdateInput, requestOptions?: RequestOptions): Promise<void>
+  move(input: SessionMoveInput, requestOptions?: RequestOptions): Promise<void>
   prompt(input: SessionPromptInput, requestOptions?: RequestOptions): Promise<SessionInboxUser>
   generate(input: SessionGenerateInput, requestOptions?: RequestOptions): Promise<{ text: string }>
   command(input: SessionCommandInput, requestOptions?: RequestOptions): Promise<SessionInboxUser>
+  compact(input: SessionCompactInput, requestOptions?: RequestOptions): Promise<SessionInboxCompaction>
   synthetic(input: SessionSyntheticInput, requestOptions?: RequestOptions): Promise<SessionInboxSynthetic>
   interrupt(input: SessionInterruptInput, requestOptions?: RequestOptions): Promise<void>
-  rename(input: SessionRenameInput, requestOptions?: RequestOptions): Promise<void>
   wait(input: SessionWaitInput, requestOptions?: RequestOptions): Promise<void>
 }
 ```
@@ -810,7 +826,7 @@ await ctx.skill.transform((editor) => {
     id: "review",
     name: "Review",
     description: "Review the current changes",
-    location: "/workspace/.redsun/skills/review.md",
+    path: "/workspace/.redsun/skills/review/SKILL.md",
     content: "Review the current changes for correctness and missing tests.",
   })
   const review = editor.get("review")

@@ -1,9 +1,9 @@
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
-import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Global } from "@opencode/util/global"
 import type { TuiInput } from "../../src/app"
 import type { Config } from "../../src/config"
+import { tmpdir } from "./fixture"
 import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
 
 export async function createAppFixture(
@@ -21,6 +21,7 @@ export async function createAppFixture(
   } = {},
 ) {
   const { run } = await import("../../src/app")
+  const state = input.state ? undefined : await tmpdir()
   const setup = await createTestRenderer({
     width: input.width ?? 100,
     height: input.height ?? 30,
@@ -47,12 +48,10 @@ export async function createAppFixture(
       log: () => {},
     }).pipe(
       Effect.provide(
-        input.state || input.configDirectory
-          ? Global.layerWith({
-              ...(input.state ? { state: input.state } : {}),
-              ...(input.configDirectory ? { config: input.configDirectory } : {}),
-            })
-          : AppNodeBuilder.build(Global.node),
+        Global.layerWith({
+          state: input.state ?? state?.path,
+          ...(input.configDirectory ? { config: input.configDirectory } : {}),
+        }),
       ),
       Effect.provide(FileSystem.layerNoop({})),
     ),
@@ -67,6 +66,7 @@ export async function createAppFixture(
         await task
       } finally {
         await server.stop()
+        await state?.[Symbol.asyncDispose]()
       }
     },
   }

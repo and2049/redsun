@@ -351,7 +351,7 @@ Use permission actions to hide or deny tools without disconnecting their server.
 
 ## Context
 
-For calls made on behalf of a session, redsun sends the session ID in `CallToolRequest.params._meta.sessionID`. This applies to direct tools and Code Mode over stdio and Streamable HTTP:
+For calls made on behalf of a session, redsun sends the session ID in `CallToolRequest.params._meta["ai.opencode/sessionID"]`. This applies to direct tools and Code Mode over stdio and Streamable HTTP:
 
 ```json
 {
@@ -359,7 +359,7 @@ For calls made on behalf of a session, redsun sends the session ID in `CallToolR
   "params": {
     "name": "lookup",
     "arguments": { "query": "example" },
-    "_meta": { "sessionID": "ses_..." }
+    "_meta": { "ai.opencode/sessionID": "ses_..." }
   }
 }
 ```

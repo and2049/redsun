@@ -30,18 +30,19 @@ import p26 from "./models.md" with { type: "text" }
 import p27 from "./network.md" with { type: "text" }
 import p28 from "./permissions.md" with { type: "text" }
 import p29 from "./plugins.md" with { type: "text" }
-import p30 from "./providers.md" with { type: "text" }
-import p31 from "./references.md" with { type: "text" }
-import p32 from "./sharing.md" with { type: "text" }
-import p33 from "./skills.md" with { type: "text" }
-import p34 from "./snapshots.md" with { type: "text" }
-import p35 from "./themes.md" with { type: "text" }
-import p36 from "./tools.md" with { type: "text" }
-import p37 from "./troubleshooting.md" with { type: "text" }
-import p38 from "./warming.md" with { type: "text" }
-import p39 from "./websearch.md" with { type: "text" }
+import p30 from "./policies.md" with { type: "text" }
+import p31 from "./providers.md" with { type: "text" }
+import p32 from "./references.md" with { type: "text" }
+import p33 from "./sharing.md" with { type: "text" }
+import p34 from "./skills.md" with { type: "text" }
+import p35 from "./snapshots.md" with { type: "text" }
+import p36 from "./themes.md" with { type: "text" }
+import p37 from "./tools.md" with { type: "text" }
+import p38 from "./troubleshooting.md" with { type: "text" }
+import p39 from "./warming.md" with { type: "text" }
+import p40 from "./websearch.md" with { type: "text" }
 
-export const source = "ab60f08c69c79bd6c89bd4203c548a0a3a530ea5"
+export const source = "05018b8862a8fc198ec9810aafd397c96bb7d86e"
 
 export const pages: ReadonlyArray<{ readonly path: string; readonly content: string }> = [
   { path: "agents.md", content: p0 },
@@ -74,14 +75,15 @@ export const pages: ReadonlyArray<{ readonly path: string; readonly content: str
   { path: "network.md", content: p27 },
   { path: "permissions.md", content: p28 },
   { path: "plugins.md", content: p29 },
-  { path: "providers.md", content: p30 },
-  { path: "references.md", content: p31 },
-  { path: "sharing.md", content: p32 },
-  { path: "skills.md", content: p33 },
-  { path: "snapshots.md", content: p34 },
-  { path: "themes.md", content: p35 },
-  { path: "tools.md", content: p36 },
-  { path: "troubleshooting.md", content: p37 },
-  { path: "warming.md", content: p38 },
-  { path: "websearch.md", content: p39 },
+  { path: "policies.md", content: p30 },
+  { path: "providers.md", content: p31 },
+  { path: "references.md", content: p32 },
+  { path: "sharing.md", content: p33 },
+  { path: "skills.md", content: p34 },
+  { path: "snapshots.md", content: p35 },
+  { path: "themes.md", content: p36 },
+  { path: "tools.md", content: p37 },
+  { path: "troubleshooting.md", content: p38 },
+  { path: "warming.md", content: p39 },
+  { path: "websearch.md", content: p40 },
 ]

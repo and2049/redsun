@@ -1,8 +1,6 @@
-import { Schema } from "effect"
 import { migrateV1 } from "./v1-migrate.js"
 import type { ThemeV1Json } from "./v1.js"
-import { ThemeDocument } from "./schema.js"
-import { themeDecodeError } from "./resolve.js"
+import { parseThemeDocument } from "./resolve.js"
 import { themeModes } from "./select.js"
 import cloud from "./assets/cloud.json" with { type: "json" }
 import dawn from "./assets/dawn.json" with { type: "json" }
@@ -38,8 +36,6 @@ export const DEFAULT_THEMES: Record<string, ThemeDocumentSource> = {
   wave,
 }
 
-const decodeThemeDocument = Schema.decodeUnknownSync(ThemeDocument, { reportInput: true })
-
 export function isThemeSource(source: unknown): source is ThemeDocumentSource {
   if (typeof source !== "object" || source === null || Array.isArray(source)) return false
   return "theme" in source || "base" in source
@@ -48,11 +44,7 @@ export function isThemeSource(source: unknown): source is ThemeDocumentSource {
 // A flat V1 palette carries `theme`; anything else must be a V2 document.
 export function parseTheme(source: ThemeDocumentSource, name = "theme") {
   if ("theme" in source) return migrateV1(source as ThemeV1Json)
-  try {
-    return decodeThemeDocument(source)
-  } catch (error) {
-    throw themeDecodeError(error, name)
-  }
+  return parseThemeDocument(source, name)
 }
 
 export function themeMode(source: ThemeDocumentSource, name?: string): "dark" | "light" {

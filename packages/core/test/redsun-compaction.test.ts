@@ -10,6 +10,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
 import { CompactionExtractor } from "@opencode/core/session/compaction-extractor"
 import { SessionCompaction } from "@opencode/core/session/compaction"
+import { SessionEvent } from "@opencode/core/session/event"
 import { SessionMessage } from "@opencode/core/session/message"
 import { SessionModelRequest } from "@opencode/core/session/model-request"
 import { SessionProjector } from "@opencode/core/session/projector"
@@ -96,15 +97,33 @@ const configured = (settings: Partial<SessionCompaction.Settings>) =>
 
 const message = (value: Record<string, unknown>) => decodeMessage({ time: { created: 0 }, ...value })
 
-const loaded = (session: SessionSchema.Info, messages: readonly SessionMessage.Info[]) => ({
+const loaded = (
+  session: SessionSchema.Info,
+  messages: readonly SessionMessage.Info[],
+  resolved: SessionRunnerModel.Resolved = resolvedModel,
+) => ({
   session,
   messages,
-  model: resolvedModel,
+  model: resolved,
   agent: { id: Agent.defaultID, info: Agent.Info.default(Agent.defaultID) },
   initial: "Session instructions",
-  instructionUpdate: "",
   tools: { definitions: [], execute: () => Effect.die("Compaction must not execute tools") },
 })
+
+/** Opens the compaction's message as the runner does when it delivers `/compact`, then compacts. */
+const compactManually = (session: SessionSchema.Info, messages: readonly SessionMessage.Info[], inputID: string) =>
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const compaction = yield* SessionCompaction.Service
+    const id = SessionMessage.ID.make(inputID)
+    yield* bus.publish(SessionEvent.Compaction.Started, {
+      sessionID: session.id,
+      reason: "manual",
+      recent: "",
+      inputID: id,
+    })
+    return yield* compaction.compact({ reason: "manual", context: loaded(session, messages), inputID: id })
+  })
 
 const conversation = () => [
   message({
@@ -247,18 +266,9 @@ test("buildPrompt folds the inventory in ahead of the template rules", () => {
 hybrid.effect("hybrid compaction sends the head as transcript plus the inventory", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ strategy: "hybrid", tokens: 0 })
+    yield* configured({ strategy: "hybrid", keep: 0 })
     const { session } = yield* seedSession("hybrid")
-    const messages = conversation()
-    expect(
-      yield* compaction.compactManual({
-        session,
-        resolveContext: () => Effect.succeed(loaded(session, messages)),
-        prepare: (yield* SessionModelRequest.Service).compaction,
-        messages,
-        inputID: SessionMessage.ID.make("msg_compact_hybrid"),
-      }),
-    ).toEqual({ status: "completed" })
+    expect(yield* compactManually(session, conversation(), "msg_compact_hybrid")).toEqual({ status: "completed" })
     expect(requests).toHaveLength(1)
     const prompt = JSON.stringify(requests[0]?.messages)
     expect(prompt).toContain("## Structured Inventory")
@@ -272,37 +282,22 @@ hybrid.effect("hybrid compaction sends the head as transcript plus the inventory
 hybrid.effect("compaction defaults to an LLM summary without an inventory", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ tokens: 0 })
+    yield* configured({ keep: 0 })
     const { session } = yield* seedSession("llm")
-    const messages = conversation()
-    expect(
-      yield* compaction.compactManual({
-        session,
-        resolveContext: () => Effect.succeed(loaded(session, messages)),
-        prepare: (yield* SessionModelRequest.Service).compaction,
-        messages,
-        inputID: SessionMessage.ID.make("msg_compact_llm"),
-      }),
-    ).toEqual({ status: "completed" })
+    expect(yield* compactManually(session, conversation(), "msg_compact_llm")).toEqual({ status: "completed" })
     expect(requests).toHaveLength(1)
     expect(JSON.stringify(requests[0]?.messages)).not.toContain("## Structured Inventory")
   }),
 )
 
-algorithmic.effect("algorithmic compaction completes without an LLM call or model resolution", () =>
+algorithmic.effect("algorithmic compaction completes without an LLM call", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ strategy: "algorithmic", tokens: 0 })
+    yield* configured({ strategy: "algorithmic", keep: 0 })
     const { session, store } = yield* seedSession("algorithmic")
-    expect(
-      yield* compaction.compactManual({
-        session,
-        resolveContext: () => Effect.die("algorithmic compaction must not resolve a model"),
-        prepare: (yield* SessionModelRequest.Service).compaction,
-        messages: conversation(),
-        inputID: SessionMessage.ID.make("msg_compact_algorithmic"),
-      }),
-    ).toEqual({ status: "completed" })
+    expect(yield* compactManually(session, conversation(), "msg_compact_algorithmic")).toEqual({
+      status: "completed",
+    })
     expect(requests).toHaveLength(0)
     const context = yield* store.context(session.id)
     expect(context).toMatchObject([{ type: "compaction", reason: "manual", status: "completed" }])
@@ -316,7 +311,7 @@ algorithmic.effect("algorithmic compaction completes without an LLM call or mode
 algorithmic.effect("algorithmic compaction carries the previous summary forward", () =>
   Effect.gen(function* () {
     requests = []
-    const compaction = yield* configured({ strategy: "algorithmic", tokens: 0 })
+    yield* configured({ strategy: "algorithmic", keep: 0 })
     const { session, store } = yield* seedSession("carry")
     const previous = message({
       id: "msg_previous_compaction",
@@ -326,21 +321,32 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
       summary: "## Task\n\nEarlier anchored summary.",
       recent: "",
     })
-    expect(
-      yield* compaction.compactManual({
-        session,
-        resolveContext: () => Effect.die("algorithmic compaction must not resolve a model"),
-        prepare: (yield* SessionModelRequest.Service).compaction,
-        messages: [previous, ...conversation()],
-        inputID: SessionMessage.ID.make("msg_compact_carry"),
-      }),
-    ).toEqual({ status: "completed" })
+    expect(yield* compactManually(session, [previous, ...conversation()], "msg_compact_carry")).toEqual({
+      status: "completed",
+    })
     expect(requests).toHaveLength(0)
     const context = yield* store.context(session.id)
     const summary = context[0]?.type === "compaction" && context[0].status === "completed" ? context[0].summary : ""
     expect(summary).toContain("## Previous Summary")
     expect(summary).toContain("Earlier anchored summary.")
     expect(summary).toContain("Fix the login redirect bug in the auth flow.")
+  }),
+)
+
+algorithmic.effect("automatic algorithmic compaction opens its own message", () =>
+  Effect.gen(function* () {
+    requests = []
+    yield* configured({ strategy: "algorithmic", keep: 0 })
+    const { session, store } = yield* seedSession("algorithmic-auto")
+    const compaction = yield* SessionCompaction.Service
+    // Overflow skips the due check, like a provider rejection would.
+    expect(yield* compaction.compact({ reason: "overflow", context: loaded(session, conversation()) })).toEqual({
+      status: "completed",
+    })
+    expect(requests).toHaveLength(0)
+    expect(yield* store.context(session.id)).toMatchObject([
+      { type: "compaction", reason: "auto", status: "completed" },
+    ])
   }),
 )
 
@@ -352,7 +358,7 @@ for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
         requests = []
         // The tail allowance fits the newest three messages but not the long opener, so the
         // reads land in the retained tail rather than the summarized head.
-        const compaction = yield* configured({ strategy, tokens: 200 })
+        yield* configured({ strategy, keep: 200 })
         const { session, store } = yield* seedSession("stale-read")
         const read = (id: string, text: string) => ({
           type: "tool",
@@ -374,15 +380,7 @@ for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
           }),
           message({ id: "msg_user_stale_two", type: "user", text: "Also keep the fragment intact." }),
         ]
-        expect(
-          yield* compaction.compactManual({
-            session,
-            resolveContext: () => Effect.succeed(loaded(session, messages)),
-            prepare: (yield* SessionModelRequest.Service).compaction,
-            messages,
-            inputID: SessionMessage.ID.make("msg_compact_stale"),
-          }),
-        ).toEqual({ status: "completed" })
+        expect(yield* compactManually(session, messages, "msg_compact_stale")).toEqual({ status: "completed" })
         const context = yield* store.context(session.id)
         const recent = context.at(-1)
         const tail = recent?.type === "compaction" && recent.status === "completed" ? recent.recent : ""
@@ -401,45 +399,41 @@ for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
 hybrid.effect("a configured threshold lowers the automatic trigger but never raises it past the ceiling", () =>
   Effect.gen(function* () {
     const compaction = yield* SessionCompaction.Service
-    const session = Session.Info.make({
-      id: Session.ID.make("ses_threshold"),
-      projectID: Project.ID.global,
-      cost: Money.USD.zero,
-      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
-      location: Location.Ref.make({ directory: AbsolutePath.make("/tmp") }),
-    })
-    const required = (tokens: number, limit: { context: number; input?: number; output: number }) => {
+    const { session } = yield* seedSession("threshold")
+    // An automatic compaction that is not due is skipped; a due one runs.
+    const due = (tokens: number, limit: { context: number; input?: number; output: number }) => {
       const resolved = SessionRunnerModel.resolved(model, { capabilities: resolvedModel.capabilities, cost, limit })
       const messages = [
         message({
           id: "msg_assistant_threshold",
           type: "assistant",
           agent: "build",
-          model: { id: "test-model", providerID: "test-provider" },
+          model: { id: "summary-model", providerID: "test" },
           content: [{ type: "text", text: "Done" }],
           tokens: { input: tokens, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: 0, completed: 0 },
         }),
       ]
-      return compaction.required({ messages, resolved, context: { ...loaded(session, messages), model: resolved } })
+      return compaction
+        .compact({ reason: "auto", context: loaded(session, messages, resolved) })
+        .pipe(Effect.map((outcome) => outcome.status !== "skipped"))
     }
     const chatgpt = { context: 400_000, input: 272_000, output: 128_000 }
-    // Default: input − 20K buffer.
-    expect(required(251_999, chatgpt)).toBe(false)
-    expect(required(252_000, chatgpt)).toBe(true)
+    // Default: 10% of the input window kept free.
+    expect(yield* due(244_799, chatgpt)).toBe(false)
+    expect(yield* due(244_800, chatgpt)).toBe(true)
 
     yield* configured({ threshold: 60 })
     // 60% of the input window, the window the meter reads.
-    expect(required(163_199, chatgpt)).toBe(false)
-    expect(required(163_200, chatgpt)).toBe(true)
+    expect(yield* due(163_199, chatgpt)).toBe(false)
+    expect(yield* due(163_200, chatgpt)).toBe(true)
     // Without an input limit, the percentage is of the total.
-    expect(required(59_999, { context: 100_000, output: 10_000 })).toBe(false)
-    expect(required(60_000, { context: 100_000, output: 10_000 })).toBe(true)
+    expect(yield* due(59_999, { context: 100_000, output: 10_000 })).toBe(false)
+    expect(yield* due(60_000, { context: 100_000, output: 10_000 })).toBe(true)
 
     yield* configured({ threshold: 95 })
-    // 95% (258,400) is above the buffered ceiling, which still wins.
-    expect(required(251_999, chatgpt)).toBe(false)
-    expect(required(252_000, chatgpt)).toBe(true)
+    // 95% (258,400) is above the ceiling, which still wins.
+    expect(yield* due(244_799, chatgpt)).toBe(false)
+    expect(yield* due(244_800, chatgpt)).toBe(true)
   }),
 )

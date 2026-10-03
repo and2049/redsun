@@ -102,8 +102,10 @@ describe("DelegatedRuntime.decode", () => {
       const decoded = DelegatedRuntime.decode("model-1", {
         prompt: [],
         headers: {
-          "x-opencode-session": "ses_1",
-          "x-parent-session-id": "ses_parent",
+          // The affinity header names the parent for a child; the turn is the child's own session.
+          "x-opencode-session": "ses_parent",
+          "x-opencode-session-id": "ses_1",
+          "x-opencode-parent-session-id": "ses_parent",
           "X-Redsun-Delegate-Agent": "build",
           "x-redsun-delegate-kind": "primary",
           "x-redsun-delegate-message": "msg_1",
@@ -119,8 +121,9 @@ describe("DelegatedRuntime.decode", () => {
         assistantMessageID: "msg_1",
       })
       expect(decoded.options.headers).toEqual({
-        "x-opencode-session": "ses_1",
-        "x-parent-session-id": "ses_parent",
+        "x-opencode-session": "ses_parent",
+        "x-opencode-session-id": "ses_1",
+        "x-opencode-parent-session-id": "ses_parent",
         "x-opencode-client": "redsun",
       })
     }),
@@ -128,7 +131,7 @@ describe("DelegatedRuntime.decode", () => {
 
   it.effect("yields no turn without a complete, known identity", () =>
     Effect.sync(() => {
-      const partial = { "x-opencode-session": "ses_1", "x-redsun-delegate-agent": "build" }
+      const partial = { "x-opencode-session-id": "ses_1", "x-redsun-delegate-agent": "build" }
       expect(DelegatedRuntime.decode("m", { prompt: [], headers: partial }).turn).toBeUndefined()
       const unknown = { ...partial, "x-redsun-delegate-kind": "bogus" }
       expect(DelegatedRuntime.decode("m", { prompt: [], headers: unknown }).turn).toBeUndefined()
@@ -143,8 +146,8 @@ describe("delegated runtime registration", () => {
       yield* register(runtime([]))
       const owned = yield* prepare(OWNED, "primary", "ses_parent")
       expect(owned.request.http?.headers).toMatchObject({
-        "x-opencode-session": "ses_delegate",
-        "x-parent-session-id": "ses_parent",
+        "x-opencode-session-id": "ses_delegate",
+        "x-opencode-parent-session-id": "ses_parent",
         "x-redsun-delegate-agent": "build",
         "x-redsun-delegate-kind": "primary",
       })
@@ -475,7 +478,9 @@ describe("delegated runtime host capabilities", () => {
       expect(base.static[0]).toContain("Prefer dedicated tools over shell commands")
       expect(base.static[0]).toContain("# Code comments")
       expect(base.static[0]).not.toContain("${OPENCODE_TOOL_GUIDANCE}")
-      expect(base.dynamic.some((part) => part.includes("<env>") && part.includes("ses_1"))).toBe(true)
+      // The environment block no longer names the session (upstream #51960, prompt-cache reuse).
+      expect(base.dynamic.some((part) => part.includes("<env>"))).toBe(true)
+      expect(base.dynamic.some((part) => part.includes("ses_1"))).toBe(false)
       expect(base.dynamic.some((part) => part.startsWith("Today's date:"))).toBe(true)
       // Guidance follows the served tools: no edit line without the edit tool.
       const readOnly = yield* host.delegate.context.system({

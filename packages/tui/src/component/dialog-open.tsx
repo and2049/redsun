@@ -7,7 +7,7 @@ import { dialogWidth, useDialog } from "../ui/dialog"
 import { DialogSelect, dialogSelectContentWidth, type DialogSelectRef } from "../ui/dialog-select"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { useRoute } from "../context/route"
-import { locationKey, useData } from "../context/data"
+import { useData } from "../context/data"
 import { useClient } from "../context/client"
 import { useLocation } from "../context/location"
 import { useTheme, useThemes } from "../context/theme"
@@ -190,25 +190,12 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
     })
 
     const current = location.ref ?? data.location.default()
-    const seen = new Set<string>()
-    const projectOptions = [
-      ...data.project.list().flatMap((project) =>
-        [project.canonical, ...project.sandboxes].map((directory) => ({
-          directory,
-          project,
-        })),
-      ),
-      ...sessions().map((session) => ({
-        directory: session.location.directory,
-        project: data.project.get(session.projectID),
-      })),
-    ]
-      .filter((item) => {
-        const key = locationKey(item)
-        if (item.directory === "/" || seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
+    const projectOptions = data.project
+      .list()
+      .filter((project) => project.canonical !== "/")
+      // Historical project identities can share a checkout. The list is newest-active first.
+      .filter((project, index, projects) => projects.findIndex((item) => item.canonical === project.canonical) === index)
+      .map((project) => ({ directory: project.canonical, project }))
       .map((item) => {
         const title =
           item.directory === item.project?.canonical
@@ -232,7 +219,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
           category: t("ui.projects"),
           gutter:
             item.directory === current.directory ||
-            (item.directory === location.current?.project.canonical && !seen.has(locationKey(current)))
+            item.directory === location.current?.project.canonical
               ? () => <text fg={theme.text.formfield.selected}>●</text>
               : undefined,
         }

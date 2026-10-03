@@ -144,7 +144,7 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
       "Upgrade to a specific version with a specific package manager.",
       "Upgrade to a specific version with a specific installation method.",
     ],
-    ["$ redsun upgrade 1.18.15 --method bun", "$ redsun upgrade <version> --method curl"],
+    [/\$ redsun upgrade [0-9.]+ --method bun/, "$ redsun upgrade <version> --method curl"],
   ],
   "cli/index": [
     [
@@ -153,6 +153,7 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
     ],
   ],
   "cli/theme": [["The default theme is `opencode`.", "The default theme is `dusk`."]],
+  policies: [[/^Use `provider\.use` instead of the V1 [\s\S]*?\)\.\n\n/m, ""]],
   "cli/web": [
     [
       "redsun ships with a web ui that is served from the same server that powers the\nTUI. It's available by default and password protected.",

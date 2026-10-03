@@ -10,14 +10,15 @@ The first search asks you to allow web search and select a provider. redsun reme
 
 ## Providers
 
-redsun includes four search providers:
+redsun includes five search providers:
 
-| Provider  | ID          | Environment variable |
-| --------- | ----------- | -------------------- |
-| Exa       | `exa`       | `EXA_API_KEY`        |
-| Firecrawl | `firecrawl` | `FIRECRAWL_API_KEY`  |
-| Parallel  | `parallel`  | `PARALLEL_API_KEY`   |
-| Tavily    | `tavily`    | `TAVILY_API_KEY`     |
+| Provider  | ID          | Environment variable          |
+| --------- | ----------- | ----------------------------- |
+| Exa       | `exa`       | `EXA_API_KEY`                 |
+| Firecrawl | `firecrawl` | `FIRECRAWL_API_KEY`           |
+| Parallel  | `parallel`  | `PARALLEL_API_KEY`            |
+| Tavily    | `tavily`    | `TAVILY_API_KEY`              |
+| TinyFish  | `tinyfish`  | `TINYFISH_API_KEY` (optional) |
 
 Connect an account from the TUI with `/connect`, or set the provider's environment variable before starting redsun.
 

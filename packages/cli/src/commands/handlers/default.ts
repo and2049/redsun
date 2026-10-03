@@ -4,13 +4,17 @@ import { run } from "@opencode/tui"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Config } from "../../config"
-import { Context, Effect, Fiber, FileSystem, Option, Queue } from "effect"
+import { Context, Effect, FileSystem, Option, Queue, Schedule, Semaphore } from "effect"
 import { ServerConnection } from "../../services/server-connection"
 import { Updater } from "../../services/updater"
 import { UpdatePreflight } from "../../services/update-preflight"
 import { Npm } from "@opencode/util/npm"
 import { OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
 import { Env } from "../../env"
+import { Service } from "@opencode/client/effect/service"
+import { OpenCode } from "@opencode/client/promise"
+import { findSession } from "../../session-target"
+import { errorMessage } from "../../util/error"
 
 export default Runtime.handler(Commands, (input) =>
   Effect.gen(function* () {
@@ -46,17 +50,46 @@ export default Runtime.handler(Commands, (input) =>
         Effect.promise(() => preflight.fail("redsun update could not start the new background service")),
       ),
     )
+    const session = Option.getOrUndefined(input.session)
+    // A missing --session ID becomes the ID of the session the first prompt creates.
+    const sessionExists =
+      session !== undefined &&
+      (yield* Effect.tryPromise({
+        try: () =>
+          findSession(
+            OpenCode.make({ baseUrl: server.endpoint.url, headers: Service.headers(server.endpoint) }),
+            session,
+          ),
+        catch: (cause) => new Error(errorMessage(cause)),
+      })) !== undefined
     const updater = yield* Updater.Service
     let installing: string | undefined
-    const updateListeners = new Set<(version: string) => void>()
-    const update = yield* (
-      server.service
-        ? Effect.succeed(undefined)
-        : updater.run((version) => {
-            installing = version
-            updateListeners.forEach((notify) => notify(version))
-          })
-    ).pipe(Effect.ensuring(Effect.sync(() => (installing = undefined))), Effect.forkScoped)
+    let latest: Updater.RunResult | undefined
+    const installListeners = new Set<(version: string) => void>()
+    const resultListeners = new Set<(result: Updater.RunResult) => void>()
+    // Background checks, `/update` lookups, and manual installs take turns so two installs never overlap.
+    const checking = yield* Semaphore.make(1)
+    // REDSUN: a managed service polls for updates itself (server-process.ts) and publishes them to
+    // attached clients; only a standalone or remote launch checks from here.
+    if (!server.service)
+      yield* updater
+        .run((version) => {
+          installing = version
+          installListeners.forEach((notify) => notify(version))
+        })
+        .pipe(
+          Effect.ensuring(Effect.sync(() => (installing = undefined))),
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              if (!result || (result.type === latest?.type && result.version === latest.version)) return
+              latest = result
+              resultListeners.forEach((notify) => notify(result))
+            }),
+          ),
+          checking.withPermits(1),
+          Effect.repeat(Schedule.spaced("10 minutes")),
+          Effect.forkScoped({ startImmediately: true }),
+        )
     preflight.loading()
     const config = yield* Config.Service
     const npm = yield* Npm.Service
@@ -84,7 +117,8 @@ export default Runtime.handler(Commands, (input) =>
       },
       args: {
         continue: input.continue,
-        sessionID: Option.getOrUndefined(input.session),
+        sessionID: sessionExists ? session : undefined,
+        newSessionID: sessionExists ? undefined : session,
         prompt: Option.getOrUndefined(input.prompt),
         auto: input.auto || input.yolo || input.dangerouslySkipPermissions,
       },
@@ -96,21 +130,19 @@ export default Runtime.handler(Commands, (input) =>
       plugins: input.plugin.length ? input.plugin : undefined,
       updater: {
         remote: requestedServer !== undefined,
-        subscribe: (notify, signal) =>
-          runPromise(
-            Fiber.join(update).pipe(
-              Effect.flatMap((result) => (result === undefined ? Effect.void : Effect.sync(() => notify(result)))),
-            ),
-            { signal },
-          ),
+        subscribe: (notify) => {
+          if (latest) notify(latest)
+          resultListeners.add(notify)
+          return () => resultListeners.delete(notify)
+        },
         check: (signal, notify) => {
           if (installing) notify(installing)
-          updateListeners.add(notify)
-          return runPromise(Fiber.join(update).pipe(Effect.flatMap(() => updater.check())), { signal }).finally(() =>
-            updateListeners.delete(notify),
+          installListeners.add(notify)
+          return runPromise(checking.withPermits(1)(updater.check()), { signal }).finally(() =>
+            installListeners.delete(notify),
           )
         },
-        apply: (version) => runPromise(updater.apply(version)),
+        apply: (version) => runPromise(checking.withPermits(1)(updater.apply(version))),
       },
       packages: {
         prepare: (spec, install = true) => runPromise(install ? npm.add(spec) : npm.resolve(spec)),

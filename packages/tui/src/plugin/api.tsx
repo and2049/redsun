@@ -20,6 +20,7 @@ import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
 import { useAttention } from "../context/attention"
 import { useStorage } from "../context/storage"
+import { useLocal } from "../context/local"
 import { abbreviateHome } from "../util/path-format"
 import type { LanguageContribution } from "@opencode/plugin/tui/i18n"
 import { useLanguage } from "../i18n"
@@ -76,6 +77,7 @@ export function usePluginHost() {
     storage: useStorage(),
     language: useLanguage(),
     languageRegistry: useLanguageRegistry(),
+    local: useLocal(),
   }
 }
 
@@ -261,6 +263,22 @@ export function createPluginContext(input: {
         focus: () => false,
         move: () => false,
         close: () => false,
+      },
+      model: {
+        current() {
+          const selection = host.local.model.selection()
+          if (!selection) return
+          return { providerID: selection.providerID, modelID: selection.modelID, variant: selection.variant }
+        },
+        variant: {
+          list: () => host.local.model.variant.list(),
+          set(variant) {
+            if (!host.local.model.selection()) return false
+            if (variant !== undefined && !host.local.model.variant.list().includes(variant)) return false
+            host.local.model.variant.set(variant)
+            return true
+          },
+        },
       },
       slot(value: SlotClaim) {
         // Keys are counter-suffixed so one plugin may claim several places;

@@ -1,6 +1,6 @@
 # Commands
 
-Every command accepts `--help` for its full flag list, for example `redsun run --help`. Commands that talk to a server also accept `--standalone` to run a private server and `--server <url>` to target a specific one.
+Every command accepts `--help` for its full flag list, for example `redsun run --help`. Some server-backed commands accept `--standalone` to run a private server or `--server <url>` to target a specific one; check the command's help for its supported flags.
 
 ## run
 
@@ -139,7 +139,7 @@ $ redsun auth login anthropic
 Log in with a specific authentication method.
 
 ```bash
-$ redsun auth login anthropic --method api-key
+$ redsun auth login anthropic --method key
 ```
 
 Log out of a saved account.
@@ -334,13 +334,14 @@ $ redsun serve --help
 
 ## pair
 
-Shows server pairing information, including URLs, credentials, and a QR code.
+Prints one-time links, plus a QR code of the first one, that sign a browser or
+app in to the server. Links expire after 5 minutes and work once.
 
 ```bash
 $ redsun pair
 ```
 
-Advertise an external URL in the QR code.
+Use an external URL in the links.
 
 ```bash
 $ redsun pair --url https://dev.example.com
@@ -433,13 +434,13 @@ $ redsun api GET /api/session
 Call an operation ID with a query parameter.
 
 ```bash
-$ redsun api v2.session.list --param limit=10
+$ redsun api session.list --param limit=10
 ```
 
 Send a JSON body.
 
 ```bash
-$ redsun api v2.session.create --data '{"title": "New session"}'
+$ redsun api session.create --data '{"title": "New session"}'
 ```
 
 Add a request header.
