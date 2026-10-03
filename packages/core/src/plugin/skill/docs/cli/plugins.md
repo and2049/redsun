@@ -1,0 +1,59 @@
+# Plugins
+
+Plugins configured in `redsun.json(c)` that expose a TUI component are loaded automatically by the CLI. To learn how
+to build plugins, see [Building plugins](../build/plugins/index.md). You do not need to add the same package to `cli.json`. The CLI
+gets the active plugin list from the connected redsun server, so this also works when the server is remote.
+
+Use `cli.json` for CLI-only plugins. These plugins run locally in the terminal and remain active when the CLI connects
+to a remote server:
+
+```json title="cli.json"
+{
+  "plugins": [
+    "opencode.example",
+    "opencode.example@1.0.0",
+    "@example/opencode-tui",
+    "@example/opencode-tui@1.0.0",
+    "./plugins/status",
+    "../plugins/status",
+    "/home/user/plugins/status",
+    "file:///home/user/plugins/status"
+  ]
+}
+```
+
+Entries are processed in order. Prefix an ID or wildcard with `-` to disable matching plugins:
+
+```json title="cli.json"
+{
+  "plugins": ["*", "-opencode.notifications", "-team.*"]
+}
+```
+
+Pass plugin options with the object form:
+
+```json title="cli.json"
+{
+  "plugins": [
+    {
+      "package": "@example/opencode-tui",
+      "options": {
+        "compact": true
+      }
+    }
+  ]
+}
+```
+
+redsun also discovers plugins under the global config directory and project `.redsun` directories. Each plugin uses
+the same layout as a published package, with server and TUI entrypoints kept together.
+
+```text title="Plugin discovery paths"
+<global-config>/plugins/status/index.ts
+<global-config>/plugins/status/tui.ts
+<project>/.redsun/plugins/status/index.ts
+<project>/.redsun/plugins/status/tui.ts
+```
+
+Discovered plugins can import `@opencode/plugin/tui` directly; redsun resolves the package at runtime. See
+[Building CLI plugins](../build/plugins/cli.md) for examples.
