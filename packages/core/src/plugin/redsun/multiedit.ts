@@ -42,6 +42,32 @@ export const Output = Schema.Struct({
 export const DESCRIPTION =
   "Apply several exact find-and-replace edits to ONE file in a single call. Edits run in order, each against the result of the previous edit, and the whole call is atomic: if any edit fails, nothing is written. Each edit follows the edit tool's rules — oldString must match exactly (preserve indentation, omit line-number prefixes) and must be unique unless replaceAll is true. Prefer this over several edit calls when making multiple changes to the same file."
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/**
+ * Folds the edit tool's single-edit shape (`oldString`/`newString` at the top level), which models
+ * sometimes send to multiedit, into a one-entry `edits` array. Anything else is returned unchanged.
+ */
+export function foldLegacyEdit(input: unknown): unknown {
+  if (!isRecord(input) || input.edits !== undefined) return input
+  if (typeof input.oldString !== "string" || typeof input.newString !== "string") return input
+  const { oldString, newString, replaceAll, ...rest } = input
+  return { ...rest, edits: [{ oldString, newString, ...(typeof replaceAll === "boolean" ? { replaceAll } : {}) }] }
+}
+
+// An execute.before hook, so it runs ahead of the schema repair in Tool.executeTool, which prunes
+// keys the input schema does not declare (oldString/newString among them).
+export const LegacyFoldPlugin = define({
+  id: "redsun.tool.multiedit.legacy-fold",
+  effect: (ctx) =>
+    ctx.tool.hook("execute.before", (event) =>
+      Effect.sync(() => {
+        if (event.tool === NAME) event.input = foldLegacyEdit(event.input)
+      }),
+    ),
+})
+
 export const Plugin = define({
   id: "redsun.tool.multiedit",
   effect: Effect.fn(function* (ctx) {

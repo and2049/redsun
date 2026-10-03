@@ -219,7 +219,7 @@ export type InternalPlugin = Plugin<Requirements | Scope.Scope>
 
 const pre = [
   // REDSUN: upstream registers ToolInputRepairPlugin here. Its repair runs in Tool.executeTool
-  // instead, against the request's captured definition and after redsun's legacy edit fold.
+  // instead, against the request's captured definition.
   ConfigWorktreePlugin.Plugin,
   ConfigMcpPlugin.Plugin,
   McpCodeModeExclusionPlugin.Plugin,
@@ -282,6 +282,7 @@ const post = [
   RedsunAttribution.Plugin,
   RedsunTodo.Plugin,
   RedsunMultiedit.Plugin,
+  RedsunMultiedit.LegacyFoldPlugin,
 ] as const satisfies readonly InternalPlugin[]
 
 export const list = Effect.fn("PluginInternal.list")(function* () {
