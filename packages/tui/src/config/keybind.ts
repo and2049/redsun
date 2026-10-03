@@ -114,6 +114,7 @@ export const Definitions = {
   "session.interrupt": keybind("ctrl+\\", "Interrupt current session"),
   "session.background": keybind("ctrl+b", "Background blocking session tools"),
   "session.compact": keybind("none", "Compact the session"),
+  "session.aside": keybind("none", "Ask a side question"),
   "session.cd": keybind("none", "Change working directory"),
   "session.queued_prompts": keybind("ctrl+shift+q", "Manage queued prompts"),
   "queued_prompt.delete": keybind("ctrl+d", "Delete queued prompt"),

@@ -79,8 +79,8 @@ export function themeSwatches(source: ThemeDocumentSource, name: string) {
   }
   const { mode, theme } = loaded
   const step = mode === "light" ? 800 : 200
-  const background = theme.background.default
-  const highlight = theme.contextual.elevated.background.action.primary.focused
+  const background = theme.background.base
+  const highlight = theme.surface("dialog").background.action.primary.focused
   const hues: RGBA[] = []
   for (const scale of theme.categorical) {
     const color = scale[step]
@@ -102,7 +102,7 @@ export function themeSwatches(source: ThemeDocumentSource, name: string) {
 
 export function DialogThemeList() {
   const themes = useThemes()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const dialog = useDialog()
   const { t } = useLanguage()
   let confirmed = false
@@ -131,7 +131,7 @@ export function DialogThemeList() {
   function FamilyTitle(props: { family: ThemeFamily; mode: Mode }) {
     const shown = familyMember(props.family, props.mode)
     const members = [props.family.dark, props.family.light].filter((name): name is string => Boolean(name))
-    const quiet = () => ((highlighted() ?? initialFamily()) === props.family.key ? dimmed() : theme.text.subdued)
+    const quiet = () => ((highlighted() ?? initialFamily()) === props.family.key ? dimmed() : theme.text.muted)
     return (
       <>
         {members.map((name, index) => (
@@ -184,7 +184,7 @@ export function DialogThemeList() {
     const active = createMemo(() => mode() === props.mode)
     return (
       <text
-        fg={active() ? theme.text.action.primary.selected : theme.text.subdued}
+        fg={active() ? theme.text.action.primary.selected : theme.text.muted}
         attributes={active() ? TextAttributes.BOLD : undefined}
         onMouseUp={() => switchMode(props.mode)}
       >
@@ -198,7 +198,7 @@ export function DialogThemeList() {
       title={t("ui.themes")}
       titleView={
         <box flexDirection="row" gap={2}>
-          <text fg={theme.text.default} attributes={TextAttributes.BOLD}>
+          <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
             {t("ui.themes")}
           </text>
           <Tab label={t("theme.scheme.dark")} mode="dark" />

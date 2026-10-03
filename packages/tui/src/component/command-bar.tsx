@@ -142,7 +142,7 @@ export function CommandBar() {
       flexShrink={0}
       height={1}
       zIndex={1000}
-      backgroundColor={vim.mode === "command" ? theme.background.surface.offset : theme.background.default}
+      backgroundColor={vim.mode === "command" ? theme.background.raised.base : theme.background.base}
       flexDirection="row"
       alignItems="center"
       paddingLeft={1}
@@ -158,8 +158,8 @@ export function CommandBar() {
               setInput(value)
               setSelected(-1)
             }}
-            focusedBackgroundColor={theme.background.surface.offset}
-            focusedTextColor={theme.text.default}
+            focusedBackgroundColor={theme.background.raised.base}
+            focusedTextColor={theme.text.base}
             cursorColor={theme.text.action.primary.selected}
             flexGrow={1}
           />
@@ -170,10 +170,10 @@ export function CommandBar() {
               left={0}
               width={Math.min(56, dimensions().width)}
               flexDirection="column"
-              backgroundColor={theme.background.surface.overlay}
+              backgroundColor={theme.background.raised.high}
               border={["left"]}
               customBorderChars={SplitBorder.customBorderChars}
-              borderColor={theme.border.default}
+              borderColor={theme.border.base}
               zIndex={100}
             >
               <For each={suggestions()}>
@@ -184,13 +184,13 @@ export function CommandBar() {
                     backgroundColor={index() === selected() ? theme.background.action.primary.selected : undefined}
                   >
                     <text
-                      fg={index() === selected() ? theme.text.action.primary.focused : theme.text.default}
+                      fg={index() === selected() ? theme.text.action.primary.focused : theme.text.base}
                       wrapMode="none"
                     >
                       {suggestion}{" "}
                       <span
                         style={{
-                          fg: index() === selected() ? theme.text.action.primary.focused : theme.text.subdued,
+                          fg: index() === selected() ? theme.text.action.primary.focused : theme.text.muted,
                         }}
                       >
                         — {commands().get(suggestion)?.description}
@@ -207,22 +207,22 @@ export function CommandBar() {
             <Show when={workspace()}>
               {(value) => (
                 <text wrapMode="none">
-                  <span style={{ fg: theme.text.default }}>{value()}</span>
-                  <Show when={branch()}>{(name) => <span style={{ fg: theme.text.subdued }}> ({name()})</span>}</Show>
+                  <span style={{ fg: theme.text.base }}>{value()}</span>
+                  <Show when={branch()}>{(name) => <span style={{ fg: theme.text.muted }}> ({name()})</span>}</Show>
                 </text>
               )}
             </Show>
             <box flexDirection="row" flexShrink={0}>
               <Show when={vim.pendingCount()}>
                 {(count) => (
-                  <text fg={theme.text.default} wrapMode="none">
+                  <text fg={theme.text.base} wrapMode="none">
                     {count()}{" "}
                   </text>
                 )}
               </Show>
               <Show when={usageLabel()}>
                 {(value) => (
-                  <text fg={theme.text.subdued} wrapMode="none">
+                  <text fg={theme.text.muted} wrapMode="none">
                     {value()}
                   </text>
                 )}

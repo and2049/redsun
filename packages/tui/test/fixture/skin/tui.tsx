@@ -24,7 +24,7 @@ function Logo(props: { context: Plugin.Context }) {
       <text>SKIN LOGO {props.context.app.name}</text>
       <text>
         mode {props.context.vim.mode} theme {props.context.themes.current()} bg{" "}
-        {hex(props.context.theme.background.default)}
+        {hex(props.context.theme.background.base)}
       </text>
       <text>
         dims {dimensions().width}x{dimensions().height}
@@ -44,7 +44,7 @@ function Backdrop(props: { context: Plugin.Context; width: number; height: numbe
 
 export default Plugin.define({
   id: "test.skin",
-  api: 1,
+  api: 2,
   setup(context) {
     context.themes.register("skin", skin("#123456"))
     context.themes.register("skin-warm", skin("#654321"))

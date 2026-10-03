@@ -50,20 +50,20 @@ export function PromptMetadataRow(props: {
         <Show when={props.mode === "normal" && layout().model}>
           <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
             <Show when={layout().agent}>
-              <text fg={fade(theme.text.subdued, props.modelAlpha)}>·</text>
+              <text fg={fade(theme.text.muted, props.modelAlpha)}>·</text>
             </Show>
             <text
               flexShrink={1}
               minWidth={0}
               wrapMode="none"
               truncate
-              fg={fade(props.muted ? theme.text.subdued : theme.text.default, props.modelAlpha)}
+              fg={fade(props.muted ? theme.text.muted : theme.text.base, props.modelAlpha)}
             >
               {layout().model}
             </text>
             <Show when={layout().provider}>
               {(provider) => (
-                <text flexShrink={0} fg={fade(theme.text.subdued, props.modelAlpha)}>
+                <text flexShrink={0} fg={fade(theme.text.muted, props.modelAlpha)}>
                   {provider()}
                 </text>
               )}
@@ -71,9 +71,9 @@ export function PromptMetadataRow(props: {
             <Show when={layout().variant}>
               {(variant) => (
                 <>
-                  <text fg={fade(theme.text.subdued, props.variantAlpha)}>·</text>
+                  <text fg={fade(theme.text.muted, props.variantAlpha)}>·</text>
                   <text
-                    fg={fade(theme.text.feedback.warning.default, props.variantAlpha)}
+                    fg={fade(theme.text.feedback.warning.base, props.variantAlpha)}
                     attributes={TextAttributes.BOLD}
                   >
                     {variant()}
@@ -82,11 +82,11 @@ export function PromptMetadataRow(props: {
               )}
             </Show>
             <Show when={layout().worker !== undefined}>
-              <text fg={fade(theme.text.subdued, props.modelAlpha)}>·</text>
+              <text fg={fade(theme.text.muted, props.modelAlpha)}>·</text>
               <Show
                 when={layout().worker}
                 fallback={
-                  <text flexShrink={0} fg={fade(theme.text.feedback.warning.default, props.modelAlpha)}>
+                  <text flexShrink={0} fg={fade(theme.text.feedback.warning.base, props.modelAlpha)}>
                     {WORKER_UNSET}
                   </text>
                 }
@@ -98,13 +98,13 @@ export function PromptMetadataRow(props: {
                       minWidth={0}
                       wrapMode="none"
                       truncate
-                      fg={fade(props.muted ? theme.text.subdued : theme.text.default, props.modelAlpha)}
+                      fg={fade(props.muted ? theme.text.muted : theme.text.base, props.modelAlpha)}
                     >
                       {worker().model}
                     </text>
                     <Show when={worker().provider}>
                       {(provider) => (
-                        <text flexShrink={0} fg={fade(theme.text.subdued, props.modelAlpha)}>
+                        <text flexShrink={0} fg={fade(theme.text.muted, props.modelAlpha)}>
                           {provider()}
                         </text>
                       )}
@@ -112,9 +112,9 @@ export function PromptMetadataRow(props: {
                     <Show when={worker().variant}>
                       {(variant) => (
                         <>
-                          <text fg={fade(theme.text.subdued, props.variantAlpha)}>·</text>
+                          <text fg={fade(theme.text.muted, props.variantAlpha)}>·</text>
                           <text
-                            fg={fade(theme.text.feedback.warning.default, props.variantAlpha)}
+                            fg={fade(theme.text.feedback.warning.base, props.variantAlpha)}
                             attributes={TextAttributes.BOLD}
                           >
                             {variant()}

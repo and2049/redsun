@@ -42,13 +42,12 @@ const decodeThemeDocument = Schema.decodeUnknownSync(ThemeDocument, { reportInpu
 
 export function isThemeSource(source: unknown): source is ThemeDocumentSource {
   if (typeof source !== "object" || source === null || Array.isArray(source)) return false
-  return "theme" in source || "version" in source
+  return "theme" in source || "base" in source
 }
 
+// A flat V1 palette carries `theme`; anything else must be a V2 document.
 export function parseTheme(source: ThemeDocumentSource, name = "theme") {
-  const version = source.version ?? 1
-  if (version === 1) return migrateV1(source as ThemeV1Json)
-  if (version !== 2) throw new Error(`Unsupported theme version: ${String(version)}`)
+  if ("theme" in source) return migrateV1(source as ThemeV1Json)
   try {
     return decodeThemeDocument(source)
   } catch (error) {

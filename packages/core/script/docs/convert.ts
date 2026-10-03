@@ -152,6 +152,7 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
       "- Curl and PowerShell installations print the final command to remove the executable manually.",
     ],
   ],
+  "cli/theme": [["The default theme is `opencode`.", "The default theme is `dusk`."]],
   "cli/web": [
     [
       "redsun ships with a web ui that is served from the same server that powers the\nTUI. It's available by default and password protected.",

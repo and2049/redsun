@@ -16,7 +16,7 @@ export function DialogUpdate(props: {
   restart: () => void
 }) {
   const dialog = useDialog()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const { t } = useLanguage()
   const [error, setError] = createSignal<string>()
   const [active, setActive] = createSignal(0)
@@ -34,12 +34,14 @@ export function DialogUpdate(props: {
       }),
   )
   const state = createMemo(() => {
+    const message = error()
+    if (message) return { type: "check-failed" as const, message }
+    const current = props.state()
+    if (current?.type === "installing") return current
     if (check.loading) return { type: "checking" as const }
     const unavailable = check()
     if (unavailable) return { type: "unavailable" as const, message: unavailable }
-    const message = error()
-    if (message) return { type: "check-failed" as const, message }
-    return props.state() ?? { type: "current" as const }
+    return current ?? { type: "current" as const }
   })
   const buttons = createMemo(() => {
     const type = state().type
@@ -88,12 +90,12 @@ export function DialogUpdate(props: {
   return (
     <box paddingLeft={2} paddingRight={2} gap={1}>
       <box flexDirection="row" justifyContent="space-between">
-        <text attributes={TextAttributes.BOLD} fg={theme.text.default}>
+        <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
           {state().type === "available" || state().type === "installing" || state().type === "failed"
             ? t("toast.update.title")
             : t("titlebar.update")}
         </text>
-        <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
+        <text fg={theme.text.muted} onMouseUp={() => dialog.clear()}>
           esc
         </text>
       </box>
@@ -102,31 +104,31 @@ export function DialogUpdate(props: {
           {(current) => (
             <Switch>
               <Match when={current.type === "checking"}>
-                <Spinner shimmer={theme.text.default}>{t("ui.checkingForUpdates")}</Spinner>
+                <Spinner shimmer={theme.text.base}>{t("ui.checkingForUpdates")}</Spinner>
               </Match>
               <Match when={current.type === "available"}>
-                <text fg={theme.text.subdued}>{t("ui.anUpdateIsAvailableAfterInstallingYouLl")}</text>
+                <text fg={theme.text.muted}>{t("ui.anUpdateIsAvailableAfterInstallingYouLl")}</text>
               </Match>
               <Match when={current.type === "installing"}>
-                <Spinner shimmer={theme.text.default}>
+                <Spinner shimmer={theme.text.base}>
                   {current.type === "installing" ? t("ui.installingRedsun", { version: current.version }) : ""}
                 </Spinner>
               </Match>
               <Match when={current.type === "installed"}>
-                <text fg={theme.text.subdued} wrapMode="word">
+                <text fg={theme.text.muted} wrapMode="word">
                   {t("ui.updateSuccessfulARestartIsRequiredAnyActive")}
                 </text>
               </Match>
               <Match when={current.type === "current"}>
-                <text fg={theme.text.subdued}>{t("ui.redsunIsAlreadyUpToDate")}</text>
+                <text fg={theme.text.muted}>{t("ui.redsunIsAlreadyUpToDate")}</text>
               </Match>
               <Match when={current.type === "unavailable"}>
-                <text fg={theme.text.subdued} wrapMode="word">
+                <text fg={theme.text.muted} wrapMode="word">
                   {current.type === "unavailable" ? current.message : ""}
                 </text>
               </Match>
               <Match when={current.type === "failed" || current.type === "check-failed"}>
-                <text fg={theme.text.feedback.error.default}>
+                <text fg={theme.text.feedback.error.base}>
                   {current.type === "failed" || current.type === "check-failed" ? current.message : ""}
                 </text>
               </Match>
@@ -144,7 +146,7 @@ export function DialogUpdate(props: {
                 backgroundColor={active() === index() ? theme.background.action.primary.focused : undefined}
                 onMouseUp={() => void button.run()}
               >
-                <text fg={active() === index() ? theme.text.action.primary.focused : theme.text.subdued}>
+                <text fg={active() === index() ? theme.text.action.primary.focused : theme.text.muted}>
                   {button.label}
                 </text>
               </box>

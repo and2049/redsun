@@ -43,9 +43,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
   const client = useClient()
   const location = useLocation()
   const toast = useToast()
-  const themes = useThemes()
-  const theme = useTheme("elevated")
-  const mode = themes.mode
+  const theme = useTheme().surface("dialog")
   const paths = useTuiPaths()
   const dimensions = useTerminalDimensions()
   const shortcuts = Keymap.useShortcuts()
@@ -327,7 +325,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
             emptyView={
               <Show when={!recent.loading && !projects.loading}>
                 <box paddingLeft={4} paddingRight={4}>
-                  <text fg={theme.text.subdued}>{t("ui.noRecentSessionsOrProjects")}</text>
+                  <text fg={theme.text.muted}>{t("ui.noRecentSessionsOrProjects")}</text>
                 </box>
               </Show>
             }
@@ -341,13 +339,13 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
               >
                 <box>
                   <Show when={projectID() && worktrees.loading}>
-                    <Spinner color={theme.text.subdued}>{t("ui.loadingWorktrees")}</Spinner>
+                    <Spinner color={theme.text.muted}>{t("ui.loadingWorktrees")}</Spinner>
                   </Show>
                   <Show when={!projectID() && (recent.loading || projects.loading)}>
-                    <Spinner color={theme.text.subdued}>{t("ui.refreshingSessionsAndProjects")}</Spinner>
+                    <Spinner color={theme.text.muted}>{t("ui.refreshingSessionsAndProjects")}</Spinner>
                   </Show>
                   <Show when={!projectID() && (recent() === false || projects() === false)}>
-                    <text fg={theme.text.feedback.error.default}>
+                    <text fg={theme.text.feedback.error.base}>
                       {t(
                         recent() === false
                           ? projects() === false
@@ -398,7 +396,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
             footerHints={[...(projectID() ? [{ title: t("ui.newWorktree"), label: "ctrl+n" }] : [])]}
             noMatchView={
               <box paddingLeft={4} paddingRight={4}>
-                <text fg={theme.text.subdued}>
+                <text fg={theme.text.muted}>
                   {projectID()
                     ? worktrees.loading
                       ? "Loading worktrees…"
@@ -430,7 +428,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
           size="large"
           title={`${projectName(data.project.get(projectID()!)) ?? t("ui.project")} / ${t("ui.newWorktree2")}`}
           placeholder={t("ui.worktreeNameOptional")}
-          description={() => <text fg={theme.text.subdued}>{t("ui.leaveBlankForARandomName")}</text>}
+          description={() => <text fg={theme.text.muted}>{t("ui.leaveBlankForARandomName")}</text>}
           busy={creating()}
           busyText={t("ui.creatingWorktree")}
           onCancel={cancelCreation}

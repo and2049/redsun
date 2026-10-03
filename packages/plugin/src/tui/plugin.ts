@@ -5,7 +5,7 @@ export type { Context }
 export type Cleanup = () => Promise<void> | void
 
 /** The plugin API version this host implements; see README.md for what each version adds. */
-export const API = 1
+export const API = 2
 
 export interface Definition {
   readonly id: string

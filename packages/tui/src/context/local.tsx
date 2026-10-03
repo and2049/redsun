@@ -11,12 +11,14 @@ import { readJson, writeJsonAtomic } from "../util/persistence"
 import {
   createModelPreferenceRepository,
   cycleModelVariant,
+  favoriteModels,
   modelPreferenceKey,
   normalizeModelVariant,
+  recentModels,
   type ModelPreference,
   type ModelPreferenceModel,
 } from "../model-preference"
-import { useTheme, useThemes } from "./theme"
+import { useTheme } from "./theme"
 import { useToast } from "../ui/toast"
 import { useRoute } from "./route"
 import { useData } from "./data"
@@ -24,26 +26,12 @@ import { effectivePermissionMode, usePermission } from "./permission"
 import { useLocation } from "./location"
 import { parse } from "../util/model"
 
-export function recentModels(model: ModelPreferenceModel, recent: ModelPreferenceModel[]) {
-  const seen = new Set<string>()
-  return [model, ...recent]
-    .filter((item) => {
-      const key = modelPreferenceKey(item)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    .slice(0, 10)
-    .map((item) => ({ providerID: item.providerID, modelID: item.modelID }))
-}
-
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
     const data = useData()
     const toast = useToast()
     const theme = useTheme()
-    const { mode } = useThemes()
     const route = useRoute()
     const paths = useTuiPaths()
     const args = useArgs()
@@ -85,7 +73,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         }),
       )
       const colors = createMemo(() => {
-        const step = mode() === "light" ? 800 : 200
+        const step = 200
         return dedupeWith(
           theme.categorical.map((scale) => scale[step]),
           (first, second) => first.equals(second),
@@ -171,39 +159,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const pendingSelectionCommits = new Map<string, { agentID: string; selection: string }>()
       const selectionKey = (value: ModelSelection) =>
         `${modelPreferenceKey(value)}:${normalizeModelVariant(value.variant) ?? "default"}`
-      const saveState = {
-        pending: false,
-      }
 
-      function savePreferences() {
-        if (!preferences.ready) {
-          saveState.pending = true
-          return
-        }
-        saveState.pending = false
-        void repository
-          .patch({
-            recent: preferences.recent,
-            favorite: preferences.favorite,
-            variant: preferences.variant,
-            worker: preferences.worker,
-          })
-          .catch(() => undefined)
-      }
-
-      repository
-        .load()
-        .then((value) => {
+      function applyPreferences(value: ModelPreference) {
+        batch(() => {
           setPreferences("recent", value.recent)
           setPreferences("favorite", value.favorite)
           setPreferences("variant", value.variant)
           setPreferences("worker", value.worker)
-        })
-        .catch(() => {})
-        .finally(() => {
           setPreferences("ready", true)
-          if (saveState.pending) savePreferences()
         })
+      }
+
+      onCleanup(repository.subscribe(applyPreferences))
 
       const configuredModel = createMemo(() => {
         const entry = data.location.config
@@ -399,7 +366,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         batch(() => {
           if (route.data.type === "session") setSelectionState("workerBySession", route.data.sessionID, selection)
           setPreferences("worker", selection)
-          savePreferences()
+          void repository.saveWorker(selection).catch(() => undefined)
         })
       }
 
@@ -429,7 +396,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         clear() {
           if (route.data.type === "session") setSelectionState("workerBySession", route.data.sessionID, undefined)
           setPreferences("worker", undefined)
-          savePreferences()
+          void repository.saveWorker(undefined).catch(() => undefined)
         },
         setVariant(variant: string | undefined) {
           const value = workerSelection()
@@ -550,7 +517,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!next) return
           if (!selectModel({ ...next })) return
           setPreferences("recent", recentModels(next, preferences.recent))
-          savePreferences()
+          void repository.addRecent(next).catch(() => undefined)
         },
         set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
           batch(() => {
@@ -558,7 +525,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             if (!selectModel(model)) return
             if (options?.recent) {
               setPreferences("recent", recentModels(model, preferences.recent))
-              savePreferences()
+              void repository.addRecent(model).catch(() => undefined)
             }
           })
         },
@@ -568,14 +535,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const exists = preferences.favorite.some(
               (x) => x.providerID === model.providerID && x.modelID === model.modelID,
             )
-            const next = exists
-              ? preferences.favorite.filter((x) => x.providerID !== model.providerID || x.modelID !== model.modelID)
-              : [model, ...preferences.favorite]
-            setPreferences(
-              "favorite",
-              next.map((x) => ({ providerID: x.providerID, modelID: x.modelID })),
-            )
-            savePreferences()
+            setPreferences("favorite", favoriteModels(model, preferences.favorite, !exists))
+            void repository.setFavorite(model, !exists).catch(() => undefined)
           })
         },
         variant: {
@@ -598,7 +559,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               setSessionDraft(route.data.sessionID, { ...m, variant: normalizeModelVariant(value) })
             }
             setPreferences("variant", modelPreferenceKey(m), value ?? "default")
-            savePreferences()
+            void repository.saveVariant(m, value).catch(() => undefined)
           },
           cycle() {
             const variants = this.list()

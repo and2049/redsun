@@ -46,7 +46,7 @@ export function Logo() {
                       </text>
                     )
                   return (
-                    <text fg={mix(theme.background.default, base(), SHADOW_ALPHA)} selectable={false}>
+                    <text fg={mix(theme.background.base, base(), SHADOW_ALPHA)} selectable={false}>
                       {char}
                     </text>
                   )

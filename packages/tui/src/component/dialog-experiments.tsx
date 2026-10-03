@@ -59,7 +59,7 @@ export function DialogExperiments() {
       onSelect={(option) => void change(option.value)}
       emptyView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>{t("ui.noExperimentsAvailable")}</text>
+          <text fg={theme.text.muted}>{t("ui.noExperimentsAvailable")}</text>
         </box>
       }
       footerHints={experiments.length > 0 ? [{ title: "←/→", label: "change" }] : []}

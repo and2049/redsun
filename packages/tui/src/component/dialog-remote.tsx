@@ -12,7 +12,7 @@ export function DialogRemote() {
   dialog.setSize("xlarge")
   const remote = useRemoteControl()
   remote.subscribe()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const { t } = useLanguage()
   const statusLabel = () => t(remote.status()?.state ?? "status unknown")
   const [confirm, setConfirm] = createSignal<string>()
@@ -49,9 +49,9 @@ export function DialogRemote() {
   }
   const color = () => {
     const state = remote.status()?.state
-    if (state === "ready" || state === "connected") return theme.text.feedback.success.default
-    if (state === "unavailable") return theme.text.feedback.warning.default
-    return theme.text.subdued
+    if (state === "ready" || state === "connected") return theme.text.feedback.success.base
+    if (state === "unavailable") return theme.text.feedback.warning.base
+    return theme.text.muted
   }
   const guidance = () => {
     const status = remote.status()
@@ -161,7 +161,7 @@ export function DialogRemote() {
     <DialogSelect
       title={t("ui.remoteControl", { status: t(remoteLabel(remote.status())) })}
       titleView={
-        <text fg={theme.text.default}>
+        <text fg={theme.text.base}>
           {t("remote.remoteControl2") + " "}
           <span style={{ fg: color() }}>{statusLabel()}</span>
         </text>
@@ -174,19 +174,19 @@ export function DialogRemote() {
           <Show when={remote.status()}>
             <text>{remote.status()?.enrolled ? t("remote.enrolled") : t("remote.notEnrolled")}</text>
           </Show>
-          <text fg={remote.companion()?.error ? theme.text.feedback.warning.default : theme.text.default}>
+          <text fg={remote.companion()?.error ? theme.text.feedback.warning.base : theme.text.base}>
             {guidance()}
           </text>
           <Show when={remote.error()}>
-            <text fg={theme.text.feedback.warning.default}>{remote.error()}</text>
+            <text fg={theme.text.feedback.warning.base}>{remote.error()}</text>
           </Show>
           <Show when={remote.status()?.supported && !remote.status()?.backendID}>
-            <text fg={theme.text.feedback.warning.default}>
+            <text fg={theme.text.feedback.warning.base}>
               {t("remote.backendIdentityHasNotBeenPersistedFixService")}
             </text>
           </Show>
           <Show when={remote.tailscaleState()?.mapping === "conflict"}>
-            <text fg={theme.text.feedback.warning.default}>
+            <text fg={theme.text.feedback.warning.base}>
               {t("remote.tailscaleServeMappingConflictsInspectTailscaleServeStatus")}
             </text>
           </Show>

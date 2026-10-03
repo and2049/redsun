@@ -1,5 +1,6 @@
 export * as PluginInternal from "./internal.js"
 
+import { LLMClient } from "@opencode/ai"
 import type { Plugin } from "@opencode/plugin/effect/plugin"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
@@ -12,6 +13,7 @@ import { Provider } from "../provider.js"
 import { Command } from "../command.js"
 import { Config } from "../config.js"
 import { Credential } from "../credential.js"
+import { llmClient } from "../effect/app-node-platform.js"
 import { ConfigAgentPlugin } from "../config/plugin/agent.js"
 import { ConfigCommandPlugin } from "../config/plugin/command.js"
 import { ConfigCompactionPlugin } from "../config/plugin/compaction.js"
@@ -95,6 +97,7 @@ import { WellKnown } from "../wellknown.js"
 import { WriteTool } from "../tool/plugin/write.js"
 import { AgentPlugin } from "./agent.js"
 import { CommandPlugin } from "./command.js"
+import { NativeCompactionPlugin } from "./compaction.js"
 import { IdentityPlugin } from "./identity.js"
 import { PlanPlugin } from "./plan.js"
 import { ModelsDevPlugin } from "./models-dev.js"
@@ -103,6 +106,7 @@ import { ProviderPlugins } from "./provider.js"
 import { WebSearchPlugins } from "./websearch/index.js"
 import { SkillPlugin } from "./skill.js"
 import { VcsHgPlugin } from "./vcs/hg.js"
+import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
 import { VcsGitPlugin } from "./vcs/git.js"
 import { WarmingPlugin } from "./warming.js"
@@ -131,6 +135,7 @@ const services = [
   Integration.Service,
   Job.Service,
   KV.Service,
+  LLMClient.Service,
   Location.Service,
   ModelsDev.Service,
   Mcp.Service,
@@ -183,6 +188,7 @@ export const requirements = LayerNode.group([
   Integration.node,
   Job.node,
   KV.node,
+  llmClient,
   Location.node,
   ModelsDev.node,
   Mcp.node,
@@ -213,6 +219,7 @@ export const requirements = LayerNode.group([
 export type InternalPlugin = Plugin<Requirements | Scope.Scope>
 
 const pre = [
+  ToolInputRepairPlugin.Plugin,
   ConfigWorktreePlugin.Plugin,
   ConfigMcpPlugin.Plugin,
   McpCodeModeExclusionPlugin.Plugin,
@@ -229,6 +236,7 @@ const pre = [
   ModelsDevPlugin,
   ClaudeCodeProviderPlugin.Plugin,
   AcpRuntimePlugin,
+  NativeCompactionPlugin.Plugin,
   ...ProviderPlugins,
   ...WebSearchPlugins,
   PatchTool.Plugin,

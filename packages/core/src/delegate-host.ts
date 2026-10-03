@@ -313,7 +313,7 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const agent = yield* agents.get(Agent.ID.make(input.agent))
           if (!agent) return []
-          const candidates = Skill.available(yield* skills.list(), agent).filter(
+          const candidates = Skill.available(yield* skills.list(), agent.permissions).filter(
             (skill) => skill.description !== undefined && skill.autoinvoke !== false,
           )
           const decisions = yield* Effect.forEach(candidates, (skill) =>

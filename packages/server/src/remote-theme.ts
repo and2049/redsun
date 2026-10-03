@@ -18,40 +18,43 @@ function resolve(name: string, source: ThemeDocumentSource): RemoteControl.Theme
   const mode = themeMode(source, name)
   const theme = resolveThemeDocument(parseTheme(source, name), mode)
   const actions = (colors: typeof theme.text.action) => ({
-    primary: colorToHex(colors.primary.default),
-    secondary: colorToHex(colors.secondary.default),
-    destructive: colorToHex(colors.destructive.default),
+    primary: colorToHex(colors.primary.base),
+    secondary: colorToHex(colors.secondary.base),
+    destructive: colorToHex(colors.destructive.base),
   })
   const feedback = (colors: typeof theme.background.feedback) => ({
-    error: colorToHex(colors.error.default),
-    warning: colorToHex(colors.warning.default),
-    success: colorToHex(colors.success.default),
-    info: colorToHex(colors.info.default),
+    error: colorToHex(colors.error.base),
+    warning: colorToHex(colors.warning.base),
+    success: colorToHex(colors.success.base),
+    info: colorToHex(colors.info.base),
   })
+  // The wire keeps the pre-2.0.7 token names. Themes no longer carry status
+  // colours, so these are the hue steps the old defaults resolved them to.
+  const attention = colorToHex(theme.hue.accent[200])
   return {
     name,
     mode,
     colors: {
       text: {
-        default: colorToHex(theme.text.default),
-        subdued: colorToHex(theme.text.subdued),
+        default: colorToHex(theme.text.base),
+        subdued: colorToHex(theme.text.muted),
         action: actions(theme.text.action),
         status: {
-          running: colorToHex(theme.text.status.running),
-          question: colorToHex(theme.text.status.question),
-          permission: colorToHex(theme.text.status.permission),
-          unread: colorToHex(theme.text.status.unread),
+          running: colorToHex(theme.hue.interactive[200]),
+          question: attention,
+          permission: attention,
+          unread: attention,
         },
         feedback: feedback(theme.text.feedback),
       },
       background: {
-        default: colorToHex(theme.background.default),
-        offset: colorToHex(theme.background.surface.offset),
-        overlay: colorToHex(theme.background.surface.overlay),
+        default: colorToHex(theme.background.base),
+        offset: colorToHex(theme.background.raised.base),
+        overlay: colorToHex(theme.background.raised.high),
         action: actions(theme.background.action),
         feedback: feedback(theme.background.feedback),
       },
-      border: { default: colorToHex(theme.border.default) },
+      border: { default: colorToHex(theme.border.base) },
       diff: { added: colorToHex(theme.diff.text.added), removed: colorToHex(theme.diff.text.removed) },
       markdown: {
         text: colorToHex(theme.markdown.text),

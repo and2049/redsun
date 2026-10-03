@@ -31,7 +31,7 @@ export function DialogStash(props: { onSelect: (entry: StashEntry) => void }) {
   const { t } = useLanguage()
   const dialog = useDialog()
   const stash = usePromptStash()
-  const theme = useTheme("elevated")
+  const theme = useTheme().surface("dialog")
   const shortcuts = Keymap.useShortcuts()
 
   const [toDelete, setToDelete] = createSignal<number>()

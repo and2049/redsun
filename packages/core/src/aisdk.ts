@@ -34,7 +34,7 @@ import { Auth, Endpoint, RequestExecutor, type AnyRoute } from "@opencode/ai/rou
 import { ProviderShared } from "@opencode/ai/protocols/shared"
 import { Cause, Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
 import { makeParser } from "effect/unstable/encoding/Sse"
-import type { ID, Info } from "./model.js"
+import type { ID, RuntimeInfo } from "./model.js"
 import { DelegatedRuntime } from "./delegate.js"
 import { Provider } from "./provider.js"
 import { State } from "./state.js"
@@ -47,14 +47,14 @@ type ToolResultContent = Extract<AssistantContent[number], { type: "tool-result"
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 export interface SDKEvent {
-  readonly model: Info
+  readonly model: RuntimeInfo
   readonly package: string
   readonly options: Record<string, any>
   sdk?: SDK
 }
 
 export interface LanguageEvent {
-  readonly model: Info
+  readonly model: RuntimeInfo
   readonly sdk: SDK
   readonly options: Record<string, any>
   language?: LanguageModelV3
@@ -117,7 +117,7 @@ function wrapSSE(res: Response, ms: number, ctl: AbortController) {
   })
 }
 
-function prepareOptions(model: Info, pkg: string) {
+function prepareOptions(model: RuntimeInfo, pkg: string) {
   const projected = mapBodyToProviderOptions(model, pkg)
   const options: Record<string, any> = {
     name: model.canonical ?? model.providerID,
@@ -129,6 +129,8 @@ function prepareOptions(model: Info, pkg: string) {
   const customFetch = options.fetch
   const chunkTimeout = options.chunkTimeout
   delete options.chunkTimeout
+  delete options.compaction
+  delete options.transport
   options.fetch = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const opts = { ...(init ?? {}) }
     const signals = [
@@ -181,8 +183,8 @@ export interface Interface {
   }
   readonly runSDK: (event: SDKEvent) => Effect.Effect<SDKEvent>
   readonly runLanguage: (event: LanguageEvent) => Effect.Effect<LanguageEvent>
-  readonly language: (model: Info) => Effect.Effect<LanguageModelV3, InitError>
-  readonly model: (model: Info) => Effect.Effect<LanguageModel, InitError>
+  readonly language: (model: RuntimeInfo) => Effect.Effect<LanguageModelV3, InitError>
+  readonly model: (model: RuntimeInfo) => Effect.Effect<LanguageModel, InitError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/AISDK") {}
@@ -313,7 +315,7 @@ export const locationLayer = Layer.effect(
   }),
 )
 
-function modelFromLanguage(info: Info, language: LanguageModelV3) {
+function modelFromLanguage(info: RuntimeInfo, language: LanguageModelV3) {
   const packageName = Provider.packageName(info.package!)
   const projected = mapBodyToProviderOptions(info, packageName)
   const providerID = info.canonical ?? info.providerID
@@ -401,13 +403,16 @@ function requestSettings(settings: Readonly<Record<string, unknown>> | undefined
   if (settings === undefined) return undefined
   const result = Object.fromEntries(
     Object.entries(settings).filter(
-      ([key]) => !["apiKey", "authToken", "baseURL", "chunkTimeout", "fetch", "timeout"].includes(key),
+      ([key]) =>
+        !["apiKey", "authToken", "baseURL", "chunkTimeout", "compaction", "fetch", "timeout", "transport"].includes(
+          key,
+        ),
     ),
   )
   return Object.keys(result).length === 0 ? undefined : result
 }
 
-function mapBodyToProviderOptions(model: Info, packageName: string) {
+function mapBodyToProviderOptions(model: RuntimeInfo, packageName: string) {
   const settings = requestSettings(model.settings)
   const pro = Schema.is(Schema.Struct({ mode: Schema.Literal("pro") }))(model.body?.reasoning)
   const forceReasoning =
