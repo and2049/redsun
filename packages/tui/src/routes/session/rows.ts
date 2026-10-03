@@ -9,39 +9,15 @@ import {
   completePrevious,
   groupRefs,
   hasPart,
-  messagePath,
   partitionPending,
-  partPath,
   projectEntries,
   type AppendPart,
   type CacheUsage,
   type PartRef,
   type ProjectionEntry,
   type SessionRow,
-  type Verbosity,
-  defaultVerbosity,
 } from "./grouping/session"
 export type { CacheUsage, PartRef, SessionRow } from "./grouping/session"
-
-/**
- * A page boundary can cut a group in half, which would show a partial summary and
- * give the group a provisional ID (derived from its first part). While the oldest
- * row is a group, keep loading older pages until something precedes it.
- */
-export async function completeGroupBoundary(input: {
-  rows: readonly SessionRow[]
-  messages: () => number
-  more: () => boolean
-  loadMore: () => Promise<void>
-  active: () => boolean
-}) {
-  while (input.active() && input.rows[0]?.type === "group" && input.more()) {
-    const before = input.messages()
-    await input.loadMore()
-    // A page that adds nothing would otherwise loop forever.
-    if (input.messages() === before) return
-  }
-}
 
 export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessionID: string) => void) {
   const data = useData()
@@ -50,7 +26,6 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
   const [rows, setRows] = createStore<SessionRow[]>([])
   const revertBoundary = () => data.session.get(sessionID())?.revert?.messageID
   const turnTokens = () => Boolean(config.data.debug?.turn_tokens)
-  const verbosity = () => config.data.session?.verbosity ?? defaultVerbosity
 
   function reduce() {
     const messages = data.session.message.list(sessionID())
@@ -65,7 +40,6 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       boundary ? visible.filter((message) => message.id < boundary) : visible,
       inputs,
       turnTokens(),
-      verbosity(),
     )
     partitionPending(rows, pendingPermissions())
     const position = rows.findIndex((row) => row.type === "message" && inputs.has(row.messageID))
@@ -101,22 +75,14 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       if (status !== "connected") return
       setRows(reconcile(reduce()))
       void data.session.pending.sync(id).catch(() => undefined)
-      void data.session.message
-        .sync(id)
-        .then(async () => {
+      void data.session.message.sync(id).then(
+        () => {
           if (sessionID() !== id) return
           setRows(reconcile(reduce()))
-          // Restoration waits for complete boundary groups so saved group IDs resolve.
-          await completeGroupBoundary({
-            rows,
-            messages: () => data.session.message.list(id).length,
-            more: () => data.session.message.more(id),
-            loadMore: () => data.session.message.loadMore(id),
-            active: () => sessionID() === id,
-          }).catch(() => undefined)
-          if (sessionID() === id) onSynced?.(id)
-        })
-        .catch(() => undefined)
+          onSynced?.(id)
+        },
+        () => undefined,
+      )
     }),
   )
 
@@ -171,7 +137,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
     ),
   )
 
-  createEffect(on([turnTokens, verbosity], () => setRows(reconcile(reduce())), { defer: true }))
+  createEffect(on(turnTokens, () => setRows(reconcile(reduce())), { defer: true }))
 
   const appendMessage = (messageID: string) =>
     setRows(
@@ -190,7 +156,9 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
     setRows(
       produce((draft) => {
         if (!hasPart(draft, ref)) {
-          append(draft, ref, part, queuedStart(draft), verbosity())
+          const footer = draft.findIndex((row) => row.type === "assistant-footer" && row.messageID === ref.messageID)
+          const index = queuedStart(draft)
+          append(draft, ref, part, footer === -1 ? index : Math.min(footer, index))
           return
         }
         if (part.type !== "reasoning" || part.time?.completed === undefined) return
@@ -214,11 +182,24 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       }),
     )
 
-  const removeFooter = (messageID: string) =>
+  // A new step moves the turn's live footer onto its message: the previous step's
+  // footer disappears (settled turns keep theirs) and one appears for the running step,
+  // so the timer/tok-per-second line stays on screen for the whole turn.
+  const retargetFooter = (messageID: string) =>
     setRows(
       produce((draft) => {
-        const index = draft.findIndex((row) => row.type === "assistant-footer" && row.messageID === messageID)
-        if (index !== -1) draft.splice(index, 1)
+        for (let index = draft.length - 1; index >= 0; index--) {
+          const row = draft[index]
+          if (row?.type !== "assistant-footer" || row.messageID === messageID) continue
+          const message = data.session.message.get(sessionID(), row.messageID)
+          if (message?.type !== "assistant") continue
+          const terminal = (message.finish && !["tool-calls", "unknown"].includes(message.finish)) || message.error
+          if (!terminal && !message.retry) draft.splice(index, 1)
+        }
+        if (draft.some((row) => row.type === "assistant-footer" && row.messageID === messageID)) return
+        const index = queuedStart(draft)
+        completePrevious(draft, index)
+        draft.splice(index, 0, { type: "assistant-footer", messageID })
       }),
     )
 
@@ -292,7 +273,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
       if (event.data.sessionID === sessionID()) appendFooter(event.data.assistantMessageID)
     }),
     data.on("session.step.started", (event) => {
-      if (event.data.sessionID === sessionID()) removeFooter(event.data.assistantMessageID)
+      if (event.data.sessionID === sessionID()) retargetFooter(event.data.assistantMessageID)
     }),
     data.on("session.step.ended", (event) => {
       if (event.data.sessionID !== sessionID() || ["tool-calls", "unknown"].includes(event.data.finish)) return
@@ -310,12 +291,7 @@ export function createSessionRows(sessionID: Accessor<string>, onSynced?: (sessi
   return rows
 }
 
-export function reduceSessionRows(
-  messages: SessionMessageInfo[],
-  inputs = new Set<string>(),
-  turnTokens = false,
-  verbosity: Verbosity = defaultVerbosity,
-) {
+export function reduceSessionRows(messages: SessionMessageInfo[], inputs = new Set<string>(), turnTokens = false) {
   const isInput = (message: SessionMessageInfo) => inputs.has(message.id)
   const pendingCompactions = messages.filter((message) => message.type === "compaction" && message.status === "running")
   const pending = new Set([...pendingCompactions.map((message) => message.id), ...inputs])
@@ -352,11 +328,7 @@ export function reduceSessionRows(
       }
       if (message.type === "synthetic" && !message.description?.trim()) return rows
       if (message.type === "compaction" && message.status === "completed" && usage) usage.previousTurnCache = undefined
-      rows.push({
-        entry: { type: "message", messageID: message.id },
-        path: messagePath(message, verbosity),
-        closesPrevious: !pending.has(message.id),
-      })
+      rows.push({ entry: { type: "message", messageID: message.id }, closesPrevious: !pending.has(message.id) })
       return rows
     }
     usage?.steps.push(message)
@@ -364,11 +336,7 @@ export function reduceSessionRows(
     message.content.forEach((part) => {
       const partID = part.type === "tool" ? part.id : `${part.type}:${ordinals[part.type]++}`
       if ((part.type === "text" || part.type === "reasoning") && !part.text.trim()) return
-      rows.push({
-        entry: { type: "part", ref: { messageID: message.id, partID } },
-        part,
-        path: partPath(part, verbosity),
-      })
+      rows.push({ entry: { type: "part", ref: { messageID: message.id, partID } }, part })
     })
     const terminal = (message.finish && !["tool-calls", "unknown"].includes(message.finish)) || message.error
     if (terminal || message.retry) {
@@ -377,7 +345,25 @@ export function reduceSessionRows(
     if (terminal && legacy) flushTurn(rows)
     return rows
   }, [])
-  return projectEntries(entries)
+  const rows = projectEntries(entries)
+  // A turn still generating keeps a live footer under its newest step so the timer and
+  // tok/s stay visible while the model works; terminal and retry footers land above.
+  const running = messages.findLast(
+    (message): message is SessionMessageAssistant => message.type === "assistant" && !pending.has(message.id),
+  )
+  if (
+    running &&
+    !running.error &&
+    !running.retry &&
+    !(running.finish && !["tool-calls", "unknown"].includes(running.finish)) &&
+    !rows.some((row) => row.type === "assistant-footer" && row.messageID === running.id)
+  ) {
+    const index = rows.findIndex(
+      (row) => row.type === "compaction-queued" || (row.type === "message" && pending.has(row.messageID)),
+    )
+    rows.splice(index === -1 ? rows.length : index, 0, { type: "assistant-footer", messageID: running.id })
+  }
+  return rows
 }
 
 export function cacheReuseDrop(previous: CacheUsage | undefined, current: CacheUsage) {
@@ -392,6 +378,32 @@ export function cacheReuseDrop(previous: CacheUsage | undefined, current: CacheU
   // OpenAI cache reads can move between one and two 1,024-token buckets without a material loss of reuse.
   if (current.model.providerID === "openai" && drop >= 1_024 && drop <= 2_048) return
   return drop > 0 ? drop : undefined
+}
+
+// Stamp appended to the settled footer: 24h clock today, "yesterday" for the prior
+// calendar day, otherwise a full date. Local time throughout.
+export function completionStamp(completed: number, now: number) {
+  const end = new Date(completed)
+  const clock = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`
+  const start = new Date(now)
+  const days =
+    (Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()) -
+      Date.UTC(end.getFullYear(), end.getMonth(), end.getDate())) /
+    86_400_000
+  if (days === 0) return clock
+  if (days === 1) return `yesterday ${clock}`
+  const date = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`
+  return `${date} ${clock}`
+}
+
+export function turnInput(
+  message: SessionMessageAssistant,
+  messages: SessionMessageInfo[],
+  position?: number,
+  legacy = legacyTurns(messages),
+) {
+  const index = position ?? messages.findIndex((item) => item.id === message.id)
+  return messages[inputIndex(messages, index === -1 ? messages.length : index, legacy)]
 }
 
 // `legacy` marks a session without idle markers, where a turn ends at the next prompt. Reactive
@@ -409,11 +421,25 @@ export function turnDuration(
   return Math.max(0, message.time.completed - (input?.time.created ?? message.time.created))
 }
 
+// The provider only reports token usage at step end, so the running step's output is
+// estimated from what it has streamed so far - visible text, reasoning, and tool-call
+// input all count as model output. Four characters per token is the usual rough cut.
+function estimateOutputTokens(message: SessionMessageAssistant) {
+  const chars = message.content.reduce((total, part) => {
+    if (part.type === "text" || part.type === "reasoning") return total + part.text.length
+    if (part.type === "tool" && part.state.status === "streaming" && typeof part.state.input === "string")
+      return total + part.state.input.length
+    return total
+  }, 0)
+  return chars / 4
+}
+
 export function turnTokensPerSecond(
   message: SessionMessageAssistant,
   messages: SessionMessageInfo[],
   position?: number,
   legacy = legacyTurns(messages),
+  live?: { now: number },
 ) {
   const index = position ?? messages.findIndex((item) => item.id === message.id)
   const end = index === -1 ? messages.length : index + 1
@@ -421,12 +447,18 @@ export function turnTokensPerSecond(
   const steps = messages
     .slice(start + 1, end)
     .filter((item): item is SessionMessageAssistant => item.type === "assistant")
-  const durations = steps.flatMap((step) =>
-    step.time.streamed === undefined ? [] : [Math.max(0, step.time.streamed - step.time.created)],
-  )
-  if (steps.length === 0 || durations.length !== steps.length) return
-  const output = steps.reduce((total, step) => total + (step.tokens?.output ?? 0) + (step.tokens?.reasoning ?? 0), 0)
-  const duration = durations.reduce((total, value) => total + value, 0)
+  const settled = steps.filter((step) => step.time.streamed !== undefined)
+  // A settled turn is rated from real usage alone and needs every step to carry it.
+  if (!live && settled.length !== steps.length) return
+  if (steps.length === 0) return
+  let output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0) + (step.tokens?.reasoning ?? 0), 0)
+  let duration = settled.reduce((total, step) => total + Math.max(0, (step.time.streamed ?? 0) - step.time.created), 0)
+  if (live)
+    for (const step of steps) {
+      if (step.time.streamed !== undefined) continue
+      output += estimateOutputTokens(step)
+      duration += Math.max(0, live.now - step.time.created)
+    }
   if (output <= 0 || duration <= 0) return
   // Aggregate before dividing so each step is weighted by its provider-active duration.
   return output / (duration / 1_000)
@@ -477,25 +509,17 @@ export function sessionRowID(row: SessionRow, boundaryID?: string) {
   if (row.type === "part") return `session-part:${row.ref.messageID}:${row.ref.partID}`
 }
 
+export function rowMessageID(row: SessionRow) {
+  if (row.type === "message" || row.type === "assistant-footer") return row.messageID
+  if (row.type === "part") return row.ref.messageID
+  if (row.type === "group") return groupRefs(row)[0]?.messageID
+  if (row.type === "turn-usage") return row.messageIDs[0]
+}
+
 function rowBoundaryMessageID(row: SessionRow, messages: Map<string, SessionMessageInfo>) {
-  if (row.type === "message") {
-    const message = messages.get(row.messageID)
-    if (message?.type === "user" && message.text.trim()) return message.id
-    return undefined
-  }
-  const messageID =
-    row.type === "part"
-      ? row.ref.messageID
-      : row.type === "group"
-        ? groupRefs(row)[0]?.messageID
-        : row.type === "assistant-footer"
-          ? row.messageID
-          : row.type === "turn-usage"
-            ? row.messageIDs[0]
-            : undefined
-  if (!messageID) return undefined
-  const message = messages.get(messageID)
-  if (message?.type === "assistant") return message.id
+  const message = messages.get(rowMessageID(row) ?? "")
+  if (row.type === "message") return message?.type === "user" && message.text.trim() ? message.id : undefined
+  return message?.type === "assistant" ? message.id : undefined
 }
 
 export function resolvePart(message: SessionMessageAssistant, partID: string) {
@@ -505,4 +529,43 @@ export function resolvePart(message: SessionMessageAssistant, partID: string) {
   if (!match) return
   const ordinal = Number(match[2])
   return message.content.filter((part) => part.type === match[1])[ordinal]
+}
+
+export function explorationSummary(names: readonly string[]) {
+  const counts = new Map<string, number>()
+  for (const name of names) {
+    const kind = RUN_KINDS[name] ?? "list"
+    counts.set(kind, (counts.get(kind) ?? 0) + 1)
+  }
+  const phrases = RUN_ORDER.flatMap((kind) => {
+    const count = counts.get(kind)
+    if (!count) return []
+    const [singular, plural] = RUN_NOUNS[kind]!
+    return [`${RUN_VERBS[kind]} ${count} ${count === 1 ? singular : plural}`]
+  })
+  const text = phrases.join(", ")
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+const RUN_KINDS: Record<string, string> = {
+  read: "read",
+  grep: "search",
+  glob: "search",
+  webfetch: "fetch",
+  websearch: "web",
+}
+const RUN_ORDER = ["read", "search", "list", "fetch", "web"] as const
+const RUN_VERBS: Record<string, string> = {
+  read: "read",
+  search: "searched for",
+  list: "listed",
+  fetch: "fetched",
+  web: "ran",
+}
+const RUN_NOUNS: Record<string, [string, string]> = {
+  read: ["file", "files"],
+  search: ["pattern", "patterns"],
+  list: ["directory", "directories"],
+  fetch: ["page", "pages"],
+  web: ["web search", "web searches"],
 }

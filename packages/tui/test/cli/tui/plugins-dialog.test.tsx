@@ -98,7 +98,7 @@ async function renderPlugins(
               <DataProvider directory={root}>
                 <LocationProvider>
                   <Keymap.Provider>
-                    <ThemeProvider mode="dark" source={emptyThemeSource}>
+                    <ThemeProvider source={emptyThemeSource}>
                       <ToastProvider>
                         <DialogProvider>
                           <Content />
@@ -162,10 +162,15 @@ test("checking for updates refreshes the inventory and reveals the update action
   const fixture = await renderPlugins(tmp.path, { list: [packagePlugin(false)], check: [packagePlugin(true)] })
 
   try {
-    // The update action starts hidden: triggering it before a check issues no request.
     fixture.app.mockInput.pressKey("u", { ctrl: true })
     await fixture.app.flush()
     expect(fixture.requests).toEqual([])
+
+    const initial = await fixture.app.waitForFrame((frame) => frame.includes("dadba13"))
+    expect(initial).toContain("check")
+    expect(initial).toContain("ctrl+r")
+    expect(initial).not.toContain("update available")
+    expect(initial).not.toContain("ctrl+u")
 
     fixture.app.mockInput.pressKey("r", { ctrl: true })
     await fixture.app.waitFor(() => fixture.requests.length === 1)

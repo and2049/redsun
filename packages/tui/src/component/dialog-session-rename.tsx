@@ -3,16 +3,18 @@ import { type DialogContext, useDialog } from "../ui/dialog"
 import { useClient } from "../context/client"
 import { useToast } from "../ui/toast"
 import { errorMessage } from "../util/error"
+import { useLanguage } from "../i18n"
 
 export function DialogSessionRename(props: { sessionID: string; currentTitle?: string }) {
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
+  const { t } = useLanguage()
 
   return (
     <DialogPrompt
-      title="Rename session"
-      placeholder="Session title"
+      title={t("session.renameSession")}
+      placeholder={t("ui.sessionTitle")}
       value={props.currentTitle}
       onConfirm={(value) => {
         const title = value.trim()

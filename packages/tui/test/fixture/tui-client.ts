@@ -134,6 +134,18 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       })
     if (url.pathname === "/api/session") return json({ data: [], cursor: {} })
     if (url.pathname === "/api/config") return json([])
+    if (url.pathname === "/api/config/context")
+      return json({ stale_read_deduplication: false, compaction: { strategy: "llm" } })
+    if (url.pathname === "/api/remote")
+      return json({
+        supported: false,
+        enabled: false,
+        state: "disabled",
+        enrolled: false,
+        processID: "fixture",
+        version: 1,
+        leaseSeconds: 30,
+      })
     if (url.pathname === "/api/session/active") return json({ data: {} })
     if (request.method === "POST" && /^\/api\/session\/[^/]+\/model$/.test(url.pathname))
       return new Response(null, { status: 204 })
@@ -145,6 +157,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/form")
       return json({ location: { directory, project: { id: "proj_test", directory: worktree } }, data: [] })
     if (/^\/api\/session\/[^/]+\/form$/.test(url.pathname)) return json({ data: [] })
+    if (/^\/api\/session\/[^/]+\/pin$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/experimental\/session\/[^/]+\/terminal$/.test(url.pathname)) return json({ data: [] })
     if (
       ["/api/agent", "/api/model", "/api/provider", "/api/integration", "/api/command", "/api/skill"].includes(
@@ -160,10 +173,18 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/websearch/provider") {
       return json({ location: { directory, project: { id: "proj_test", directory, canonical: directory } }, data: [] })
     }
+    // REDSUN: the auto-approve mode is server state, read once per connect.
+    if (url.pathname === "/api/permission/mode/options") return json({ data: { native: false } })
+    if (url.pathname === "/api/permission/mode")
+      return request.method === "PUT" ? new Response(null, { status: 204 }) : json({ data: { mode: "normal" } })
+    // REDSUN: sessions have no worker model of their own unless a test serves one.
+    if (/^\/api\/rpc\/redsun\.worker-model\/(get|set)$/.test(url.pathname)) return json({ output: {} })
     if (url.pathname === "/provider") return json({ all: [], default: {}, connected: [] })
     if (url.pathname === "/session") return json([])
     if (url.pathname === "/vcs") return json({ branch: "main" })
     if (url.pathname === "/api/experimental/migration/v1") return json({ status: "completed" })
+    if (url.pathname === "/api/remote/companion") return json({ running: false, port: 43123, pending: [] })
+    if (url.pathname === "/api/remote/tailscale") return new Response(null, { status: 503 })
     throw new Error(`unexpected request: ${url.pathname}`)
   }
   fetch.preconnect = () => {}

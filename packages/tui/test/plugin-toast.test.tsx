@@ -27,6 +27,9 @@ function setup(route: Route) {
     keymapState: {},
     sessionTabs: {},
     toast: { show: (toast: Shown) => shown.push(toast) },
+    language: { locale: () => "en", languages: () => [], diagnostics: () => [] },
+    themes: { select: () => false, locked: () => false },
+    vim: {},
     route: {
       get data() {
         return route

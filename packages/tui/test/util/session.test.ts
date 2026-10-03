@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionMessageInfo } from "@opencode/client"
-import { lastAssistantWithUsage, sessionFamily } from "../../src/util/session"
+import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode/client"
+import { contextUsage, formatContextUsage, lastAssistantWithUsage, sessionFamily } from "../../src/util/session"
+import { sessionUsage } from "../../src/util/session-usage"
 
 const assistant = (id: string, input: number): SessionMessageInfo => ({
   id,
@@ -41,6 +42,29 @@ describe("util.session", () => {
     expect(lastAssistantWithUsage(messages, "msg_a")?.tokens.input).toBe(10)
     expect(lastAssistantWithUsage(messages, "msg_missing")).toBeUndefined()
     expect(lastAssistantWithUsage(messages)?.tokens.input).toBe(30)
+  })
+
+  test("shows a runtime-reported context percentage without inventing tokens", () => {
+    const reported: SessionMessageInfo = {
+      ...(assistant("msg_kiro", 0) as SessionMessageAssistant),
+      providerState: { contextPercent: 2.95 },
+    }
+    const usage = contextUsage([assistant("msg_before", 30), reported], [])
+    expect(usage).toEqual({ percent: 3 })
+    expect(formatContextUsage(usage?.tokens, usage?.percent)).toBe("(3%)")
+    expect(sessionUsage({ messages: [reported], cost: 0 })).toEqual({ context: "(3%)", percent: "3%" })
+  })
+
+  test("measures context against the input limit when the model has one", () => {
+    const model = (limit: { context: number; input?: number }) =>
+      [{ providerID: "provider", id: "model", limit: { ...limit, output: 128_000 } }] as never
+    const messages = [assistant("msg_a", 252_000)]
+    // Automatic compaction fires from the input limit: the meter reads near full, not at 63%.
+    expect(contextUsage(messages, model({ context: 400_000, input: 272_000 }))).toEqual({
+      tokens: 252_000,
+      percent: 93,
+    })
+    expect(contextUsage(messages, model({ context: 400_000 }))?.percent).toBe(63)
   })
 
   test("resets usage at completed compaction until the next assistant reports it", () => {

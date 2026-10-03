@@ -478,7 +478,7 @@ export function Autocomplete(props: {
       return [slash.name, ...(slash.aliases ?? [])].map((name) => ({
         display: `/${name}`,
         description: command.description ?? command.title,
-        onSelect: slash.arguments ? () => insertSlash(name) : command.run,
+        onSelect: slash.arguments === true ? () => insertSlash(name) : command.run,
       }))
     })
     const commandNames = new Set<string>()
@@ -858,6 +858,10 @@ export function Autocomplete(props: {
       zIndex={100}
       {...SplitBorder}
       borderColor={theme.border.base}
+      // REDSUN DENSE: opaque base under the translucent menu surface. The popup
+      // draws over whatever sits above the prompt; without the base layer that
+      // content bleeds through every unselected row (dialog.tsx stacks the same way).
+      backgroundColor={theme.background.base}
     >
       <scrollbox
         ref={(r: ScrollBoxRenderable) => {

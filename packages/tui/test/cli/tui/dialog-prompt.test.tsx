@@ -58,7 +58,7 @@ async function mountPrompt(input: {
       >
         <ConfigProvider config={resolvedConfig}>
           <Keymap.Provider>
-            <ThemeProvider mode="dark" source={emptyThemeSource}>
+            <ThemeProvider source={emptyThemeSource}>
               <ToastProvider>
                 <DialogProvider>
                   <Prompt />
@@ -107,7 +107,8 @@ test("dialog prompt submit wins when return is also input newline", async () => 
   }
 })
 
-test("alt return inserts a newline with default keybinds", async () => {
+// REDSUN: alt+return is prompt.queue here, so the newline default rides ctrl+return.
+test("ctrl return inserts a newline with default keybinds", async () => {
   await using tmp = await tmpdir()
   const confirmed: string[] = []
   const prompt = await mountPrompt({
@@ -121,7 +122,7 @@ test("alt return inserts a newline with default keybinds", async () => {
     const textarea = prompt.app.renderer.currentFocusedEditor
     if (!(textarea instanceof TextareaRenderable)) throw new Error("expected focused dialog textarea")
 
-    prompt.app.mockInput.pressEnter({ meta: true })
+    prompt.app.mockInput.pressEnter({ ctrl: true })
 
     expect(confirmed).toEqual([])
     expect(textarea.plainText).toBe("draft\n")

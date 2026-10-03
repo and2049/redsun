@@ -10,10 +10,10 @@ import { useRoute } from "../context/route"
 import { useData } from "../context/data"
 import { useClient } from "../context/client"
 import { useLocation } from "../context/location"
-import { useSessionTabs } from "../context/session-tabs"
-import { useTheme } from "../context/theme"
+import { useTheme, useThemes } from "../context/theme"
 import { Keymap } from "../context/keymap"
 import { Locale } from "../util/locale"
+import { useLanguage } from "../i18n"
 import { abbreviateHome } from "../runtime"
 import { useTuiPaths } from "../context/runtime"
 import { truncateFilePath } from "../ui/file-path"
@@ -36,12 +36,12 @@ type OpenView = { type: "projects" } | { type: "worktrees"; projectID: string }
 type OpenSelection = { view: OpenView; filter: string; selected?: OpenTarget }
 
 export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: SessionInfo[]) => void }) {
+  const { t } = useLanguage()
   const dialog = useDialog()
   const route = useRoute()
   const data = useData()
   const client = useClient()
   const location = useLocation()
-  const sessionTabs = useSessionTabs()
   const toast = useToast()
   const theme = useTheme().surface("dialog")
   const paths = useTuiPaths()
@@ -150,9 +150,6 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
         .catch(() => undefined),
   )
 
-  const openTabs = createMemo(
-    () => new Set(sessionTabs.enabled() ? sessionTabs.tabs().map((tab) => tab.sessionID) : []),
-  )
   const currentSessionID = createMemo(() =>
     route.data.type === "session" ? data.session.root(route.data.sessionID) : undefined,
   )
@@ -169,15 +166,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
   })
 
   const options = createMemo(() => {
-    const tabs = openTabs()
-    // With an empty query the menu shows what is not already one keystroke away: open tabs are
-    // visible in the strip, so recents exclude them. Typing widens the pool to every session so
-    // matching a loaded tab by name still switches to it.
-    const recent = filter().trim()
-      ? sessions()
-      : sessions()
-          .filter((session) => !tabs.has(session.id))
-          .slice(0, RECENT_LIMIT)
+    const recent = filter().trim() ? sessions() : sessions().slice(0, RECENT_LIMIT)
     const sessionOptions = recent.map((session) => {
       const project = data.project.get(session.projectID)
       const name = projectName(project)
@@ -196,11 +185,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
         category: "Sessions",
         footer: `${label ? `${Locale.truncate(label, 30)} · ` : ""}${timeAgo(session.time.updated)}`,
         onSelect: () => location.set(session.location),
-        gutter: running
-          ? (color: RGBA) => <Spinner color={color} />
-          : tabs.has(session.id)
-            ? () => <text fg={theme.hue.accent[200]}>▪</text>
-            : undefined,
+        gutter: running ? (color: RGBA) => <Spinner color={color} /> : undefined,
       }
     })
 
@@ -231,7 +216,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
             directory: item.directory,
             ...(git ? { projectID: item.project!.id } : {}),
           } as OpenTarget,
-          category: "Projects",
+          category: t("ui.projects"),
           gutter:
             item.directory === current.directory ||
             item.directory === location.current?.project.canonical
@@ -305,8 +290,12 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
               pending = undefined
               restore(previous)
             }}
-            title={projectID() ? `${projectName(data.project.get(projectID()!)) ?? "Project"} / Worktrees` : "Open"}
-            placeholder={projectID() ? "Search worktrees…" : "Search sessions and projects…"}
+            title={
+              projectID()
+                ? `${projectName(data.project.get(projectID()!)) ?? t("ui.project")} / ${t("ui.worktrees")}`
+                : t("common.open")
+            }
+            placeholder={t(projectID() ? "ui.searchWorktrees" : "ui.searchSessionsAndProjects")}
             options={projectID() ? worktreeOptions() : options()}
             current={
               currentSessionID() ? ({ type: "session", sessionID: currentSessionID()! } as OpenTarget) : undefined
@@ -323,7 +312,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
             emptyView={
               <Show when={!recent.loading && !projects.loading}>
                 <box paddingLeft={4} paddingRight={4}>
-                  <text fg={theme.text.muted}>No recent sessions or projects</text>
+                  <text fg={theme.text.muted}>{t("ui.noRecentSessionsOrProjects")}</text>
                 </box>
               </Show>
             }
@@ -337,15 +326,20 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
               >
                 <box>
                   <Show when={projectID() && worktrees.loading}>
-                    <Spinner color={theme.text.muted}>Loading worktrees…</Spinner>
+                    <Spinner color={theme.text.muted}>{t("ui.loadingWorktrees")}</Spinner>
                   </Show>
                   <Show when={!projectID() && (recent.loading || projects.loading)}>
-                    <Spinner color={theme.text.muted}>Refreshing sessions and projects…</Spinner>
+                    <Spinner color={theme.text.muted}>{t("ui.refreshingSessionsAndProjects")}</Spinner>
                   </Show>
                   <Show when={!projectID() && (recent() === false || projects() === false)}>
                     <text fg={theme.text.feedback.error.base}>
-                      Could not refresh{" "}
-                      {recent() === false ? (projects() === false ? "sessions and projects" : "sessions") : "projects"}.
+                      {t(
+                        recent() === false
+                          ? projects() === false
+                            ? "ui.couldNotRefreshSessionsAndProjects"
+                            : "ui.couldNotRefreshSessions"
+                          : "ui.couldNotRefreshProjects",
+                      )}
                     </text>
                   </Show>
                 </box>
@@ -356,7 +350,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
                 ? [
                     {
                       bind: "right",
-                      title: "Show project worktrees",
+                      title: t("ui.showProjectWorktrees"),
                       group: "Dialog",
                       run: () => {
                         const target = select?.selected?.value
@@ -378,15 +372,15 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
                 ? [
                     {
                       bind: "left",
-                      title: "Return to projects",
+                      title: t("ui.returnToProjects"),
                       group: "Dialog",
                       run: back,
                     },
-                    { bind: "ctrl+n", title: "New worktree", group: "Dialog", run: newWorktree },
+                    { bind: "ctrl+n", title: t("ui.newWorktree2"), group: "Dialog", run: newWorktree },
                   ]
                 : []),
             ]}
-            footerHints={[...(projectID() ? [{ title: "new worktree", label: "ctrl+n" }] : [])]}
+            footerHints={[...(projectID() ? [{ title: t("ui.newWorktree"), label: "ctrl+n" }] : [])]}
             noMatchView={
               <box paddingLeft={4} paddingRight={4}>
                 <text fg={theme.text.muted}>
@@ -419,11 +413,11 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
       >
         <DialogPrompt
           size="large"
-          title={`${projectName(data.project.get(projectID()!)) ?? "Project"} / New worktree`}
-          placeholder="Worktree name (optional)"
-          description={() => <text fg={theme.text.muted}>Leave blank for a random name.</text>}
+          title={`${projectName(data.project.get(projectID()!)) ?? t("ui.project")} / ${t("ui.newWorktree2")}`}
+          placeholder={t("ui.worktreeNameOptional")}
+          description={() => <text fg={theme.text.muted}>{t("ui.leaveBlankForARandomName")}</text>}
           busy={creating()}
-          busyText="Creating worktree…"
+          busyText={t("ui.creatingWorktree")}
           onCancel={cancelCreation}
           onConfirm={(value) => {
             const id = projectID()!

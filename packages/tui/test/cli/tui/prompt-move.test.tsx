@@ -154,8 +154,12 @@ test.each([false, true])("Ctrl+M moves only an existing session (home=%s)", asyn
   try {
     await fixture.move.open()
     const frame = await fixture.app.waitForFrame((frame) => frame.includes("Worktrees") && frame.includes(linked))
-    expect(frame).toContain("new ctrl+a")
-    expect(frame.includes("move ctrl+m")).toBe(!home)
+    const lines = frame.split("\n")
+    const shortcuts = lines.findIndex((line) => line.includes("ctrl+a"))
+    expect(shortcuts).toBeGreaterThan(0)
+    expect(lines[shortcuts - 1]).toContain("new")
+    expect(lines[shortcuts].includes("ctrl+m")).toBe(!home)
+    expect(/\bmove\b/.test(lines[shortcuts - 1])).toBe(!home)
     await fixture.app.waitFor(() => fixture.app.renderer.currentFocusedEditor instanceof InputRenderable)
     await fixture.app.mockInput.typeText("linked")
     await fixture.app.waitForFrame((frame) => frame.includes(linked) && !frame.includes(clone))
@@ -394,7 +398,7 @@ async function renderMove(input: {
                 <ClientProvider api={createApi(calls.fetch)}>
                   <DataProvider directory={launch}>
                     <LocationProvider>
-                      <ThemeProvider mode="dark" source={emptyThemeSource}>
+                      <ThemeProvider source={emptyThemeSource}>
                         <DialogProvider>
                           <Probe />
                         </DialogProvider>

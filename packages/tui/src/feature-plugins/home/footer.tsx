@@ -12,6 +12,32 @@ export function homeFooterVisibility(width: number) {
   }
 }
 
+function Directory(props: { context: Plugin.Context }) {
+  const location = createMemo(() => props.context.location)
+  const name = createMemo(() => {
+    const current = location()
+    if (!current) return undefined
+    if (current.workspaceID) return current.workspaceID
+    return current.directory.split(/[\\/]/).filter(Boolean).at(-1)
+  })
+  const branch = createMemo(() => props.context.data.location.vcs.info(location())?.branch.current)
+
+  return (
+    <Show when={name()}>
+      {(value) => (
+        <box flexShrink={1} minWidth={0}>
+          <text wrapMode="none" truncate>
+            <span style={{ fg: props.context.theme.text.base }}>{value()}</span>
+            <Show when={branch()}>
+              {(item) => <span style={{ fg: props.context.theme.text.muted }}> ({item()})</span>}
+            </Show>
+          </text>
+        </box>
+      )}
+    </Show>
+  )
+}
+
 function Mcp(props: { context: Plugin.Context }) {
   const dimensions = useTerminalDimensions()
   const visibility = createMemo(() => homeFooterVisibility(dimensions().width))
@@ -90,8 +116,9 @@ function View(props: { context: Plugin.Context }) {
         flexShrink={0}
         gap={2}
       >
-        <Mcp context={props.context} />
         <Plugins context={props.context} />
+        <Mcp context={props.context} />
+        <Directory context={props.context} />
         <Slot path="home.footer.status" />
         <box flexGrow={1} />
         <Show when={visibility().version}>

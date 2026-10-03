@@ -1,4 +1,15 @@
 import type { FormField, FormValue } from "@opencode/client"
+import type { FormWithLocation } from "@opencode/client/solid"
+
+export function formRequestOptions(form: FormWithLocation) {
+  if (form.sessionID !== "global" || !form.location) return undefined
+  return {
+    headers: {
+      "x-opencode-directory": encodeURIComponent(form.location.directory),
+      ...(form.location.workspaceID ? { "x-opencode-workspace": form.location.workspaceID } : {}),
+    },
+  }
+}
 
 export type FormAnswerField = Exclude<FormField, { type: "external" }>
 

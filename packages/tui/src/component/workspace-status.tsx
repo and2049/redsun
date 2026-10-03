@@ -1,0 +1,57 @@
+import { Show } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
+import { useLocal } from "../context/local"
+import { useTheme } from "../context/theme"
+import { useRemoteControl } from "../context/remote-control"
+import { useLanguage } from "../i18n"
+
+export function WorkspaceStatus() {
+  const permission = useLocal().permission
+  const theme = useTheme()
+  const remote = useRemoteControl()
+  const dimensions = useTerminalDimensions()
+  const language = useLanguage()
+  const compact = () => dimensions().width < 80
+  const rcState = () => remote.status()?.state
+  const rcColor = () =>
+    rcState() === "unavailable" ? theme.text.feedback.warning.base : theme.text.feedback.success.base
+
+  return (
+    <box flexShrink={0} height={1} paddingLeft={1} paddingRight={1} flexDirection="row" justifyContent="flex-end">
+      <Show when={rcState() === "ready" || rcState() === "connected" || rcState() === "unavailable"}>
+        <text wrapMode="none" fg={rcColor()}>
+          {"/RC "}
+        </text>
+      </Show>
+      <text wrapMode="none" onMouseDown={() => permission.toggle()}>
+        <Show
+          when={permission.mode === "auto"}
+          fallback={
+            <Show
+              when={permission.mode === "native_auto"}
+              fallback={
+                <span style={{ fg: theme.text.muted }}>
+                  {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
+                </span>
+              }
+            >
+              <span style={{ fg: theme.text.feedback.info.base }}>
+                {`⏵⏵ ${compact() ? language.t("permission.claudeAuto.compact") : language.t("permission.claudeAuto.enabled")}`}
+              </span>
+              <Show when={!compact()}>
+                <span style={{ fg: theme.text.muted }}>(Shift+Tab)</span>
+              </Show>
+            </Show>
+          }
+        >
+          <span style={{ fg: theme.text.feedback.success.base }}>
+            {compact() ? language.t("permission.autoApprove.on") : `⏵⏵ ${language.t("permission.autoApprove.enabled")}`}
+          </span>
+          <Show when={!compact()}>
+            <span style={{ fg: theme.text.muted }}>(Shift+Tab)</span>
+          </Show>
+        </Show>
+      </text>
+    </box>
+  )
+}

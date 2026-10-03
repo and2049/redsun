@@ -27,6 +27,7 @@ import type { ResolvedTheme } from "@opencode/theme/tui"
 import type { CliRenderer, KeyEvent, MarkdownCodeBlockRenderer, Renderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type { Store } from "solid-js/store"
+import type { I18n } from "./i18n.js"
 
 export interface Storage {
   /**
@@ -162,21 +163,6 @@ type PromptFooterInput = {
   readonly showDetails: boolean
 }
 
-export type PanelPresentation = "panel" | "fullscreen"
-
-/** Client-local state of the selected session panel. The host owns its layout and input scope. */
-export interface PanelInput {
-  /** Selected content name, set by ui.panel.open. Contributions decide whether to render it. */
-  readonly name: string
-  readonly sessionID: string
-  readonly width: number
-  readonly presentation: PanelPresentation
-  readonly focused: boolean
-  readonly focus: () => void
-  readonly close: () => void
-  readonly toggleFullscreen: () => void
-}
-
 /**
  * The host UI's slot tree. Every path is one slot: a named boundary a plugin
  * may render around, inside, or take over. Paths are absolute and
@@ -191,12 +177,13 @@ export interface PanelInput {
 export interface SlotMap {
   readonly app: Readonly<Record<string, never>>
   readonly "home.footer": Readonly<Record<string, never>>
+  readonly "home.logo": Readonly<Record<string, never>>
+  readonly "home.backdrop": { readonly width: number; readonly height: number }
   readonly "home.footer.status": Readonly<Record<string, never>>
   readonly "prompt.footer": PromptFooterInput
   readonly "prompt.footer.status": PromptFooterInput
   readonly "prompt.footer.file": PromptFooterInput
   readonly "session.composer.top": { readonly sessionID: string }
-  readonly "session.panel": PanelInput
   readonly "sidebar.content": { readonly sessionID: string }
   readonly "sidebar.footer": { readonly sessionID: string }
 }
@@ -261,7 +248,28 @@ export type SlotClaim<Path extends SlotPath = SlotPath> = Path extends SlotPath
     )
   : never
 
+export type VimMode = "insert" | "normal" | "command"
+
+export interface Vim {
+  /** The prompt's vim mode. Reactive when read in a Solid computation. */
+  readonly mode: VimMode
+}
+
+export interface Themes {
+  /** Registers a theme document under a name; the returned disposer removes it. */
+  register(name: string, document: unknown): () => void
+  /** Activates a registered theme for this process without saving it to config. */
+  select(name: string): boolean
+  /** Holds the active theme: the switcher, the settings row and config changes are ignored until released. */
+  lock(): () => void
+  /** The active theme name. Reactive when read in a Solid computation. */
+  current(): string
+  /** Whether a lock is held. Reactive when read in a Solid computation. */
+  locked(): boolean
+}
+
 export interface App {
+  readonly name: string
   readonly version: string
   readonly channel: string
 }
@@ -400,8 +408,8 @@ export interface KeymapCommand {
   readonly slash?: {
     readonly name: string
     readonly aliases?: string[]
-    /** Keeps the slash command in the prompt and passes its raw input to run. */
-    readonly arguments?: true
+    /** Keeps the slash command in the prompt and passes its raw input to run; "optional" runs on selection but still accepts typed input. */
+    readonly arguments?: true | "optional"
   }
   /** Promotes the command in discovery UI. */
   readonly suggested?: boolean | (() => boolean)
@@ -470,14 +478,6 @@ export interface UI {
     navigate(destination: Destination): void
     current(): Route
   }
-  readonly panel: {
-    /** Opens the session.panel slot in the current session. */
-    open(name: string, options?: { readonly presentation?: PanelPresentation }): boolean
-    /** Closes this plugin's active panel. Other plugins' panels are unaffected. */
-    close(): void
-    /** This plugin's active panel, if any. Reactive when read in a Solid computation. */
-    current(): { readonly name: string; readonly sessionID: string } | undefined
-  }
   readonly tabs: {
     /** Returns whether session tabs are enabled for this TUI. */
     enabled(): boolean
@@ -511,9 +511,12 @@ export interface UI {
   }
   /** Claims a place in the slot tree; see SlotClaim. */
   readonly slot: (claim: SlotClaim) => () => void
+  /** Terminal size in cells. Reactive when read in a Solid computation. */
+  readonly dimensions: () => { readonly width: number; readonly height: number }
 }
 
 export interface Context {
+  readonly i18n: I18n
   readonly options: Readonly<Record<string, any>>
   readonly location: LocationRef | undefined
   readonly app: App
@@ -523,6 +526,8 @@ export interface Context {
   readonly attention: Attention
   readonly theme: ResolvedTheme
   readonly themeMode: "dark" | "light"
+  readonly themes: Themes
+  readonly vim: Vim
   readonly markdown: {
     registerCodeBlockRenderer(language: string, render: MarkdownCodeBlockRenderer): () => void
   }

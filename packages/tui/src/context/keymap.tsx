@@ -33,7 +33,7 @@ declare module "@opentui/keymap" {
     slash?: {
       name: string
       aliases?: string[]
-      arguments?: true
+      arguments?: true | "optional"
     }
   }
 }
@@ -179,6 +179,7 @@ export interface Keymap {
   }
   /** Registers a low-level keymap interceptor. */
   intercept: OpenTuiKeymap["intercept"]
+  clearPendingSequence(): void
   /** Returns whether an event matches the configured leader key. */
   isLeader(event: KeyEvent): boolean
 }
@@ -197,6 +198,7 @@ function use(): Keymap {
       push: (mode) => value.mode.push(mode, resolveInteractivity(enabled)),
     },
     intercept: value.keymap.intercept.bind(value.keymap),
+    clearPendingSequence: () => value.keymap.clearPendingSequence(),
     isLeader,
   }
 }

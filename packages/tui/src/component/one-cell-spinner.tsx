@@ -45,7 +45,6 @@ export function OneCellSpinner(props: {
   createEffect(() => {
     if (!sequenced() || props.animations === false || props.paused || complete()) return
     let previous = performance.now()
-    // Leave idle gaps: mini awaits renderer.idle() to flush and admit prompts.
     const timer = setInterval(
       () => {
         const now = performance.now()

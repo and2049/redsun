@@ -1,5 +1,5 @@
 import type { PluginInfo } from "@opencode/client"
-import type { Plugin } from "@opencode/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import type { MarkdownCodeBlockRenderer, MarkdownOptions } from "@opentui/core"
 import {
   batch,
@@ -22,7 +22,7 @@ import { resolveSlots, type Claim } from "./structure"
 import { createStore, produce, reconcile as reconcileStore, unwrap } from "solid-js/store"
 import { isDeepEqual } from "remeda"
 import "#runtime-plugin-support"
-import { useConfig } from "../config"
+import { useConfig, type Config } from "../config"
 import { useTuiLifecycle } from "../context/runtime"
 import { useClient } from "../context/client"
 import { useData } from "../context/data"
@@ -33,6 +33,7 @@ import { discoverPluginTargets, localSource, mergePluginTargets } from "./discov
 import { createPluginSources } from "./source"
 import { isMissingPath } from "../util/config-directories"
 import { createMarkdownRenderer } from "./markdown"
+import type { LanguageContribution } from "@opencode/plugin/tui/i18n"
 import { useLog, type LogTags } from "../context/log"
 
 export interface PackageSource {
@@ -76,6 +77,7 @@ type Registration = {
   routes: Record<string, Page>
   slots: Record<string, RegisteredSlot>
   markdown: Record<string, MarkdownCodeBlockRenderer>
+  i18n: Record<string, LanguageContribution>
   cleanups: Dispose[]
 }
 
@@ -85,7 +87,9 @@ type Trace = <T>(stage: string, tags: LogTags, task: () => Promise<T>) => Promis
 
 const PluginContext = createContext<Value>()
 
-export function PluginProvider(props: ParentProps<{ packages: PackageSource; directories: string[] }>) {
+export function PluginProvider(
+  props: ParentProps<{ packages: PackageSource; directories: string[]; plugins?: ReadonlyArray<Config.Plugin> }>,
+) {
   const host = usePluginHost()
   const log = useLog({ component: "plugin" })
   const config = useConfig()
@@ -110,6 +114,15 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // One save can emit several watch events. Remember setup failures so those
   // events do not repeatedly tear down and restore the last good generation.
   const setupFailures = new Map<string, { version: string; options: Registration["options"]; error: string }>()
+  let updatingLanguages = false
+  const publishLanguages = () => {
+    if (updatingLanguages) return
+    host.languageRegistry?.publish(
+      Object.values(store.registrations).flatMap((item) =>
+        item.active ? Object.values(unwrap(item.i18n)).map((value) => ({ plugin: item.plugin.id, value })) : [],
+      ),
+    )
+  }
   let operationID = 0
   const trace: Trace = (stage, tags, task) => {
     const id = ++operationID
@@ -145,6 +158,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
     setStore("registrations", id, "routes", reconcileStore({}))
     setStore("registrations", id, "slots", reconcileStore({}))
     setStore("registrations", id, "markdown", reconcileStore({}))
+    setStore("registrations", id, "i18n", reconcileStore({}))
   }
 
   const activate = async (id: string) => {
@@ -164,18 +178,23 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       registry: {
         has: (kind, name) => Boolean(store.registrations[id]?.[kind][name]),
         set: (
-          kind: "routes" | "slots" | "markdown",
+          kind: "routes" | "slots" | "markdown" | "i18n",
           name: string,
-          value: Page | RegisteredSlot | MarkdownCodeBlockRenderer,
-        ) => setStore("registrations", id, kind, name, () => value),
-        remove: (kind, name) =>
+          value: Page | RegisteredSlot | MarkdownCodeBlockRenderer | LanguageContribution,
+        ) => {
+          setStore("registrations", id, kind, name, () => value)
+          if (kind === "i18n") publishLanguages()
+        },
+        remove: (kind, name) => {
           setStore(
             "registrations",
             produce((registrations) => {
               if (!registrations[id]) return
               delete registrations[id][kind][name]
             }),
-          ),
+          )
+          if (kind === "i18n") publishLanguages()
+        },
         active: () => Boolean(store.registrations[id]?.active),
       },
     })
@@ -241,7 +260,17 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // is serialized through one chain so generations can never interleave.
   let loading = Promise.resolve()
   const enqueue = <T,>(task: () => Promise<T>) => {
-    const result = loading.catch(() => undefined).then(task)
+    const result = loading
+      .catch(() => undefined)
+      .then(async () => {
+        updatingLanguages = true
+        try {
+          return await task()
+        } finally {
+          updatingLanguages = false
+          publishLanguages()
+        }
+      })
     loading = result.then(
       () => undefined,
       () => undefined,
@@ -304,6 +333,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
           optional: true,
         })),
         ...(config.data.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
+        ...(props.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
       ],
       directory,
     )
@@ -526,7 +556,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   const resolved = createMemo(() => resolveSlots({ paths: new Set(Object.keys(mounted)), claims: claims() }))
   createEffect(
     on(
-      () => JSON.stringify([serverTuiPlugins(), config.data.plugins ?? []]),
+      () => JSON.stringify([serverTuiPlugins(), config.data.plugins ?? [], props.plugins ?? []]),
       () => {
         npmFailures.clear()
         void enqueue(reconcile).then(
@@ -582,7 +612,10 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
               .map(([id]) => deactivate(id).catch(() => undefined)),
           ),
         )
-        .then(() => setStore("registrations", reconcileStore({})))
+        .then(() => {
+          setStore("registrations", reconcileStore({}))
+          publishLanguages()
+        })
         .finally(sources.dispose)
       return disposing
     }
@@ -637,6 +670,8 @@ async function disposeAll(cleanups: Dispose[]) {
 }
 
 async function setup(plugin: Plugin.Definition, context: Plugin.Context, owned: Dispose[]) {
+  if (plugin.api !== undefined && plugin.api > Plugin.API)
+    throw new Error(`${plugin.id} requires plugin API ${plugin.api}; this redsun supports ${Plugin.API}`)
   try {
     return await plugin.setup(context)
   } catch (error) {
@@ -708,6 +743,7 @@ function toRegistration(item: Desired): Registration {
     routes: {},
     slots: {},
     markdown: {},
+    i18n: {},
     cleanups: [],
   }
 }

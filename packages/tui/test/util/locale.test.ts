@@ -8,6 +8,10 @@ test("truncates text from the right by terminal width", () => {
   expect(Locale.truncateWidth("abcdefgh", 0)).toBe("")
 })
 
+test("preserves a suffix when truncating text by terminal width", () => {
+  expect(Locale.truncateWidthWithSuffix("随便问问…“修复失败”", 12, "”")).toBe("随便问问…“…”")
+})
+
 test("takes whole graphemes within terminal width", () => {
   expect(Locale.takeWidth("ab界cd", 4)).toBe("ab界")
   expect(Locale.graphemes("a👨‍👩‍👧‍👦b")).toEqual(["a", "👨‍👩‍👧‍👦", "b"])

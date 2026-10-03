@@ -8,6 +8,8 @@ import { createStore, reconcile } from "solid-js/store"
 import { watch } from "fs"
 import path from "path"
 import { TuiKeybind } from "./keybind"
+import { canonicalLocale, isLocale } from "../i18n/locale"
+import { createLanguageRegistry, LanguageContext, LanguageRegistryContext } from "../i18n/context"
 
 export interface Interface {
   readonly path?: string
@@ -25,24 +27,6 @@ export const AttentionSoundName = Schema.Literals([
 ])
 export type AttentionSoundName = Schema.Schema.Type<typeof AttentionSoundName>
 export type AttentionSoundPaths = Partial<Record<AttentionSoundName, string>>
-
-export const MiniWorkSpinner = Schema.Literals([
-  "block-soft-slide",
-  "block-soft-sweep",
-  "block-low-comet",
-  "block-low-duet",
-  "block-shuttle",
-  "block-bridge",
-  "block-squeeze",
-  "small-toggle",
-  "square-toggle",
-  "grow-shrink",
-  "quadrant-orbit",
-  "crosshatch",
-  "density-wave",
-  "seed",
-])
-export type MiniWorkSpinner = Schema.Schema.Type<typeof MiniWorkSpinner>
 
 export const Plugin = Schema.Union([
   Schema.String,
@@ -67,12 +51,19 @@ export const Cursor = Schema.Struct({
 }).annotate({ description: "Terminal cursor settings" })
 
 export const Info = Schema.Struct({
+  usage: Schema.optional(
+    Schema.Struct({
+      collapsed: Schema.optional(Schema.Array(Schema.String)).annotate({
+        description: "Collapsed providers in the usage menu; all are expanded by default",
+      }),
+    }),
+  ).annotate({ description: "Account usage menu preferences" }),
+  language: Schema.optional(Schema.String.check(Schema.makeFilter(isLocale))).annotate({
+    description: "Interface language; defaults to English",
+  }),
   theme: Schema.optional(
     Schema.Struct({
       name: Schema.optional(Schema.String).annotate({ description: "Theme name" }),
-      mode: Schema.optional(Schema.Literals(["system", "dark", "light"])).annotate({
-        description: "Color mode; 'system' follows the terminal",
-      }),
     }),
   ).annotate({ description: "Color theme settings" }),
   keybinds: Schema.optional(TuiKeybind.KeybindOverrides).annotate({ description: "Custom key bindings" }),
@@ -158,9 +149,6 @@ export const Info = Schema.Struct({
       grouping: Schema.optional(Schema.Literals(["auto", "none"])).annotate({
         description: "Group related transcript items automatically or render each item separately",
       }),
-      verbosity: Schema.optional(Schema.Literals(["low", "medium", "high"])).annotate({
-        description: "Transcript detail level: low summarizes each run of tools and thoughts, high opens exploration and instruction groups",
-      }),
       image_preview: Schema.optional(Schema.Boolean).annotate({
         description: "Show user attachment and tool-result images in the session transcript",
       }),
@@ -173,64 +161,18 @@ export const Info = Schema.Struct({
       new_location: Schema.optional(Schema.Literals(["launch", "inherit"])).annotate({
         description: "Start new sessions in the TUI launch directory or inherit the active session location",
       }),
-      permissions: Schema.optional(Schema.Literals(["prompt", "autoaccept"])).annotate({
-        description: "Prompt for permission requests or accept them automatically",
-      }),
     }),
   ).annotate({ description: "Session transcript presentation settings" }),
   tabs: Schema.optional(
     Schema.Struct({
-      mode: Schema.optional(Schema.Literals(["auto", "on", "off"])).annotate({
-        description: "Use session tabs always, never, or when the terminal environment supports them",
-      }),
-      enabled: Schema.optional(Schema.Boolean).annotate({
-        description: "Legacy tab toggle; use mode instead",
-      }),
       scope: Schema.optional(Schema.Literals(["global", "cwd"])).annotate({
-        description: "Share tabs globally or keep a separate set for each working directory",
-      }),
-      layout: Schema.optional(Schema.Literals(["horizontal", "vertical"])).annotate({
-        description: "Show tabs in a horizontal strip or vertical sidebar",
+        description: "List sessions from every project or only the current working directory",
       }),
       indicators: Schema.optional(Schema.Literals(["status", "numbers"])).annotate({
         description: "Show status icons or always show tab numbers",
       }),
     }),
-  ).annotate({ description: "Tab strip settings" }),
-  mini: Schema.optional(
-    Schema.Struct({
-      thinking: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
-        description: "Show or hide model reasoning",
-      }),
-      tools: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
-        description: "Show or hide tool calls and the assistant text that precedes them",
-      }),
-      shell_output: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
-        description: "Show or hide raw shell tool output",
-      }),
-      turn_summary: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
-        description: "Show or hide the agent, model, and duration summary in scrollback",
-      }),
-      footer: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
-        description: "Show or hide persistent activity, model, usage, and context details in the footer",
-      }),
-      splash: Schema.optional(Schema.Literals(["show", "hide"])).annotate({
-        description: "Show or hide the entry and exit splash banners",
-      }),
-      work_spinner: Schema.optional(MiniWorkSpinner).annotate({
-        description: "Work spinner animation in the Mini footer (default: block-soft-slide)",
-      }),
-      mono: Schema.optional(Schema.Boolean).annotate({
-        description: "Use monochrome ASCII output",
-      }),
-      replay: Schema.optional(Schema.Boolean).annotate({
-        description: "Restore session history on resume and terminal resize",
-      }),
-      replay_limit: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))).annotate({
-        description: "Maximum number of newest messages restored during replay",
-      }),
-    }),
-  ).annotate({ description: "Mini transcript presentation settings" }),
+  ).annotate({ description: "Session list scope" }),
   debug: Schema.optional(
     Schema.Struct({
       devtools: Schema.optional(Schema.Boolean).annotate({ description: "Show the DevTools debug bar" }),
@@ -248,6 +190,7 @@ export const Info = Schema.Struct({
   cursor: Schema.optional(Cursor),
 })
 export type Info = Schema.Schema.Type<typeof Info>
+export type Plugin = Schema.Schema.Type<typeof Plugin>
 
 export type Resolved = Omit<Info, "attention" | "cursor" | "keybinds" | "leader" | "mouse" | "session" | "tabs"> & {
   attention: {
@@ -264,27 +207,16 @@ export type Resolved = Omit<Info, "attention" | "cursor" | "keybinds" | "leader"
     style: "block" | "underline" | "line" | "default"
     blinking: boolean
   }
-  session: Omit<NonNullable<Info["session"]>, "new_location" | "permissions" | "tps"> & {
+  session: Omit<NonNullable<Info["session"]>, "new_location" | "tps"> & {
     new_location: "launch" | "inherit"
-    permissions: "prompt" | "autoaccept"
-    terminal: boolean
     tps: boolean
   }
   tabs: {
-    mode: "auto" | "on" | "off"
-    enabled: boolean
     scope: "global" | "cwd"
-    layout: "horizontal" | "vertical"
-    indicators: "status" | "numbers"
   }
 }
 
-export function resolve(
-  input: Info,
-  options: { terminalSuspend: boolean; environment?: Readonly<Record<string, string | undefined>> },
-): Resolved {
-  const tabsMode =
-    input.tabs?.mode ?? (input.tabs?.enabled === undefined ? "auto" : input.tabs.enabled ? "on" : "off")
+export function resolve(input: Info, options: { terminalSuspend: boolean }): Resolved {
   const keybinds: TuiKeybind.KeybindOverrides = { ...input.keybinds }
   if (!options.terminalSuspend) {
     keybinds["terminal.suspend"] = "none"
@@ -298,6 +230,7 @@ export function resolve(
 
   return {
     ...input,
+    ...(input.language ? { language: canonicalLocale(input.language) } : {}),
     attention: {
       notifications: input.attention?.notifications ?? false,
       sound: input.attention?.sound ?? false,
@@ -319,18 +252,11 @@ export function resolve(
     session: {
       ...input.session,
       new_location: input.session?.new_location ?? "launch",
-      permissions: input.session?.permissions ?? "prompt",
-      // Persistent terminal panes need the opencode-pty daemon, which does not ship Windows binaries.
-      terminal: process.platform !== "win32",
       tps: input.session?.tps ?? true,
     },
     tabs: {
       ...input.tabs,
-      mode: tabsMode,
-      enabled: tabsMode === "on" || (tabsMode === "auto" && (options.environment ?? process.env).HERDR_ENV !== "1"),
       scope: input.tabs?.scope ?? "cwd",
-      layout: input.tabs?.layout ?? "horizontal",
-      indicators: input.tabs?.indicators ?? "status",
     },
   }
 }
@@ -344,10 +270,11 @@ const ConfigContext = createContext<{
 export function ConfigProvider(props: {
   config: Resolved
   service?: Interface
-  options?: { terminalSuspend: boolean; environment?: Readonly<Record<string, string | undefined>> }
+  options?: { terminalSuspend: boolean }
   children: JSX.Element
 }) {
   const [config, setConfig] = createStore(props.config)
+  const languages = createLanguageRegistry()
   const host = props.service
   const apply = (info: Info) => setConfig(reconcile(resolve(info, props.options ?? { terminalSuspend: true })))
   const update = async (update: (draft: any) => void) => {
@@ -367,7 +294,13 @@ export function ConfigProvider(props: {
     : undefined
   onCleanup(() => watcher?.close())
   return (
-    <ConfigContext.Provider value={{ data: config, path: host?.path, update }}>{props.children}</ConfigContext.Provider>
+    <ConfigContext.Provider value={{ data: config, path: host?.path, update }}>
+      <LanguageRegistryContext.Provider value={languages}>
+        <LanguageContext.Provider value={() => canonicalLocale(config.language ?? "en")}>
+          {props.children}
+        </LanguageContext.Provider>
+      </LanguageRegistryContext.Provider>
+    </ConfigContext.Provider>
   )
 }
 

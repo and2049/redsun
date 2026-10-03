@@ -233,7 +233,7 @@ async function renderFrame(component: () => JSX.Element, mode: "dark" | "light" 
     () => (
       <TestTuiContexts>
         <ConfigProvider config={createTuiResolvedConfig()}>
-          <ThemeProvider mode={mode} source={emptyThemeSource}>
+          <ThemeProvider source={emptyThemeSource}>
             {component()}
           </ThemeProvider>
         </ConfigProvider>

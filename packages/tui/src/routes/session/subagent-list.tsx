@@ -1,0 +1,151 @@
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import type { SessionInfo } from "@opencode/client/promise"
+import { useData } from "../../context/data"
+import { Keymap } from "../../context/keymap"
+import { useTheme } from "../../context/theme"
+import { useLanguage } from "../../i18n"
+import { Locale } from "../../util/locale"
+import { stringWidth } from "../../util/string-width"
+import { listWindow } from "./child-navigation"
+
+const AGENT_PATTERN = /^(.*?)\s*\(@([\w-]+) subagent\)$/
+
+function elapsed(ms: number) {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const minutes = Math.floor(total / 60)
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  if (minutes > 0) return `${minutes}m ${total % 60}s`
+  return `${total}s`
+}
+
+function padStartWidth(value: string, width: number) {
+  return " ".repeat(Math.max(0, width - stringWidth(value))) + value
+}
+
+export function alignDetails(
+  rows: readonly { elapsed: string; tokens: string }[],
+  format: (elapsed: string, tokens: string) => string = (elapsed, tokens) => `${elapsed} · ↓ ${tokens} tokens`,
+) {
+  const width = (key: "elapsed" | "tokens") => Math.max(0, ...rows.map((row) => stringWidth(row[key])))
+  const elapsedWidth = width("elapsed")
+  const tokensWidth = width("tokens")
+  return rows.map((row) => format(padStartWidth(row.elapsed, elapsedWidth), padStartWidth(row.tokens, tokensWidth)))
+}
+
+export const [listHidden, setListHidden] = createSignal(true)
+
+export function SubagentHint(props: { count: number }) {
+  const theme = useTheme()
+  const shortcuts = Keymap.useShortcuts()
+  const language = useLanguage()
+  return (
+    <box flexShrink={0} paddingTop={1} paddingLeft={1}>
+      <text fg={theme.text.muted} wrapMode="none">
+        <span style={{ fg: theme.text.base }}>{shortcuts.get("session.child.list.next") ?? "down"}</span>{" "}
+        {language.t("session.subagents.view", {
+          count: props.count,
+        })}
+      </text>
+    </box>
+  )
+}
+
+export function subagentLabel(title: string | undefined, fallback = "subagent") {
+  const match = AGENT_PATTERN.exec(title ?? "")
+  return match ? { agent: match[2]!, description: match[1]! } : { agent: fallback, description: title ?? "" }
+}
+
+export function SubagentList(props: {
+  root: SessionInfo
+  active: readonly SessionInfo[]
+  currentID: string
+  onSelect: (sessionID: string) => void
+}) {
+  const data = useData()
+  const theme = useTheme()
+  const language = useLanguage()
+  const [now, setNow] = createSignal(Date.now())
+  const [hover, setHover] = createSignal<string | undefined>()
+  createEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    onCleanup(() => clearInterval(timer))
+  })
+
+  const selected = createMemo(() => props.active.findIndex((info) => info.id === props.currentID))
+  const window = createMemo(() => listWindow(selected(), props.active.length))
+  const visible = createMemo(() => props.active.slice(window().start, window().end))
+  const hidden = createMemo(() => props.active.length - window().end)
+
+  const tokens = (sessionID: string) =>
+    (data.session.message.list(sessionID) ?? []).reduce(
+      (total, message) => total + (message.type === "assistant" ? (message.tokens?.output ?? 0) : 0),
+      0,
+    )
+  const details = createMemo(() =>
+    alignDetails(
+      visible().map((info) => ({
+        elapsed: elapsed(now() - info.time.created),
+        tokens: Locale.number(tokens(info.id)),
+      })),
+      (elapsed, tokens) => language.t("activity.tokens", { elapsed, tokens }),
+    ),
+  )
+
+  const Row = (row: { id: string; agent?: string; description: string; detail?: string }) => {
+    const current = () => row.id === props.currentID
+    return (
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        gap={2}
+        paddingLeft={1}
+        paddingRight={1}
+        backgroundColor={current() || hover() === row.id ? theme.background.raised.base : undefined}
+        onMouseOver={() => setHover(row.id)}
+        onMouseOut={() => setHover(undefined)}
+        onMouseUp={() => props.onSelect(row.id)}
+      >
+        <text fg={current() ? theme.text.base : theme.text.muted} wrapMode="none" truncate flexShrink={1}>
+          {current() ? "●" : "○"}{" "}
+          <Show when={row.agent}>
+            {(agent) => (
+              <>
+                <span style={{ fg: theme.text.muted }}>{agent()}</span>
+                {"  "}
+              </>
+            )}
+          </Show>
+          <b>{row.description}</b>
+        </text>
+        <Show when={row.detail}>
+          {(detail) => (
+            <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
+              {detail()}
+            </text>
+          )}
+        </Show>
+      </box>
+    )
+  }
+
+  return (
+    <box flexShrink={0} paddingTop={1}>
+      <Row id={props.root.id} description={language.t("activity.main")} />
+      <For each={visible()}>
+        {(info, index) => {
+          const label = createMemo(() =>
+            subagentLabel(info.title, language.locale() === "en" ? "subagent" : language.t("session.subagent")),
+          )
+          return (
+            <Row id={info.id} agent={label().agent} description={label().description} detail={details()[index()]} />
+          )
+        }}
+      </For>
+      <Show when={hidden() > 0}>
+        <text fg={theme.text.muted} paddingLeft={3}>
+          {language.t("activity.more", { count: hidden() })}
+        </text>
+      </Show>
+    </box>
+  )
+}

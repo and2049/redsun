@@ -97,6 +97,26 @@ export const SessionMessageTable = sqliteTable(
   ],
 )
 
+export const SessionMessagePinTable = sqliteTable(
+  "session_message_pin",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    message_id: text()
+      .$type<SessionMessage.ID>()
+      .notNull()
+      .references(() => SessionMessageTable.id, { onDelete: "cascade" }),
+    label: text(),
+    ...Timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.session_id, table.message_id] }),
+    index("session_message_pin_created_idx").on(table.session_id, table.time_created, table.message_id),
+  ],
+)
+
 export const SessionPendingTable = sqliteTable(
   "session_pending",
   {

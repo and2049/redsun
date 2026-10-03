@@ -107,7 +107,7 @@ async function mountForm(
           <Keymap.Provider>
             <ClientProvider api={createApi(transport.fetch)}>
               <DataProvider directory={process.cwd()}>
-                <ThemeProvider mode="dark" source={emptyThemeSource}>
+                <ThemeProvider source={emptyThemeSource}>
                   <ToastProvider>{response ? <CurrentForm /> : <FormPrompt form={form} />}</ToastProvider>
                 </ThemeProvider>
               </DataProvider>

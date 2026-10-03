@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test"
-import { EmbeddedTerminalRenderable } from "@opentui/core"
-import { createTestRenderer } from "@opentui/core/testing"
+import { createMockKeys, createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import path from "node:path"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 import { createAppFixture } from "./fixture/app"
+import { takeDraft } from "../src/component/prompt/draft-stash"
 import type { PluginInfo } from "@opencode/client"
 
 test.each([100, 44])("Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s", async (width) => {
@@ -122,7 +123,7 @@ test.each(["dismissed", "refreshing"])(
     const locations: string[] = []
     await using setup = await createAppFixture({
       state: state.path,
-      config: { animations: false, tabs: { mode: "off" } },
+      config: { animations: false },
       fetch: (url) => {
         if (url.pathname === "/api/session") {
           if (url.searchParams.has("parentID")) {
@@ -225,7 +226,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
   const setTitle = setup.renderer.setTerminalTitle.bind(setup.renderer)
   setup.renderer.setTerminalTitle = (title) => {
     titles.push(title)
-    if (title === "OpenCode") started()
+    if (title === "test") started()
     setTitle(title)
   }
   const listeners = new Set(process.listeners("SIGHUP"))
@@ -246,6 +247,7 @@ test("SIGHUP clears title and disposes scoped resources once", async () => {
       }).pipe(Effect.provide(Global.layerWith({ state: state.path })), Effect.provide(FileSystem.layerNoop({}))),
     )
     await ready
+    expect(titles[0]).toBe("test")
     process.emit("SIGHUP")
     await task
 
@@ -271,8 +273,8 @@ test("session lifecycle updates the terminal title and prints the epilogue after
   })
   const setTitle = setup.renderer.setTerminalTitle.bind(setup.renderer)
   setup.renderer.setTerminalTitle = (title) => {
-    if (title === "OC | Demo session") initialTitle()
-    if (title === "OC | Renamed session") renamedTitle()
+    if (title === "> Demo session") initialTitle()
+    if (title === "> Renamed session") renamedTitle()
     setTitle(title)
   }
   const events = createEventStream()
@@ -336,7 +338,7 @@ test("session lifecycle updates the terminal title and prints the epilogue after
     await task
 
     expect(stdout).toContain("Renamed session")
-    expect(stdout).toContain("opencode -s dummy")
+    expect(stdout).toContain("redsun -s dummy")
     expect(promptRequests).toBe(0)
   } finally {
     process.stdout.write = originalWrite
@@ -353,7 +355,7 @@ test("session title generated while an untitled session is loading remains visib
   const generatedTitle = Promise.withResolvers<void>()
   setup.renderer.setTerminalTitle = (title) => {
     titles.push(title)
-    if (title === "OC | Generated title") generatedTitle.resolve()
+    if (title === "> Generated title") generatedTitle.resolve()
     setTitle(title)
   }
   const sessionRequested = Promise.withResolvers<void>()
@@ -421,9 +423,9 @@ test("session title generated while an untitled session is loading remains visib
     ])
     await Bun.sleep(20)
 
-    const generated = titles.lastIndexOf("OC | Generated title")
+    const generated = titles.lastIndexOf("> Generated title")
     expect(generated).toBeGreaterThan(-1)
-    expect(titles.slice(generated + 1)).not.toContain("OpenCode")
+    expect(titles.slice(generated + 1)).not.toContain("test")
     setup.renderer.destroy()
     await task
   } finally {
@@ -432,141 +434,9 @@ test("session title generated while an untitled session is loading remains visib
   }
 })
 
-test("vertical session tabs switch to horizontal below readable content width", async () => {
-  await using state = await tmpdir()
-  await Bun.write(path.join(state.path, "test", "tui", "layout.json"), JSON.stringify({ verticalTabsWidth: 42 }))
-  const session = {
-    id: "ses_resize",
-    title: "Resize fixture",
-    projectID: "project",
-    location: { directory },
-    cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: 1, updated: 2 },
-  }
-  await using setup = await createAppFixture({
-    width: 120,
-    state: state.path,
-    config: {
-      animations: false,
-      tabs: { mode: "on", layout: "vertical", indicators: "status" },
-      session: { sidebar: "hide" },
-    },
-    args: { sessionID: session.id },
-    fetch: (url) => {
-      if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
-      if (/^\/api\/session\/ses_resize\/(message|inbox|permission)$/.test(url.pathname))
-        return json({ data: [], cursor: {} })
-      return undefined
-    },
-  })
-  await setup.ready
-  await setup.waitForFrame((frame) => frame.split("\n")[1].slice(0, 42).includes(session.title))
-
-  setup.resize(100, 30)
-  await setup.waitForFrame((frame) => frame.split("\n")[0].includes(session.title))
-  expect(setup.captureCharFrame()).not.toContain("⌕")
-  setup.resize(120, 30)
-  await setup.waitForFrame((frame) => frame.split("\n")[1].slice(0, 42).includes(session.title))
-})
-
-test("narrow vertical session tabs collapse to a compact rail with the terminal", async () => {
-  await using state = await tmpdir()
-  await Bun.write(path.join(state.path, "test", "tui", "layout.json"), JSON.stringify({ verticalTabsWidth: 5 }))
-  const session = {
-    id: "ses_resize",
-    title: "Resize fixture",
-    projectID: "project",
-    location: { directory },
-    cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: 1, updated: 2 },
-  }
-  await using setup = await createAppFixture({
-    width: 80,
-    state: state.path,
-    config: {
-      animations: false,
-      tabs: { mode: "on", layout: "vertical", indicators: "status" },
-      session: { sidebar: "hide" },
-    },
-    args: { sessionID: session.id },
-    fetch: (url) => {
-      if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
-      if (/^\/api\/session\/ses_resize\/(message|inbox|permission)$/.test(url.pathname))
-        return json({ data: [], cursor: {} })
-      return undefined
-    },
-  })
-  await setup.ready
-  await setup.waitForFrame((frame) => frame.split("\n")[1].slice(0, 10).trim() === "⌕")
-
-  setup.resize(68, 30)
-  await setup.waitForFrame((frame) => frame.split("\n")[0].includes(session.title))
-  expect(setup.captureCharFrame()).not.toContain("⌕")
-  setup.resize(80, 30)
-  await setup.waitForFrame((frame) => frame.split("\n")[1].slice(0, 10).trim() === "⌕")
-})
-
-test("automatic rename refreshes the displayed title before settling, even without a renamed event", async () => {
-  await using state = await tmpdir()
-  const response = Promise.withResolvers<Response>()
-  const bodies: unknown[] = []
-  const location = { directory, project: { id: "project", directory, canonical: directory } }
-  const session = {
-    id: "ses_rename",
-    title: "Compiler cleanup",
-    projectID: "project",
-    location: { directory },
-    agent: "build",
-    model: { providerID: "provider", id: "model" },
-    cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: 0, updated: 0 },
-  }
-  await using setup = await createAppFixture({
-    width: 110,
-    height: 20,
-    state: state.path,
-    config: { tabs: { mode: "on", layout: "vertical" }, session: { sidebar: "hide" } },
-    args: { sessionID: session.id },
-    fetch: async (url, request) => {
-      if (url.pathname === "/api/location") return json(location)
-      if (url.pathname === "/api/agent")
-        return json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }] })
-      if (url.pathname === "/api/model")
-        return json({ location, data: [{ id: "model", providerID: "provider", name: "Model", variants: [] }] })
-      if (url.pathname === "/api/provider") return json({ location, data: [{ id: "provider", name: "Provider" }] })
-      if (url.pathname === "/api/session") return json({ data: [], cursor: {} })
-      if (url.pathname === "/api/session/ses_rename" && request.method === "PATCH") {
-        bodies.push(await request.json())
-        return response.promise
-      }
-      if (url.pathname === "/api/session/ses_rename") return json({ data: session })
-      if (/^\/api\/session\/ses_rename\/(message|inbox|permission)$/.test(url.pathname))
-        return json({ data: [], cursor: {} })
-      return undefined
-    },
-  })
-
-  try {
-    await setup.waitForFrame((frame) => frame.includes(session.title) && frame.includes("Build · Model Provider"))
-    await setup.mockInput.typeText("/rename")
-    setup.mockInput.pressEscape()
-    setup.mockInput.pressEnter()
-    await setup.waitFor(() => bodies.length === 1)
-    await setup.renderOnce()
-    expect(bodies[0]).toEqual({ title: "" })
-    expect(setup.captureCharFrame()).toContain("Compiler cleanup")
-
-    session.title = "Simplify compiler parsing"
-    response.resolve(new Response(null, { status: 204 }))
-    await setup.waitForFrame((frame) => frame.includes(session.title), { maxPasses: 60 })
-    expect(setup.captureCharFrame()).not.toContain("Compiler cleanup")
-  } finally {
-    response.resolve(new Response(null, { status: 204 }))
-  }
-})
+// REDSUN: upstream's 'automatic rename refreshes the displayed title' test observes the
+// session tabs / sidebar title, surfaces redsun does not render; the title plumbing is
+// covered by component/title-shimmer.test.ts.
 
 test.each([80, 120])("completes custom Markdown and ordinary fences in a session at width %s", async (width) => {
   await using state = await tmpdir()
@@ -587,7 +457,7 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
     width,
     height: 55,
     state: state.path,
-    config: { animations: false, tabs: { mode: "off" }, session: { sidebar: "hide" } },
+    config: { animations: false, session: { sidebar: "hide" } },
     args: { sessionID: session.id },
     fetch: (url) => {
       if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
@@ -608,7 +478,8 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
               time: { created: 1 },
               status: "completed",
               reason: "manual",
-              summary: "```latex\ny^2\n```",
+              summary:
+                "Condensed earlier turns. The fixture rendered custom fences, tables and math across the whole first exchange of the session.",
               recent: "msg_markdown",
             },
           ],
@@ -628,11 +499,25 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
       frame.includes("DiagramStart") &&
       frame.includes("DiagramEnd") &&
       frame.includes("x\u00b2") &&
-      frame.includes("y\u00b2"),
+      frame.includes("Compaction"),
   )
-  expect(streaming).toContain("Compaction")
   expect(streaming).not.toContain("initial final")
   expect(streaming).not.toContain("MARKDOWN_END")
+
+  // The completed compaction is pre-collapsed like a thinking trace: a single
+  // "▶ Compaction: …tail" line of plain text instead of a rendered block, so the
+  // summary only shows its tail until it is expanded.
+  expect(streaming).toContain("\u25b6 Compaction:")
+  expect(streaming).toContain("first exchange")
+  expect(streaming).not.toContain("Condensed earlier turns")
+
+  // Clicking the row expands the full summary beneath the "▼ Compaction:" head.
+  const collapsedLines = streaming.split("\n")
+  const compactionRow = collapsedLines.findIndex((line) => line.includes("Compaction"))
+  expect(compactionRow).toBeGreaterThanOrEqual(0)
+  await setup.mockMouse.click(collapsedLines[compactionRow].indexOf("Compaction"), compactionRow)
+  const expanded = await setup.waitForFrame((frame) => frame.includes("Condensed earlier turns"))
+  expect(expanded).toContain("\u25bc Compaction:")
 
   // Queue final text and completion together to exercise TextPart's reactive property order.
   setup.events.emit({
@@ -661,17 +546,25 @@ test.each([80, 120])("completes custom Markdown and ordinary fences in a session
     },
   })
   const frame = await setup.waitForFrame(
-    (frame) => frame.includes("MARKDOWN_END") && frame.includes("initial final") && frame.includes("2ms"),
+    (frame) => frame.includes("MARKDOWN_END") && frame.includes("initial final") && frame.includes(" for 0s"),
   )
   expect(frame).toContain("DiagramStart")
   expect(frame).toContain("DiagramEnd")
   expect(frame).toContain("x\u00b2")
-  expect(frame).toContain("y\u00b2")
   expect(frame).toContain("initial final")
   expect(frame).not.toContain("graph LR")
   expect(frame).not.toContain("x^2")
-  expect(frame).not.toContain("y^2")
   expect(frame).not.toContain("```")
+
+  // Clicking again collapses the summary back to the teaser. A different
+  // column than the first click: clicking the same cell twice reads as a
+  // double-click word selection, which the toggle deliberately ignores.
+  const expandedLines = frame.split("\n")
+  const expandedRow = expandedLines.findIndex((line) => line.includes("Compaction"))
+  expect(expandedRow).toBeGreaterThanOrEqual(0)
+  await setup.mockMouse.click(expandedLines[expandedRow].indexOf("Compaction") + 2, expandedRow)
+  const collapsedAgain = await setup.waitForFrame((frame2) => !frame2.includes("Condensed earlier turns"))
+  expect(collapsedAgain).toContain("\u25b6 Compaction:")
 })
 
 test("keeps assistant footer metrics current after prepend, same-length refresh, and revert", async () => {
@@ -692,7 +585,7 @@ test("keeps assistant footer metrics current after prepend, same-length refresh,
     width: 100,
     height: 40,
     state: state.path,
-    config: { animations: false, tabs: { mode: "off" }, session: { sidebar: "hide", tps: true } },
+    config: { animations: false, session: { sidebar: "hide", tps: true } },
     args: { sessionID: session.id },
     fetch: (url) => {
       if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
@@ -756,7 +649,7 @@ test("keeps assistant footer metrics current after prepend, same-length refresh,
 
   const initial = await setup.waitForFrame((frame) => frame.includes("Original answer") && frame.includes("20.0 tok/s"))
   expect(initial).toContain("Current input")
-  expect(initial).toContain("4.0s \u00b7 20.0 tok/s")
+  expect(initial).toContain("4s \u00b7 20.0 tok/s")
   expect(initial).not.toContain("Prepended input")
 
   setup.mockInput.pressKey("g", { ctrl: true })
@@ -770,7 +663,7 @@ test("keeps assistant footer metrics current after prepend, same-length refresh,
   )
   expect(prepended).toContain("Current input")
   expect(prepended).toContain("Original answer")
-  expect(prepended).toContain("4.0s \u00b7 20.0 tok/s")
+  expect(prepended).toContain("4s \u00b7 20.0 tok/s")
 
   // Refresh the latest page: length stays four, but the retained assistant moves from index three to one.
   refresh = true
@@ -785,8 +678,8 @@ test("keeps assistant footer metrics current after prepend, same-length refresh,
   )
   expect(refreshed).toContain("Current input")
   expect(refreshed).toContain("Original answer")
-  expect(refreshed).toContain("4.0s \u00b7 20.0 tok/s")
-  expect(refreshed).toContain("3.0s \u00b7 50.0 tok/s")
+  expect(refreshed).toContain("4s \u00b7 20.0 tok/s")
+  expect(refreshed).toContain("3s \u00b7 50.0 tok/s")
 
   setup.events.emit({
     id: "evt_footer_reverted",
@@ -799,7 +692,7 @@ test("keeps assistant footer metrics current after prepend, same-length refresh,
     (frame) => frame.includes("Original answer") && !frame.includes("Later input") && !frame.includes("Later answer"),
   )
   expect(reverted).toContain("Current input")
-  expect(reverted).toContain("4.0s \u00b7 20.0 tok/s")
+  expect(reverted).toContain("4s \u00b7 20.0 tok/s")
   expect(reverted).not.toContain("50.0 tok/s")
 })
 
@@ -889,7 +782,7 @@ test("home startup prompt is submitted exactly once", async () => {
   await using setup = await createAppFixture({
     state: state.path,
     args: { prompt: "HOME_READY" },
-    config: { animations: false, tabs: { mode: "off" } },
+    config: { animations: false },
     fetch: async (url, request) => {
       if (url.pathname === "/api/location") return json(location)
       if (url.pathname === "/api/fs/list") return json({ location, data: [] })
@@ -944,7 +837,7 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
   let session: unknown
   await using setup = await createAppFixture({
     state: state.path,
-    config: { animations: false, tabs: { mode: "off" }, keybinds: { "session.new": "f6" } },
+    config: { animations: false, keybinds: { "session.new": "f6" } },
     fetch: async (url, request) => {
       requests.push(url)
       if (url.searchParams.has("location[directory]") && url.searchParams.get("location[directory]") !== target)
@@ -981,7 +874,7 @@ test.each([false, true])("uses the resolved launch directory for new prompts (fa
   })
 
   await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model Provider"))
+  await setup.waitForFrame((frame) => frame.includes("Build · Remote Model"))
   setup.mockInput.pressKey("F6")
   await setup.renderOnce()
   await setup.mockInput.typeText("REMOTE_READY")
@@ -1082,7 +975,7 @@ test("completed user shell output replaces a partial live read when the final re
   let failedReads = 0
   await using setup = await createAppFixture({
     state: state.path,
-    config: { animations: false, tabs: { mode: "off" }, session: { sidebar: "hide" } },
+    config: { animations: false, session: { sidebar: "hide" } },
     args: { sessionID: session.id },
     fetch: (url) => {
       if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
@@ -1266,7 +1159,9 @@ test("keeps the prompt display stable while a new location catalog loads", async
 
   try {
     await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("Build · Source Model Provider"))
+    // REDSUN: the home prompt hides provider labels unconditionally, so the
+    // meta row reads "Build · Source Model" with no trailing provider.
+    await setup.waitForFrame((frame) => frame.includes("Build · Source Model"))
     const agentSpan = () =>
       setup
         .captureSpans()
@@ -1286,7 +1181,8 @@ test("keeps the prompt display stable while a new location catalog loads", async
       }),
     ])
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toContain(target)
+    // REDSUN: the prompt has no location readout (the dock owns directory display),
+    // so the target request above is the confirmation that /cd took effect.
 
     locationCatalog.resolve()
     await Promise.race([
@@ -1297,15 +1193,15 @@ test("keeps the prompt display stable while a new location catalog loads", async
     ])
     await setup.renderOnce()
 
-    expect(setup.captureCharFrame()).toContain("Build · Source Model Provider")
+    expect(setup.captureCharFrame()).toContain("Build · Source Model")
     expect(agentSpan()?.fg.toInts()).toEqual(sourceAgentColor)
 
     catalog.resolve()
-    const resolved = await setup.waitForFrame((frame) => frame.includes("Build · Target Model provider"))
+    const resolved = await setup.waitForFrame((frame) => frame.includes("Build · Target Model"))
     expect(resolved).not.toContain("Source Model")
 
     providerCatalog.resolve()
-    await setup.waitForFrame((frame) => frame.includes("Build · Target Model Provider"))
+    await setup.waitForFrame((frame) => frame.includes("Build · Target Model"))
   } finally {
     locationCatalog.resolve()
     catalog.resolve()
@@ -1313,20 +1209,76 @@ test("keeps the prompt display stable while a new location catalog loads", async
   }
 })
 
-test("configured app binding opens settings", async () => {
+test("configured app bindings execute settings and permission commands", async () => {
+  // The permission mode is server state now, and the fixture answers "normal"
+  // on every connect -- so which way F7 toggles is decided by the fixture
+  // rather than by whatever a previous run left on disk.
   await using setup = await createAppFixture({
-    config: { animations: false, keybinds: { "opencode.settings": "f6" } },
+    config: { animations: false, keybinds: { "opencode.settings": "f6", "permission.mode": "f7" } },
   })
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("commands"))
 
   setup.mockInput.pressKey("F6")
   const settings = await setup.waitForFrame((frame) => frame.includes("Settings"))
-  expect(settings).toContain("Color mode")
+  expect(settings).toContain("Appearance")
   expect(settings).toContain("Animations")
+  setup.mockInput.pressEscape()
+  await setup.waitForFrame((frame) => !frame.includes("Settings"))
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("Auto-approve all enabled"))
 })
 
-test("ctrl+c dismisses autocomplete and shell mode before exiting", async () => {
+test("Claude Code cycles manual, approve-for-me, auto-approve via the app binding", async () => {
+  const modes: string[] = []
+  await using setup = await createAppFixture({
+    args: { model: "claude-code/sonnet" },
+    config: { animations: false, keybinds: { "permission.mode": "f7" } },
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/agent")
+        return json({
+          location: { directory, project: { id: "proj_test", directory } },
+          data: [{ id: "build", mode: "primary", hidden: false, permissions: [] }],
+        })
+      if (url.pathname === "/api/model")
+        return json({
+          location: { directory, project: { id: "proj_test", directory } },
+          data: [{ id: "sonnet", providerID: "claude-code", name: "Sonnet", variants: [] }],
+        })
+      if (url.pathname === "/api/permission/mode/options") {
+        return json({ data: { native: true } })
+      }
+      if (url.pathname === "/api/permission/mode") {
+        if (request.method === "GET") return json({ data: { mode: "normal" } })
+        modes.push(((await request.json()) as { mode: string }).mode)
+        return new Response(null, { status: 204 })
+      }
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("Build · Sonnet") && frame.includes("Manual"))
+  // The native mode is looked up lazily; a press that beats the answer waits for it.
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("⏵⏵ Approve for me"))
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("Auto-approve all enabled"))
+  setup.mockInput.pressKey("F7")
+  await setup.waitForFrame((frame) => frame.includes("Manual"))
+  await setup.waitFor(() => modes.length === 3)
+  expect(modes).toEqual(["native_auto", "auto", "normal"])
+})
+
+test.each([
+  { auto: undefined, expected: "Manual (Shift+Tab)" },
+  { auto: true, expected: "Auto-approve all enabled" },
+])("home reports the auto-approve mode before a session exists (auto: $auto)", async ({ auto, expected }) => {
+  await using setup = await createAppFixture({ args: auto ? { auto } : {} })
+  await setup.ready
+  const frame = await setup.waitForFrame((frame) => frame.includes(expected))
+  expect(frame).toContain(expected)
+})
+
+test("ctrl+c dismisses autocomplete and shell mode without exiting", async () => {
   await using setup = await createAppFixture()
   await setup.ready
   await setup.waitForFrame((frame) => frame.includes("commands"))
@@ -1344,159 +1296,99 @@ test("ctrl+c dismisses autocomplete and shell mode before exiting", async () => 
   expect(setup.renderer.isDestroyed).toBe(false)
 })
 
-test.skipIf(process.platform === "win32").each(["manual", "select"] as const)(
-  "selection copy and pane management respect %s mode in the prompt and terminal pane",
-  async (copy) => {
-    await using state = await tmpdir()
-    const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
-    setup.renderer.start()
-    const ready = Promise.withResolvers<void>()
-    const session = {
-      id: "dummy",
-      title: "Selection fixture",
-      projectID: "project",
-      location: { directory },
-      cost: 0,
-      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      time: { created: 0, updated: 0 },
-    }
-    const pty = {
-      id: "pty_fixture",
-      sessionID: session.id,
-      title: "Terminal",
-      command: "/bin/sh",
-      args: [],
-      cwd: directory,
-      status: "running",
-      pid: 1,
-      foregroundProcess: null,
-      size: { cols: 48, rows: 24 },
-      output: { head: 0, tail: 0 },
-    }
-    const input: string[] = []
-    const calls = createFetch((url, request) => {
-      if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
-      if (url.pathname === "/api/session/dummy") return json({ data: session })
-      if (url.pathname === "/api/session/dummy/message") return json({ data: [], cursor: {} })
-      if (url.pathname === "/api/session/dummy/inbox") return json({ data: [] })
-      if (url.pathname === "/api/session/dummy/permission") return json({ data: [] })
-      if (url.pathname === "/api/experimental/session/dummy/terminal")
-        return json({ data: request.method === "POST" ? pty : [pty] })
-      if (url.pathname === "/api/experimental/persistent-pty/pty_fixture/snapshot")
-        return json({
-          data: {
-            info: pty,
-            text: "alpha beta gamma",
-            checkpoint: Buffer.from("alpha beta gamma").toString("base64"),
-            cursor: { x: 16, y: 0 },
-          },
-        })
-      if (url.pathname === "/api/experimental/persistent-pty/pty_fixture/connect-token")
-        return json({ data: { ticket: "fixture" } })
-      return undefined
-    }, createEventStream())
-    const server = Bun.serve({
-      port: 0,
-      fetch(request, server) {
-        if (new URL(request.url).pathname.endsWith("/connect") && server.upgrade(request)) return undefined
-        return calls.fetch(request)
-      },
-      websocket: {
-        open(socket) {
-          socket.send(JSON.stringify({ type: "attached", inputProtocol: 1, role: "controller", info: pty }))
-          socket.send(JSON.stringify({ type: "replay_complete" }))
-        },
-        message(_socket, message) {
-          const data = Buffer.from(message)
-          if (data[0] === 1) input.push(data.subarray(5).toString())
-        },
-      },
-    })
-
-    try {
-      const { run } = await import("../src/app")
-      const task = Effect.runPromise(
-        run({
-          app: { name: "test", version: "test", channel: "test" },
-          server: { endpoint: { url: server.url.toString() } },
-          config: {
-            get: async () => ({
-              animations: false,
-              terminal: { copy },
-            }),
-            update: async () => ({}),
-          },
-          packages: { prepare: async () => ({ directory: "" }) },
-          args: { sessionID: session.id },
-          terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
-          log: () => {},
-        }).pipe(Effect.provide(Global.layerWith({ state: state.path })), Effect.provide(FileSystem.layerNoop({}))),
-      )
-
-      await ready.promise
-      await setup.waitForFrame((frame) => frame.includes("commands"))
-      await setup.mockInput.typeText("selection audit draft")
-      setup.mockInput.pressKey("a", { ctrl: true, shift: true })
-      expect(setup.renderer.getSelection()?.getSelectedText()).toBe("selection audit draft")
-
-      setup.mockInput.pressEscape()
-      expect(setup.renderer.hasSelection).toBeFalse()
-      expect(setup.renderer.currentFocusedEditor?.plainText).toBe("selection audit draft")
-
-      setup.mockInput.pressKey("c", { ctrl: true })
-      await setup.waitForFrame((frame) => !frame.includes("selection audit draft"))
-      expect(setup.renderer.currentFocusedEditor?.plainText).toBe("")
-      expect(setup.renderer.hasSelection).toBeFalse()
-      expect(setup.renderer.isDestroyed).toBeFalse()
-
-      await setup.mockInput.typeText("/terminal")
-      await setup.waitForFrame((frame) => frame.includes("New terminal"))
-      setup.mockInput.pressEnter()
-      await setup.waitForFrame((frame) => frame.includes("alpha beta gamma"))
-      setup.mockInput.pressKey("x", { ctrl: true })
-      setup.mockInput.pressArrow("right")
-      const terminal = setup.renderer.currentFocusedRenderable
-      if (!(terminal instanceof EmbeddedTerminalRenderable)) throw new Error("Terminal was not focused")
-      setup.renderer.startSelection(terminal, terminal.x + 6, terminal.y)
-      setup.renderer.updateSelection(terminal, terminal.x + 9, terminal.y, { finishDragging: true })
-      expect(setup.renderer.getSelection()?.getSelectedText()).toBe("beta")
-
-      setup.mockInput.pressEscape()
-      expect(setup.renderer.hasSelection).toBeFalse()
-      expect(terminal.hasSelection()).toBeFalse()
-
-      await setup.mockMouse.click(terminal.x + 6, terminal.y)
-      if (copy === "select") {
-        setup.renderer.updateSelection(terminal, terminal.x + 9, terminal.y, { finishDragging: true })
-        expect(setup.renderer.getSelection()?.getSelectedText()).toBe("beta")
-      }
-      setup.mockInput.pressKey("c", { ctrl: true })
-      await setup.waitFor(() => input.length > 0)
-      expect(input).toEqual(["\x03"])
-      expect(setup.renderer.hasSelection).toBeFalse()
-      expect(setup.renderer.isDestroyed).toBeFalse()
-
-      setup.mockInput.pressKey("x", { ctrl: true })
-      setup.mockInput.pressArrow("up")
-      await setup.waitFor(() => terminal.isDestroyed)
-      expect(setup.renderer.currentFocusedEditor?.plainText).toBe("")
-      setup.mockInput.pressKey("x", { ctrl: true })
-      setup.mockInput.pressKey("t")
-      await setup.waitForFrame((frame) => frame.includes("alpha beta gamma"))
-      expect(setup.renderer.currentFocusedRenderable).toBeInstanceOf(EmbeddedTerminalRenderable)
-      setup.mockInput.pressKey("x", { ctrl: true })
-      setup.mockInput.pressArrow("down")
-      await setup.waitForFrame((frame) => frame.includes("Subagents") && frame.includes("Terminals"))
-      expect(setup.renderer.currentFocusedRenderable).not.toBeInstanceOf(EmbeddedTerminalRenderable)
-
-      setup.renderer.destroy()
-      await task
-    } finally {
-      if (!setup.renderer.isDestroyed) setup.renderer.destroy()
-      await server.stop()
-    }
+test.each(["\x03", "\x1b[99;5u", "\x1b[1089::99;5u"])(
+  "Ctrl+C clears the prompt and repeated %j keystrokes never exit",
+  async (key) => {
+    await using setup = await createAppFixture()
+    await setup.ready
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: false })
+    await setup.mockInput.typeText("draft to clear")
+    keys.pressKey(key)
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "")
+    keys.pressKey(key)
+    keys.pressKey(key)
+    await setup.renderOnce()
+    expect(setup.renderer.isDestroyed).toBeFalse()
+    await setup.mockInput.typeText("new draft")
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "new draft")
+    keys.pressKey(key)
   },
 )
+
+test.each(["", "unsent draft"])("Ctrl+Q exits with prompt %j", async (draft) => {
+  await using setup = await createAppFixture()
+  await setup.ready
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText(draft)
+  setup.mockInput.pressKey("q", { ctrl: true })
+  await setup.waitFor(() => setup.renderer.isDestroyed)
+  expect(takeDraft(undefined)?.prompt.text ?? "").toBe(draft)
+})
+
+test.each(["manual", "select"] as const)("selection copy and dismissal respect %s mode in the prompt", async (copy) => {
+  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  setup.renderer.start()
+  const ready = Promise.withResolvers<void>()
+  const session = {
+    id: "dummy",
+    title: "Selection fixture",
+    projectID: "project",
+    location: { directory },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 0, updated: 0 },
+  }
+  const calls = createFetch((url) => {
+    if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
+    if (url.pathname === "/api/session/dummy") return json({ data: session })
+    if (url.pathname === "/api/session/dummy/message") return json({ data: [], cursor: {} })
+    if (url.pathname === "/api/session/dummy/inbox") return json({ data: [] })
+    if (url.pathname === "/api/session/dummy/permission") return json({ data: [] })
+    return undefined
+  }, createEventStream())
+  const server = Bun.serve({ port: 0, fetch: (request) => calls.fetch(request) })
+
+  try {
+    const { run } = await import("../src/app")
+    const task = Effect.runPromise(
+      run({
+        app: { name: "test", version: "test", channel: "test" },
+        server: { endpoint: { url: server.url.toString() } },
+        config: {
+          get: async () => ({ animations: false, terminal: { copy } }),
+          update: async () => ({}),
+        },
+        packages: { prepare: async () => ({ directory: "" }) },
+        args: { sessionID: session.id },
+        terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
+        log: () => {},
+      }).pipe(Effect.provide(AppNodeBuilder.build(Global.node)), Effect.provide(FileSystem.layerNoop({}))),
+    )
+
+    await ready.promise
+    await setup.waitForFrame((frame) => frame.includes("Manual"))
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+    setup.renderer.currentFocusedEditor?.focus()
+    await setup.renderOnce()
+    await setup.mockInput.typeText("selection audit draft")
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor?.plainText === "selection audit draft")
+    setup.mockInput.pressKey("a", { ctrl: true, shift: true })
+    expect(setup.renderer.getSelection()?.getSelectedText()).toBe("selection audit draft")
+
+    setup.mockInput.pressKey("c", { ctrl: true })
+    await setup.waitForFrame((frame) => !frame.includes("selection audit draft"))
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("")
+    expect(setup.renderer.hasSelection).toBeFalse()
+    expect(setup.renderer.isDestroyed).toBeFalse()
+
+    setup.renderer.destroy()
+    await task
+  } finally {
+    if (!setup.renderer.isDestroyed) setup.renderer.destroy()
+    await server.stop()
+  }
+})
 
 test.each([100, 44])(
   "execution failure keeps the empty session composer and draft usable at width %s",
@@ -1515,7 +1407,7 @@ test.each([100, 44])(
       width,
       state: state.path,
       args: { sessionID: session.id },
-      config: { animations: false, tabs: { mode: "off" } },
+      config: { animations: false },
       fetch: (url) => {
         if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
         if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
@@ -1526,7 +1418,8 @@ test.each([100, 44])(
       },
     })
     await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("commands"))
+    await setup.waitForFrame((frame) => frame.includes("Manual"))
+    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     setup.mockInput.pressKey("u", { ctrl: true })
     await setup.mockInput.typeText("Keep this draft")
     await setup.waitForFrame((frame) => frame.includes("Keep this draft"))
@@ -1679,7 +1572,7 @@ test.each([44, 100])(
       width,
       state: state.path,
       args: { sessionID: session.id },
-      config: { animations: false, tabs: { mode: "off" } },
+      config: { animations: false },
       fetch: (url) => {
         if (url.pathname === "/api/session") return json({ data: [session], cursor: {} })
         if (url.pathname === `/api/session/${session.id}`) return json({ data: session })
@@ -1707,7 +1600,8 @@ test.each([44, 100])(
     await setup.ready
     await setup.waitForFrame((frame) => frame.includes("Retrying in 3s"))
     expect(setup.captureCharFrame()).toContain("attempt 2")
-    expect(setup.captureCharFrame()).toContain("Provider unavailable")
+    // The dense transcript wraps the message at width 44.
+    expect(setup.captureCharFrame().replace(/\s+/g, " ")).toContain("Provider unavailable")
     expect(setup.captureCharFrame()).not.toContain("Error:")
     await setup.waitForFrame((frame) => frame.includes("Retrying in 2s"), { maxPasses: 200 })
     await setup.waitForFrame((frame) => frame.includes("Retrying in 1s"), { maxPasses: 200 })

@@ -3,7 +3,7 @@ import { extend, type JSX } from "@opentui/solid"
 import { splitProps } from "solid-js"
 import { useConfig } from "../config"
 import { MaskedTextRenderable } from "./masked-text"
-import { coast, smootherstep } from "./tab-pulse"
+import { coast, smootherstep } from "./shimmer-motion"
 
 type FadeInTextOptions = TextOptions & {
   backdrop?: RGBA

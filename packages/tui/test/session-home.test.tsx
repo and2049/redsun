@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test"
-import { type Renderable, ScrollBoxRenderable } from "@opentui/core"
+import { type Renderable, ScrollBoxRenderable, Yoga } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
+import { forgetScrollAnchor } from "../src/routes/session/scroll-anchor"
 
 test.each([
   "bottom",
@@ -26,7 +27,14 @@ test.each([
   "prepend-failure",
 ])("Home loads a stable, bounded beginning (%s)", async (mode) => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  // REDSUN: the scroll anchor persists per session id across mounts; every mode reuses
+  // "ses_test", so a leaked anchor from an away-from-bottom mode breaks the next mount.
+  forgetScrollAnchor("ses_test")
+  // REDSUN: the dense transcript renders 2 lines per user message (upstream: 3), so at
+  // height 30 the 20-message first page fits within two viewports and revealOlderRows'
+  // scrollTop guard would page instead of scrolling. A shorter viewport restores the
+  // upstream geometry the modes assume.
+  const setup = await createTestRenderer({ width: 100, height: 22, useThread: false, kittyKeyboard: true })
   setup.renderer.start()
   const session = {
     id: "ses_test",
@@ -93,7 +101,6 @@ test.each([
       config: {
         get: async () => ({
           animations: false,
-          tabs: { mode: "off" },
           keybinds: {
             "session.line.up": "f6",
             "session.page.down": "f7",
@@ -117,6 +124,7 @@ test.each([
         : root.getChildren().map(findScrollBox).find(Boolean)
     const scroll = findScrollBox(setup.renderer.root)
     if (!scroll) throw new Error("session transcript scrollbox was not found")
+    expect(scroll.viewport.getLayoutNode().getComputedPadding(Yoga.Edge.Right)).toBe(1)
     const mounted = () => scroll.getChildren().filter((child) => child.id?.startsWith("message-"))
     const maximum = () => Math.max(0, scroll.scrollHeight - scroll.viewport.height)
     if (mode === "scrolled" || mode === "cancel" || mode === "settling-scrolled") {

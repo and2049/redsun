@@ -15,6 +15,7 @@ import { useTheme } from "../context/theme"
 import { useUpdateNotification } from "../context/update-notification"
 import { useExit } from "../context/exit"
 import { FadeInText } from "../component/fade-in-text"
+import { useLanguage } from "../i18n"
 
 let once = false
 const placeholder = {
@@ -32,7 +33,15 @@ export function Home() {
   const data = useData()
   const location = useLocation()
   const dimensions = useTerminalDimensions()
+  const theme = useTheme()
+  const language = useLanguage()
+  const localizedPlaceholder = createMemo(() => ({
+    normal: placeholder.normal.map((item) => language.t(item)),
+    shell: placeholder.shell,
+  }))
+  const promptMaxWidth = createMemo(() => Math.max(75, Math.floor(dimensions().width * 0.7)))
   const [logoWidth, setLogoWidth] = createSignal(0)
+  const [backdrop, setBackdrop] = createSignal({ width: 0, height: 0 })
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
   const currentLocation = () => route.location ?? data.location.default()
   const forms = createMemo(() => data.session.form.list("global", currentLocation()) ?? [])
@@ -81,30 +90,44 @@ export function Home() {
   return (
     <>
       <box
-        flexGrow={1}
-        alignItems="center"
-        paddingLeft={dimensions().width < 44 ? 1 : 2}
-        paddingRight={dimensions().width < 44 ? 1 : 2}
+        position="absolute"
+        zIndex={-1}
+        left={0}
+        top={0}
+        right={0}
+        bottom={0}
+        onSizeChange={function () {
+          setBackdrop({ width: this.width, height: this.height })
+        }}
       >
+        <Slot path="home.backdrop" input={backdrop()} />
+      </box>
+      <box width="100%" flexShrink={0}>
+        <Slot path="home.footer" />
+      </box>
+      <box flexGrow={1} alignItems="center" paddingLeft={1} paddingRight={1}>
         <box flexGrow={1} minHeight={0} />
-        <box height={3} minHeight={0} flexShrink={1} />
         <box
           flexShrink={0}
           onSizeChange={function () {
             setLogoWidth(this.width)
           }}
         >
-          <Logo />
+          <Slot path="home.logo">
+            <Logo />
+          </Slot>
         </box>
         <box height={1} flexShrink={0} />
         <UpdateNotification width={logoWidth()} />
-        <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
-          <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
+        <box height={1} flexShrink={0} marginTop={1}>
+          <text fg={theme.text.muted}>
+            / {language.t("session.commands")} · ! {language.t("session.shell")} · @ {language.t("session.files")}
+          </text>
+        </box>
+        <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
+          <Prompt ref={bind} placeholders={localizedPlaceholder()} disabled={forms().length > 0} />
         </box>
         <box flexGrow={1} minHeight={0} />
-      </box>
-      <box width="100%" flexShrink={0}>
-        <Slot path="home.footer" />
       </box>
       <Show when={forms()[0]?.id} keyed>
         {(_) => {
@@ -126,6 +149,7 @@ function UpdateNotification(props: { width: number }) {
   const update = useUpdateNotification()
   const exit = useExit()
   const theme = useTheme()
+  const language = useLanguage()
   const [hovered, setHovered] = createSignal(false)
   const backdrop = () => (hovered() ? theme.background.action.primary.hovered : theme.background.base)
   createEffect(() => {
@@ -162,10 +186,10 @@ function UpdateNotification(props: { width: number }) {
                   </span>
                 </Show>
                 {remote
-                  ? "remote server update available"
+                  ? language.t("session.remoteServerUpdateAvailable")
                   : state.type === "installed"
-                    ? ` restart to use v${state.version}`
-                    : ` to install v${state.version}`}
+                    ? ` ${language.t("session.restartToUse", { version: `v${state.version}` })}`
+                    : ` ${language.t("session.toInstall", { version: `v${state.version}` })}`}
               </FadeInText>
             </box>
           </Show>

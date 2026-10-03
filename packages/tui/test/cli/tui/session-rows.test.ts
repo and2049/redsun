@@ -4,6 +4,8 @@ import { createMemo, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
   cacheReuseDrop,
+  completionStamp,
+  explorationSummary,
   messageBoundaryIDs,
   reduceSessionRows,
   sessionRowID,
@@ -23,6 +25,21 @@ test("measures turn duration from the user prompt across assistant steps", () =>
   ]
 
   expect(turnDuration(final, messages)).toBe(29_000)
+})
+
+test("stamps a settled turn with the local completion time", () => {
+  // Same calendar day: clock only. Fixed offsets keep this independent of the test timezone.
+  const noon = new Date(2026, 7, 12, 14, 5).getTime()
+  expect(completionStamp(noon, new Date(2026, 7, 12, 14, 6).getTime())).toBe("14:05")
+  // Prior calendar day.
+  const yesterday = new Date(2026, 7, 11, 21, 3).getTime()
+  expect(completionStamp(yesterday, new Date(2026, 7, 12, 0, 30).getTime())).toBe("yesterday 21:03")
+  // Older than a day: full date and clock.
+  const older = new Date(2026, 7, 12, 9, 42).getTime()
+  expect(completionStamp(older, new Date(2026, 7, 27, 10, 0).getTime())).toBe("2026-08-12 09:42")
+  // Late yesterday still counts as yesterday even past midnight.
+  const lateNight = new Date(2026, 7, 11, 23, 59).getTime()
+  expect(completionStamp(lateNight, new Date(2026, 7, 12, 1, 0).getTime())).toBe("yesterday 23:59")
 })
 
 test("measures request throughput including reasoning across model changes without tool time", () => {
@@ -362,6 +379,7 @@ test("groups exploration parts across assistant messages until a delimiter", () 
       ],
     },
     { type: "part", ref: { messageID: "assistant-2", partID: "text:0" } },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -392,6 +410,7 @@ test("keeps non-exploration tools as individual part rows", () => {
       size: 1,
       children: [partChild("assistant-1", "grep-1")],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
@@ -422,6 +441,7 @@ test("assigns stable kind ordinals within an assistant message", () => {
       size: 1,
       children: [partChild("assistant-1", "reasoning:1")],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
@@ -451,6 +471,7 @@ test("groups adjacent reasoning parts until a visible boundary", () => {
       size: 1,
       children: [partChild("assistant-1", "reasoning:2")],
     },
+    { type: "assistant-footer", messageID: "assistant-1" },
   ])
 })
 
@@ -482,6 +503,7 @@ test("groups across empty assistant reasoning parts", () => {
       size: 2,
       children: [partChild("assistant-1", "read-1"), partChild("assistant-2", "grep-1")],
     },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -550,6 +572,7 @@ test("hides synthetic messages without descriptions", () => {
       size: 2,
       children: [partChild("assistant-1", "read-1"), partChild("assistant-2", "grep-1")],
     },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
   expect(reduceSessionRows(messages, new Set(["synthetic-1"]))).toEqual(rows)
 })
@@ -585,6 +608,73 @@ test("renders synthetic messages with descriptions", () => {
       size: 1,
       children: [partChild("assistant-2", "grep-1")],
     },
+    { type: "assistant-footer", messageID: "assistant-2" },
+  ])
+})
+
+test("blends streamed usage with an in-flight estimate while the turn is live", () => {
+  const first = assistant("assistant-1", [])
+  first.time = { created: 8_000, streamed: 10_000, completed: 20_000 }
+  first.finish = "tool-calls"
+  first.tokens = { input: 10, output: 20, reasoning: 5, cache: { read: 0, write: 0 } }
+  const inflight = assistant("assistant-2", [{ type: "text", text: "x".repeat(40) }])
+  inflight.time = { created: 27_000 }
+  const messages: SessionMessageInfo[] = [
+    { type: "user", id: "user-1", text: "Question", time: { created: 1_000 } },
+    first,
+    inflight,
+  ]
+
+  // 25 real tokens (output plus reasoning) over 2s plus ~10 estimated (40 chars / 4)
+  // over the 2s elapsed so far.
+  expect(turnTokensPerSecond(inflight, messages, undefined, undefined, { now: 29_000 })).toBe(8.75)
+  // The estimate moves with the clock even while no new content arrives.
+  expect(turnTokensPerSecond(inflight, messages, undefined, undefined, { now: 33_000 })).toBe(4.375)
+  expect(turnTokensPerSecond(inflight, messages)).toBeUndefined()
+})
+
+test("keeps a live footer under the newest step of a running turn", () => {
+  const inflight = assistant("assistant-1", [{ type: "text", text: "Working" }])
+  const messages: SessionMessageInfo[] = [{ type: "user", id: "user-1", text: "Go", time: { created: 0 } }, inflight]
+
+  expect(reduceSessionRows(messages)).toEqual([
+    { type: "message", messageID: "user-1" },
+    { type: "part", ref: { messageID: "assistant-1", partID: "text:0" } },
+    { type: "assistant-footer", messageID: "assistant-1" },
+  ])
+})
+
+test("places the live footer before queued input rows", () => {
+  const inflight = assistant("assistant-1", [{ type: "text", text: "Working" }])
+  const messages: SessionMessageInfo[] = [
+    { type: "user", id: "user-1", text: "Go", time: { created: 0 } },
+    inflight,
+    { type: "user", id: "user-queued", text: "Queued", time: { created: 5 } },
+  ]
+
+  expect(reduceSessionRows(messages, new Set(["user-queued"]))).toEqual([
+    { type: "message", messageID: "user-1" },
+    { type: "part", ref: { messageID: "assistant-1", partID: "text:0" } },
+    { type: "assistant-footer", messageID: "assistant-1" },
+    { type: "message", messageID: "user-queued" },
+  ])
+})
+
+test("emits no live footer once the turn settles or errors", () => {
+  const settled = assistant("assistant-1", [{ type: "text", text: "Done" }])
+  settled.finish = "stop"
+  const failed = assistant("assistant-2", [{ type: "text", text: "Broken" }])
+  failed.error = { type: "provider.transport", message: "Disconnected" }
+
+  const rows = reduceSessionRows([
+    { type: "user", id: "user-1", text: "Go", time: { created: 0 } },
+    settled,
+    { type: "user", id: "user-2", text: "Again", time: { created: 2 } },
+    failed,
+  ])
+  expect(rows.filter((row) => row.type === "assistant-footer")).toEqual([
+    { type: "assistant-footer", messageID: "assistant-1" },
+    { type: "assistant-footer", messageID: "assistant-2" },
   ])
 })
 
@@ -645,3 +735,47 @@ function assistant(id: string, content: SessionMessageAssistant["content"]): Ses
 function pending() {
   return { status: "streaming" as const, input: "" }
 }
+
+test("collapses every read-only tool into one run", () => {
+  // Upstream stops at read/glob/grep. A directory listing, a page fetch and a
+  // web search produce exactly the same kind of row, and reading twenty of them
+  // one per line is what the collapse exists to avoid.
+  const messages: SessionMessageInfo[] = [
+    assistant("assistant-1", [
+      { type: "tool", id: "read-1", name: "read", state: pending(), time: { created: 1 } },
+      { type: "tool", id: "list-1", name: "list", state: pending(), time: { created: 2 } },
+      { type: "tool", id: "fetch-1", name: "webfetch", state: pending(), time: { created: 3 } },
+      { type: "tool", id: "web-1", name: "websearch", state: pending(), time: { created: 4 } },
+    ]),
+  ]
+
+  expect(reduceSessionRows(messages)).toEqual([
+    {
+      type: "group",
+      kind: "exploration",
+      pending: [],
+      completed: false,
+      size: 4,
+      children: [
+        partChild("assistant-1", "read-1"),
+        partChild("assistant-1", "list-1"),
+        partChild("assistant-1", "fetch-1"),
+        partChild("assistant-1", "web-1"),
+      ],
+    },
+    { type: "assistant-footer", messageID: "assistant-1" },
+  ])
+})
+
+test("summarizes a run as what it did", () => {
+  expect(explorationSummary(["read", "read", "read", "grep", "glob"])).toBe("Read 3 files, searched for 2 patterns")
+  expect(explorationSummary(["read"])).toBe("Read 1 file")
+  expect(explorationSummary(["grep"])).toBe("Searched for 1 pattern")
+  expect(explorationSummary(["list", "list"])).toBe("Listed 2 directories")
+  expect(explorationSummary(["webfetch", "websearch"])).toBe("Fetched 1 page, ran 1 web search")
+  // Phrase order is fixed, not first-seen, so the same mix always reads the same.
+  expect(explorationSummary(["websearch", "read"])).toBe("Read 1 file, ran 1 web search")
+  // An unrecognized tool still counts rather than vanishing from the tally.
+  expect(explorationSummary(["lsp"])).toBe("Listed 1 directory")
+  expect(explorationSummary([])).toBe("")
+})

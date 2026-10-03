@@ -1,4 +1,21 @@
 import type {
+  RemoteCompanionGetOutput,
+  RemoteCompanionConfigureInput,
+  RemoteCompanionConfigureOutput,
+  RemoteCompanionRegisterOutput,
+  RemoteCompanionCancelOutput,
+  RemoteCompanionApproveInput,
+  RemoteCompanionApproveOutput,
+  RemoteTailscaleGetOutput,
+  RemoteTailscaleApplyOutput,
+  RemoteStatusOutput,
+  RemotePolicyInput,
+  RemotePolicyOutput,
+  RemoteEnrollInput,
+  RemoteEnrollOutput,
+  RemoteRevokeOutput,
+  RemoteHeartbeatInput,
+  RemoteHeartbeatOutput,
   ServerInfoOutput,
   ServerPairOutput,
   ServerConnectInput,
@@ -10,6 +27,11 @@ import type {
   AgentListOutput,
   AgentGetInput,
   AgentGetOutput,
+  RemoteCatalogThemeOutput,
+  RemoteCatalogAgentsInput,
+  RemoteCatalogAgentsOutput,
+  RemoteCatalogModelsInput,
+  RemoteCatalogModelsOutput,
   PluginListInput,
   PluginListOutput,
   PluginCheckInput,
@@ -101,10 +123,20 @@ import type {
   SessionEnvironmentOutput,
   SessionViewInput,
   SessionViewOutput,
+  MessagePinsInput,
+  MessagePinsOutput,
+  MessagePinInput,
+  MessagePinOutput,
+  MessageRenamePinInput,
+  MessageRenamePinOutput,
+  MessageUnpinInput,
+  MessageUnpinOutput,
   MessageListInput,
   MessageListOutput,
   ModelListInput,
   ModelListOutput,
+  ModelRefreshInput,
+  ModelRefreshOutput,
   ModelDefaultInput,
   ModelDefaultOutput,
   GenerateTextInput,
@@ -163,6 +195,11 @@ import type {
   FormListOutput,
   PermissionRequestListInput,
   PermissionRequestListOutput,
+  PermissionModeGetOutput,
+  PermissionModeSetInput,
+  PermissionModeSetOutput,
+  PermissionModeOptionsInput,
+  PermissionModeOptionsOutput,
   PermissionSavedListInput,
   PermissionSavedListOutput,
   PermissionSavedRemoveInput,
@@ -260,6 +297,10 @@ import type {
   WebsearchQueryOutput,
   ConfigGetInput,
   ConfigGetOutput,
+  ConfigContextGetInput,
+  ConfigContextGetOutput,
+  ConfigContextUpdateInput,
+  ConfigContextUpdateOutput,
   ConfigShellsOutput,
   ConfigUpdateInput,
   ConfigUpdateOutput,
@@ -416,6 +457,143 @@ export function make(options: ClientOptions) {
   })
 
   return {
+    remote: {
+      companion: {
+        get: (requestOptions?: RequestOptions) =>
+          request<RemoteCompanionGetOutput>(
+            {
+              method: "GET",
+              path: `/api/remote/companion`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        configure: (input: RemoteCompanionConfigureInput, requestOptions?: RequestOptions) =>
+          request<RemoteCompanionConfigureOutput>(
+            {
+              method: "PUT",
+              path: `/api/remote/companion`,
+              body: { origin: input["origin"], port: input["port"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        register: (requestOptions?: RequestOptions) =>
+          request<RemoteCompanionRegisterOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/companion/registration`,
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
+        cancel: (requestOptions?: RequestOptions) =>
+          request<RemoteCompanionCancelOutput>(
+            {
+              method: "DELETE",
+              path: `/api/remote/companion/registration`,
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
+        approve: (input: RemoteCompanionApproveInput, requestOptions?: RequestOptions) =>
+          request<RemoteCompanionApproveOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/companion/approval`,
+              body: { requestID: input["requestID"], fingerprint: input["fingerprint"] },
+              successStatus: 204,
+              declaredStatuses: [400, 401, 409],
+              empty: true,
+            },
+            requestOptions,
+          ),
+      },
+      tailscale: {
+        get: (requestOptions?: RequestOptions) =>
+          request<RemoteTailscaleGetOutput>(
+            {
+              method: "GET",
+              path: `/api/remote/tailscale`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 503],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        apply: (requestOptions?: RequestOptions) =>
+          request<RemoteTailscaleApplyOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/tailscale`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 503],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      status: (requestOptions?: RequestOptions) =>
+        request<RemoteStatusOutput>(
+          { method: "GET", path: `/api/remote`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
+          requestOptions,
+        ),
+      policy: (input: RemotePolicyInput, requestOptions?: RequestOptions) =>
+        request<RemotePolicyOutput>(
+          {
+            method: "PUT",
+            path: `/api/remote/policy`,
+            body: { enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      enroll: (input: RemoteEnrollInput, requestOptions?: RequestOptions) =>
+        request<RemoteEnrollOutput>(
+          {
+            method: "POST",
+            path: `/api/remote/enrollment`,
+            body: { backendID: input["backendID"], credentialID: input["credentialID"], digest: input["digest"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 409, 503],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      revoke: (requestOptions?: RequestOptions) =>
+        request<RemoteRevokeOutput>(
+          {
+            method: "DELETE",
+            path: `/api/remote/enrollment`,
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      heartbeat: (input: RemoteHeartbeatInput, requestOptions?: RequestOptions) =>
+        request<RemoteHeartbeatOutput>(
+          {
+            method: "POST",
+            path: `/api/remote/heartbeat`,
+            body: { connected: input["connected"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
     server: {
       info: (requestOptions?: RequestOptions) =>
         request<ServerInfoOutput>(
@@ -485,6 +663,37 @@ export function make(options: ClientOptions) {
             query: { location: input["location"] },
             successStatus: 200,
             declaredStatuses: [400, 401, 404],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    remoteCatalog: {
+      theme: (requestOptions?: RequestOptions) =>
+        request<RemoteCatalogThemeOutput>(
+          { method: "GET", path: `/api/remote/theme`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
+          requestOptions,
+        ),
+      agents: (input?: RemoteCatalogAgentsInput, requestOptions?: RequestOptions) =>
+        request<RemoteCatalogAgentsOutput>(
+          {
+            method: "GET",
+            path: `/api/remote/agent`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      models: (input?: RemoteCatalogModelsInput, requestOptions?: RequestOptions) =>
+        request<RemoteCatalogModelsOutput>(
+          {
+            method: "GET",
+            path: `/api/remote/model`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 503],
             empty: false,
           },
           requestOptions,
@@ -952,7 +1161,12 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/generate`,
-            body: { prompt: input["prompt"] },
+            body: {
+              prompt: input["prompt"],
+              temperature: input["temperature"],
+              model: input["model"],
+              tools: input["tools"],
+            },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 503],
             empty: false,
@@ -1093,6 +1307,52 @@ export function make(options: ClientOptions) {
         ),
     },
     message: {
+      pins: (input: MessagePinsInput, requestOptions?: RequestOptions) =>
+        request<MessagePinsOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin`,
+            query: { cursor: input["cursor"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      pin: (input: MessagePinInput, requestOptions?: RequestOptions) =>
+        request<MessagePinOutput>(
+          {
+            method: "PUT",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin/${encodeURIComponent(input.messageID)}`,
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      renamePin: (input: MessageRenamePinInput, requestOptions?: RequestOptions) =>
+        request<MessageRenamePinOutput>(
+          {
+            method: "PATCH",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin/${encodeURIComponent(input.messageID)}`,
+            body: { label: input["label"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      unpin: (input: MessageUnpinInput, requestOptions?: RequestOptions) =>
+        request<MessageUnpinOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/pin/${encodeURIComponent(input.messageID)}`,
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 500],
+            empty: true,
+          },
+          requestOptions,
+        ),
       list: (input: MessageListInput, requestOptions?: RequestOptions) =>
         request<MessageListOutput>(
           {
@@ -1116,6 +1376,18 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [400, 401, 503],
             empty: false,
+          },
+          requestOptions,
+        ),
+      refresh: (input?: ModelRefreshInput, requestOptions?: RequestOptions) =>
+        request<ModelRefreshOutput>(
+          {
+            method: "POST",
+            path: `/api/model/refresh`,
+            query: { location: input?.["location"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 503],
+            empty: true,
           },
           requestOptions,
         ),
@@ -1507,6 +1779,43 @@ export function make(options: ClientOptions) {
             },
             requestOptions,
           ),
+      },
+      mode: {
+        get: (requestOptions?: RequestOptions) =>
+          request<{ readonly data: PermissionModeGetOutput }>(
+            {
+              method: "GET",
+              path: `/api/permission/mode`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ).then((value) => value.data),
+        set: (input: PermissionModeSetInput, requestOptions?: RequestOptions) =>
+          request<PermissionModeSetOutput>(
+            {
+              method: "PUT",
+              path: `/api/permission/mode`,
+              body: { mode: input["mode"] },
+              successStatus: 204,
+              declaredStatuses: [400, 401],
+              empty: true,
+            },
+            requestOptions,
+          ),
+        options: (input: PermissionModeOptionsInput, requestOptions?: RequestOptions) =>
+          request<{ readonly data: PermissionModeOptionsOutput }>(
+            {
+              method: "GET",
+              path: `/api/permission/mode/options`,
+              query: { location: input["location"], providerID: input["providerID"], modelID: input["modelID"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ).then((value) => value.data),
       },
       saved: {
         list: (input?: PermissionSavedListInput, requestOptions?: RequestOptions) =>
@@ -2185,6 +2494,33 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      context: {
+        get: (input?: ConfigContextGetInput, requestOptions?: RequestOptions) =>
+          request<ConfigContextGetOutput>(
+            {
+              method: "GET",
+              path: `/api/config/context`,
+              query: { location: input?.["location"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401, 500],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        update: (input: ConfigContextUpdateInput, requestOptions?: RequestOptions) =>
+          request<ConfigContextUpdateOutput>(
+            {
+              method: "PATCH",
+              path: `/api/config/context`,
+              query: { location: input["location"] },
+              body: input["payload"],
+              successStatus: 200,
+              declaredStatuses: [400, 401, 500],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
       shells: (requestOptions?: RequestOptions) =>
         request<ConfigShellsOutput>(
           { method: "GET", path: `/api/config/shell`, successStatus: 200, declaredStatuses: [400, 401], empty: false },

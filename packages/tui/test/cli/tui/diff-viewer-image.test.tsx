@@ -153,7 +153,7 @@ function renderImage(
       <TestTuiContexts>
         <ConfigProvider config={createTuiResolvedConfig()}>
           <Keymap.Provider>
-            <ThemeProvider mode={options.mode} source={emptyThemeSource}>
+            <ThemeProvider source={emptyThemeSource}>
               <ToastProvider>
                 <DialogProvider>{component()}</DialogProvider>
               </ToastProvider>

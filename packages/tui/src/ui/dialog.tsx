@@ -2,14 +2,20 @@ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { Keymap } from "../context/keymap"
 import { ThemeContextProvider, useTheme } from "../context/theme"
-import { InputRenderable, MouseButton, Renderable, RGBA } from "@opentui/core"
+import { applyGain, InputRenderable, MouseButton, Renderable } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
 import { useConfig } from "../config"
+import { SplitBorder } from "./border"
 import { copy, copyOnSelectRelease } from "../util/selection"
+import { setTerminalBackgroundGain } from "../util/terminal-background"
+
+const BACKDROP_GAIN = 1 - 150 / 255
 
 export type DialogSize = "medium" | "large" | "xlarge"
+
+export type DialogPlacement = "default" | "bottom"
 
 export function dialogWidth(size: DialogSize) {
   if (size === "xlarge") return 116
@@ -21,12 +27,19 @@ export function Dialog(
   props: ParentProps<{
     size?: DialogSize
     centered?: boolean
+    placement?: DialogPlacement
     onClose: () => void
   }>,
 ) {
   const dimensions = useTerminalDimensions()
   const theme = useTheme().surface("dialog")
   const renderer = useRenderer()
+  const bottom = () => props.placement === "bottom"
+
+  createEffect(() => {
+    setTerminalBackgroundGain(renderer, bottom() ? 1 : BACKDROP_GAIN)
+  })
+  onCleanup(() => setTerminalBackgroundGain(renderer, 1))
 
   let dismiss = false
   return (
@@ -44,14 +57,16 @@ export function Dialog(
       }}
       width={dimensions().width}
       height={dimensions().height}
-      alignItems="center"
-      justifyContent={props.centered ? "center" : undefined}
+      alignItems={bottom() ? "stretch" : "center"}
+      justifyContent={bottom() ? "flex-end" : props.centered ? "center" : undefined}
       position="absolute"
       zIndex={3000}
-      paddingTop={props.centered ? 0 : dimensions().height / 4}
+      paddingTop={bottom() || props.centered ? 0 : dimensions().height / 4}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      renderBefore={(buffer) => {
+        if (!bottom()) applyGain(buffer, BACKDROP_GAIN)
+      }}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
@@ -61,12 +76,16 @@ export function Dialog(
           dismiss = false
           e.stopPropagation()
         }}
-        width={dialogWidth(props.size ?? "medium")}
-        maxWidth={dimensions().width - 2}
+        width={bottom() ? "100%" : dialogWidth(props.size ?? "medium")}
+        maxWidth={bottom() ? dimensions().width : dimensions().width - 2}
+        border={bottom() ? SplitBorder.border : false}
+        customBorderChars={bottom() ? SplitBorder.customBorderChars : undefined}
+        borderColor={bottom() ? theme.border.base : undefined}
         backgroundColor={theme.background.base}
-        paddingTop={1}
       >
-        {props.children}
+        <box backgroundColor={bottom() ? theme.background.raised.high : undefined} paddingTop={1}>
+          {props.children}
+        </box>
       </box>
       </box>
     </ThemeContextProvider>
@@ -82,6 +101,7 @@ function init() {
     }[],
     size: "medium" as DialogSize,
     centered: false,
+    placement: "default" as DialogPlacement,
   })
 
   const renderer = useRenderer()
@@ -163,6 +183,7 @@ function init() {
       batch(() => {
         setStore("size", "medium")
         setStore("centered", false)
+        setStore("placement", "default")
         setStore("stack", [])
       })
       refocus()
@@ -178,6 +199,7 @@ function init() {
       batch(() => {
         setStore("size", options?.size ?? "medium")
         setStore("centered", false)
+        setStore("placement", "default")
         setStore("stack", [
           {
             element: input,
@@ -204,6 +226,12 @@ function init() {
     },
     setCentered(centered: boolean) {
       setStore("centered", centered)
+    },
+    get placement() {
+      return store.placement
+    },
+    setPlacement(placement: DialogPlacement) {
+      setStore("placement", placement)
     },
   }
 }
@@ -240,7 +268,7 @@ export function DialogProvider(props: ParentProps) {
         }
       >
         <Show when={value.stack.length}>
-          <Dialog onClose={() => value.clear()} size={value.size} centered={value.centered}>
+          <Dialog onClose={() => value.clear()} size={value.size} centered={value.centered} placement={value.placement}>
             {value.stack.at(-1)!.element}
           </Dialog>
         </Show>

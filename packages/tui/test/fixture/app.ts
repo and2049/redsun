@@ -12,8 +12,12 @@ export async function createAppFixture(
     height?: number
     state?: string
     config?: Config.Info
+    configDirectory?: string
+    configService?: Config.Interface
     args?: TuiInput["args"]
+    plugins?: TuiInput["plugins"]
     fetch?: FetchHandler
+    service?: TuiInput["server"]["service"]
   } = {},
 ) {
   const { run } = await import("../../src/app")
@@ -32,14 +36,23 @@ export async function createAppFixture(
   const task = Effect.runPromise(
     run({
       app: { name: "test", version: "test", channel: "test" },
-      server: { endpoint: { url: server.url.toString() } },
-      config: { get: async () => input.config ?? { animations: false }, update: async () => ({}) },
+      server: { endpoint: { url: server.url.toString() }, service: input.service },
+      config: input.configService ?? {
+        get: async () => input.config ?? { animations: false },
+        update: async () => ({}),
+      },
       packages: { prepare: async () => ({ directory: "" }) },
+      plugins: input.plugins,
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
       args: input.args ?? {},
       log: () => {},
     }).pipe(
-      Effect.provide(Global.layerWith({ state: input.state ?? state?.path })),
+      Effect.provide(
+        Global.layerWith({
+          state: input.state ?? state?.path,
+          ...(input.configDirectory ? { config: input.configDirectory } : {}),
+        }),
+      ),
       Effect.provide(FileSystem.layerNoop({})),
     ),
   )

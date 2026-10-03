@@ -2,7 +2,7 @@ import { RGBA, type OptimizedBuffer, type RenderContext, type TextOptions } from
 import { extend, type JSX } from "@opentui/solid"
 import { splitProps } from "solid-js"
 import { MaskedTextRenderable } from "./masked-text"
-import { coast, intensityAt } from "./tab-pulse"
+import { coast, intensityAt } from "./shimmer-motion"
 
 type ShimmerTextOptions = TextOptions & {
   shimmer: RGBA

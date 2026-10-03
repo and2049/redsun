@@ -5,6 +5,23 @@ import { HttpClientError } from "effect/unstable/http"
 import { HttpApiClient } from "effect/unstable/httpapi"
 import { ClientApi } from "../../contract"
 import type {
+  RemoteCompanionGetOutput,
+  RemoteCompanionConfigureInput,
+  RemoteCompanionConfigureOutput,
+  RemoteCompanionRegisterOutput,
+  RemoteCompanionCancelOutput,
+  RemoteCompanionApproveInput,
+  RemoteCompanionApproveOutput,
+  RemoteTailscaleGetOutput,
+  RemoteTailscaleApplyOutput,
+  RemoteStatusOutput,
+  RemotePolicyInput,
+  RemotePolicyOutput,
+  RemoteEnrollInput,
+  RemoteEnrollOutput,
+  RemoteRevokeOutput,
+  RemoteHeartbeatInput,
+  RemoteHeartbeatOutput,
   ServerInfoOutput,
   ServerPairOutput,
   ServerConnectInput,
@@ -16,6 +33,11 @@ import type {
   AgentListOutput,
   AgentGetInput,
   AgentGetOutput,
+  RemoteCatalogThemeOutput,
+  RemoteCatalogAgentsInput,
+  RemoteCatalogAgentsOutput,
+  RemoteCatalogModelsInput,
+  RemoteCatalogModelsOutput,
   PluginListInput,
   PluginListOutput,
   PluginCheckInput,
@@ -107,10 +129,20 @@ import type {
   SessionEnvironmentOutput,
   SessionViewInput,
   SessionViewOutput,
+  MessagePinsInput,
+  MessagePinsOutput,
+  MessagePinInput,
+  MessagePinOutput,
+  MessageRenamePinInput,
+  MessageRenamePinOutput,
+  MessageUnpinInput,
+  MessageUnpinOutput,
   MessageListInput,
   MessageListOutput,
   ModelListInput,
   ModelListOutput,
+  ModelRefreshInput,
+  ModelRefreshOutput,
   ModelDefaultInput,
   ModelDefaultOutput,
   GenerateTextInput,
@@ -169,6 +201,11 @@ import type {
   FormListOutput,
   PermissionRequestListInput,
   PermissionRequestListOutput,
+  PermissionModeGetOutput,
+  PermissionModeSetInput,
+  PermissionModeSetOutput,
+  PermissionModeOptionsInput,
+  PermissionModeOptionsOutput,
   PermissionSavedListInput,
   PermissionSavedListOutput,
   PermissionSavedRemoveInput,
@@ -262,6 +299,10 @@ import type {
   WebsearchQueryOutput,
   ConfigGetInput,
   ConfigGetOutput,
+  ConfigContextGetInput,
+  ConfigContextGetOutput,
+  ConfigContextUpdateInput,
+  ConfigContextUpdateOutput,
   ConfigShellsOutput,
   ConfigUpdateInput,
   ConfigUpdateOutput,
@@ -283,6 +324,78 @@ const preserveStream =
   <A>() =>
   <E, R>(stream: Stream.Stream<A, E, R>) =>
     stream
+
+const EndpointRemoteCompanionGet = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteCompanionGetOutput>()(raw["remote.companion"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteCompanionConfigure = (raw: RawClient["server.remote"]) => (input: RemoteCompanionConfigureInput) =>
+  preserveEffect<RemoteCompanionConfigureOutput>()(
+    raw["remote.companion.configure"]({ payload: { origin: input["origin"], port: input["port"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointRemoteCompanionRegister = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteCompanionRegisterOutput>()(
+    raw["remote.companion.register"]({}).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteCompanionCancel = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteCompanionCancelOutput>()(
+    raw["remote.companion.cancel"]({}).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteCompanionApprove = (raw: RawClient["server.remote"]) => (input: RemoteCompanionApproveInput) =>
+  preserveEffect<RemoteCompanionApproveOutput>()(
+    raw["remote.companion.approve"]({
+      payload: { requestID: input["requestID"], fingerprint: input["fingerprint"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteTailscaleGet = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteTailscaleGetOutput>()(raw["remote.tailscale"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteTailscaleApply = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteTailscaleApplyOutput>()(raw["remote.tailscale.apply"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteStatus = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteStatusOutput>()(raw["remote.status"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemotePolicy = (raw: RawClient["server.remote"]) => (input: RemotePolicyInput) =>
+  preserveEffect<RemotePolicyOutput>()(
+    raw["remote.policy"]({ payload: { enabled: input["enabled"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteEnroll = (raw: RawClient["server.remote"]) => (input: RemoteEnrollInput) =>
+  preserveEffect<RemoteEnrollOutput>()(
+    raw["remote.enroll"]({
+      payload: { backendID: input["backendID"], credentialID: input["credentialID"], digest: input["digest"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteRevoke = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteRevokeOutput>()(raw["remote.revoke"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteHeartbeat = (raw: RawClient["server.remote"]) => (input: RemoteHeartbeatInput) =>
+  preserveEffect<RemoteHeartbeatOutput>()(
+    raw["remote.heartbeat"]({ payload: { connected: input["connected"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupRemote = (raw: RawClient["server.remote"]) => ({
+  companion: {
+    get: EndpointRemoteCompanionGet(raw),
+    configure: EndpointRemoteCompanionConfigure(raw),
+    register: EndpointRemoteCompanionRegister(raw),
+    cancel: EndpointRemoteCompanionCancel(raw),
+    approve: EndpointRemoteCompanionApprove(raw),
+  },
+  tailscale: { get: EndpointRemoteTailscaleGet(raw), apply: EndpointRemoteTailscaleApply(raw) },
+  status: EndpointRemoteStatus(raw),
+  policy: EndpointRemotePolicy(raw),
+  enroll: EndpointRemoteEnroll(raw),
+  revoke: EndpointRemoteRevoke(raw),
+  heartbeat: EndpointRemoteHeartbeat(raw),
+})
 
 const EndpointServerInfo = (raw: RawClient["server.server"]) => () =>
   preserveEffect<ServerInfoOutput>()(raw["server.info"]({}).pipe(Effect.mapError(mapClientError)))
@@ -329,6 +442,25 @@ const EndpointAgentGet = (raw: RawClient["server.agent"]) => (input: AgentGetInp
 const adaptGroupAgent = (raw: RawClient["server.agent"]) => ({
   list: EndpointAgentList(raw),
   get: EndpointAgentGet(raw),
+})
+
+const EndpointRemoteCatalogTheme = (raw: RawClient["server.remoteCatalog"]) => () =>
+  preserveEffect<RemoteCatalogThemeOutput>()(raw["remoteCatalog.theme"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteCatalogAgents = (raw: RawClient["server.remoteCatalog"]) => (input?: RemoteCatalogAgentsInput) =>
+  preserveEffect<RemoteCatalogAgentsOutput>()(
+    raw["remoteCatalog.agents"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteCatalogModels = (raw: RawClient["server.remoteCatalog"]) => (input?: RemoteCatalogModelsInput) =>
+  preserveEffect<RemoteCatalogModelsOutput>()(
+    raw["remoteCatalog.models"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupRemoteCatalog = (raw: RawClient["server.remoteCatalog"]) => ({
+  theme: EndpointRemoteCatalogTheme(raw),
+  agents: EndpointRemoteCatalogAgents(raw),
+  models: EndpointRemoteCatalogModels(raw),
 })
 
 const EndpointPluginList = (raw: RawClient["server.plugin"]) => (input?: PluginListInput) =>
@@ -660,7 +792,15 @@ const EndpointSessionInstructionsEntryRemove =
 
 const EndpointSessionGenerate = (raw: RawClient["server.session"]) => (input: SessionGenerateInput) =>
   preserveEffect<SessionGenerateOutput>()(
-    raw["session.generate"]({ params: { sessionID: input["sessionID"] }, payload: { prompt: input["prompt"] } }).pipe(
+    raw["session.generate"]({
+      params: { sessionID: input["sessionID"] },
+      payload: {
+        prompt: input["prompt"],
+        temperature: input["temperature"],
+        model: input["model"],
+        tools: input["tools"],
+      },
+    }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
     ),
@@ -813,6 +953,35 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
   view: EndpointSessionView(raw),
 })
 
+const EndpointMessagePins = (raw: RawClient["server.message"]) => (input: MessagePinsInput) =>
+  preserveEffect<MessagePinsOutput>()(
+    raw["session.pins"]({ params: { sessionID: input["sessionID"] }, query: { cursor: input["cursor"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointMessagePin = (raw: RawClient["server.message"]) => (input: MessagePinInput) =>
+  preserveEffect<MessagePinOutput>()(
+    raw["session.pin"]({ params: { sessionID: input["sessionID"], messageID: input["messageID"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointMessageRenamePin = (raw: RawClient["server.message"]) => (input: MessageRenamePinInput) =>
+  preserveEffect<MessageRenamePinOutput>()(
+    raw["session.pin.rename"]({
+      params: { sessionID: input["sessionID"], messageID: input["messageID"] },
+      payload: { label: input["label"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointMessageUnpin = (raw: RawClient["server.message"]) => (input: MessageUnpinInput) =>
+  preserveEffect<MessageUnpinOutput>()(
+    raw["session.unpin"]({ params: { sessionID: input["sessionID"], messageID: input["messageID"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
 const EndpointMessageList = (raw: RawClient["server.message"]) => (input: MessageListInput) =>
   preserveEffect<MessageListOutput>()(
     raw["session.messages"]({
@@ -821,11 +990,22 @@ const EndpointMessageList = (raw: RawClient["server.message"]) => (input: Messag
     }).pipe(Effect.mapError(mapClientError)),
   )
 
-const adaptGroupMessage = (raw: RawClient["server.message"]) => ({ list: EndpointMessageList(raw) })
+const adaptGroupMessage = (raw: RawClient["server.message"]) => ({
+  pins: EndpointMessagePins(raw),
+  pin: EndpointMessagePin(raw),
+  renamePin: EndpointMessageRenamePin(raw),
+  unpin: EndpointMessageUnpin(raw),
+  list: EndpointMessageList(raw),
+})
 
 const EndpointModelList = (raw: RawClient["server.model"]) => (input?: ModelListInput) =>
   preserveEffect<ModelListOutput>()(
     raw["model.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointModelRefresh = (raw: RawClient["server.model"]) => (input?: ModelRefreshInput) =>
+  preserveEffect<ModelRefreshOutput>()(
+    raw["model.refresh"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
 const EndpointModelDefault = (raw: RawClient["server.model"]) => (input?: ModelDefaultInput) =>
@@ -835,6 +1015,7 @@ const EndpointModelDefault = (raw: RawClient["server.model"]) => (input?: ModelD
 
 const adaptGroupModel = (raw: RawClient["server.model"]) => ({
   list: EndpointModelList(raw),
+  refresh: EndpointModelRefresh(raw),
   default: EndpointModelDefault(raw),
 })
 
@@ -1106,6 +1287,29 @@ const EndpointPermissionRequestList = (raw: RawClient["server.permission"]) => (
     raw["permission.request.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointPermissionModeGet = (raw: RawClient["server.permission"]) => () =>
+  preserveEffect<PermissionModeGetOutput>()(
+    raw["permission.mode.get"]({}).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
+const EndpointPermissionModeSet = (raw: RawClient["server.permission"]) => (input: PermissionModeSetInput) =>
+  preserveEffect<PermissionModeSetOutput>()(
+    raw["permission.mode.set"]({ payload: { mode: input["mode"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointPermissionModeOptions = (raw: RawClient["server.permission"]) => (input: PermissionModeOptionsInput) =>
+  preserveEffect<PermissionModeOptionsOutput>()(
+    raw["permission.mode.options"]({
+      query: { location: input["location"], providerID: input["providerID"], modelID: input["modelID"] },
+    }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
 const EndpointPermissionSavedList = (raw: RawClient["server.permission"]) => (input?: PermissionSavedListInput) =>
   preserveEffect<PermissionSavedListOutput>()(
     raw["permission.saved.list"]({ query: { projectID: input?.["projectID"] } }).pipe(
@@ -1164,6 +1368,11 @@ const EndpointPermissionReply = (raw: RawClient["server.permission"]) => (input:
 
 const adaptGroupPermission = (raw: RawClient["server.permission"]) => ({
   request: { list: EndpointPermissionRequestList(raw) },
+  mode: {
+    get: EndpointPermissionModeGet(raw),
+    set: EndpointPermissionModeSet(raw),
+    options: EndpointPermissionModeOptions(raw),
+  },
   saved: { list: EndpointPermissionSavedList(raw), remove: EndpointPermissionSavedRemove(raw) },
   create: EndpointPermissionCreate(raw),
   list: EndpointPermissionList(raw),
@@ -1558,6 +1767,20 @@ const EndpointConfigGet = (raw: RawClient["server.config"]) => (input?: ConfigGe
     raw["config.get"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointConfigContextGet = (raw: RawClient["server.config"]) => (input?: ConfigContextGetInput) =>
+  preserveEffect<ConfigContextGetOutput>()(
+    raw["config.context.get"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+type ConfigContextUpdateRequest = Parameters<RawClient["server.config"]["config.context.update"]>[0]
+const EndpointConfigContextUpdate = (raw: RawClient["server.config"]) => (input: ConfigContextUpdateInput) =>
+  preserveEffect<ConfigContextUpdateOutput>()(
+    raw["config.context.update"]({
+      query: { location: input["location"] },
+      payload: input["payload"],
+    } as ConfigContextUpdateRequest).pipe(Effect.mapError(mapClientError)),
+  )
+
 const EndpointConfigShells = (raw: RawClient["server.config"]) => () =>
   preserveEffect<ConfigShellsOutput>()(raw["config.shells"]({}).pipe(Effect.mapError(mapClientError)))
 
@@ -1568,14 +1791,17 @@ const EndpointConfigUpdate = (raw: RawClient["server.config"]) => (input: Config
 
 const adaptGroupConfig = (raw: RawClient["server.config"]) => ({
   get: EndpointConfigGet(raw),
+  context: { get: EndpointConfigContextGet(raw), update: EndpointConfigContextUpdate(raw) },
   shells: EndpointConfigShells(raw),
   update: EndpointConfigUpdate(raw),
 })
 
 const adaptClient = (raw: RawClient) => ({
+  remote: adaptGroupRemote(raw["server.remote"]),
   server: adaptGroupServer(raw["server.server"]),
   location: adaptGroupLocation(raw["server.location"]),
   agent: adaptGroupAgent(raw["server.agent"]),
+  remoteCatalog: adaptGroupRemoteCatalog(raw["server.remoteCatalog"]),
   plugin: adaptGroupPlugin(raw["server.plugin"]),
   session: adaptGroupSession(raw["server.session"]),
   message: adaptGroupMessage(raw["server.message"]),

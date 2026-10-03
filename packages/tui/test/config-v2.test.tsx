@@ -17,29 +17,13 @@ test("validates the explicit diff source defaults", () => {
   expect(() => decodeInfo({ diffs: { source: "auto" } })).toThrow()
 })
 
-test("validates mini replay and work spinner settings", () => {
-  expect(decodeInfo({ mini: { tools: "hide", replay: false, replay_limit: 50 } })).toEqual({
-    mini: { tools: "hide", replay: false, replay_limit: 50 },
-  })
-  expect(() => decodeInfo({ mini: { tools: "quiet" } })).toThrow()
-  expect(() => decodeInfo({ mini: { replay_limit: 0 } })).toThrow()
-  expect(() => decodeInfo({ mini: { replay_limit: 1.5 } })).toThrow()
-  expect(decodeInfo({ mini: { work_spinner: "quadrant-orbit" } })).toEqual({
-    mini: { work_spinner: "quadrant-orbit" },
-  })
-  expect(() => decodeInfo({ mini: { work_spinner: "unknown" } })).toThrow()
-})
-
-test("validates the session tabs setting", () => {
+test("validates the session list scope setting", () => {
   const decode = Schema.decodeUnknownSync(Info)
 
-  expect(decode({ tabs: { mode: "on", layout: "vertical", indicators: "numbers" } })).toEqual({
-    tabs: { mode: "on", layout: "vertical", indicators: "numbers" },
-  })
-  expect(() => decode({ tabs: { indicators: "unknown" } })).toThrow()
-  expect(() => decode({ tabs: { layout: true } })).toThrow()
-  expect(() => decode({ tabs: { mode: true } })).toThrow()
-  expect(decode({ tabs: { enabled: false } })).toEqual({ tabs: { enabled: false } })
+  expect(decode({ tabs: { scope: "global" } })).toEqual({ tabs: { scope: "global" } })
+  expect(() => decode({ tabs: { scope: "everything" } })).toThrow()
+  // The tab strip is gone, so its settings are no longer part of the schema.
+  expect(decode({ tabs: { enabled: true, layout: "vertical" } })).toEqual({ tabs: {} })
   expect(decode({ prompt: { image_preview: true } })).toEqual({ prompt: { image_preview: true } })
   expect(decode({ session: { image_preview: true } })).toEqual({ session: { image_preview: true } })
   expect(decode({ session: { tps: false } })).toEqual({ session: { tps: false } })
@@ -50,58 +34,31 @@ test("validates the session tabs setting", () => {
 test("resolves nested config and keybind defaults", () => {
   const config = resolve(
     {
-      keybinds: { leader: "ctrl+o" },
+      keybinds: { "open.menu": "ctrl+o" },
       leader: { timeout: 500 },
       scroll: { speed: 2, acceleration: true },
       diffs: { view: "split" },
       debug: { devtools: true },
     },
-    { terminalSuspend: true, environment: {} },
+    { terminalSuspend: true },
   )
 
   expect(config.leader.timeout).toBe(500)
-  expect(config.keybinds.get("leader")?.[0]?.key).toBe("ctrl+o")
+  expect(config.keybinds.get("open.menu")?.[0]?.key).toBe("ctrl+o")
+  // `leader` is accepted and ignored so a config written before it went
+  // away still loads.
+  expect(config.keybinds.get("leader")).toEqual([])
   expect(config.scroll).toEqual({ speed: 2, acceleration: true })
   expect(config.diffs).toEqual({ view: "split" })
   expect(config.debug).toEqual({ devtools: true })
-  expect(config.tabs).toEqual({
-    mode: "auto",
-    enabled: true,
-    scope: "cwd",
-    layout: "horizontal",
-    indicators: "status",
-  })
+  expect(config.tabs).toEqual({ scope: "cwd" })
   expect(config.session.new_location).toBe("launch")
   expect(config.session.tps).toBe(true)
 })
 
-test("resolves automatic tabs from the terminal environment", () => {
-  expect(resolve({}, { terminalSuspend: true, environment: {} }).tabs.enabled).toBe(true)
-  expect(resolve({}, { terminalSuspend: true, environment: { HERDR_ENV: "1" } }).tabs.enabled).toBe(false)
-  expect(
-    resolve({ tabs: { mode: "on" } }, { terminalSuspend: true, environment: { HERDR_ENV: "1" } }).tabs.enabled,
-  ).toBe(true)
-  expect(resolve({ tabs: { mode: "off" } }, { terminalSuspend: true, environment: {} }).tabs.enabled).toBe(false)
-  expect(resolve({ tabs: { enabled: false } }, { terminalSuspend: true, environment: {} }).tabs).toMatchObject({
-    mode: "off",
-    enabled: false,
-  })
-  expect(
-    resolve({ tabs: { mode: "on", enabled: false } }, { terminalSuspend: true, environment: {} }).tabs,
-  ).toMatchObject({ mode: "on", enabled: true })
-})
-
-test("shows resolved tab defaults in settings", () => {
-  expect(settings.find((setting) => setting.path.join(".") === "tabs.mode")).toMatchObject({
-    default: "auto",
-    values: ["off", "on", "auto"],
-  })
+test("offers session list scope and no tab strip settings", () => {
   expect(settings.find((setting) => setting.path.join(".") === "tabs.scope")?.default).toBe("cwd")
-  expect(settings.find((setting) => setting.path.join(".") === "tabs.layout")?.default).toBe("horizontal")
-  expect(settings.find((setting) => setting.path.join(".") === "tabs.indicators")).toMatchObject({
-    default: "status",
-    values: ["status", "numbers"],
-  })
+  expect(settings.some((setting) => setting.category === "Tabs")).toBe(false)
 })
 
 test("shows the new session location default in settings", () => {
@@ -112,14 +69,6 @@ test("shows the TPS default in session settings", () => {
   const setting = settings.find((setting) => setting.path.join(".") === "session.tps")
   expect(setting?.category).toBe("Session")
   expect(setting?.default).toBe(true)
-})
-
-test("shows transcript verbosity in session settings", () => {
-  expect(settings.find((setting) => setting.path.join(".") === "session.verbosity")).toMatchObject({
-    category: "Session",
-    default: "medium",
-    values: ["low", "medium", "high"],
-  })
 })
 
 test("names tool grouping explicitly in settings", () => {
@@ -156,23 +105,38 @@ test("uses command IDs as keybind keys", () => {
 test("preserves current navigation defaults", () => {
   const config = resolve({}, { terminalSuspend: true })
 
+  expect(config.keybinds.get("app.exit")).toMatchObject([{ key: "ctrl+q" }])
+  expect(config.keybinds.get("prompt.clear")).toMatchObject([{ key: "ctrl+c" }])
   expect(config.keybinds.get("open.menu")).toMatchObject([{ key: "ctrl+o" }])
-  expect(config.keybinds.get("session.tab.next")).toMatchObject([{ key: "ctrl+tab,alt+down" }])
-  expect(config.keybinds.get("session.tab.previous")).toMatchObject([{ key: "ctrl+shift+tab,alt+up" }])
-  expect(config.keybinds.get("session.tab.next_unread")).toMatchObject([{ key: "alt+shift+down" }])
-  expect(config.keybinds.get("session.tab.previous_unread")).toMatchObject([{ key: "alt+shift+up" }])
-  expect(config.keybinds.get("session.tab.reopen")).toMatchObject([{ key: "ctrl+shift+t" }])
-  expect(config.keybinds.get("session.tab.select.10")).toMatchObject([{ key: "<leader>0,ctrl+0" }])
+  // Redsun has no tab strip, so no session.tab.* command is defined and none
+  // resolves to a key. An override for one is dropped at decode rather than
+  // rejected, so the binding stays empty either way.
+  expect(config.keybinds.get("session.tab.next")).toEqual([])
+  expect(config.keybinds.get("session.tab.select.10")).toEqual([])
+  expect(
+    resolve(decodeInfo({ keybinds: { "session.tab.next": "ctrl+tab" } }), { terminalSuspend: true }).keybinds.get(
+      "session.tab.next",
+    ),
+  ).toEqual([])
+  expect(config.keybinds.get("session.child.first")).toMatchObject([{ key: "ctrl+down" }])
+  expect(config.keybinds.get("session.child.next")).toMatchObject([{ key: "right" }])
+  expect(config.keybinds.get("session.child.previous")).toMatchObject([{ key: "left" }])
+  expect(config.keybinds.get("session.child.list.next")).toMatchObject([{ key: "down" }])
+  expect(config.keybinds.get("session.child.list.previous")).toMatchObject([{ key: "up" }])
+  expect(config.keybinds.get("session.parent")).toMatchObject([{ key: "ctrl+up" }])
   expect(config.keybinds.get("session.message.next")).toEqual([])
   expect(config.keybinds.get("session.message.previous")).toEqual([])
   expect(config.keybinds.get("session.message.user.next")).toEqual([])
   expect(config.keybinds.get("session.message.user.previous")).toEqual([])
   expect(config.keybinds.get("input.buffer.home")).toEqual([])
   expect(config.keybinds.get("input.buffer.end")).toEqual([])
-  expect(config.keybinds.get("prompt.images.view")).toMatchObject([{ key: "<leader>i" }])
+  expect(config.keybinds.get("prompt.images.view")).toEqual([])
 })
 
-test("preserves migrated v1 keybind defaults", () => {
+test("maps every migrated v1 keybind onto a command that still exists", () => {
+  // The defaults deliberately diverge -- redsun de-leadered, so `<leader>l`
+  // became a bare `l` in normal mode. What has to keep holding is the *name*
+  // mapping, which is what a v1 config is migrated through.
   const pairs = [
     ["app.exit", "app_exit"],
     ["prompt.paste", "input_paste"],
@@ -184,7 +148,8 @@ test("preserves migrated v1 keybind defaults", () => {
 
   pairs.forEach(([command, name]) => {
     expect(CommandMap[name]).toBe(command)
-    expect(TuiKeybind.Definitions[command].default).toEqual(Definitions[name].default)
+    expect(TuiKeybind.Definitions[command], command).toBeDefined()
+    expect(Definitions[name], name).toBeDefined()
   })
 })
 
@@ -192,13 +157,6 @@ test("accepts every v2-only named command ID", () => {
   const commands = [
     "server.pair",
     "session.toggle.exploration_grouping",
-    "composer.subagent.up",
-    "composer.subagent.down",
-    "composer.subagent.select",
-    "composer.subagent.interrupt",
-    "composer.shell.up",
-    "composer.shell.down",
-    "composer.shell.kill",
     "diff.down",
     "diff.up",
     "diff.page.down",
@@ -210,6 +168,7 @@ test("accepts every v2-only named command ID", () => {
     "diff.mark_reviewed",
     "opencode.settings",
     "service.restart",
+    "permission.mode",
     "session.cd",
     "app.scrap",
   ]
@@ -223,13 +182,6 @@ test("accepts every v2-only named command ID", () => {
 
 test("centralizes named command defaults and resolves explicit none", () => {
   const defaults = {
-    "composer.subagent.up": "up",
-    "composer.subagent.down": "down",
-    "composer.subagent.select": "return",
-    "composer.subagent.interrupt": "ctrl+d",
-    "composer.shell.up": "up",
-    "composer.shell.down": "down",
-    "composer.shell.kill": "ctrl+d",
     "diff.down": "j,down",
     "diff.up": "k,up",
     "diff.page.down": "pagedown,ctrl+f",
@@ -301,7 +253,7 @@ test("provides config and its host interface", async () => {
 
   function Consumer() {
     context = useConfig()
-    return <text>{`${context.data.mouse ? "mouse" : "none"} ${context.data.keybinds.get("leader")?.[0]?.key}`}</text>
+    return <text>{`${context.data.mouse ? "mouse" : "none"} ${context.data.keybinds.get("open.menu")?.[0]?.key}`}</text>
   }
 
   const app = await testRender(() => (
@@ -311,15 +263,34 @@ test("provides config and its host interface", async () => {
   ))
   try {
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("mouse ctrl+x")
+    expect(app.captureCharFrame()).toContain("mouse ctrl+o")
     if (!context) throw new Error("Config context was not provided")
     await context.update((draft) => {
       draft.mouse = false
-      draft.keybinds = { leader: "ctrl+o" }
+      draft.keybinds = { "open.menu": "ctrl+shift+o" }
     })
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("none ctrl+o")
+    expect(app.captureCharFrame()).toContain("none ctrl+shift+o")
   } finally {
     app.renderer.destroy()
   }
+})
+
+test("binds no command behind a leader key", () => {
+  // Redsun has no leader. Normal mode frees every bare letter to be a command,
+  // so `<leader>l` became `l` and the token has nothing left to introduce.
+  for (const [command, definition] of Object.entries(TuiKeybind.Definitions)) {
+    const value = JSON.stringify(definition.default)
+    expect(value, command).not.toContain("<leader>")
+  }
+  expect(Object.keys(TuiKeybind.Definitions)).not.toContain("leader")
+})
+
+test("keeps shift+tab for auto-approve and moves interrupt off escape", () => {
+  const config = resolve({}, { terminalSuspend: true })
+  // The auto-approve readout row names this shortcut, so it has to be the one.
+  expect(config.keybinds.get("permission.mode")).toMatchObject([{ key: "shift+tab" }])
+  expect(config.keybinds.get("agent.cycle")).toMatchObject([{ key: "tab" }])
+  // Normal mode claims escape, so interrupt cannot keep it.
+  expect(config.keybinds.get("session.interrupt")).toMatchObject([{ key: "ctrl+\\" }])
 })

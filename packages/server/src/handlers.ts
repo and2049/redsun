@@ -30,8 +30,12 @@ import { VcsHandler } from "./handlers/vcs"
 import { EventFeed } from "./event-feed"
 import { MigrationHandler } from "./handlers/migration"
 import { ConfigHandler } from "./handlers/config"
+import { RemoteHandler } from "./handlers/remote-control"
+import { RemoteCatalogHandler } from "./handlers/remote-catalog"
 
 export const handlers = Layer.mergeAll(
+  RemoteHandler,
+  RemoteCatalogHandler,
   ServerHandler,
   DebugHandler,
   MigrationHandler,

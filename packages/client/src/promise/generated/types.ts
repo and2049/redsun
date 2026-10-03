@@ -1,5 +1,25 @@
 export type JsonValue = null | boolean | number | string | Array<JsonValue> | { [key: string]: JsonValue }
 
+export type RemoteControlApproval = { requestID: string; fingerprint: string }
+
+export type RemoteControlTailscale = {
+  host: string
+  origin: string
+  certificate: boolean
+  mapping: "missing" | "ready" | "conflict"
+}
+
+export type RemoteControlStatus = {
+  supported: boolean
+  enabled: boolean
+  state: "disabled" | "unavailable" | "ready" | "connected"
+  enrolled: boolean
+  backendID?: string
+  processID: string
+  version: 1
+  leaseSeconds: 30
+}
+
 export type ServerInfo = { version: string; pid: number; urls: Array<string>; paths: { tmp: string } }
 
 export type PairingCode = { code: string; expires_in: number }
@@ -19,6 +39,49 @@ export type ProviderTransport = "http" | "websocket"
 export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
+
+export type RemoteControlTheme = {
+  name: string
+  mode: "light" | "dark"
+  colors: {
+    text: {
+      default: string
+      subdued: string
+      action: { primary: string; secondary: string; destructive: string }
+      status: { running: string; question: string; permission: string; unread: string }
+      feedback: { error: string; warning: string; success: string; info: string }
+    }
+    background: {
+      default: string
+      offset: string
+      overlay: string
+      action: { primary: string; secondary: string; destructive: string }
+      feedback: { error: string; warning: string; success: string; info: string }
+    }
+    border: { default: string }
+    diff: { added: string; removed: string }
+    markdown: {
+      text: string
+      heading: string
+      link: string
+      linkText: string
+      code: string
+      blockQuote: string
+      emphasis: string
+      strong: string
+      horizontalRule: string
+      listItem: string
+      listEnumeration: string
+      image: string
+      imageText: string
+      codeBlock: string
+    }
+  }
+}
+
+export type RemoteControlAgentChoice = { id: string; name: string; mode: "subagent" | "primary" | "all" }
+
+export type RemoteControlModelChoice = { id: string; providerID: string; name: string; variants: Array<{ id: string }> }
 
 export type PluginSource =
   | { type: "builtin" }
@@ -221,6 +284,17 @@ export type FormExternalField = { key: string; type: "external"; url: string; ti
 
 export type FormValue = string | number | "Infinity" | "-Infinity" | "NaN" | boolean | Array<string>
 
+export type SessionMessagePinInfo = {
+  sessionID: string
+  messageID: string
+  label: string | null
+  preview: string
+  role: "user" | "assistant"
+  created: number
+  updated: number
+  messageCreated: number
+}
+
 export type ModelReasoningField = "reasoning" | "reasoning_content" | "reasoning_text" | (string & {})
 
 export type ModelMaxTokensField = "max_completion_tokens" | "max_tokens"
@@ -311,6 +385,8 @@ export type ProjectCommands = { start?: string }
 export type ProjectTime = { created: number; updated: number; active: number }
 
 export type PermissionSource = { type: "tool"; messageID: string; id: string }
+
+export type PermissionMode = "normal" | "auto" | "native_auto"
 
 export type PermissionSavedInfo = {
   id: string
@@ -440,6 +516,16 @@ export type ConfigWorktree = { directory: string }
 export type ConfigModelCapabilities = { tools?: boolean; input?: Array<string>; output?: Array<string> }
 
 export type ConfigShellOption = { path: string; name: string; acceptable: boolean }
+
+export type RemoteControlCompanion = {
+  running: boolean
+  error?: string
+  origin?: string
+  port: number
+  pending: Array<RemoteControlApproval>
+}
+
+export type RemoteControlPolicyResult = { status: RemoteControlStatus; persisted: boolean }
 
 export type SessionMessageLocationSwitched = {
   id: string
@@ -975,6 +1061,42 @@ export type SessionCompactionDelta = {
   data: { sessionID: string; text: string }
 }
 
+export type SessionPinsUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.pins.updated"
+  location?: LocationRef
+  data: { sessionID: string }
+}
+
+export type RemoteStatus = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "remote.status"
+  location?: LocationRef
+  data: {
+    supported: boolean
+    enabled: boolean
+    state: "disabled" | "unavailable" | "ready" | "connected"
+    enrolled: boolean
+    backendID?: string
+    processID: string
+    version: 1
+    leaseSeconds: 30
+  }
+}
+
+export type RemoteSync = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "remote.sync"
+  location?: LocationRef
+  data: {}
+}
+
 export type FilesystemChanged = {
   id: string
   created: number
@@ -1390,6 +1512,20 @@ export type SessionMessageAssistantReasoning1 = {
   time?: { created: number; completed?: number }
 }
 
+export type SessionStepUsage = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.step.usage"
+  location?: LocationRef
+  data: {
+    sessionID: string
+    assistantMessageID: string
+    tokens: TokenUsageInfo
+    providerState?: SessionMessageProviderState1
+  }
+}
+
 export type ToolContent1 = ToolTextContent | ToolFileContent1
 
 export type FormNumberField = {
@@ -1463,6 +1599,8 @@ export type FormMultiselectField = {
 }
 
 export type FormAnswer = { [x: string]: FormValue }
+
+export type SessionMessagePinPage = { data: Array<SessionMessagePinInfo>; next?: string }
 
 export type ModelCompatibility = {
   reasoningField?: ModelReasoningField
@@ -1554,6 +1692,15 @@ export type PermissionAsked = {
     source?: PermissionSource
     message?: string
   }
+}
+
+export type PermissionModeChanged = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "permission.mode.changed"
+  location?: LocationRef
+  data: { mode: PermissionMode }
 }
 
 export type PermissionReplied = {
@@ -2119,7 +2266,23 @@ export type ConfigEntry =
                 }
           }
         }
-        compaction?: { auto?: boolean; keep?: { tokens?: number }; buffer?: number }
+        compaction?: {
+          auto?: boolean
+          keep?: { tokens?: number }
+          buffer?: number
+          strategy?: "hybrid" | "algorithmic" | "llm"
+          max_tool_results?: number
+          threshold?: number
+        }
+        attribution?: { commit?: boolean | string }
+        advisor?: {
+          enabled?: boolean
+          model?: string
+          mode?: "auto" | "aside-only"
+          cooldown_turns?: number
+          guidance?: string
+        }
+        project_memory?: { load?: "outline" | "full" }
         skills?: Array<string>
         commands?: {
           [x: string]: {
@@ -2132,6 +2295,9 @@ export type ConfigEntry =
           }
         }
         instructions?: Array<string>
+        instruction_max_chars?: number
+        stale_read_deduplication?: boolean
+        chatgpt_context_window?: "default" | "max"
         references?: {
           [x: string]:
             | string
@@ -2191,6 +2357,39 @@ export type ConfigEntry =
           portable_shell_scanner?: boolean
           subagent_depth?: number
           policies?: Array<{ action: "provider.use" | "permission"; resource: string; effect: "allow" | "deny" }>
+        }
+        claude_code?: {
+          enabled?: boolean
+          behavior?: "redsun" | "extended" | "native"
+          binary_path?: string
+          config_dir?: string
+          permission_mode?: string
+          worker_permission_mode?: string
+          extra_args?: Array<string> | { [x: string]: string | null }
+          env?: { [x: string]: string }
+        }
+        acp?: {
+          agents?: {
+            [x: string]: {
+              enabled?: boolean
+              preset?: string
+              name?: string
+              command?: string
+              args?: Array<string>
+              env?: { [x: string]: string }
+              models?: Array<string | { id: string; name?: string }>
+              host_tools?: "extras" | "all"
+              prompt?: "none" | "prefix"
+              inherited_instructions?: Array<string>
+              native_approval_mode?: string
+              native_approval_args?: Array<string>
+              auto_approval_mode?: string
+              auto_approval_args?: Array<string>
+              default_mode?: string
+              compact_command?: string
+              home?: { env?: string; path?: string }
+            }
+          }
         }
       }
     }
@@ -2449,6 +2648,7 @@ export type V2Event =
   | SessionShellEnded
   | SessionStepStarted
   | SessionStepStreamed
+  | SessionStepUsage
   | SessionStepEnded
   | SessionStepFailed
   | SessionTextStarted
@@ -2472,10 +2672,14 @@ export type V2Event =
   | SessionRevertStaged
   | SessionRevertCleared
   | SessionRevertCommitted
+  | SessionPinsUpdated
+  | RemoteStatus
+  | RemoteSync
   | FilesystemChanged
   | ReferenceUpdated
   | PermissionAsked
   | PermissionReplied
+  | PermissionModeChanged
   | PluginUpdated
   | ProjectUpdated
   | WorktreeUpdated
@@ -2525,6 +2729,14 @@ export type UnauthorizedError = { readonly _tag: "UnauthorizedError"; readonly m
 export const isUnauthorizedError = (value: unknown): value is UnauthorizedError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "UnauthorizedError"
 
+export type ConflictError = {
+  readonly _tag: "ConflictError"
+  readonly message: string
+  readonly resource?: string | undefined
+}
+export const isConflictError = (value: unknown): value is ConflictError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
+
 export type ServiceUnavailableError = {
   readonly _tag: "ServiceUnavailableError"
   readonly message: string
@@ -2552,14 +2764,6 @@ export type SessionNotFoundError = {
 }
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
-
-export type ConflictError = {
-  readonly _tag: "ConflictError"
-  readonly message: string
-  readonly resource?: string | undefined
-}
-export const isConflictError = (value: unknown): value is ConflictError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
 export type UnknownError = {
   readonly _tag: "UnknownError"
@@ -2741,6 +2945,58 @@ export type WorktreeError = {
 export const isWorktreeError = (value: unknown): value is WorktreeError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "WorktreeError"
 
+export type RemoteCompanionGetOutput = RemoteControlCompanion
+
+export type RemoteCompanionConfigureInput = {
+  readonly origin: { readonly origin: string; readonly port?: number }["origin"]
+  readonly port?: { readonly origin: string; readonly port?: number }["port"]
+}
+
+export type RemoteCompanionConfigureOutput = RemoteControlCompanion
+
+export type RemoteCompanionRegisterOutput = void
+
+export type RemoteCompanionCancelOutput = void
+
+export type RemoteCompanionApproveInput = {
+  readonly requestID: { readonly requestID: string; readonly fingerprint: string }["requestID"]
+  readonly fingerprint: { readonly requestID: string; readonly fingerprint: string }["fingerprint"]
+}
+
+export type RemoteCompanionApproveOutput = void
+
+export type RemoteTailscaleGetOutput = RemoteControlTailscale
+
+export type RemoteTailscaleApplyOutput = RemoteControlTailscale
+
+export type RemoteStatusOutput = RemoteControlStatus
+
+export type RemotePolicyInput = { readonly enabled: { readonly enabled: boolean }["enabled"] }
+
+export type RemotePolicyOutput = RemoteControlPolicyResult
+
+export type RemoteEnrollInput = {
+  readonly backendID: {
+    readonly backendID: string
+    readonly credentialID: string
+    readonly digest: string
+  }["backendID"]
+  readonly credentialID: {
+    readonly backendID: string
+    readonly credentialID: string
+    readonly digest: string
+  }["credentialID"]
+  readonly digest: { readonly backendID: string; readonly credentialID: string; readonly digest: string }["digest"]
+}
+
+export type RemoteEnrollOutput = void
+
+export type RemoteRevokeOutput = RemoteControlPolicyResult
+
+export type RemoteHeartbeatInput = { readonly connected: { readonly connected: boolean }["connected"] }
+
+export type RemoteHeartbeatOutput = RemoteControlStatus
+
 export type ServerInfoOutput = ServerInfo
 
 export type ServerPairOutput = PairingCode
@@ -2769,6 +3025,20 @@ export type AgentGetInput = {
 }
 
 export type AgentGetOutput = { location: LocationPublicRef; data: AgentInfo }
+
+export type RemoteCatalogThemeOutput = RemoteControlTheme
+
+export type RemoteCatalogAgentsInput = {
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+}
+
+export type RemoteCatalogAgentsOutput = { location: LocationPublicRef; data: Array<RemoteControlAgentChoice> }
+
+export type RemoteCatalogModelsInput = {
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+}
+
+export type RemoteCatalogModelsOutput = { location: LocationPublicRef; data: Array<RemoteControlModelChoice> }
 
 export type PluginListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
@@ -4583,7 +4853,30 @@ export type SessionInstructionsEntryRemoveOutput = void
 
 export type SessionGenerateInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly prompt: { readonly prompt: string }["prompt"]
+  readonly prompt: {
+    readonly prompt: string
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["prompt"]
+  readonly temperature?: {
+    readonly prompt: string
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["temperature"]
+  readonly model?: {
+    readonly prompt: string
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["model"]
+  readonly tools?: {
+    readonly prompt: string
+    readonly temperature?: number | "Infinity" | "-Infinity" | "NaN" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly tools?: boolean | null
+  }["tools"]
 }
 
 export type SessionGenerateOutput = SessionGenerateResponse["data"]
@@ -5507,6 +5800,35 @@ export type SessionViewInput = {
 
 export type SessionViewOutput = void
 
+export type MessagePinsInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly cursor?: { readonly cursor?: string | undefined }["cursor"]
+}
+
+export type MessagePinsOutput = SessionMessagePinPage
+
+export type MessagePinInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+}
+
+export type MessagePinOutput = void
+
+export type MessageRenamePinInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+  readonly label: { readonly label: string | null }["label"]
+}
+
+export type MessageRenamePinOutput = void
+
+export type MessageUnpinInput = {
+  readonly sessionID: { readonly sessionID: string; readonly messageID: string }["sessionID"]
+  readonly messageID: { readonly sessionID: string; readonly messageID: string }["messageID"]
+}
+
+export type MessageUnpinOutput = void
+
 export type MessageListInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly limit?: {
@@ -5586,6 +5908,12 @@ export type ModelListInput = {
 }
 
 export type ModelListOutput = { location: LocationPublicRef; data: Array<ModelInfo> }
+
+export type ModelRefreshInput = {
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+}
+
+export type ModelRefreshOutput = void
 
 export type ModelDefaultInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
@@ -5985,6 +6313,32 @@ export type PermissionRequestListInput = {
 }
 
 export type PermissionRequestListOutput = { location: LocationPublicRef; data: Array<PermissionRequest> }
+
+export type PermissionModeGetOutput = { data: { mode: PermissionMode } }["data"]
+
+export type PermissionModeSetInput = { readonly mode: { readonly mode: "normal" | "auto" | "native_auto" }["mode"] }
+
+export type PermissionModeSetOutput = void
+
+export type PermissionModeOptionsInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly providerID: string
+    readonly modelID: string
+  }["location"]
+  readonly providerID: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly providerID: string
+    readonly modelID: string
+  }["providerID"]
+  readonly modelID: {
+    readonly location?: { readonly directory?: string | undefined } | undefined
+    readonly providerID: string
+    readonly modelID: string
+  }["modelID"]
+}
+
+export type PermissionModeOptionsOutput = { data: { native: boolean } }["data"]
 
 export type PermissionSavedListInput = { readonly projectID?: { readonly projectID?: string | undefined }["projectID"] }
 
@@ -6596,6 +6950,34 @@ export type ConfigGetInput = {
 }
 
 export type ConfigGetOutput = Array<ConfigEntry>
+
+export type ConfigContextGetInput = {
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+}
+
+export type ConfigContextGetOutput = {
+  stale_read_deduplication?: boolean
+  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm"; threshold?: number | null }
+  attribution?: { commit?: boolean | string }
+  chatgpt_context_window?: "default" | "max"
+}
+
+export type ConfigContextUpdateInput = {
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+  readonly payload: {
+    readonly stale_read_deduplication?: boolean
+    readonly compaction?: { readonly strategy?: "hybrid" | "algorithmic" | "llm"; readonly threshold?: number | null }
+    readonly attribution?: { readonly commit?: boolean | string }
+    readonly chatgpt_context_window?: "default" | "max"
+  }
+}
+
+export type ConfigContextUpdateOutput = {
+  stale_read_deduplication?: boolean
+  compaction?: { strategy?: "hybrid" | "algorithmic" | "llm"; threshold?: number | null }
+  attribution?: { commit?: boolean | string }
+  chatgpt_context_window?: "default" | "max"
+}
 
 export type ConfigShellsOutput = Array<ConfigShellOption>
 

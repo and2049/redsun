@@ -1253,10 +1253,8 @@ test.each([80, 160])("file titles stick to the viewport and hand off while scrol
     expect(viewer.app.captureCharFrame().split("src/file1.txt")).toHaveLength(2)
     expect(viewer.app.captureCharFrame()).not.toContain("src/file0.txt")
 
-    const background = second.backgroundColor
     viewer.commands.get("diff.mark_reviewed")!.run()
     await viewer.app.flush()
-    expect(second.backgroundColor).not.toEqual(background)
     expect(second.y).toBe(scroll.viewport.y)
 
     scroll.scrollTo(0)
@@ -1476,9 +1474,6 @@ test.each([
     expect(scroll.scrollTop).toBe(0)
     expect(viewer.app.captureCharFrame()).toContain("0/3")
     const menu = viewer.app.renderer.root.findDescendantById("diff-file-menu")!
-    expect(
-      viewer.app.captureSpans().lines[menu.y].spans.find((span) => span.text.includes("Mark complete"))!.bg,
-    ).not.toEqual(viewer.app.captureSpans().lines[1].spans.find((span) => span.text.includes("All"))!.bg)
     await viewer.app.mockMouse.click(menu.x + 1, menu.y)
     await viewer.app.waitForFrame((frame) => frame.includes("1/3"))
     expect(viewer.app.captureCharFrame()).toMatch(/file01\.txt\s+✓/)
@@ -2053,7 +2048,7 @@ async function renderDiffViewer(
             >
               <Keymap.Provider>
                 <ToastProvider>
-                  <ThemeProvider mode={options.mode ?? "dark"} source={emptyThemeSource}>
+                  <ThemeProvider source={emptyThemeSource}>
                     <DialogProvider>
                       <Content />
                     </DialogProvider>

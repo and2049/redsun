@@ -6,6 +6,7 @@ import type { UpdateState } from "../context/update-notification"
 import { useDialog } from "../ui/dialog"
 import { errorMessage } from "../util/error"
 import { Spinner } from "./spinner"
+import { useLanguage } from "../i18n"
 
 export function DialogUpdate(props: {
   check?: (signal: AbortSignal) => Promise<string | undefined>
@@ -16,6 +17,7 @@ export function DialogUpdate(props: {
 }) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
+  const { t } = useLanguage()
   const [error, setError] = createSignal<string>()
   const [active, setActive] = createSignal(0)
   const controller = new AbortController()
@@ -46,13 +48,13 @@ export function DialogUpdate(props: {
     if (type === "installing") return []
     const confirm =
       type === "available"
-        ? { label: "Update", run: props.install }
+        ? { label: t("titlebar.update"), run: props.install }
         : type === "installed"
-          ? { label: "Restart", run: props.restart }
+          ? { label: t("error.page.action.restart"), run: props.restart }
           : undefined
     return [
       {
-        label: "Skip",
+        label: t("ui.skip"),
         run: () => {
           props.skip()
           dialog.clear()
@@ -69,13 +71,13 @@ export function DialogUpdate(props: {
     commands: [
       {
         bind: "return",
-        title: "Confirm update action",
+        title: t("ui.confirmUpdateAction"),
         group: "Dialog",
         run: () => void buttons()[active()]?.run(),
       },
       ...["left", "right", "tab", "shift+tab"].map((bind) => ({
         bind,
-        title: bind === "left" || bind === "shift+tab" ? "Previous update action" : "Next update action",
+        title: bind === "left" || bind === "shift+tab" ? t("ui.previousUpdateAction") : t("ui.nextUpdateAction"),
         group: "Dialog",
         run: () => {
           const count = buttons().length
@@ -89,11 +91,9 @@ export function DialogUpdate(props: {
     <box paddingLeft={2} paddingRight={2} gap={1}>
       <box flexDirection="row" justifyContent="space-between">
         <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
-          {state().type === "installing"
-            ? "Updating OpenCode"
-            : state().type === "available" || state().type === "failed"
-              ? "Update available"
-              : "Update"}
+          {state().type === "available" || state().type === "installing" || state().type === "failed"
+            ? t("toast.update.title")
+            : t("titlebar.update")}
         </text>
         <text fg={theme.text.muted} onMouseUp={() => dialog.clear()}>
           esc
@@ -104,25 +104,23 @@ export function DialogUpdate(props: {
           {(current) => (
             <Switch>
               <Match when={current.type === "checking"}>
-                <Spinner shimmer={theme.text.base}>Checking for updates…</Spinner>
+                <Spinner shimmer={theme.text.base}>{t("ui.checkingForUpdates")}</Spinner>
               </Match>
               <Match when={current.type === "available"}>
-                <text fg={theme.text.muted}>
-                  An update is available. After installing, you'll be prompted to restart OpenCode.
-                </text>
+                <text fg={theme.text.muted}>{t("ui.anUpdateIsAvailableAfterInstallingYouLl")}</text>
               </Match>
               <Match when={current.type === "installing"}>
                 <Spinner shimmer={theme.text.base}>
-                  {current.type === "installing" ? `Installing OpenCode ${current.version}…` : ""}
+                  {current.type === "installing" ? t("ui.installingRedsun", { version: current.version }) : ""}
                 </Spinner>
               </Match>
               <Match when={current.type === "installed"}>
                 <text fg={theme.text.muted} wrapMode="word">
-                  Update successful! A restart is required. Any active sessions will be resumed automatically.
+                  {t("ui.updateSuccessfulARestartIsRequiredAnyActive")}
                 </text>
               </Match>
               <Match when={current.type === "current"}>
-                <text fg={theme.text.muted}>OpenCode is already up to date.</text>
+                <text fg={theme.text.muted}>{t("ui.redsunIsAlreadyUpToDate")}</text>
               </Match>
               <Match when={current.type === "unavailable"}>
                 <text fg={theme.text.muted} wrapMode="word">

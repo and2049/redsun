@@ -1,5 +1,5 @@
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
-import { RGBA, TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes, type MouseEvent } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type {
   SessionMessageAssistant,
@@ -7,49 +7,27 @@ import type {
   SessionMessageAssistantText,
 } from "@opencode/client"
 import { Spinner } from "../../component/spinner"
-import { createSyntaxStyleMemo, useTheme, useThemes } from "../../context/theme"
+import { useTheme, useThemes } from "../../context/theme"
 import { reasoningSummary } from "../../context/thinking"
 import { usePlugin } from "../../plugin/context"
-import { SplitBorder } from "../../ui/border"
-import { Locale } from "../../util/locale"
-import { use } from "./render-context"
-import { generateThinkingSyntax } from "./thinking-syntax"
-import { canonicalToolName } from "../../util/tool-display"
+import { NAVIGATION_TINT, TRANSCRIPT_GUTTER, use } from "./render-context"
+import { tint } from "../../theme/color"
+
+import { useLanguage } from "../../i18n"
+import { useRenderer } from "@opentui/solid"
+import { stringWidth } from "../../util/string-width"
 
 export const INLINE_TOOL_ICON_WIDTH = 2
-
-const toolDisplays = new Set([
-  "shell",
-  "glob",
-  "read",
-  "grep",
-  "webfetch",
-  "websearch",
-  "write",
-  "edit",
-  "subagent",
-  "execute",
-  "patch",
-  "question",
-  "skill",
-])
-
-export function toolDisplay(tool: string) {
-  const normalized = canonicalToolName(tool)
-  return toolDisplays.has(normalized) ? normalized : "generic"
-}
 
 export function ReasoningPart(props: {
   last: boolean
   part: SessionMessageAssistantReasoning
   message: SessionMessageAssistant
 }) {
-  const theme = useTheme()
-  const { currentSyntax: syntax } = useThemes()
-  const thinkingSyntax = createSyntaxStyleMemo(() => generateThinkingSyntax(syntax(), theme.text.muted))
+  const { t } = useLanguage()
   const ctx = use()
-  // Collapsed by default in hide mode: a single line throughout, so the
-  // layout never shifts. Click to open the full markdown block, click to close.
+  // Collapsed by default in hide mode: a single line throughout, so the layout
+  // never shifts. Click to open the full trace, click to close.
   const [expanded, setExpanded] = createSignal(false)
 
   const content = createMemo(() => reasoningContent(props.part))
@@ -57,57 +35,20 @@ export function ReasoningPart(props: {
     () => props.part.time?.completed !== undefined || props.message.time.completed !== undefined,
   )
   const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
-  const duration = createMemo(() => {
-    const end = props.part.time?.completed ?? props.message.time.completed
-    const start = props.part.time?.created ?? props.message.time.created
-    return end === undefined ? 0 : Math.max(0, end - start)
-  })
   const summary = createMemo(() => reasoningSummary(content()))
-  const toggle = () => {
-    if (!inMinimal()) return
-    setExpanded((prev) => !prev)
-  }
 
   return (
     <Show when={content()}>
-      <box paddingLeft={3} flexDirection="column" flexShrink={0}>
-        <box
-          border={!inMinimal() || expanded() ? ["left"] : undefined}
-          customBorderChars={SplitBorder.customBorderChars}
-          borderColor={theme.decrease(theme.background.base)}
-          paddingLeft={!inMinimal() || expanded() ? 1 : 0}
-        >
-          <box onMouseUp={toggle}>
-            <ReasoningHeader
-              toggleable={inMinimal()}
-              open={!inMinimal() || expanded()}
-              done={isDone()}
-              title={inMinimal() && !expanded() ? summary().title : null}
-              duration={isDone() ? Locale.duration(duration()) : undefined}
-            />
-          </box>
-        </box>
-        <Show when={!inMinimal() || expanded()}>
-          <box marginTop={1}>
-            <box
-              border={["left"]}
-              customBorderChars={SplitBorder.customBorderChars}
-              borderColor={theme.decrease(theme.background.base)}
-              paddingLeft={inMinimal() ? 3 : 1}
-            >
-              <code
-                filetype="markdown"
-                drawUnstyledText={false}
-                streaming={true}
-                syntaxStyle={thinkingSyntax()}
-                content={content()}
-                conceal={ctx.markdownMode() === "rendered"}
-                fg={theme.text.muted}
-              />
-            </box>
-          </box>
-        </Show>
-      </box>
+      <Disclosure
+        label={t("application.thinking")}
+        italic
+        content={content()}
+        title={summary().title}
+        done={isDone()}
+        toggleable={inMinimal()}
+        open={!inMinimal() || expanded()}
+        onToggle={() => setExpanded((prev) => !prev)}
+      />
     </Show>
   )
 }
@@ -115,55 +56,6 @@ export function ReasoningPart(props: {
 export function reasoningContent(part: SessionMessageAssistantReasoning) {
   // OpenRouter encrypts some reasoning blocks; drop the placeholder.
   return part.text.replace("[REDACTED]", "").trim()
-}
-
-function ReasoningHeader(props: {
-  toggleable: boolean
-  open: boolean
-  done: boolean
-  title: string | null
-  duration?: string
-}) {
-  const theme = useTheme()
-  const fg = () =>
-    props.open
-      ? RGBA.fromValues(
-          theme.text.feedback.warning.base.r,
-          theme.text.feedback.warning.base.g,
-          theme.text.feedback.warning.base.b,
-          0.6,
-        )
-      : theme.text.feedback.warning.base
-
-  return (
-    <Switch>
-      <Match when={!props.done}>
-        <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
-        </box>
-      </Match>
-      <Match when={true}>
-        <text fg={fg()} wrapMode="none">
-          <Show when={props.toggleable}>
-            <span>{props.open ? "- " : "+ "}</span>
-          </Show>
-          <span>Thought</span>
-          <Show when={props.title || props.duration}>
-            <span>: </span>
-          </Show>
-          <Show when={props.title}>
-            <span>{props.title}</span>
-          </Show>
-          <Show when={props.duration}>
-            <span>
-              {props.title ? " · " : ""}
-              {props.duration}
-            </span>
-          </Show>
-        </text>
-      </Match>
-    </Switch>
-  )
 }
 
 export function TextPart(props: {
@@ -175,10 +67,14 @@ export function TextPart(props: {
   const theme = useTheme()
   const { currentSyntax: syntax } = useThemes()
   const plugins = usePlugin()
+  const bg = () =>
+    ctx.navigationMessage() === props.message.id
+      ? tint(theme.background.base, theme.accent, NAVIGATION_TINT)
+      : theme.background.base
   return (
     <Show when={props.part.text.trim()}>
-      <box paddingLeft={3} flexShrink={0}>
-        {/* Configure custom nodes before parsing; apply content before streaming so completion keeps the final tokens. */}
+      <box paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
+        {/* Apply content before streaming so completion does not freeze the previous Markdown tokens. */}
         <markdown
           syntaxStyle={syntax()}
           renderNode={plugins.markdown()}
@@ -188,7 +84,7 @@ export function TextPart(props: {
           tableOptions={{ style: "grid", cellPaddingX: 1 }}
           conceal={ctx.markdownMode() === "rendered"}
           fg={theme.markdown.text}
-          bg={theme.background.base}
+          bg={bg()}
         />
       </box>
     </Show>
@@ -198,6 +94,8 @@ export function TextPart(props: {
 export function InlineToolRow(props: {
   icon: string
   iconColor?: RGBA
+  name?: string
+  nameColor?: RGBA
   color?: RGBA
   errorColor?: RGBA
   failed?: boolean
@@ -212,17 +110,30 @@ export function InlineToolRow(props: {
   children: JSX.Element
   onMouseOver?: () => void
   onMouseOut?: () => void
-  onMouseUp?: () => void
+  onMouseUp?: (event: MouseEvent) => void
 }) {
   return (
-    <box paddingLeft={3} onMouseOver={props.onMouseOver} onMouseOut={props.onMouseOut} onMouseUp={props.onMouseUp}>
+    <box
+      paddingLeft={TRANSCRIPT_GUTTER}
+      onMouseOver={props.onMouseOver}
+      onMouseOut={props.onMouseOut}
+      onMouseUp={props.onMouseUp}
+    >
       <Switch>
         <Match when={props.spinner}>
-          <Show when={props.status} fallback={<Spinner color={props.color} children={props.children} />}>
+          <Show
+            when={props.status}
+            fallback={
+              <Spinner color={props.color}>
+                <ToolName name={props.name} color={props.nameColor ?? props.color} />
+                {props.children}
+              </Spinner>
+            }
+          >
             {(status) => (
               <box flexDirection="row" gap={1}>
                 <Spinner color={props.color} />
-                <InlineToolLabel color={props.color} status={status()}>
+                <InlineToolLabel color={props.color} name={props.name} nameColor={props.nameColor} status={status()}>
                   {props.children}
                 </InlineToolLabel>
               </box>
@@ -247,6 +158,10 @@ export function InlineToolRow(props: {
                     fg={props.failed ? props.errorColor : props.color}
                     attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
                   >
+                    <ToolName
+                      name={props.name}
+                      color={props.failed ? props.errorColor : (props.nameColor ?? props.color)}
+                    />
                     {props.failed && !props.complete ? (props.failure ?? props.children) : props.children}
                   </text>
                 }
@@ -254,6 +169,8 @@ export function InlineToolRow(props: {
                 {(status) => (
                   <InlineToolLabel
                     color={props.failed ? props.errorColor : props.color}
+                    name={props.name}
+                    nameColor={props.failed ? props.errorColor : props.nameColor}
                     denied={props.denied}
                     status={status()}
                   >
@@ -274,7 +191,14 @@ export function InlineToolRow(props: {
   )
 }
 
-function InlineToolLabel(props: { color?: RGBA; denied?: boolean; status: JSX.Element; children: JSX.Element }) {
+function InlineToolLabel(props: {
+  color?: RGBA
+  name?: string
+  nameColor?: RGBA
+  denied?: boolean
+  status: JSX.Element
+  children: JSX.Element
+}) {
   return (
     <box flexDirection="row" flexWrap="wrap" columnGap={1} flexGrow={1}>
       <text
@@ -283,9 +207,97 @@ function InlineToolLabel(props: { color?: RGBA; denied?: boolean; status: JSX.El
         fg={props.color}
         attributes={props.denied ? TextAttributes.STRIKETHROUGH : undefined}
       >
+        <ToolName name={props.name} color={props.nameColor ?? props.color} />
         {props.children}
       </text>
       {props.status}
+    </box>
+  )
+}
+
+// The tool name that leads an inline row, in bold accent: the row reads as
+// `Name args` with only the name coloured, so it registers as a call rather
+// than another line of muted prose.
+function ToolName(props: { name?: string; color?: RGBA }) {
+  return (
+    <Show when={props.name}>
+      <span style={{ fg: props.color, bold: true }}>{props.name}</span>{" "}
+    </Show>
+  )
+}
+
+const THINKING_LABEL = "▶ Thinking: "
+
+// The collapsed disclosure row shows the *end* of the content, not its start:
+// what the model concluded is more useful at a glance than how it opened. Sized
+// so the row never wraps -- the chevron, the label and the gutters come off the
+// available width before the tail is taken.
+export function thinkingTeaser(content: string, width: number, label = THINKING_LABEL) {
+  const available = Math.max(10, width - 3 - stringWidth(label) - 4)
+  const flat = content.replace(/\s+/g, " ").trim()
+  if (flat.length <= available) return flat
+  return "..." + flat.slice(flat.length - available)
+}
+
+// A pre-collapsed disclosure: a single "▶ Label: …tail" line that clicking flips
+// to "▼ Label:" with the full content indented flush beneath it. The show mode
+// (`session.toggle.thinking`) renders the same look pinned open. Muted
+// throughout -- reasoning traces and compaction summaries are asides, and
+// colouring them competes with the tool rows for attention. Thinking renders
+// italic; compaction reuses the identical shape without the italic flag.
+export function Disclosure(props: {
+  label: string
+  title: string | null
+  content: string
+  done: boolean
+  toggleable: boolean
+  open: boolean
+  onToggle: () => void
+  italic?: boolean
+  color?: string | RGBA | undefined
+}) {
+  const ctx = use()
+  const theme = useTheme()
+  const renderer = useRenderer()
+  const [hover, setHover] = createSignal(false)
+  const collapsedLabel = () => `▶ ${props.label}: `
+  const teaser = createMemo(() => thinkingTeaser(props.content, ctx.width, collapsedLabel()))
+  const color = () => props.color ?? theme.text.muted
+  const attributes = () => (props.italic ? TextAttributes.ITALIC : undefined)
+
+  return (
+    <box paddingLeft={TRANSCRIPT_GUTTER} paddingRight={TRANSCRIPT_GUTTER} flexDirection="column" flexShrink={0}>
+      <Show
+        when={props.done}
+        fallback={
+          <box flexDirection="row">
+            <Spinner color={theme.text.feedback.warning.base}>
+              {props.title ? `${props.label}: ${props.title}` : props.label}
+            </Spinner>
+          </box>
+        }
+      >
+        <box
+          onMouseOver={() => props.toggleable && setHover(true)}
+          onMouseOut={() => setHover(false)}
+          onMouseUp={(event: MouseEvent) => {
+            if (event.button !== 0 || !props.toggleable) return
+            if (renderer.getSelection()?.getSelectedText()) return
+            props.onToggle()
+          }}
+        >
+          <text fg={hover() ? theme.text.base : color()} wrapMode="none" attributes={attributes()}>
+            {props.open ? `▼ ${props.label}:` : collapsedLabel() + teaser()}
+          </text>
+        </box>
+      </Show>
+      <Show when={props.open && props.content}>
+        <box paddingLeft={2}>
+          <text fg={color()} attributes={attributes()}>
+            {props.content}
+          </text>
+        </box>
+      </Show>
     </box>
   )
 }

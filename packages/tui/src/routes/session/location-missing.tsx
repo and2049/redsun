@@ -10,6 +10,7 @@ import { useToast } from "../../ui/toast"
 import { errorMessage } from "../../util/error"
 import { DialogWorkspaces, type WorkspaceSelection } from "../../component/dialog-workspaces"
 import { useData } from "../../context/data"
+import { useLanguage } from "../../i18n"
 
 export function SessionLocationMissing(props: { directory: string; projectID: string; sessionID: string }) {
   const dialog = useDialog()
@@ -59,22 +60,23 @@ export function SessionLocationMissing(props: { directory: string; projectID: st
 export function SessionLocationUnavailable(props: { directory: string; onMove: () => void }) {
   const paths = useTuiPaths()
   const theme = useTheme()
+  const language = useLanguage()
   const directory = createMemo(() => Locale.truncateMiddle(abbreviateHome(props.directory, paths.home), 72))
 
   return (
     <SessionQuestion
       id="session.location-missing"
-      group="Session recovery"
-      choicesLabel="Recovery actions"
+      group={language.t("session.sessionRecovery")}
+      choicesLabel={language.t("session.recoveryActions")}
       instance={props.directory}
-      title="Session location unavailable"
+      title={language.t("session.sessionLocationUnavailable")}
       body={
         <box paddingLeft={1} gap={1}>
           <text fg={theme.text.muted}>{directory()}</text>
-          <text fg={theme.text.base}>Choose another directory to continue this session.</text>
+          <text fg={theme.text.base}>{language.t("session.chooseAnotherDirectoryToContinueThisSession")}</text>
         </box>
       }
-      options={{ move: "Choose directory" }}
+      options={{ move: language.t("session.chooseDirectory") }}
       onSelect={props.onMove}
     />
   )

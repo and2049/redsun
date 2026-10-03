@@ -46,7 +46,7 @@ test("legacy page key aliases compile as page keys", async () => {
 
 test("formats navigation keys as arrows", async () => {
   let read = () => ({}) as Record<string, string>
-  const commands = ["session.parent", "session.child.first"]
+  const commands = ["session.child.list.previous", "session.child.list.next"]
 
   function Harness() {
     const shortcuts = Keymap.useShortcuts()
@@ -66,8 +66,8 @@ test("formats navigation keys as arrows", async () => {
   ))
   try {
     expect(read()).toEqual({
-      "session.parent": "↑",
-      "session.child.first": "↓",
+      "session.child.list.previous": "↑",
+      "session.child.list.next": "↓",
     })
   } finally {
     app.renderer.destroy()

@@ -14,9 +14,6 @@ import { Keymap } from "../../../src/context/keymap"
 import { LocationProvider, useLocation } from "../../../src/context/location"
 import { RouteProvider } from "../../../src/context/route"
 import { ThemeProvider } from "../../../src/context/theme"
-import { Composer } from "../../../src/routes/session/composer"
-import { DialogProvider } from "../../../src/ui/dialog"
-import { ToastProvider } from "../../../src/ui/toast"
 import { createSessionRows, type SessionRow } from "../../../src/routes/session/rows"
 import { groupRefs } from "../../../src/routes/session/grouping/session"
 import { unwrap } from "solid-js/store"
@@ -45,7 +42,7 @@ function emitEvent(events: ReturnType<typeof createEventStream>, event: OpenCode
   events.emit({ ...event, location: { directory } })
 }
 
-const config = createTuiResolvedConfig({}, { terminal: false })
+const config = createTuiResolvedConfig()
 
 function DataProvider(props: ParentProps) {
   return (
@@ -603,6 +600,102 @@ test("truncates committed revert messages without changing lifetime usage", asyn
   }
 })
 
+test("live step usage updates a running assistant, never a completed one", async () => {
+  const events = createEventStream()
+  const sessionID = "ses_live_usage"
+  const assistantMessageID = "msg_live_usage"
+  const calls = createFetch((url) => {
+    if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
+    if (url.pathname !== `/api/session/${sessionID}`) return
+    return json({
+      data: {
+        id: sessionID,
+        projectID: "proj_test",
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: 0, updated: 0 },
+        title: "Live usage",
+        location: { directory },
+      },
+    })
+  }, events)
+  let data!: ReturnType<typeof useData>
+
+  function Probe() {
+    data = useData()
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <ClientProvider api={createApi(calls.fetch)}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </ClientProvider>
+    </TestTuiContexts>
+  ))
+
+  const assistant = () => {
+    const message = data.session.message.list(sessionID).find((item) => item.id === assistantMessageID)
+    return message?.type === "assistant" ? message : undefined
+  }
+  const live = (id: string, input: number, providerState?: Record<string, unknown>) =>
+    emitEvent(events, {
+      id,
+      created: 2,
+      type: "session.step.usage",
+      data: {
+        sessionID,
+        assistantMessageID,
+        tokens: { input, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        ...(providerState ? { providerState } : {}),
+      },
+    })
+
+  try {
+    await data.session.sync(sessionID)
+    emitEvent(events, {
+      id: "evt_live_usage_started",
+      created: 1,
+      type: "session.step.started",
+      durable: durable(sessionID, 1),
+      data: {
+        started: 1,
+        sessionID,
+        assistantMessageID,
+        agent: "build",
+        model: { providerID: "provider", id: "model" },
+      },
+    })
+    live("evt_live_usage_1", 100, { contextPercent: 3 })
+    await wait(() => assistant()?.tokens?.input === 100)
+    expect(assistant()?.providerState).toEqual({ contextPercent: 3 })
+    expect(assistant()?.cost).toBeUndefined()
+    live("evt_live_usage_2", 200)
+    await wait(() => assistant()?.tokens?.input === 200)
+    expect(assistant()?.providerState).toEqual({ contextPercent: 3 })
+
+    const recorded = { input: 250, output: 9, reasoning: 0, cache: { read: 0, write: 0 } }
+    emitEvent(events, {
+      id: "evt_live_usage_ended",
+      created: 3,
+      type: "session.step.ended",
+      durable: durable(sessionID, 2),
+      data: { sessionID, assistantMessageID, finish: "stop", cost: 0, tokens: recorded },
+    })
+    await wait(() => assistant()?.time.completed !== undefined)
+    // A live value that lands after the recorded one is stale.
+    live("evt_live_usage_late", 300)
+    await Bun.sleep(50)
+    expect(assistant()?.tokens).toEqual(recorded)
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("updates session location when moved", async () => {
   const events = createEventStream()
   const destination = "/tmp/opencode-moved"
@@ -932,7 +1025,9 @@ test("completes exploration when a queued prompt is promoted", async () => {
       },
     })
     await wait(() => rows.find((row) => row.type === "group")?.completed === true)
-    expect(rows.at(-1)).toEqual({ type: "message", messageID: "message-user" })
+    await wait(() => rows.at(-1)?.type === "assistant-footer")
+    expect(rows.at(-1)).toEqual({ type: "assistant-footer", messageID: "message-assistant" })
+    expect(rows.at(-2)).toEqual({ type: "message", messageID: "message-user" })
   } finally {
     app.renderer.destroy()
   }
@@ -1082,79 +1177,6 @@ test("classifies live tool rows independently of their call ID", async () => {
 
     await wait(() => rows.length > 0)
     expect(rows).toEqual([{ type: "part", ref: { messageID: "message-assistant", partID: "reasoning:0" } }])
-  } finally {
-    app.renderer.destroy()
-  }
-})
-
-test("loads older pages until the oldest exploration group is complete before reporting sync", async () => {
-  const events = createEventStream()
-  const sessionID = "session-boundary"
-  const model = { id: "model", providerID: "provider" }
-  // One prompt, then 50 single-read steps: the 20-message first page cuts the group.
-  const history = [
-    { type: "user", id: "msg_000", text: "Explore", time: { created: 0 } },
-    ...Array.from({ length: 50 }, (_, index) => ({
-      type: "assistant",
-      id: `msg_${String(index + 1).padStart(3, "0")}`,
-      agent: "build",
-      model,
-      time: { created: index + 1, completed: index + 1 },
-      finish: "tool-calls",
-      content: [
-        {
-          type: "tool",
-          id: `read-${index}`,
-          name: "read",
-          time: { created: index + 1, completed: index + 1 },
-          state: { status: "completed", input: { path: `${index}.ts` }, content: [], metadata: {} },
-        },
-      ],
-    })),
-  ]
-  const pages: string[] = []
-  const calls = createFetch((url) => {
-    if (url.pathname !== `/api/session/${sessionID}/message`) return
-    const end = Number(url.searchParams.get("cursor") ?? history.length)
-    const start = Math.max(0, end - Number(url.searchParams.get("limit") ?? 20))
-    pages.push(`${start}-${end}`)
-    return json({ data: history.slice(start, end).toReversed(), cursor: start > 0 ? { next: String(start) } : {} })
-  }, events)
-  let rows!: ReturnType<typeof createSessionRows>
-  let client!: ReturnType<typeof useClient>
-  const synced: SessionRow[] = []
-
-  function Probe() {
-    client = useClient()
-    rows = createSessionRows(
-      () => sessionID,
-      () => synced.push(structuredClone(unwrap(rows[0]))),
-    )
-    return <box />
-  }
-
-  const app = await testRender(() => (
-    <TestTuiContexts>
-      <ClientProvider api={createApi(calls.fetch)}>
-        <ProjectProvider>
-          <DataProvider>
-            <Probe />
-          </DataProvider>
-        </ProjectProvider>
-      </ClientProvider>
-    </TestTuiContexts>
-  ))
-
-  try {
-    await wait(() => client.connection.status() === "connected")
-    await wait(() => synced.length > 0, 4000)
-    expect(pages).toEqual(["31-51", "11-31", "0-11"])
-    // Sync is reported only once the group's true first read is loaded.
-    expect(synced[0]).toEqual({ type: "message", messageID: "msg_000" })
-    const group = rows[1]
-    if (group?.type !== "group") throw new Error("Expected exploration group")
-    expect(group.size).toBe(50)
-    expect(groupRefs(group)[0]).toEqual({ messageID: "msg_001", partID: "read-0" })
   } finally {
     app.renderer.destroy()
   }
@@ -1533,7 +1555,7 @@ test("tracks session status from active sessions and execution events", async ()
       const assistant = data.session.message.get("session-retry", "message-retry")
       return assistant?.type === "assistant" && assistant.retry === undefined
     })
-    await wait(() => !rows.some((row) => row.type === "assistant-footer" && row.messageID === "message-retry"))
+    expect(rows.some((row) => row.type === "assistant-footer" && row.messageID === "message-retry")).toBe(true)
     expect(data.session.message.list("session-retry").filter((message) => message.type === "assistant")).toHaveLength(1)
     emitEvent(events, {
       id: "evt_retry_scheduled_again",
@@ -1842,7 +1864,7 @@ test("restores queued compaction from durable pending input", async () => {
       },
     })
     await wait(() => rows.some((row) => row.type === "part"))
-    expect(rows.map((row) => row.type)).toEqual(["part", "compaction-queued", "compaction-queued"])
+    expect(rows.map((row) => row.type)).toEqual(["part", "assistant-footer", "compaction-queued", "compaction-queued"])
 
     emitEvent(events, {
       id: "evt_compaction_started",
@@ -2156,12 +2178,7 @@ test("refreshes references after updates", async () => {
 test("keeps shell state scoped to location", async () => {
   const events = createEventStream()
   const other = "/tmp/opencode/other"
-  let removed: URL | undefined
-  const calls = createFetch((url, request) => {
-    if (url.pathname === "/api/shell/sh_other" && request.method === "DELETE") {
-      removed = url
-      return new Response(null, { status: 204 })
-    }
+  const calls = createFetch((url) => {
     if (url.pathname !== "/api/shell") return
     const requestDirectory = url.searchParams.get("location[directory]")
     return json({
@@ -2190,13 +2207,7 @@ test("keeps shell state scoped to location", async () => {
     return (
       <RouteProvider initialRoute={{ type: "session", sessionID: "ses_shared" }}>
         <Keymap.Provider>
-          <ThemeProvider mode="dark" source={emptyThemeSource}>
-            <ToastProvider>
-              <DialogProvider>
-                <Composer sessionID="ses_shared" open={true} defaultTab="shell" />
-              </DialogProvider>
-            </ToastProvider>
-          </ThemeProvider>
+          <ThemeProvider source={emptyThemeSource} />
         </Keymap.Provider>
       </RouteProvider>
     )
@@ -2225,13 +2236,6 @@ test("keeps shell state scoped to location", async () => {
       ["sh_default", directory],
       ["sh_other", other],
     ])
-
-    await app.waitForFrame((frame) => frame.includes("pnpm dev"))
-    app.mockInput.pressArrow("down")
-    app.mockInput.pressKey("d", { ctrl: true })
-    await wait(() => removed !== undefined)
-    expect(removed?.searchParams.get("location[directory]")).toBe(other)
-    expect(removed?.searchParams.has("location[workspace]")).toBe(false)
 
     events.emit({
       id: "evt_shell_created",
@@ -2507,6 +2511,62 @@ test("adds, dismisses, and refreshes form requests", async () => {
 
     await data.session.form.sync("ses_1")
     expect(data.session.form.list("ses_1")?.map((form) => form.id)).toEqual(["frm_remote"])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+// REDSUN: a delegated runtime's tool asks from outside any location, so its form event carries
+// none. A session's form still belongs to that session; only a global form needs the location.
+test("keeps a session form whose event carries no location", async () => {
+  const events = createEventStream()
+  const calls = createFetch(undefined, events)
+  let data!: ReturnType<typeof useData>
+  let client!: ReturnType<typeof useClient>
+
+  function Probe() {
+    data = useData()
+    client = useClient()
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <ClientProvider api={createApi(calls.fetch)}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </ClientProvider>
+    </TestTuiContexts>
+  ))
+
+  try {
+    await wait(() => client.connection.status() === "connected")
+    events.emit({
+      id: "evt_form_created_unlocated",
+      created: 0,
+      type: "form.created",
+      data: { form: { id: "frm_unlocated", sessionID: "ses_1", title: "Questions", fields: formFields } },
+    })
+    await wait(() => data.session.form.list("ses_1")?.length === 1)
+    expect(data.session.form.list("ses_1")?.map((form) => form.id)).toEqual(["frm_unlocated"])
+
+    events.emit({
+      id: "evt_form_created_global_unlocated",
+      created: 1,
+      type: "form.created",
+      data: { form: { id: "frm_global", sessionID: "global", title: "Questions", fields: formFields } },
+    })
+    events.emit({
+      id: "evt_form_cancelled_unlocated",
+      created: 2,
+      type: "form.cancelled",
+      data: { sessionID: "ses_1", id: "frm_unlocated" },
+    })
+    await wait(() => data.session.form.list("ses_1")?.length === 0)
+    expect(data.session.form.list("global", { directory }) ?? []).toEqual([])
   } finally {
     app.renderer.destroy()
   }

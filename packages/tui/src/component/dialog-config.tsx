@@ -1,8 +1,16 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createResource, createSignal, Show } from "solid-js"
+import type { Config } from "@opencode/schema/config"
 import { useConfig } from "../config"
-import { useThemes } from "../context/theme"
+import { useTheme, useThemes } from "../context/theme"
+import { useClient } from "../context/client"
+import { useData } from "../context/data"
+import { useLocation } from "../context/location"
 import { DialogSelect } from "../ui/dialog-select"
 import { useToast } from "../ui/toast"
+import { errorMessage } from "../util/error"
+import { useLanguage } from "../i18n"
+import { useDialog } from "../ui/dialog"
+import { DialogLanguage } from "./dialog-language"
 
 type Setting = {
   title: string
@@ -14,25 +22,84 @@ type Setting = {
   step?: number
   min?: number
   max?: number
-  format?: (value: unknown) => string
+  format?: (value: unknown, t: (message: string) => string) => string
   keywords?: readonly string[]
+  backend?: boolean
+  description?: string
+  warning?: string
 }
 
 export const settings: Setting[] = [
+  {
+    title: "Interface language",
+    category: "Appearance",
+    path: ["language"],
+    default: "en",
+    keywords: ["language", "locale", "translation", "中文", "Español", "한국어", "Français"],
+  },
+  {
+    title: "Stale-read deduplication",
+    category: "Context",
+    path: ["stale_read_deduplication"],
+    default: false,
+    values: [false, true],
+    labels: ["off", "on"],
+    backend: true,
+    warning: "Warning: may break prompt caching and increase costs.",
+    keywords: ["cache", "context optimizer", "pruning", "reads"],
+  },
+  {
+    title: "Compaction mode",
+    category: "Context",
+    path: ["compaction", "strategy"],
+    default: "llm",
+    values: ["llm", "hybrid", "algorithmic"],
+    labels: ["LLM", "Hybrid", "Algorithmic"],
+    backend: true,
+    description: "LLM: model summary. Hybrid: adds an inventory. Algorithmic: inventory only, no model call.",
+    keywords: ["summary", "compression", "context", "hybrid", "algorithmic"],
+  },
+  {
+    title: "Auto-compaction threshold",
+    category: "Context",
+    path: ["compaction", "threshold"],
+    default: null,
+    values: [null, 50, 60, 70, 75, 80, 85, 90, 95],
+    format: (value, t) => (typeof value === "number" ? `${value}%` : t("settings.auto")),
+    backend: true,
+    description:
+      "Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default.",
+    keywords: ["compaction", "compact", "summary", "context", "window", "limit", "percent", "claude", "kiro"],
+  },
+  {
+    title: "ChatGPT context window",
+    category: "Context",
+    path: ["chatgpt_context_window"],
+    default: "default",
+    values: ["default", "max"],
+    labels: ["Default", "Maximum"],
+    backend: true,
+    description:
+      "OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows.",
+    keywords: ["openai", "codex", "gpt", "subscription", "context", "window", "limit", "compaction"],
+  },
+  {
+    title: "Commit attribution",
+    category: "Git",
+    path: ["attribution", "commit"],
+    default: false,
+    values: [false, true],
+    labels: ["off", "on"],
+    backend: true,
+    description: "Asks the agent to end its commit messages with a Co-authored-by trailer for redsun-agent[bot].",
+    keywords: ["co-author", "coauthor", "trailer", "commit", "git", "attribution"],
+  },
   {
     title: "Theme",
     category: "Appearance",
     path: ["theme", "name"],
     default: "opencode",
     keywords: ["color scheme", "colors"],
-  },
-  {
-    title: "Color mode",
-    category: "Appearance",
-    path: ["theme", "mode"],
-    default: "system",
-    values: ["system", "dark", "light"],
-    keywords: ["dark mode", "light mode", "system theme"],
   },
   {
     title: "Animations",
@@ -85,14 +152,6 @@ export const settings: Setting[] = [
     keywords: ["transcript", "messages", "reads", "searches"],
   },
   {
-    title: "Verbosity",
-    category: "Session",
-    path: ["session", "verbosity"],
-    default: "medium",
-    values: ["low", "medium", "high"],
-    keywords: ["detail", "activity", "summary", "transcript"],
-  },
-  {
     title: "Transcript images",
     category: "Session",
     path: ["session", "image_preview"],
@@ -120,45 +179,13 @@ export const settings: Setting[] = [
     keywords: ["directory", "cwd", "inherit"],
   },
   {
-    title: "Permissions",
+    title: "Session list scope",
     category: "Session",
-    path: ["session", "permissions"],
-    default: "prompt",
-    values: ["prompt", "autoaccept"],
-    labels: ["prompt", "auto accept"],
-    keywords: ["approve", "accept", "permission requests"],
-  },
-  {
-    title: "Mode",
-    category: "Tabs",
-    path: ["tabs", "mode"],
-    default: "auto",
-    values: ["off", "on", "auto"],
-  },
-  {
-    title: "Scope",
-    category: "Tabs",
     path: ["tabs", "scope"],
     default: "cwd",
     values: ["cwd", "global"],
     labels: ["current directory", "global"],
-  },
-  {
-    title: "Layout",
-    category: "Tabs",
-    path: ["tabs", "layout"],
-    default: "horizontal",
-    values: ["horizontal", "vertical"],
-    keywords: ["sidebar", "orientation", "left"],
-  },
-  {
-    title: "Indicators",
-    category: "Tabs",
-    path: ["tabs", "indicators"],
-    default: "status",
-    values: ["status", "numbers"],
-    labels: ["status icons", "always show numbers"],
-    keywords: ["tab numbers", "number mode", "status icons"],
+    keywords: ["sessions", "projects", "directory"],
   },
   {
     title: "Layout",
@@ -322,21 +349,54 @@ export function settingID(setting: Setting) {
 }
 
 export function DialogConfig(props: { current?: string }) {
+  const language = useLanguage()
+  const { t } = language
+  const dialog = useDialog()
   const config = useConfig()
   const toast = useToast()
   const themes = useThemes()
+  const theme = useTheme()
+  const items = createMemo(() =>
+    themes.locked() ? settings.filter((setting) => settingID(setting) !== "theme.name") : settings,
+  )
+  const client = useClient()
+  const location = useLocation()
+  const data = useData()
+  const ref = () => {
+    const target = location.ref ?? data.location.default()
+    return { directory: target.directory, workspace: target.workspaceID }
+  }
   const current = Math.max(
     0,
-    settings.findIndex((setting) => settingID(setting) === props.current),
+    items().findIndex((setting) => settingID(setting) === props.current),
   )
   const [selected, setSelected] = createSignal(current)
   const [saving, setSaving] = createSignal(false)
+  const [backend, { mutate, refetch }] = createResource(async () => {
+    try {
+      return await client.api.config.context.get({ location: ref() })
+    } catch (error) {
+      toast.show({ variant: "error", message: errorMessage(error) })
+      return undefined
+    }
+  })
 
+  // A server older than this client does not return the setting at all: saving it would be dropped.
+  const unsupported = (setting: Setting) =>
+    setting.backend &&
+    backend() !== undefined &&
+    setting.path.reduce<unknown>(
+      (result, key) => (result && typeof result === "object" ? (result as Record<string, unknown>)[key] : undefined),
+      backend(),
+    ) === undefined
   const value = (setting: Setting) => {
-    const current = setting.path.reduce<unknown>((result, key) => {
-      if (!result || typeof result !== "object") return undefined
-      return (result as Record<string, unknown>)[key]
-    }, config.data)
+    const current = setting.path.reduce<unknown>(
+      (result, key) => {
+        if (!result || typeof result !== "object") return undefined
+        return (result as Record<string, unknown>)[key]
+      },
+      setting.backend ? backend() : config.data,
+    )
     if (setting.path.join(".") === "theme.name") return current ?? themes.selected
     return current ?? setting.default
   }
@@ -346,23 +406,47 @@ export function DialogConfig(props: { current?: string }) {
       : setting.values
   const display = (setting: Setting) => {
     const current = value(setting)
-    if (setting.format) return setting.format(current)
+    if (settingID(setting) === "language")
+      return (
+        language.languages().find((item) => item.locale === (current ?? "en"))?.nativeName ??
+        String(current ?? "English")
+      )
+    if (setting.format) return setting.format(current, t)
     const index = setting.values?.indexOf(current)
-    return index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current))
+    if (settingID(setting) === "theme.name") return String(current)
+    return t(index === undefined || index < 0 ? String(current) : (setting.labels?.[index] ?? String(current)))
   }
   const options = createMemo(() =>
-    settings.map((setting, index) => ({
-      title: setting.title,
-      category: setting.category,
-      searchText: setting.keywords?.join(" "),
-      footer: display(setting),
+    items().map((setting, index) => ({
+      title: t(setting.title),
+      category: t(setting.category),
+      searchText: [setting.title, setting.category, ...(setting.keywords ?? [])].join(" "),
+      footer:
+        setting.backend && !backend()
+          ? t(backend.loading ? "settings.loading" : "remote.unavailable")
+          : unsupported(setting)
+            ? t("settings.needsNewerServer")
+            : display(setting),
       value: index,
     })),
   )
 
   async function change(direction: number, index = selected()) {
     if (saving()) return
-    const setting = settings[index]
+    const setting = items()[index]
+    if (settingID(setting) === "language") {
+      const back = () => dialog.replace(() => <DialogConfig current="language" />)
+      dialog.replace(() => <DialogLanguage onSelect={back} onCancel={back} />)
+      return
+    }
+    if (setting.backend && !backend()) {
+      void refetch()
+      return
+    }
+    if (unsupported(setting)) {
+      toast.show({ variant: "error", message: t("settings.needsNewerServerDetail") })
+      return
+    }
     const current = value(setting)
     const choices = values(setting)
     const next = choices
@@ -370,6 +454,24 @@ export function DialogConfig(props: { current?: string }) {
       : Math.min(setting.max!, Math.max(setting.min!, Number(current) + direction * setting.step!))
     if (next === current) return
     setSaving(true)
+    if (setting.backend) {
+      const update: Config.ContextSettings =
+        setting.path[0] === "stale_read_deduplication"
+          ? { stale_read_deduplication: next === true }
+          : setting.path[0] === "attribution"
+            ? { attribution: { commit: next === true } }
+            : setting.path[0] === "chatgpt_context_window"
+              ? { chatgpt_context_window: next === "max" ? "max" : "default" }
+              : setting.path[1] === "threshold"
+                ? { compaction: { threshold: typeof next === "number" ? next : null } }
+                : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
+      await client.api.config.context
+        .update({ location: ref(), payload: update })
+        .then(mutate)
+        .catch((error) => toast.show({ variant: "error", message: errorMessage(error) }))
+        .finally(() => setSaving(false))
+      return
+    }
     await config
       .update((draft) => {
         const parent = setting.path.slice(0, -1).reduce<Record<string, unknown>>((result, key) => {
@@ -384,13 +486,23 @@ export function DialogConfig(props: { current?: string }) {
 
   return (
     <DialogSelect
-      title="Settings"
+      title={t("command.category.settings")}
       options={options()}
       current={current}
       filterThreshold={0.7}
       onMove={(option) => setSelected(option.value)}
       onSelect={(option) => void change(1, option.value)}
-      footerHints={[{ title: "←/→", label: "change" }]}
+      footerHints={[{ title: "←/→", label: t("settings.change") }]}
+      footer={
+        <Show when={items()[selected()]?.backend}>
+          <box paddingLeft={4} paddingRight={4} flexDirection="column">
+            <text fg={theme.text.muted}>{t("settings.globalDefaultsOtherConfigSourcesCanOverride")}</text>
+            <text fg={items()[selected()]?.warning ? theme.text.feedback.warning.base : theme.text.muted}>
+              {t(items()[selected()]?.warning ?? items()[selected()]?.description ?? "")}
+            </text>
+          </box>
+        </Show>
+      }
       bindings={[
         {
           bind: "left",

@@ -3,16 +3,19 @@ import { For } from "solid-js"
 import { testRender, type JSX } from "@opentui/solid"
 import {
   InlineToolRow,
+  TRANSCRIPT_GUTTER,
   executeCallSummary,
-  genericToolSummary,
   isBackgroundSubagent,
   parseApplyPatchFiles,
   parseDiagnostics,
+  parsePlanExit,
   parseQuestionAnswers,
   parseQuestions,
+  thinkingTeaser,
   subagentModelLabel,
   toolDisplay,
 } from "../../../src/routes/session"
+import { primitiveInputSummary } from "../../../src/util/tool-display"
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined
 
@@ -88,10 +91,18 @@ function FailedCompleteToolFixture() {
   )
 }
 
+function NamedToolFixture(props: { failed?: boolean }) {
+  return (
+    <InlineToolRow icon="✱" name="Grep" complete={true} pending="Searching content..." failed={props.failed}>
+      "database" in packages/core (12 matches)
+    </InlineToolRow>
+  )
+}
+
 function ReminderAlignmentFixture() {
   return (
     <box flexDirection="column">
-      <box paddingLeft={3}>
+      <box paddingLeft={TRANSCRIPT_GUTTER}>
         <text>Switched variant to medium</text>
       </box>
       <InlineToolRow icon="◈" complete={true} pending="Notice">
@@ -149,17 +160,42 @@ describe("TUI inline tool wrapping", () => {
 
   test("aligns switch reminders with instruction reminders", async () => {
     expect(await renderFrame(() => <ReminderAlignmentFixture />, { width: 35, height: 2 })).toBe(
-      "   Switched variant to medium\n   ◈ Instructions updated",
+      " Switched variant to medium\n ◈ Instructions updated",
     )
   })
 
   test("wraps a trailing status as one padded item", async () => {
     expect(await renderFrame(() => <TrailingStatusFixture />, { width: 70, height: 2 })).toBe(
-      "   : Explore Subagent — Inspect renderer status styling  Background",
+      " : Explore Subagent — Inspect renderer status styling  Background",
     )
     expect(await renderFrame(() => <TrailingStatusFixture />, { width: 62, height: 2 })).toBe(
-      "   : Explore Subagent — Inspect renderer status styling\n      Background",
+      " : Explore Subagent — Inspect renderer status styling\n    Background",
     )
+  })
+
+  test("leads a named row with the tool name, once, in both states", async () => {
+    // The name is hoisted out of the row body so it can be painted in accent
+    // while the arguments stay muted; the rendered line must still read as one
+    // `Name args` phrase, with no doubled name and no missing separator.
+    expect(await renderFrame(() => <NamedToolFixture />, { width: 60, height: 2 })).toBe(
+      ' ✱ Grep "database" in packages/core (12 matches)',
+    )
+    const failed = await renderFrame(() => <NamedToolFixture failed={true} />, { width: 60, height: 2 })
+    expect(failed).toBe(' ✱ Grep "database" in packages/core (12 matches)')
+  })
+
+  test("teases collapsed thinking with the tail of the trace", () => {
+    // A short trace shows whole, flattened onto one line.
+    expect(thinkingTeaser("  Checking\n\n  the   parser  ", 80)).toBe("Checking the parser")
+    // A long one keeps its end, so the row shows what the model concluded.
+    const long = "start " + "x".repeat(200) + " end"
+    const teased = thinkingTeaser(long, 60)
+    expect(teased.startsWith("...")).toBeTrue()
+    expect(teased.endsWith("end")).toBeTrue()
+    expect(teased.length).toBeLessThanOrEqual(60)
+    // Never narrower than a usable tail, however cramped the terminal.
+    expect(thinkingTeaser(long, 4).length).toBe(13)
+    expect(thinkingTeaser(long, 60, "▶ 思考: ")).toBe(thinkingTeaser(long, 60, "▶ Test: "))
   })
 
   test("filters malformed nested tool wire data", () => {
@@ -185,6 +221,42 @@ describe("TUI inline tool wrapping", () => {
     expect(parseQuestionAnswers({})).toBeUndefined()
   })
 
+  test("routes plan exits and the history todo alias to their rows", () => {
+    expect(toolDisplay("plan_exit")).toBe("plan_exit")
+    // Persisted delegated history keeps the native task-list name.
+    expect(toolDisplay("TodoWrite")).toBe("todowrite")
+    expect(toolDisplay("todowrite")).toBe("todowrite")
+  })
+
+  test("reads a plan exit's plan and outcome from its metadata", () => {
+    expect(parsePlanExit({ plan: "# Plan", filePath: "/p.md", approved: true })).toEqual({
+      plan: "# Plan",
+      filePath: "/p.md",
+      outcome: { kind: "approved", text: "approved" },
+    })
+    expect(parsePlanExit({ approved: false, feedback: " split step 2 " }).outcome).toEqual({
+      kind: "declined",
+      text: "declined: split step 2",
+    })
+    expect(parsePlanExit({ approved: false, feedback: "" }).outcome).toEqual({ kind: "declined", text: "declined" })
+    expect(parsePlanExit({ plan: "p", error: "hook blocked" }).outcome).toEqual({
+      kind: "failed",
+      text: "failed: hook blocked",
+    })
+    // An explicit decision outranks an error the CLI reported for the declined call.
+    expect(parsePlanExit({ approved: false, error: "denied" }).outcome?.kind).toBe("declined")
+    // Approved, then the native exit failed: still in plan mode, so the failure shows.
+    expect(parsePlanExit({ plan: "p", approved: true, error: "hook blocked" }).outcome).toEqual({
+      kind: "failed",
+      text: "failed: hook blocked",
+    })
+    expect(parsePlanExit({ plan: 1, filePath: null, approved: "yes" })).toEqual({
+      plan: undefined,
+      filePath: undefined,
+      outcome: undefined,
+    })
+  })
+
   test("summarizes execute calls on one line", () => {
     expect(
       executeCallSummary({
@@ -202,18 +274,19 @@ describe("TUI inline tool wrapping", () => {
   })
 
   test("summarizes generic tool arguments on one line", () => {
+    // The tool name leads the row as an accented `name`, so the body is the
+    // argument summary alone.
+    const summary = (input: Record<string, unknown>) => primitiveInputSummary(input).replace(/\s+/g, " ")
     expect(
-      genericToolSummary("demo_search_catalog", {
+      summary({
         query: "wireless keyboard",
         limit: 8,
         includeArchived: false,
         filters: { category: "accessories" },
       }),
-    ).toBe("demo_search_catalog [query=wireless keyboard, limit=8, includeArchived=false]")
-    expect(genericToolSummary("demo_get_weather", { city: "Tokyo", units: "celsius" })).toBe(
-      "demo_get_weather [city=Tokyo, units=celsius]",
-    )
-    expect(genericToolSummary("demo_refresh", {})).toBe("demo_refresh")
+    ).toBe("[query=wireless keyboard, limit=8, includeArchived=false]")
+    expect(summary({ city: "Tokyo", units: "celsius" })).toBe("[city=Tokyo, units=celsius]")
+    expect(summary({})).toBe("")
   })
 
   test("ignores diagnostics with malformed nested ranges", () => {

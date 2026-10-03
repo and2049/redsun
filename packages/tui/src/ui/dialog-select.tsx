@@ -12,6 +12,7 @@ import { Locale } from "../util/locale"
 import { getScrollAcceleration } from "../util/scroll"
 import { useConfig } from "../config"
 import { moveSelection, reconcileSelection } from "./select-controller"
+import { useLanguage } from "../i18n"
 
 export interface DialogSelectProps<T> {
   title: string
@@ -70,7 +71,7 @@ export interface DialogSelectOption<T = any> {
   description?: string
   searchText?: string
   searchFooter?: JSX.Element | string
-  details?: string[]
+  details?: (string | { text: string; color?: RGBA })[]
   detailsColor?: RGBA
   detailsWrap?: boolean
   footer?: JSX.Element | string
@@ -82,7 +83,7 @@ export interface DialogSelectOption<T = any> {
   disabled?: boolean
   bg?: RGBA
   fg?: RGBA
-  gutter?: (color: RGBA) => JSX.Element
+  gutter?: (color: RGBA, active: boolean) => JSX.Element
   margin?: JSX.Element
   onSelect?: (ctx: DialogContext) => void
 }
@@ -100,6 +101,8 @@ export type DialogSelectRef<T> = {
   moveTo(value: T): void
 }
 
+const BOTTOM_MENU_ROWS = 12
+
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
   type Action = NonNullable<DialogSelectProps<T>["actions"]>[number]
   type FooterHint = NonNullable<DialogSelectProps<T>["footerHints"]>[number]
@@ -108,6 +111,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   const config = useConfig().data
+  const { t } = useLanguage()
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
   const renderer = useRenderer()
 
@@ -238,7 +242,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   const dimensions = useTerminalDimensions()
-  const height = createMemo(() => Math.min(rows(), Math.floor(dimensions().height / 2) - 6))
+  const height = createMemo(() => {
+    const cap = Math.floor(dimensions().height / 2) - 6
+    if (dialog.placement === "bottom") return Math.min(rows(), cap, BOTTOM_MENU_ROWS)
+    return Math.min(rows(), cap)
+  })
 
   const selected = createMemo(() => flat()[store.selected])
 
@@ -482,13 +490,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           ? [
               {
                 bind: "tab",
-                title: "Next dialog action",
+                title: t("ui.nextDialogAction"),
                 group: "Dialog",
                 run: () => moveAction(1),
               },
               {
                 bind: "shift+tab",
-                title: "Previous dialog action",
+                title: t("ui.previousDialogAction"),
                 group: "Dialog",
                 run: () => moveAction(-1),
               },
@@ -591,47 +599,41 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   }
 
   function FooterAction(action: { item: VisibleAction }) {
-    if (!isActionItem(action.item))
+    if (!isActionItem(action.item)) {
+      const hint = action.item
       return (
-        <text>
-          <span style={{ fg: theme.text.base }}>
-            <b>{action.item.title}</b>{" "}
-          </span>
-          <span style={{ fg: theme.text.muted }}>{action.item.label}</span>
-        </text>
+        <box flexDirection="column" flexShrink={0}>
+          <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
+            {hint.title}
+          </text>
+          <text fg={theme.text.muted}>{hint.label}</text>
+        </box>
       )
+    }
     const item = action.item
     const active = createMemo(() => isActionFocused(item))
     const disabled = createMemo(() => isActionDisabled(item))
     return (
-      <box
-        flexDirection="row"
-        backgroundColor={active() ? theme.background.action.primary.focused : RGBA.fromInts(0, 0, 0, 0)}
-        onMouseUp={() => trigger(item)}
-      >
-        <text
-          fg={
-            disabled()
-              ? theme.text.action.primary.disabled
-              : active()
-                ? theme.text.action.primary.focused
-                : theme.text.base
-          }
-          attributes={active() ? TextAttributes.BOLD : undefined}
+      <box flexDirection="column" flexShrink={0}>
+        <box
+          flexDirection="row"
+          backgroundColor={active() ? theme.background.action.primary.focused : RGBA.fromInts(0, 0, 0, 0)}
+          onMouseUp={() => trigger(item)}
         >
-          {item.title}
-        </text>
-        <text
-          fg={
-            disabled()
-              ? theme.text.action.primary.disabled
-              : active()
-                ? theme.text.action.primary.focused
-                : theme.text.muted
-          }
-        >
-          {" " + item.label}
-        </text>
+          <text
+            fg={
+              disabled()
+                ? theme.text.action.primary.disabled
+                : active()
+                  ? theme.text.action.primary.focused
+                  : theme.text.base
+            }
+            attributes={active() ? TextAttributes.BOLD : undefined}
+          >
+            {item.title}
+          </text>
+        </box>
+        <text fg={disabled() ? theme.text.action.primary.disabled : theme.text.muted}>{item.label}</text>
       </box>
     )
   }
@@ -672,7 +674,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                   r.focus()
                 }, 1)
               }}
-              placeholder={props.placeholder ?? "Search"}
+              placeholder={props.placeholder ?? t("common.search.placeholder")}
               placeholderColor={theme.text.muted}
             />
           </box>
@@ -687,14 +689,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               fallback={
                 props.emptyView ?? (
                   <box paddingLeft={4} paddingRight={4}>
-                    <text fg={theme.text.muted}>No items available</text>
+                    <text fg={theme.text.muted}>{t("ui.noItemsAvailable")}</text>
                   </box>
                 )
               }
             >
               {props.noMatchView ?? (
                 <box paddingLeft={4} paddingRight={4}>
-                  <text fg={theme.text.muted}>No results found</text>
+                  <text fg={theme.text.muted}>{t("palette.empty")}</text>
                 </box>
               )}
             </Show>
@@ -716,7 +718,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                       <Show
                         when={options[0]?.categoryView}
                         fallback={
-                          <text fg={theme.hue.accent[200]} attributes={TextAttributes.BOLD}>
+                          <text fg={theme.accent} attributes={TextAttributes.BOLD}>
                             {category}
                           </text>
                         }
@@ -788,18 +790,28 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                             />
                           </box>
                           <For each={option.details}>
-                            {(detail) => (
-                              <box paddingLeft={3} paddingRight={3}>
-                                <text
-                                  fg={option.detailsColor ?? theme.text.muted}
-                                  wrapMode={option.detailsWrap ? "word" : "none"}
-                                >
-                                  {option.detailsWrap
-                                    ? detail
-                                    : Locale.truncateMiddle(detail, Math.max(1, Math.min(76, dimensions().width - 12)))}
-                                </text>
-                              </box>
-                            )}
+                            {(detail) => {
+                              const text = () => (typeof detail === "string" ? detail : detail.text)
+                              return (
+                                <box paddingLeft={3} paddingRight={3}>
+                                  <text
+                                    fg={
+                                      (typeof detail === "string" ? undefined : detail.color) ??
+                                      option.detailsColor ??
+                                      theme.text.muted
+                                    }
+                                    wrapMode={option.detailsWrap ? "word" : "none"}
+                                  >
+                                    {option.detailsWrap
+                                      ? text()
+                                      : Locale.truncateMiddle(
+                                          text(),
+                                          Math.max(1, Math.min(76, dimensions().width - 12)),
+                                        )}
+                                  </text>
+                                </box>
+                              )
+                            }}
                           </For>
                         </box>
                       )
@@ -837,7 +849,7 @@ function Option(props: {
   footerColor?: RGBA
   titleWidth?: number
   truncateTitle?: boolean | "left"
-  gutter?: (color: RGBA) => JSX.Element
+  gutter?: (color: RGBA, active: boolean) => JSX.Element
   activeColor?: RGBA
   onMouseOver?: () => void
 }) {
@@ -858,7 +870,7 @@ function Option(props: {
       </Show>
       <Show when={props.gutter}>
         <box flexShrink={0} marginRight={0}>
-          {props.gutter?.(text())}
+          {props.gutter?.(text(), Boolean(props.active) && !props.muted)}
         </box>
       </Show>
       <text

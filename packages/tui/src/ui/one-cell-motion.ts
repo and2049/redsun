@@ -1,5 +1,4 @@
 import { octantGlyph } from "./subcell"
-import type { Config } from "../config"
 
 export type OneCellMotion = {
   frames: string[]
@@ -99,7 +98,7 @@ export const WORK_SPINNERS = {
   crosshatch: { frames: Array.from("\u25a7\u25a9\u25a8\u25a9"), interval: 240 },
   "density-wave": { frames: Array.from("\u2591\u2591\u2591\u2592\u2593\u2588\u2593\u2592"), interval: 160 },
   seed: SEED_WORK,
-} satisfies Record<Config.MiniWorkSpinner, OneCellMotion>
+} satisfies Record<string, OneCellMotion>
 
 export const SEED_LAUNCH: OneCellMotion = {
   frames: Array.from({ length: 21 }, (_, index) => (index < 10 ? "\u25ab" : "\u25aa")),

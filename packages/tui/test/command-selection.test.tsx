@@ -61,7 +61,8 @@ test("custom commands commit the captured agent, model and variant before execut
   })
   try {
     await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("Build · first model"))
+    // The prompt meta row settles after the location catalogs load, which takes more render passes.
+    await setup.waitForFrame((frame) => frame.includes("Build · first model"), { maxPasses: 200 })
     setup.mockInput.pressKey("F6")
     await setup.waitForFrame((frame) => frame.includes("Plan ·"))
     setup.mockInput.pressKey("F8")
@@ -81,7 +82,7 @@ test("custom commands commit the captured agent, model and variant before execut
         setup.renderer.currentFocusedRenderable instanceof TextareaRenderable,
     )
     await setup.mockInput.typeText("/review selected input")
-    setup.mockInput.pressEscape()
+    // Escape would enter vim normal mode here; the slash popup already closed on the first space.
     setup.mockInput.pressEnter()
     await setup.waitFor(() => mutations.length > 0)
     expect(mutations).toEqual([{ type: "agent", body: { agent: "plan" } }])

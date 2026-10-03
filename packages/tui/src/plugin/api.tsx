@@ -3,7 +3,7 @@ import type { JSX } from "solid-js"
 import type { Context, Dialog, Page, SlotClaim, SlotMap, SlotPath, Toast } from "@opencode/plugin/tui/context"
 import type { Placement, PlacementKind } from "./structure"
 import { infoStringToFiletype, type MarkdownCodeBlockRenderer } from "@opentui/core"
-import { useRenderer } from "@opentui/solid"
+import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { useClient } from "../context/client"
 import { useData } from "../context/data"
 import { Keymap } from "../context/keymap"
@@ -11,6 +11,7 @@ import { useRoute } from "../context/route"
 import { useTuiApp, useTuiPaths } from "../context/runtime"
 import { useLocation } from "../context/location"
 import { useThemes } from "../context/theme"
+import { useVim } from "../context/vim"
 import { DialogAlert } from "../ui/dialog-alert"
 import { DialogConfirm } from "../ui/dialog-confirm"
 import { DialogPrompt } from "../ui/dialog-prompt"
@@ -19,10 +20,12 @@ import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
 import { useAttention } from "../context/attention"
 import { useStorage } from "../context/storage"
-import { useSessionTabs } from "../context/session-tabs"
-import { useOptionalPanel } from "../context/panel"
 import { useLocal } from "../context/local"
 import { abbreviateHome } from "../util/path-format"
+import type { LanguageContribution } from "@opencode/plugin/tui/i18n"
+import { useLanguage } from "../i18n"
+import { useLanguageRegistry } from "../i18n/context"
+import { normalizeContribution } from "../i18n/registry"
 
 export type Dispose = () => Promise<void>
 
@@ -42,11 +45,12 @@ const placements = ["prepend", "append", "before", "after", "replace"] as const 
 // route/slot registration lands there, but ordering and lifecycle stay owned
 // by the provider.
 export type Registry = {
-  has(kind: "routes" | "slots" | "markdown", name: string): boolean
+  has(kind: "routes" | "slots" | "markdown" | "i18n", name: string): boolean
   set(kind: "routes", name: string, page: Page): void
   set(kind: "slots", name: string, claim: RegisteredSlot): void
   set(kind: "markdown", name: string, render: MarkdownCodeBlockRenderer): void
-  remove(kind: "routes" | "slots" | "markdown", name: string): void
+  set(kind: "i18n", name: string, contribution: LanguageContribution): void
+  remove(kind: "routes" | "slots" | "markdown" | "i18n", name: string): void
   active(): boolean
 }
 
@@ -55,6 +59,8 @@ export type Registry = {
 export function usePluginHost() {
   return {
     renderer: useRenderer(),
+    dimensions: useTerminalDimensions(),
+    vim: useVim(),
     client: useClient(),
     data: useData(),
     route: useRoute(),
@@ -69,8 +75,8 @@ export function usePluginHost() {
     toast: useToast(),
     attention: useAttention(),
     storage: useStorage(),
-    sessionTabs: useSessionTabs(),
-    panel: useOptionalPanel(),
+    language: useLanguage(),
+    languageRegistry: useLanguageRegistry(),
     local: useLocal(),
   }
 }
@@ -86,9 +92,23 @@ export function createPluginContext(input: {
   registry: Registry
 }): Context {
   const host = input.host
-  input.owned.push(async () => host.panel?.release(input.id))
   let context: Context
   let claims = 0
+  let languageClaims = 0
+  let alive = true
+  input.owned.push(async () => {
+    alive = false
+  })
+  const owned = (dispose: () => void) => {
+    let done = false
+    const release = () => {
+      if (done) return
+      done = true
+      dispose()
+    }
+    input.owned.push(async () => release())
+    return release
+  }
   // Every dialog and registered render is wrapped so plugin components can
   // reach their own context through usePlugin().
   const provide = (render: () => JSX.Element) => (
@@ -122,7 +142,7 @@ export function createPluginContext(input: {
   }
   // Unregistering after deactivation is a no-op: deactivate already resets
   // the registration's routes and slots wholesale.
-  const registration = (kind: "routes" | "slots" | "markdown", name: string) => {
+  const registration = (kind: "routes" | "slots" | "markdown" | "i18n", name: string) => {
     let registered = true
     const unregister = () => {
       if (!registered) return
@@ -134,11 +154,31 @@ export function createPluginContext(input: {
     return unregister
   }
   context = {
+    i18n: {
+      locale: host.language.locale,
+      languages: host.language.languages,
+      diagnostics: host.language.diagnostics,
+      t: (key, values) => host.languageRegistry?.snapshot().t(host.language.locale(), key, values) ?? key,
+      register(value) {
+        if (!alive) return () => {}
+        const contribution = normalizeContribution(value)
+        const key = `language#${languageClaims++}`
+        input.registry.set("i18n", key, contribution)
+        let registered = true
+        const unregister = () => {
+          if (!registered || !alive) return
+          registered = false
+          input.registry.remove("i18n", key)
+        }
+        input.owned.push(async () => unregister())
+        return unregister
+      },
+    },
     options: input.options ?? {},
     get location() {
       return host.location.current
     },
-    app: { version: host.app.version, channel: host.app.channel },
+    app: { name: host.app.name, version: host.app.version, channel: host.app.channel },
     renderer: host.renderer,
     client: host.client.api,
     data: host.data,
@@ -148,6 +188,22 @@ export function createPluginContext(input: {
     },
     get themeMode() {
       return host.themes.mode()
+    },
+    themes: {
+      register(name, document) {
+        const dispose = host.themes.register(name, document)
+        if (!dispose) throw new Error(`Invalid theme document: ${name}`)
+        return owned(dispose)
+      },
+      select: host.themes.select,
+      lock: () => owned(host.themes.lock()),
+      current: () => host.themes.selected,
+      locked: host.themes.locked,
+    },
+    vim: {
+      get mode() {
+        return host.vim.mode
+      },
     },
     markdown: {
       registerCodeBlockRenderer(language, render) {
@@ -179,6 +235,7 @@ export function createPluginContext(input: {
       format: {
         path: (value) => abbreviateHome(value, host.paths.home),
       },
+      dimensions: host.dimensions,
       router: {
         register(page) {
           if (input.registry.has("routes", page.name)) throw new Error(`Route already registered: ${page.name}`)
@@ -199,57 +256,13 @@ export function createPluginContext(input: {
           return host.route.data
         },
       },
-      panel: {
-        open(name, options) {
-          if (!host.panel || !input.registry.active()) return false
-          const route = host.route.data
-          if (route.type !== "session") return false
-          host.panel.open({ plugin: input.id, name, sessionID: route.sessionID }, options?.presentation)
-          return true
-        },
-        close: () => host.panel?.release(input.id),
-        current() {
-          const current = host.panel?.current()
-          if (current?.plugin !== input.id) return
-          return { name: current.name, sessionID: current.sessionID }
-        },
-      },
       tabs: {
-        enabled: host.sessionTabs.enabled,
-        list: () =>
-          host.sessionTabs.tabs().map((tab) => {
-            const status = host.sessionTabs.status(tab.sessionID)
-            return {
-              ...tab,
-              active: host.sessionTabs.current() === tab.sessionID,
-              ...status,
-              attention: Boolean(status.attention),
-            }
-          }),
-        open(sessionID) {
-          if (!host.sessionTabs.enabled()) return false
-          host.sessionTabs.open(sessionID)
-          return true
-        },
-        focus(sessionID) {
-          if (!host.sessionTabs.enabled()) return false
-          host.sessionTabs.select(sessionID)
-          return true
-        },
-        move(sessionID, index) {
-          if (!host.sessionTabs.enabled()) return false
-          const target = host.data.session.root(sessionID)
-          if (!host.sessionTabs.tabs().some((tab) => tab.sessionID === target)) return false
-          host.sessionTabs.move(target, index)
-          return true
-        },
-        close(sessionID) {
-          if (!host.sessionTabs.enabled()) return false
-          const target = sessionID ?? host.sessionTabs.current()
-          if (!target || !host.sessionTabs.tabs().some((tab) => tab.sessionID === target)) return false
-          host.sessionTabs.close(target)
-          return true
-        },
+        enabled: () => false,
+        list: () => [],
+        open: () => false,
+        focus: () => false,
+        move: () => false,
+        close: () => false,
       },
       model: {
         current() {

@@ -14,7 +14,6 @@ import { Keymap } from "../../../src/context/keymap"
 import { LocationProvider, useLocation } from "../../../src/context/location"
 import { RouteProvider, useRoute } from "../../../src/context/route"
 import { TuiAppProvider } from "../../../src/context/runtime"
-import { SessionTabsProvider } from "../../../src/context/session-tabs"
 import { StorageProvider, useStorage } from "../../../src/context/storage"
 import { ThemeProvider } from "../../../src/context/theme"
 import { DialogProvider, useDialog } from "../../../src/ui/dialog"
@@ -896,13 +895,11 @@ async function renderOpen(
                     <ClientProvider api={createApi(calls.fetch)}>
                       <DataProvider directory={process.cwd()}>
                         <LocationProvider>
-                          <SessionTabsProvider>
-                            <ThemeProvider mode="dark" source={emptyThemeSource}>
+                            <ThemeProvider source={emptyThemeSource}>
                               <DialogProvider>
                                 <Probe />
                               </DialogProvider>
                             </ThemeProvider>
-                          </SessionTabsProvider>
                         </LocationProvider>
                       </DataProvider>
                     </ClientProvider>

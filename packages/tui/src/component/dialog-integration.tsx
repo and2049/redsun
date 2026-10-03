@@ -1,4 +1,4 @@
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type RGBA } from "@opentui/core"
 import type {
   ConnectionInfo,
   IntegrationCommandConnectOutput,
@@ -24,6 +24,7 @@ import { DialogPrompt } from "../ui/dialog-prompt"
 import { DialogSelect } from "../ui/dialog-select"
 import { Link } from "../ui/link"
 import { useToast } from "../ui/toast"
+import { useLanguage } from "../i18n"
 import { errorMessage } from "../util/error"
 import { formLabel, formToggleMultiselect, formValidateValue, type FormAnswerField } from "../util/form"
 
@@ -80,6 +81,7 @@ export function DialogIntegration(
   const currentLocation = useLocation()
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
+  const { t } = useLanguage()
   const location = currentLocation.ref ?? data.location.default()
   const integrations = createMemo(() =>
     integrationOptions(data.location.integration.list(location) ?? []).filter(
@@ -110,14 +112,14 @@ export function DialogIntegration(
       return {
         title: integration.name,
         value: integration.id,
-        description: methods.length === 0 ? "Environment only" : undefined,
+        description: methods.length === 0 ? t("ui.environmentOnly") : undefined,
         footer: status ? "Sign in required →" : connectionSummary(integration) || undefined,
         footerColor: status ? theme.text.feedback.warning.base : undefined,
-        category,
+        category: t(category),
         disabled: methods.length === 0 && credentials.length === 0,
         gutter:
           integration.connections.length > 0 && !status
-            ? () => <text fg={theme.text.feedback.success.base}>✓</text>
+            ? (color: RGBA, active: boolean) => <text fg={active ? color : theme.text.feedback.success.base}>✓</text>
             : undefined,
         onSelect: () => {
           if (credentials.length) return manageConnections(integration, methods, location, dialog, props.onConnected)
@@ -129,16 +131,16 @@ export function DialogIntegration(
 
   return (
     <DialogSelect
-      title="Connect an integration"
+      title={t("ui.connectAnIntegration")}
       options={options()}
       emptyView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.muted}>No integrations available</text>
+          <text fg={theme.text.muted}>{t("ui.noIntegrationsAvailable")}</text>
         </box>
       }
       noMatchView={
         <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.muted}>No integrations found</text>
+          <text fg={theme.text.muted}>{t("ui.noIntegrationsFound")}</text>
         </box>
       }
     />
@@ -157,6 +159,7 @@ function manageConnections(
     const client = useClient()
     const toast = useToast()
     const theme = useTheme().surface("dialog")
+    const { t } = useLanguage()
     const shortcuts = Keymap.useShortcuts()
     const [deleting, setDeleting] = createSignal<string>()
     const [selected, setSelected] = createSignal(methods.length ? "add" : credentialConnections(integration)[0]?.id)
@@ -178,7 +181,7 @@ function manageConnections(
           ...(methods.length
             ? [
                 {
-                  title: "Add account",
+                  title: t("ui.addAccount"),
                   value: "add",
                   onSelect: () => selectMethod(current() ?? integration, methods, location, dialog, onConnected),
                 },
@@ -190,12 +193,12 @@ function manageConnections(
               const confirming = deleting() === connection.id
               return {
                 title: confirming
-                  ? `Press ${shortcuts.get("dialog.integration.delete")} again to confirm`
+                  ? t("ui.pressAgainToConfirm", { key: shortcuts.get("dialog.integration.delete") ?? "" })
                   : connection.label,
                 value: connection.id,
                 footer: connection.status ? "Sign in required →" : undefined,
                 footerColor: connection.status ? theme.text.feedback.warning.base : undefined,
-                category: "Connected accounts",
+                category: t("ui.connectedAccounts"),
                 bg: confirming ? theme.background.action.destructive.focused : undefined,
                 fg: confirming ? theme.text.action.destructive.focused : undefined,
                 onSelect: () => {
@@ -211,14 +214,14 @@ function manageConnections(
         actions={[
           {
             command: "dialog.integration.rename",
-            title: "rename",
+            title: t("ui.rename"),
             hidden: selected() === "add",
             disabled: (option) => !option || option.value === "add",
             onTrigger: (option) => {
               dialog.replace(() => (
                 <DialogPrompt
-                  title="Rename account"
-                  placeholder="Account name"
+                  title={t("ui.renameAccount")}
+                  placeholder={t("ui.accountName")}
                   value={
                     credentialConnections(current() ?? integration).find((item) => item.id === option.value)?.label
                   }
@@ -236,7 +239,7 @@ function manageConnections(
           },
           {
             command: "dialog.integration.delete",
-            title: "delete",
+            title: t("session.delete"),
             hidden: selected() === "add",
             disabled: (option) => !option || option.value === "add",
             onTrigger: (option) => {
@@ -247,7 +250,7 @@ function manageConnections(
                 .then(() => {
                   setDeleting(undefined)
                   if (!final) return
-                  toast.show({ variant: "success", message: `Disconnected ${integration.name}` })
+                  toast.show({ variant: "success", message: t("ui.disconnected", { name: integration.name }) })
                   dialog.clear()
                 })
                 .catch((error) => {
@@ -270,16 +273,19 @@ function selectMethod(
   onConnected?: OnIntegrationConnected,
 ) {
   if (methods.length === 1) return openMethod(integration, methods[0], location, dialog, onConnected)
-  dialog.replace(() => (
-    <DialogSelect
-      title={`Connect ${integration.name}`}
-      options={methods.map((method) => ({
-        title: method.type === "key" ? (method.label ?? "API key") : method.label,
-        value: method.type === "key" ? "key" : method.id,
-        onSelect: () => openMethod(integration, method, location, dialog, onConnected),
-      }))}
-    />
-  ))
+  dialog.replace(() => {
+    const { t } = useLanguage()
+    return (
+      <DialogSelect
+        title={t("ui.connect", { name: integration.name })}
+        options={methods.map((method) => ({
+          title: method.type === "key" ? (method.label ?? t("provider.connect.method.apiKey")) : method.label,
+          value: method.type === "key" ? "key" : method.id,
+          onSelect: () => openMethod(integration, method, location, dialog, onConnected),
+        }))}
+      />
+    )
+  })
 }
 
 function openMethod(
@@ -330,6 +336,7 @@ function CommandStarting(props: {
   location: LocationRef
   onConnected?: OnIntegrationConnected
 }) {
+  const { t } = useLanguage()
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
@@ -373,7 +380,7 @@ function CommandStarting(props: {
     if (!handedOff) closed = true
   })
 
-  return <CommandView title={props.method.label} output="" message="Starting command…" />
+  return <CommandView title={props.method.label} output="" message={t("ui.startingCommand")} />
 }
 
 function CommandPending(props: {
@@ -383,6 +390,7 @@ function CommandPending(props: {
   location: LocationRef
   onConnected?: OnIntegrationConnected
 }) {
+  const { t } = useLanguage()
   const data = useData()
   const dialog = useDialog()
   const client = useClient()
@@ -412,7 +420,7 @@ function CommandPending(props: {
         }
         toast.show({
           variant: "error",
-          message: status.status === "failed" ? status.message : "Authentication expired",
+          message: status.status === "failed" ? status.message : t("ui.authenticationExpired"),
         })
         dialog.clear()
       })
@@ -434,13 +442,14 @@ function CommandPending(props: {
     })
   })
 
-  return <CommandView title={props.title} output={output()} message="Waiting for command to finish…" />
+  return <CommandView title={props.title} output={output()} message={t("ui.waitingForCommandToFinish")} />
 }
 
 function CommandView(props: { title: string; output: string; message: string }) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   const overlayTheme = useTheme()
+  const { t } = useLanguage()
   onMount(() => dialog.setSize("large"))
   return (
     <box gap={1} paddingBottom={1}>
@@ -449,7 +458,7 @@ function CommandView(props: { title: string; output: string; message: string }) 
           {props.title}
         </text>
         <text fg={theme.text.muted} onMouseUp={() => dialog.clear()}>
-          esc close
+          {t("ui.escClose")}
         </text>
       </box>
       <box
@@ -480,12 +489,13 @@ function KeyMethod(props: {
   const client = useClient()
   const toast = useToast()
   const theme = useTheme().surface("dialog")
+  const { t } = useLanguage()
   const [error, setError] = createSignal<string>()
 
   return (
     <DialogPrompt
-      title={props.method.label ?? `Connect ${props.integration.name}`}
-      placeholder="API key"
+      title={props.method.label ?? t("ui.connect", { name: props.integration.name })}
+      placeholder={t("provider.connect.method.apiKey")}
       onConfirm={(key) => {
         if (!key) return
         void client.api.integration.connect
@@ -532,6 +542,7 @@ function OAuthStarting(props: {
   answer?: FormAnswer
   onConnected?: OnIntegrationConnected
 }) {
+  const { t } = useLanguage()
   const dialog = useDialog()
   const client = useClient()
   const toast = useToast()
@@ -573,7 +584,7 @@ function OAuthStarting(props: {
       })
   })
 
-  return <OAuthView title={props.method.label} message="Starting authorization…" />
+  return <OAuthView title={props.method.label} message={t("ui.startingAuthorization")} />
 }
 
 function OAuthAuto(props: {
@@ -588,6 +599,7 @@ function OAuthAuto(props: {
   const client = useClient()
   const toast = useToast()
   const clipboard = useClipboard()
+  const { t } = useLanguage()
   let timer: ReturnType<typeof setTimeout> | undefined
   let settled = false
 
@@ -596,12 +608,12 @@ function OAuthAuto(props: {
     commands: [
       {
         bind: "o",
-        title: "Open authorization URL",
+        title: t("ui.openAuthorizationUrl"),
         group: "Dialog",
         run: () => {
           openUrl(props.attempt.url).catch(() =>
             toast.show({
-              message: "Could not open the browser. Copy the URL and continue manually.",
+              message: t("ui.couldNotOpenTheBrowserCopyTheUrl"),
               variant: "error",
             }),
           )
@@ -609,13 +621,13 @@ function OAuthAuto(props: {
       },
       {
         bind: "c",
-        title: "Copy authorization details",
+        title: t("ui.copyAuthorizationDetails"),
         group: "Dialog",
         run: () => {
           const value = props.attempt.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.attempt.url
           clipboard
             .write(value)
-            .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+            .then(() => toast.show({ message: t("ui.copiedToClipboard"), variant: "info" }))
             .catch(toast.error)
         },
       },
@@ -640,7 +652,10 @@ function OAuthAuto(props: {
           void connected(props.integration, props.location, data, dialog, toast, props.onConnected)
           return
         }
-        toast.show({ variant: "error", message: status.status === "failed" ? status.message : "Authorization expired" })
+        toast.show({
+          variant: "error",
+          message: status.status === "failed" ? status.message : t("ui.authorizationExpired"),
+        })
         dialog.clear()
       })
       .catch((cause) => {
@@ -666,7 +681,7 @@ function OAuthAuto(props: {
       title={props.title}
       url={props.attempt.url}
       instructions={props.attempt.instructions}
-      message="Waiting for authorization…"
+      message={t("ui.waitingForAuthorization")}
       copy
       open
     />
@@ -686,6 +701,7 @@ function OAuthCode(props: {
   const toast = useToast()
   const theme = useTheme().surface("dialog")
   const [error, setError] = createSignal<string>()
+  const { t } = useLanguage()
   let settled = false
 
   onCleanup(() => {
@@ -700,7 +716,7 @@ function OAuthCode(props: {
   return (
     <DialogPrompt
       title={props.title}
-      placeholder="Authorization code"
+      placeholder={t("provider.connect.oauth.code.placeholder")}
       onConfirm={(code) => {
         if (!code) return
         void client.api.integration.oauth
@@ -737,6 +753,7 @@ function OAuthView(props: {
 }) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
+  const { t } = useLanguage()
   return (
     <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
       <box flexDirection="row" justifyContent="space-between">
@@ -761,12 +778,12 @@ function OAuthView(props: {
       <box flexDirection="row" gap={2}>
         <Show when={props.open}>
           <text fg={theme.text.base}>
-            o <span style={{ fg: theme.text.muted }}>open</span>
+            o <span style={{ fg: theme.text.muted }}>{t("ui.open")}</span>
           </text>
         </Show>
         <Show when={props.copy}>
           <text fg={theme.text.base}>
-            c <span style={{ fg: theme.text.muted }}>copy</span>
+            c <span style={{ fg: theme.text.muted }}>{t("session.copy2")}</span>
           </text>
         </Show>
       </box>

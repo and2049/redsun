@@ -6,6 +6,7 @@ import path from "node:path"
 import { spawn } from "node:child_process"
 import type { Stream } from "node:stream"
 import { resolveZedDbPath, resolveZedSelection } from "./editor-zed"
+import { resumeTerminal, suspendTerminal } from "./util/terminal-background"
 
 export { normalizePromptContent } from "./prompt/content"
 
@@ -16,7 +17,7 @@ export async function openEditor(input: { value: string; renderer: CliRenderer; 
   if (!editor) return
   const file = path.join(os.tmpdir(), `${Date.now()}.md`)
   await writeFile(file, input.value)
-  input.renderer.suspend()
+  suspendTerminal(input.renderer)
   input.renderer.currentRenderBuffer.clear()
   try {
     await new Promise<void>((resolve, reject) => {
@@ -36,7 +37,7 @@ export async function openEditor(input: { value: string; renderer: CliRenderer; 
   } finally {
     await rm(file, { force: true }).catch(() => {})
     input.renderer.currentRenderBuffer.clear()
-    input.renderer.resume()
+    resumeTerminal(input.renderer)
     input.renderer.requestRender()
   }
 }

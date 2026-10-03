@@ -61,7 +61,7 @@ for (const width of [40, 100]) {
               <ClientProvider api={api}>
                 <DataProvider directory={temporary.path}>
                   <LocationProvider>
-                    <ThemeProvider mode={width === 40 ? "light" : "dark"} source={emptyThemeSource}>
+                    <ThemeProvider source={emptyThemeSource}>
                       <Keymap.Provider>
                         <ToastProvider>
                           <DialogProvider>

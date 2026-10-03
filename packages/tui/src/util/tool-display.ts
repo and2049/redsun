@@ -2,7 +2,25 @@ export function canonicalToolName(name: string) {
   if (name === "bash") return "shell"
   if (name === "task") return "subagent"
   if (name === "apply_patch") return "patch"
+  // Claude Code's delegated task-list tool renders through the same checklist row.
+  if (name === "TodoWrite") return "todowrite"
   return name
+}
+
+export type TodoItem = { content: string; status: string; children: TodoItem[] }
+
+export function todoItems(value: unknown): TodoItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item): TodoItem[] => {
+    if (typeof item !== "object" || item === null) return []
+    const { content, status, children } = item as Record<string, unknown>
+    if (typeof content !== "string" || typeof status !== "string") return []
+    return [{ content, status, children: todoItems(children) }]
+  })
+}
+
+export function flattenTodos(todos: ReadonlyArray<TodoItem>): TodoItem[] {
+  return todos.flatMap((todo) => [todo, ...flattenTodos(todo.children)])
 }
 
 export function finiteNumber(value: unknown): number | undefined {

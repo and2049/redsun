@@ -79,7 +79,7 @@ async function mountPanes(root: string, render: () => JSX.Element, parentID?: st
             <ClientProvider api={createApi(transport.fetch)}>
               <DataProvider directory={root}>
                 <LocationProvider>
-                  <ThemeProvider mode="dark" source={emptyThemeSource}>
+                  <ThemeProvider source={emptyThemeSource}>
                     <ToastProvider>
                       <Panes />
                     </ToastProvider>

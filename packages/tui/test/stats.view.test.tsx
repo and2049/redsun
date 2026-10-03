@@ -41,7 +41,7 @@ test("stats shows only this year and returns after errors or success", async () 
       app: { name: "test", version: "test", channel: "test" },
       server: { endpoint: { url: server.url.toString() } },
       config: {
-        get: async () => ({ animations: false, tabs: { mode: "off" } }),
+        get: async () => ({ animations: false }),
         update: async () => ({}),
       },
       packages: { prepare: async () => ({ directory: "" }) },
@@ -73,7 +73,7 @@ test("stats shows only this year and returns after errors or success", async () 
       setup
         .captureCharFrame()
         .split("\n")
-        .find((line) => line.includes("opencode / stats")),
+        .find((line) => line.includes("redsun / stats")),
     ).not.toContain("tab")
     setup.mockInput.pressKey("RETURN")
     setup.mockInput.pressKey("SPACE")
@@ -85,7 +85,7 @@ test("stats shows only this year and returns after errors or success", async () 
     expect(setup.captureCharFrame()).toContain("TOKENS")
     expect(setup.captureCharFrame()).not.toContain("headline")
     setup.mockInput.pressKey("ESCAPE")
-    await setup.waitForFrame((frame) => frame.includes("commands") && !frame.includes("opencode / stats"))
+    await setup.waitForFrame((frame) => frame.includes("commands") && !frame.includes("redsun / stats"))
   } finally {
     if (!setup.renderer.isDestroyed) setup.renderer.destroy()
     await task.finally(() => server.stop(true))

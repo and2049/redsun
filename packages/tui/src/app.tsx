@@ -9,6 +9,7 @@ import { LogProvider, useLog, type LogSink } from "./context/log"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
 import { Selection } from "./util/selection"
+import { resumeTerminal, suspendTerminal } from "./util/terminal-background"
 import {
   CliRenderEvents,
   createCliRenderer,
@@ -49,15 +50,20 @@ import { EditorContextProvider } from "./context/editor"
 import { useEvent } from "./context/event"
 import { ClientProvider, useClient } from "./context/client"
 import { StartupLoading } from "./component/startup-loading"
-import { DevToolsBar } from "./component/devtools-bar"
+import { WorkspaceStatus } from "./component/workspace-status"
+import { CommandBar } from "./component/command-bar"
+import { VimKeyHandler, VimProvider } from "./context/vim"
 import { Reconnecting } from "./component/reconnecting"
 import { MigrationOverlay } from "./component/migration-overlay"
 import { DataProvider, useData } from "./context/data"
-import { SessionTabsProvider, useSessionTabs } from "./context/session-tabs"
 import { LocationProvider, useLocation } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
+import { RemoteControlProvider } from "./context/remote-control"
+import { DialogRemote } from "./component/dialog-remote"
 import { DialogModel } from "./component/dialog-model"
+import { DialogUsage } from "./component/dialog-usage"
+import { useWorkerModelDialog, useWorkerVariantDialog } from "./component/dialog-worker-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
@@ -69,10 +75,6 @@ import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogOpen, DialogOpenKey, moveOpenSession } from "./component/dialog-open"
-import { SessionTabs } from "./component/session-tabs"
-import { clampSessionTabsWidth, sessionTabsFitVertically, SESSION_SIDEBAR_WIDTH } from "./ui/layout"
-import { createPaneResize } from "./ui/pane-resize"
-import { PaneResizeHandle } from "./ui/pane-resize-handle"
 import { ThemeErrorToast } from "./component/theme-error-toast"
 import { createThemeSource, ThemeProvider, useTheme, useThemes } from "./context/theme"
 import { Home } from "./routes/home"
@@ -99,33 +101,14 @@ import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 import { AttentionProvider } from "./context/attention"
 import { StorageProvider, useStorage } from "./context/storage"
-import { SessionTerminalsProvider } from "./context/session-terminals"
-import { PanelProvider, usePanel } from "./context/panel"
-import { SessionFrame } from "./component/session-frame"
+import { Session } from "./routes/session"
 import { createTuiClipboard } from "./clipboard"
+import { useLanguage } from "./i18n"
+import { DialogLanguage } from "./component/dialog-language"
 
 registerOpencodeSpinner()
 
 const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
-
-const sessionTabBindingCommands = [
-  "session.tab.next",
-  "session.tab.previous",
-  "session.tab.next_unread",
-  "session.tab.previous_unread",
-  "session.tab.close",
-  "session.tab.reopen",
-  "session.tab.select.1",
-  "session.tab.select.2",
-  "session.tab.select.3",
-  "session.tab.select.4",
-  "session.tab.select.5",
-  "session.tab.select.6",
-  "session.tab.select.7",
-  "session.tab.select.8",
-  "session.tab.select.9",
-  "session.tab.select.10",
-] as const
 
 const pinnedSessionBindingCommands = [
   "session.quick_switch.1",
@@ -142,6 +125,9 @@ const pinnedSessionBindingCommands = [
 const appBindingCommands = [
   "command.palette.show",
   "model.list",
+  "model.refresh",
+  "worker.model",
+  "worker.variant",
   "model.cycle_recent",
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
@@ -154,6 +140,7 @@ const appBindingCommands = [
   "variant.list",
   "provider.connect",
   "opencode.settings",
+  "language.switch",
   "opencode.status",
   "opencode.update",
   "server.pair",
@@ -161,8 +148,6 @@ const appBindingCommands = [
   "location.reload",
   "opencode.debug",
   "theme.switch",
-  "theme.switch_mode",
-  "theme.mode.lock",
   "help.show",
   "docs.open",
   "diff.open",
@@ -174,6 +159,7 @@ const appBindingCommands = [
   "app.toggle.file_context",
   "app.toggle.diffwrap",
   "app.toggle.paste_summary",
+  "permission.mode",
 ] as const
 
 export type TuiInput = {
@@ -181,12 +167,14 @@ export type TuiInput = {
   server: {
     endpoint: Endpoint
     service?: {
+      registration?: string
       reconnect: (signal: AbortSignal) => Promise<Endpoint>
       restart: () => Promise<void>
     }
   }
   args: Args
   config: Config.Interface
+  plugins?: ReadonlyArray<Config.Plugin>
   updater?: UpdateSource
   packages: PackageSource
   environment?: Readonly<Record<string, string>>
@@ -219,6 +207,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
   const managed = input.server.service
   const service = managed
     ? {
+        registration: managed.registration,
         reconnect: async (signal: AbortSignal) => {
           const endpoint = await managed.reconnect(signal)
           const next = { baseUrl: endpoint.url, headers: Service.headers(endpoint) }
@@ -262,7 +251,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
           (renderer) => Effect.sync(() => destroyRenderer(renderer)),
         )
       })
-      renderer.setMaxListeners(15)
+      // Every mounted component subscribes to resize through useTerminalDimensions and
+      // unsubscribes on cleanup; a session screen mounts more than EventEmitter's default 10.
+      renderer.setMaxListeners(64)
       const clipboard = yield* Effect.acquireRelease(
         Effect.sync(() => createTuiClipboard(renderer)),
         (clipboard) =>
@@ -378,48 +369,46 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                           >
                                             <ClientProvider api={api} url={input.server.endpoint.url} service={service}>
                                               <PermissionProvider>
-                                                <DataProvider directory={directory}>
-                                                  <LocationProvider>
-                                                    <SessionTabsProvider>
-                                                      <SessionTerminalsProvider>
-                                                        <ThemeProvider
-                                                          mode={mode}
-                                                          source={createThemeSource(global.config)}
-                                                        >
+                                                <RemoteControlProvider>
+                                                  <DataProvider directory={directory}>
+                                                    <LocationProvider>
+                                                      <VimProvider>
+                                                        <ThemeProvider source={createThemeSource(global.config)}>
                                                           <ThemeErrorToast />
                                                           <LocalProvider>
                                                             <PromptStashProvider>
                                                               <DialogProvider>
-                                                                <FrecencyProvider>
-                                                                  <PromptHistoryProvider>
-                                                                    <PromptRefProvider>
-                                                                      <EditorContextProvider>
-                                                                        <AttentionProvider>
-                                                                          <UpdateNotificationProvider
-                                                                            updater={input.updater}
-                                                                          >
-                                                                            <PanelProvider>
+                                                                <VimKeyHandler>
+                                                                  <FrecencyProvider>
+                                                                    <PromptHistoryProvider>
+                                                                      <PromptRefProvider>
+                                                                        <EditorContextProvider>
+                                                                          <AttentionProvider>
+                                                                            <UpdateNotificationProvider
+                                                                              updater={input.updater}
+                                                                            >
                                                                               <PluginProvider
                                                                                 packages={input.packages}
                                                                                 directories={pluginDirectories}
+                                                                                plugins={input.plugins}
                                                                               >
                                                                                 <App />
                                                                               </PluginProvider>
-                                                                            </PanelProvider>
-                                                                          </UpdateNotificationProvider>
-                                                                        </AttentionProvider>
-                                                                      </EditorContextProvider>
-                                                                    </PromptRefProvider>
-                                                                  </PromptHistoryProvider>
-                                                                </FrecencyProvider>
+                                                                            </UpdateNotificationProvider>
+                                                                          </AttentionProvider>
+                                                                        </EditorContextProvider>
+                                                                      </PromptRefProvider>
+                                                                    </PromptHistoryProvider>
+                                                                  </FrecencyProvider>
+                                                                </VimKeyHandler>
                                                               </DialogProvider>
                                                             </PromptStashProvider>
                                                           </LocalProvider>
                                                         </ThemeProvider>
-                                                      </SessionTerminalsProvider>
-                                                    </SessionTabsProvider>
-                                                  </LocationProvider>
-                                                </DataProvider>
+                                                      </VimProvider>
+                                                    </LocationProvider>
+                                                  </DataProvider>
+                                                </RemoteControlProvider>
                                               </PermissionProvider>
                                             </ClientProvider>
                                           </RouteProvider>
@@ -457,25 +446,32 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
 })
 
 function App() {
+  const { t } = useLanguage()
   const log = useLog({ component: "app" })
   const app = useTuiApp()
   const startup = useTuiStartup()
   const config = useConfig()
-  const devtools = createMemo(() => config.data.debug?.devtools ?? app.channel === "local")
   const route = useRoute()
   const dimensions = useTerminalDimensions()
   const renderer = useRenderer()
   const dialog = useDialog()
   const local = useLocal()
-  const sessionTabs = useSessionTabs()
-  const panels = usePanel()
   const keymap = Keymap.use()
   const event = useEvent()
   const client = useClient()
   const toast = useToast()
+  const refreshModels = () =>
+    client.api.model
+      .refresh()
+      .then(() => toast.show({ variant: "success", message: t("ui.modelCatalogRefreshed") }))
+      .catch(() => toast.show({ variant: "error", message: t("ui.failedToRefreshModelCatalog") }))
   const updater = useUpdateNotification()
   const theme = useTheme()
-  const { mode, supports, setMode, locked, lock, unlock, afterPaint } = useThemes()
+  const tabsTheme = useTheme().surface("dialog")
+  const openWorkerModel = useWorkerModelDialog()
+  const openWorkerVariant = useWorkerVariantDialog()
+  const themes = useThemes()
+  const { mode } = themes
   const data = useData()
   const location = useLocation()
   const exit = useExit()
@@ -483,16 +479,6 @@ function App() {
   const plugins = usePlugin()
   const clipboard = useClipboard()
   const terminalEnvironment = useTuiTerminalEnvironment()
-  let paletteTimer: ReturnType<typeof setTimeout> | undefined
-  const afterFrame = () => {
-    // The native writer can still be flushing the frame when FRAME fires. Keep OSC probes behind visible app output.
-    paletteTimer = setTimeout(afterPaint, 50)
-  }
-  onMount(() => renderer.once(CliRenderEvents.FRAME, afterFrame))
-  onCleanup(() => {
-    renderer.off(CliRenderEvents.FRAME, afterFrame)
-    if (paletteTimer) clearTimeout(paletteTimer)
-  })
   createEffect(() => {
     if (client.connection.status() !== "connected") return
     if (route.data.type !== "session") return
@@ -503,21 +489,6 @@ function App() {
     void client.api.session
       .environment({ sessionID: session.id, variables: terminalEnvironment.variables })
       .catch(toast.error)
-  })
-  const [layout, updateLayout] = useStorage().store<{ verticalTabsWidth?: number }>("layout", {
-    initial: { verticalTabsWidth: SESSION_SIDEBAR_WIDTH },
-  })
-  const tabsResize = createPaneResize({
-    value: () => layout.verticalTabsWidth ?? SESSION_SIDEBAR_WIDTH,
-    defaultValue: () => SESSION_SIDEBAR_WIDTH,
-    clamp: (width) => clampSessionTabsWidth(width, dimensions().width),
-    fromMouse: (event) => event.x + 1,
-    contains: (event, width) => event.x >= width - 1 && event.x <= width,
-    onCommit: (width) => {
-      void updateLayout((draft) => {
-        draft.verticalTabsWidth = width
-      }).catch((error) => console.error("Failed to persist TUI layout", error))
-    },
   })
   const [openSessions, setOpenSessions] = createSignal<SessionInfo[]>([])
   // Toast once when an MCP server enters a failed or needs-auth state so the user knows to act,
@@ -536,16 +507,16 @@ function App() {
       if (status.status === "needs_auth")
         toast.show({
           variant: "warning",
-          title: "MCP server needs authentication",
-          message: `Connect "${server.name}" to use its tools.`,
-          action: { label: "Open MCP servers", run: () => keymap.dispatch("mcp.list") },
+          title: t("ui.mcpServerNeedsAuthentication"),
+          message: t("ui.connectToUseItsTools", { name: server.name }),
+          action: { label: t("ui.openMcpServers"), run: () => keymap.dispatch("mcp.list") },
         })
       else
         toast.show({
           variant: "error",
-          title: `MCP server failed: ${server.name}`,
-          message: "Run /mcps to view details.",
-          action: { label: "Open MCP servers", run: () => keymap.dispatch("mcp.list") },
+          title: t("application.mcpServerFailed", { name: server.name }),
+          message: t("ui.runMcpsToViewDetails"),
+          action: { label: t("ui.openMcpServers"), run: () => keymap.dispatch("mcp.list") },
         })
     }
   })
@@ -557,6 +528,14 @@ function App() {
   const offSelectionKeys = keymap.intercept(
     "key",
     ({ event }) => {
+      if (
+        promptRef.current?.focused &&
+        event.ctrl &&
+        (event.name === "c" || event.baseCode === 99 || event.baseCode === 67)
+      ) {
+        renderer.clearSelection()
+        return
+      }
       Selection.handleSelectionKey(renderer, toast, event, clipboard, copyOnSelectEnabled())
     },
     { priority: 101 },
@@ -571,30 +550,13 @@ function App() {
 
     await clipboard
       .write(text)
-      .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+      .then(() => toast.show({ message: t("ui.copiedToClipboard"), variant: "info" }))
       .catch(toast.error)
 
     renderer.clearSelection()
   }
   const terminalTitleEnabled = () => config.data.terminal?.title ?? true
   const pasteSummaryEnabled = () => config.data.prompt?.paste !== "full"
-  const tabsVertical = () =>
-    config.data.tabs.layout === "vertical" && sessionTabsFitVertically(dimensions().width, tabsResize.size())
-  const tabsAvailable = () => sessionTabs.enabled() && sessionTabs.tabs().length > 0 && route.data.type !== "plugin"
-  const fullscreenPanel = () =>
-    route.data.type === "session" &&
-    panels.current()?.sessionID === route.data.sessionID &&
-    panels.presentation() === "fullscreen"
-  const tabsVisible = () => tabsAvailable() && !fullscreenPanel()
-  const verticalTabsVisible = () => tabsVisible() && tabsVertical()
-
-  // Measure the prospective split layout, even while full-screen hides the tabs.
-  createEffect(() => panels.setWidth(dimensions().width - (tabsAvailable() && tabsVertical() ? tabsResize.size() : 0)))
-  createEffect(() => {
-    const current = panels.current()
-    if (!current || (route.data.type === "session" && route.data.sessionID === current.sessionID)) return
-    panels.close()
-  })
 
   createEffect(() => {
     renderer.useMouse = config.data.mouse
@@ -608,23 +570,23 @@ function App() {
     if (!terminalTitleEnabled()) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle(app.name)
       return
     }
 
     if (route.data.type === "session") {
       const title = session?.title
       if (!title || isFallbackTitle(title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle(app.name)
         return
       }
 
-      renderer.setTerminalTitle(`OC | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`)
+      renderer.setTerminalTitle(`> ${title.length > 40 ? title.slice(0, 37) + "..." : title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.name}`)
+      renderer.setTerminalTitle(`${app.name} | ${route.data.name}`)
     }
   })
 
@@ -718,7 +680,7 @@ function App() {
         title: "New session",
         suggested: route.data.type === "session",
         category: "Session",
-        slash: { name: "new" },
+        slash: { name: "new", aliases: ["clear"] },
         run: () => {
           const model = local.model.current()
           const agent = local.agent.current()
@@ -726,33 +688,6 @@ function App() {
             route.data.type === "session"
               ? (data.session.get(route.data.sessionID)?.location ?? location.ref)
               : undefined
-          route.navigate({
-            type: "home",
-            location: newSessionLocation(
-              config.data.session.new_location,
-              data.location.default().directory,
-              current,
-              location.error?.location,
-            ),
-          })
-          if (agent) local.agent.set(agent.id)
-          if (model) local.model.set(model)
-          dialog.clear()
-        },
-      },
-      {
-        name: "session.clear",
-        title: "Clear session",
-        category: "Session",
-        slash: { name: "clear" },
-        run: () => {
-          const model = local.model.current()
-          const agent = local.agent.current()
-          const current =
-            route.data.type === "session"
-              ? (data.session.get(route.data.sessionID)?.location ?? location.ref)
-              : undefined
-          sessionTabs.close()
           route.navigate({
             type: "home",
             location: newSessionLocation(
@@ -782,74 +717,68 @@ function App() {
       },
       ...Array.from({ length: 9 }, (_, i) => ({
         name: `session.quick_switch.${i + 1}`,
-        title: `Switch to session in quick slot ${i + 1}`,
+        title: t("application.switchToSessionInQuickSlot", { slot: i + 1 }),
         category: "Session",
         palette: undefined,
-        enabled: () => !sessionTabs.enabled(),
         run: () => local.session.quickSwitch(i + 1),
-      })),
-      {
-        name: "session.tab.next",
-        title: "Next tab",
-        category: "Session",
-        palette: undefined,
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.cycle(1),
-      },
-      {
-        name: "session.tab.previous",
-        title: "Previous tab",
-        category: "Session",
-        palette: undefined,
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.cycle(-1),
-      },
-      {
-        name: "session.tab.next_unread",
-        title: "Next unread tab",
-        category: "Session",
-        palette: undefined,
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.cycleUnread(1),
-      },
-      {
-        name: "session.tab.previous_unread",
-        title: "Previous unread tab",
-        category: "Session",
-        palette: undefined,
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.cycleUnread(-1),
-      },
-      {
-        name: "session.tab.close",
-        title: "Close tab",
-        category: "Session",
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.close(),
-      },
-      {
-        name: "session.tab.reopen",
-        title: "Reopen closed tab",
-        category: "Session",
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.reopen(),
-      },
-      ...Array.from({ length: 10 }, (_, i) => ({
-        name: `session.tab.select.${i + 1}`,
-        title: `Switch to tab ${i + 1}`,
-        category: "Session",
-        palette: undefined,
-        enabled: sessionTabs.enabled,
-        run: () => sessionTabs.selectIndex(i),
       })),
       {
         name: "model.list",
         title: "Switch model",
         suggested: true,
         category: "Agent",
-        slash: { name: "models" },
-        run: () => {
+        // Bias /mo toward /models over /move without changing global fuzzy scoring.
+        slash: { name: "models", arguments: "optional" as const },
+        run: (input?: string) => {
+          if (input?.trim() === "refresh") return refreshModels()
           dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "model.refresh",
+        title: "Refresh model catalog",
+        category: "Agent",
+        description: t("models.refresh.description"),
+        run: refreshModels,
+      },
+      {
+        name: "usage.show",
+        title: "Show usage limits",
+        category: "Agent",
+        slash: { name: "usage" },
+        run: () => dialog.replace(() => <DialogUsage />),
+      },
+      {
+        name: "remote.control",
+        title: "Remote control",
+        category: "System",
+        slash: { name: "remote" },
+        run: () => dialog.replace(() => <DialogRemote />),
+      },
+      {
+        name: "worker.model",
+        title: "Switch worker model",
+        category: "Agent",
+        slash: { name: "worker-model", aliases: ["worker"] },
+        run: () => openWorkerModel(),
+      },
+      {
+        name: "worker.variant",
+        title: "Switch worker model variant",
+        category: "Agent",
+        palette: undefined,
+        slash: { name: "worker-variant" },
+        run: () => {
+          if (openWorkerVariant()) return
+          toast.show({
+            variant: "info",
+            message: t(
+              local.model.worker.current()
+                ? "application.thisWorkerModelHasNoVariants"
+                : "application.selectAWorkerModelFirst",
+            ),
+            duration: 3000,
+          })
         },
       },
       {
@@ -932,8 +861,8 @@ function App() {
         run: () => {
           if (local.model.variant.list().length === 0) {
             return toast.show({
-              title: "No variants available",
-              message: "The current model does not support any variants.",
+              title: t("application.noVariantsAvailable"),
+              message: t("application.theCurrentModelDoesNotSupportAnyVariants"),
               variant: "info",
             })
           }
@@ -974,6 +903,14 @@ function App() {
         category: "System",
       },
       {
+        name: "language.switch",
+        title: "Interface language",
+        category: "Settings",
+        palette: undefined,
+        slash: { name: "language", aliases: ["languages", "lang"] },
+        run: () => dialog.replace(() => <DialogLanguage />),
+      },
+      {
         name: "opencode.status",
         title: "View status",
         slash: { name: "status" },
@@ -986,7 +923,8 @@ function App() {
         ? [
             {
               name: "opencode.update",
-              title: "Update OpenCode",
+              title: "Update redsun",
+              description: "Update redsun (upgrade)",
               slash: { name: "update" },
               run: () => updater.open?.("manual"),
               category: "System",
@@ -1052,30 +990,9 @@ function App() {
         name: "theme.switch",
         title: "Switch theme",
         slash: { name: "themes" },
+        enabled: () => !themes.locked(),
         run: () => {
           dialog.replace(() => <DialogThemeList />)
-        },
-        category: "System",
-      },
-      {
-        name: "theme.switch_mode",
-        title: mode() === "dark" ? "Switch to light mode" : "Switch to dark mode",
-        palette: undefined,
-        enabled: () => supports(mode() === "dark" ? "light" : "dark"),
-        run: () => {
-          setMode(mode() === "dark" ? "light" : "dark")
-          dialog.clear()
-        },
-        category: "System",
-      },
-      {
-        name: "theme.mode.lock",
-        title: locked() ? "Unlock theme mode" : "Lock theme mode",
-        palette: undefined,
-        run: () => {
-          if (locked()) unlock()
-          else lock()
-          dialog.clear()
         },
         category: "System",
       },
@@ -1130,8 +1047,8 @@ function App() {
         palette: undefined,
         enabled: process.platform !== "win32",
         run: () => {
-          renderer.suspend()
-          process.once("SIGCONT", () => renderer.resume())
+          suspendTerminal(renderer)
+          process.once("SIGCONT", () => resumeTerminal(renderer))
           process.kill(0, "SIGTSTP")
         },
       },
@@ -1210,14 +1127,31 @@ function App() {
           dialog.clear()
         },
       },
+      {
+        name: "permission.mode",
+        title:
+          local.permission.mode === "auto"
+            ? "Disable auto-approve permissions"
+            : local.permission.mode === "native_auto"
+              ? "Enable auto-approve permissions"
+              : local.permission.native()
+                ? "Approve for me"
+                : "Enable auto-approve permissions",
+        category: "System",
+        run: () => {
+          local.permission.toggle()
+          dialog.clear()
+        },
+      },
     ].map(
       ({ name, category, ...command }) =>
         ({
           id: name,
-          group: category,
+          group: category ? t(category) : undefined,
           bind: false,
           palette: true as const,
           ...command,
+          title: t(command.title),
         }) satisfies KeymapCommand,
     ),
   )
@@ -1238,22 +1172,10 @@ function App() {
 
   Keymap.createLayer(() => ({
     mode: "global",
-    enabled: sessionTabs.enabled,
-    bindings: sessionTabBindingCommands,
-  }))
-
-  Keymap.createLayer(() => ({
-    mode: "global",
-    enabled: () => !sessionTabs.enabled(),
     bindings: pinnedSessionBindingCommands,
   }))
 
   Keymap.createLayer(() => ({
-    enabled: () => {
-      const current = promptRef.current
-      if (!current?.focused) return true
-      return current.current.text === ""
-    },
     bindings: ["app.exit"],
   }))
 
@@ -1342,57 +1264,34 @@ function App() {
         copyOnSelectEnabled() ? (event) => Selection.copyOnSelectRelease(event, renderer, toast, clipboard) : undefined
       }
     >
-      <box
-        flexGrow={1}
-        minHeight={0}
-        flexDirection="row"
-        position="relative"
-        onMouseDrag={tabsResize.onMouseDrag}
-        onMouseDragEnd={tabsResize.onMouseDragEnd}
-        onMouseUp={tabsResize.onMouseUp}
-      >
-        <Show when={verticalTabsVisible()}>
-          <SessionTabs orientation="vertical" width={tabsResize.size()} />
-        </Show>
-        <box flexGrow={1} minWidth={0} flexDirection="column">
-          <Show when={plugins.ready()}>
-            <box flexGrow={1} minHeight={0} flexDirection="column">
-              <Show when={tabsVisible() && !tabsVertical()}>
-                <SessionTabs />
-              </Show>
-              <Switch>
-                <Match when={route.data.type === "home"}>
-                  <Home />
-                </Match>
-                <Match when={route.data.type === "session"}>
-                  <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
-                    {(sessionID) => (
-                      <SessionFrame
-                        sessionID={sessionID}
-                        verticalTabsWidth={verticalTabsVisible() ? tabsResize.size() : 0}
-                      />
-                    )}
-                  </Show>
-                </Match>
-                <Match when={route.data.type === "plugin"}>
-                  <PluginRoute
-                    fallback={(id, name) => (
-                      <PluginRouteMissing id={id} name={name} onHome={() => route.navigate({ type: "home" })} />
-                    )}
-                  />
-                </Match>
-              </Switch>
-            </box>
-            <Slot path="app" />
-          </Show>
-        </box>
-        <Show when={verticalTabsVisible()}>
-          <PaneResizeHandle resize={tabsResize} left={tabsResize.size() - 1} />
+      <box flexGrow={1} minHeight={0} flexDirection="column">
+        <Show when={plugins.ready()}>
+          <box flexGrow={1} minHeight={0} flexDirection="column">
+            <Switch>
+              <Match when={route.data.type === "home"}>
+                <Home />
+              </Match>
+              <Match when={route.data.type === "session"}>
+                <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
+                  {(_) => <Session />}
+                </Show>
+              </Match>
+              <Match when={route.data.type === "plugin"}>
+                <PluginRoute
+                  fallback={(id, name) => (
+                    <PluginRouteMissing id={id} name={name} onHome={() => route.navigate({ type: "home" })} />
+                  )}
+                />
+              </Match>
+            </Switch>
+          </box>
+          <Slot path="app" />
         </Show>
       </box>
-      <Show when={devtools() && !(route.data.type === "plugin" && route.data.id === "opencode.stats")}>
-        <DevToolsBar />
+      <Show when={route.data.type === "session" || route.data.type === "home"}>
+        <WorkspaceStatus />
       </Show>
+      <CommandBar />
       <Show when={!startup.skipInitialLoading}>
         <StartupLoading ready={plugins.ready} />
       </Show>
