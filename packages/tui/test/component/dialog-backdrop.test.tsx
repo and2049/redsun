@@ -2,7 +2,7 @@ import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { createSignal, Show } from "solid-js"
 import { ConfigProvider, resolve } from "../../src/config"
-import { ThemeProvider } from "../../src/context/theme"
+import { ThemeProvider, useTheme } from "../../src/context/theme"
 import { translate } from "../fixture/languages"
 import { Dialog } from "../../src/ui/dialog"
 import { emptyThemeSource } from "../fixture/fixture"
@@ -76,3 +76,56 @@ for (const placement of ["default", "bottom"] as const) {
     },
   )
 }
+
+test("the backdrop leaves the terminal's own background undimmed", async () => {
+  const [open, setOpen] = createSignal(false)
+  function Canvas() {
+    const theme = useTheme()
+    return (
+      <box width="100%" height="100%" backgroundColor={theme.background.base}>
+        <text fg="#ffffff">canvas</text>
+        <box backgroundColor="#202020">
+          <text fg="#ffffff">raised</text>
+        </box>
+        <Show when={open()}>
+          <Dialog onClose={() => setOpen(false)}>
+            <text fg="#ffffff">Menu</text>
+          </Dialog>
+        </Show>
+      </box>
+    )
+  }
+  const app = await testRender(
+    () => (
+      <TestTuiContexts>
+        <ConfigProvider config={resolve({ theme: { terminal_background: true } }, { terminalSuspend: true })}>
+          <ThemeProvider source={emptyThemeSource}>
+            <Canvas />
+          </ThemeProvider>
+        </ConfigProvider>
+      </TestTuiContexts>
+    ),
+    { width: 100, height: 24 },
+  )
+  app.renderer.start()
+  const span = (text: string) => {
+    const found = app
+      .captureSpans()
+      .lines.flatMap((line) => line.spans)
+      .find((span) => span.text.includes(text))
+    if (!found) throw new Error(`Missing rendered span: ${text}`)
+    return found
+  }
+  try {
+    await app.waitForFrame((frame) => frame.includes("canvas"))
+    expect(span("canvas").bg.intent).toBe("default")
+    setOpen(true)
+    await app.waitForFrame((frame) => frame.includes("Menu"))
+    // Text and raised surfaces dim; the terminal's background is still the terminal's.
+    expect(span("canvas").bg.intent).toBe("default")
+    expect(span("canvas").fg.toInts()).toEqual([105, 105, 105, 255])
+    expect(span("raised").bg.toInts()).toEqual([13, 13, 13, 255])
+  } finally {
+    app.renderer.destroy()
+  }
+})
