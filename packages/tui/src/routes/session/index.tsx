@@ -2791,7 +2791,14 @@ export function BlockTool(props: BlockToolProps) {
       paddingRight={1}
       backgroundColor={hover() ? theme.decrease(background()) : background()}
       customBorderChars={SplitBorder.customBorderChars}
-      borderColor={theme.background.base}
+      // The terminal's own background has no colour to draw the gutter in, so it joins the block.
+      borderColor={
+        theme.background.base.intent === "default"
+          ? hover()
+            ? theme.decrease(background())
+            : background()
+          : theme.background.base
+      }
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={(event: MouseEvent) => {

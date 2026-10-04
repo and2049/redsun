@@ -1,4 +1,4 @@
-import { SyntaxStyle } from "@opentui/core"
+import { RGBA, SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
@@ -93,6 +93,7 @@ type State = {
   active: string
   ready: boolean
   locked: number
+  terminalBackground: boolean
 }
 
 type Themes = {
@@ -103,6 +104,8 @@ type Themes = {
   has: typeof hasTheme
   currentSyntax: Accessor<SyntaxStyle>
   mode: Accessor<"dark" | "light">
+  terminalBackground: Accessor<boolean>
+  setTerminalBackground(enabled: boolean): void
   set(theme: string): boolean
   select(theme: string): boolean
   register(name: string, document: unknown): (() => void) | undefined
@@ -124,6 +127,7 @@ const [store, setStore] = createStore<State>({
   active: FALLBACK_THEME,
   ready: false,
   locked: 0,
+  terminalBackground: false,
 })
 const [themeSources, setThemeSources] = createSignal(allThemes())
 
@@ -143,6 +147,7 @@ const themeContext = createSimpleContext({
         draft.active = typeof active === "string" ? active : FALLBACK_THEME
         draft.ready = false
         draft.locked = 0
+        draft.terminalBackground = config.theme?.terminal_background === true
       }),
     )
 
@@ -150,6 +155,7 @@ const themeContext = createSimpleContext({
       const theme = config.theme?.name
       if (theme && !store.locked) setStore("active", theme)
     })
+    createEffect(() => setStore("terminalBackground", config.theme?.terminal_background === true))
 
     function syncCustomThemes() {
       return themes
@@ -193,7 +199,9 @@ const themeContext = createSimpleContext({
       }
     })
     const mode = () => selected().mode
-    const tokens = () => selected().theme
+    const tokens = createMemo(() =>
+      store.terminalBackground ? withTerminalBackground(selected().theme) : selected().theme,
+    )
     tokens()
     themePerformance.set("Init", `${(performance.now() - initStarted).toFixed(2)} ms`)
     const current = createComponentTheme(tokens)
@@ -225,6 +233,15 @@ const themeContext = createSimpleContext({
       all: allThemes,
       has: hasTheme,
       mode,
+      terminalBackground: () => store.terminalBackground,
+      setTerminalBackground(enabled: boolean) {
+        setStore("terminalBackground", enabled)
+        void configState
+          .update((draft) => {
+            draft.theme = { ...draft.theme, terminal_background: enabled }
+          })
+          .catch(() => {})
+      },
       set(theme: string) {
         if (store.locked || !hasTheme(theme)) return false
         setStore("active", theme)
@@ -296,6 +313,26 @@ export function loadTheme(source: ThemeDocumentSource, name: string) {
   const document = parseTheme(source, name)
   const mode = themeMode(source, name)
   return { mode, theme: resolveThemeDocument(document, mode) }
+}
+
+/**
+ * The theme with the terminal's own background in place of `background.base`, so window
+ * transparency and background images show through. The replacement is opaque to the
+ * renderer (popups still cover what is beneath them) and keeps the theme colour as its
+ * RGB snapshot, so tints and mixes against the background are unchanged.
+ */
+export function withTerminalBackground(theme: ResolvedTheme): ResolvedTheme {
+  const themed = theme.background.base
+  const base = RGBA.defaultBackground(themed)
+  // Hue steps are looked up by colour identity.
+  const source = (color: RGBA) => (color === base ? themed : color)
+  return {
+    ...theme,
+    background: { ...theme.background, base },
+    source: (color) => theme.source(source(color)),
+    increase: (color, amount) => theme.increase(source(color), amount),
+    decrease: (color, amount) => theme.decrease(source(color), amount),
+  }
 }
 
 export function createSyntaxStyleMemo(factory: () => SyntaxStyle) {

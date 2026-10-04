@@ -236,8 +236,20 @@ export function DialogThemeList() {
           group: "Dialog",
           run: () => switchMode(mode() === "dark" ? "light" : "dark"),
         },
+        {
+          bind: "ctrl+b",
+          title: "Toggle terminal background",
+          group: "Dialog",
+          run: () => themes.setTerminalBackground(!themes.terminalBackground()),
+        },
       ]}
-      footerHints={[{ title: mode() === "dark" ? t("ui.lightThemes") : t("ui.darkThemes"), label: "tab" }]}
+      footerHints={[
+        { title: mode() === "dark" ? t("ui.lightThemes") : t("ui.darkThemes"), label: "tab" },
+        {
+          title: themes.terminalBackground() ? t("ui.terminalBackgroundOn") : t("ui.terminalBackgroundOff"),
+          label: "ctrl+b",
+        },
+      ]}
     />
   )
 }

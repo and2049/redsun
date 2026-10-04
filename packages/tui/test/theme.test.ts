@@ -280,3 +280,18 @@ test("shipped themes resolve only to colours they declare", () => {
     }
   }
 })
+
+test("the terminal background replaces only the base background and keeps hue steps", async () => {
+  const { loadTheme, withTerminalBackground } = await import("../src/context/theme")
+  const { theme } = loadTheme(DEFAULT_THEMES.dusk, "dusk")
+  const swapped = withTerminalBackground(theme)
+  const base = swapped.background.base
+  // Emitted as the terminal's default background, yet opaque and still the theme colour for blends.
+  expect(base.intent).toBe("default")
+  expect(base.toInts()).toEqual(theme.background.base.toInts())
+  expect(swapped.background.raised.base).toBe(theme.background.raised.base)
+  expect(swapped.decrease(base)).toBe(theme.decrease(theme.background.base))
+  expect(swapped.source(base)).toEqual(theme.source(theme.background.base))
+  // Raised surfaces keep their own colours.
+  expect(swapped.surface("dialog").background.base.intent).toBe("rgb")
+})

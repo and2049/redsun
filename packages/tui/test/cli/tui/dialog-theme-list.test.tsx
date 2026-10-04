@@ -27,17 +27,25 @@ async function renderThemes(root: string) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
   const config = createTuiResolvedConfig({ theme: { name: "dusk" } })
-  const [{ ConfigProvider }, { ThemeProvider }, { Keymap }, { DialogProvider }, { DialogThemeList }, { ToastProvider }] =
-    await Promise.all([
-      import("../../../src/config"),
-      import("../../../src/context/theme"),
-      import("../../../src/context/keymap"),
-      import("../../../src/ui/dialog"),
-      import("../../../src/component/dialog-theme-list"),
-      import("../../../src/ui/toast"),
-    ])
+  const [
+    { ConfigProvider },
+    { ThemeProvider, useThemes },
+    { Keymap },
+    { DialogProvider },
+    { DialogThemeList },
+    { ToastProvider },
+  ] = await Promise.all([
+    import("../../../src/config"),
+    import("../../../src/context/theme"),
+    import("../../../src/context/keymap"),
+    import("../../../src/ui/dialog"),
+    import("../../../src/component/dialog-theme-list"),
+    import("../../../src/ui/toast"),
+  ])
 
+  let themes!: ReturnType<typeof useThemes>
   function Themes() {
+    themes = useThemes()
     onCleanup(Keymap.use().mode.push("modal"))
     return <DialogThemeList />
   }
@@ -62,7 +70,7 @@ async function renderThemes(root: string) {
   )
   app.renderer.start()
   await app.waitForFrame((frame) => frame.includes("Themes"))
-  return app
+  return Object.assign(app, { themes })
 }
 
 function rowOf(frame: string, text: string) {
@@ -98,6 +106,31 @@ test("lists dark/light families on one row each and tab flips the mode in place"
     expect(light).toMatch(/●\s+dusk \/ dawn/)
     expect(rowOf(light, "dusk / dawn")).toBe(rowOf(dark, "dusk / dawn"))
     expect(rowOf(light, "tide / wave")).toBe(rowOf(dark, "tide / wave"))
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("ctrl+b swaps the theme background for the terminal's own", async () => {
+  await using root = await tmpdir()
+  using _themes = await shippedThemesOnly()
+  const app = await renderThemes(root.path)
+  try {
+    // Off by default: the theme paints its own background.
+    await app.waitForFrame((frame) => frame.includes("terminal background off"))
+    expect(app.themes.current.background.base.intent).toBe("rgb")
+
+    app.mockInput.pressKey("b", { ctrl: true })
+    await app.waitForFrame((frame) => frame.includes("terminal background on"))
+    expect(app.themes.current.background.base.intent).toBe("default")
+    // Previewing another theme keeps the setting.
+    app.mockInput.pressArrow("down")
+    await app.waitForFrame(() => app.themes.selected !== "dusk")
+    expect(app.themes.current.background.base.intent).toBe("default")
+
+    app.mockInput.pressKey("b", { ctrl: true })
+    await app.waitForFrame((frame) => frame.includes("terminal background off"))
+    expect(app.themes.current.background.base.intent).toBe("rgb")
   } finally {
     app.renderer.destroy()
   }

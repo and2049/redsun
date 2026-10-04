@@ -64,6 +64,9 @@ export const Info = Schema.Struct({
   theme: Schema.optional(
     Schema.Struct({
       name: Schema.optional(Schema.String).annotate({ description: "Theme name" }),
+      terminal_background: Schema.optional(Schema.Boolean).annotate({
+        description: "Show the terminal's own background instead of the theme's background colour",
+      }),
     }),
   ).annotate({ description: "Color theme settings" }),
   keybinds: Schema.optional(TuiKeybind.KeybindOverrides).annotate({ description: "Custom key bindings" }),
