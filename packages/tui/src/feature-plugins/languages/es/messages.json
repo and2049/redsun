@@ -226,6 +226,8 @@
   "ui.escClose": "Esc cerrar",
   "ui.darkThemes": "temas oscuros",
   "ui.lightThemes": "temas claros",
+  "ui.terminalBackgroundOn": "fondo del terminal activado",
+  "ui.terminalBackgroundOff": "fondo del terminal desactivado",
   "ui.connect": "Conectar {{name}}",
   "session.messageActions": "Acciones del mensaje",
   "session.jumpTo": "Ir a",

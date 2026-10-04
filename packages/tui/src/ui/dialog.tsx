@@ -1,8 +1,8 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { Keymap } from "../context/keymap"
-import { ThemeContextProvider, useTheme } from "../context/theme"
-import { applyGain, InputRenderable, MouseButton, Renderable } from "@opentui/core"
+import { ThemeContextProvider, useTheme, useThemes } from "../context/theme"
+import { applyGain, InputRenderable, MouseButton, Renderable, RGBA, type OptimizedBuffer } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
@@ -12,6 +12,22 @@ import { copy, copyOnSelectRelease } from "../util/selection"
 import { setTerminalBackgroundGain } from "../util/terminal-background"
 
 const BACKDROP_GAIN = 1 - 150 / 255
+
+// A cell colour is four u16 channels; the intent sits in the high byte of the second.
+const DEFAULT_INTENT = RGBA.defaultBackground().buffer[1]! >>> 8
+
+// applyGain rewrites the terminal's default background as the dimmed theme colour, which
+// would paint over a transparent or image background. Put those cells back so only text
+// and raised surfaces dim.
+function applyGainKeepingTerminalBackground(buffer: OptimizedBuffer, gain: number) {
+  const bg = buffer.buffers.bg
+  const kept: number[] = []
+  for (let i = 0; i < bg.length; i += 4) {
+    if (bg[i + 1]! >>> 8 === DEFAULT_INTENT) kept.push(i, bg[i]!, bg[i + 1]!, bg[i + 2]!, bg[i + 3]!)
+  }
+  applyGain(buffer, gain)
+  for (let k = 0; k < kept.length; k += 5) bg.set(kept.slice(k + 1, k + 5), kept[k]!)
+}
 
 export type DialogSize = "medium" | "large" | "xlarge"
 
@@ -33,6 +49,7 @@ export function Dialog(
 ) {
   const dimensions = useTerminalDimensions()
   const theme = useTheme().surface("dialog")
+  const themes = useThemes()
   const renderer = useRenderer()
   const bottom = () => props.placement === "bottom"
 
@@ -65,7 +82,9 @@ export function Dialog(
       left={0}
       top={0}
       renderBefore={(buffer) => {
-        if (!bottom()) applyGain(buffer, BACKDROP_GAIN)
+        if (bottom()) return
+        if (themes.terminalBackground()) applyGainKeepingTerminalBackground(buffer, BACKDROP_GAIN)
+        else applyGain(buffer, BACKDROP_GAIN)
       }}
     >
       <box

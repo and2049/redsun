@@ -226,6 +226,8 @@
   "ui.escClose": "Échap fermer",
   "ui.darkThemes": "thèmes sombres",
   "ui.lightThemes": "thèmes clairs",
+  "ui.terminalBackgroundOn": "arrière-plan du terminal activé",
+  "ui.terminalBackgroundOff": "arrière-plan du terminal désactivé",
   "ui.connect": "Connecter {{name}}",
   "session.messageActions": "Actions du message",
   "session.jumpTo": "Aller à",

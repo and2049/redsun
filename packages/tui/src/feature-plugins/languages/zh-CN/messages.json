@@ -226,6 +226,8 @@
   "ui.escClose": "Esc 关闭",
   "ui.darkThemes": "深色主题",
   "ui.lightThemes": "浅色主题",
+  "ui.terminalBackgroundOn": "终端背景：开",
+  "ui.terminalBackgroundOff": "终端背景：关",
   "ui.connect": "连接 {{name}}",
   "session.messageActions": "消息操作",
   "session.jumpTo": "跳转到",

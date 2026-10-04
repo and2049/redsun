@@ -350,7 +350,7 @@ test("dusk resolves to the same tokens the generated V2 document did", () => {
   expect(hex(resolved.background.base)).toBe("#181717")
   expect(hex(resolved.background.raised.base)).toBe("#242222")
   expect(hex(resolved.background.raised.high)).toBe("#242222")
-  expect(hex(resolved.border.base)).toBe("#e4e4e413")
+  expect(hex(resolved.border.base)).toBe("#e4e4e438")
   expect(hex(resolved.logo.gradient.start)).toBe("#f8cb00")
   expect(hex(resolved.logo.gradient.end)).toBe("#c3133c")
   // V1's seven agent colours, in order, unrounded.

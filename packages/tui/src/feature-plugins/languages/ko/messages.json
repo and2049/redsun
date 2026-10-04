@@ -226,6 +226,8 @@
   "ui.escClose": "Esc 닫기",
   "ui.darkThemes": "어두운 테마",
   "ui.lightThemes": "밝은 테마",
+  "ui.terminalBackgroundOn": "터미널 배경 켜짐",
+  "ui.terminalBackgroundOff": "터미널 배경 꺼짐",
   "ui.connect": "{{name}} 연결",
   "session.messageActions": "메시지 작업",
   "session.jumpTo": "이동",

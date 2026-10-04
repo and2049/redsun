@@ -889,6 +889,16 @@
       "context": "ui",
       "legacy": ["light themes"]
     },
+    "ui.terminalBackgroundOn": {
+      "message": "terminal background on",
+      "context": "ui",
+      "legacy": ["terminal background on"]
+    },
+    "ui.terminalBackgroundOff": {
+      "message": "terminal background off",
+      "context": "ui",
+      "legacy": ["terminal background off"]
+    },
     "ui.connect": {
       "message": "Connect {{name}}",
       "context": "ui",

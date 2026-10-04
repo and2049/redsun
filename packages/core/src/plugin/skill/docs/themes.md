@@ -36,6 +36,22 @@ Use `system` to follow your terminal's appearance, or lock the theme to one mode
 
 If a custom theme provides only one mode, redsun uses that mode when the other is requested.
 
+## Terminal background
+
+By default a theme paints its own background colour. To keep your terminal's background instead, so window
+transparency or a background image stays visible, press `Ctrl+B` in `/themes` or set it in `cli.json`:
+
+```json title="~/.config/redsun/cli.json"
+{
+  "theme": {
+    "terminal_background": true
+  }
+}
+```
+
+Only the base background is replaced. Raised surfaces such as the prompt, tool blocks, and dialogs keep the theme's
+colours, so pick a theme whose text reads well on your terminal background.
+
 ## Builtins
 
 Select a built-in theme by its name:
@@ -56,7 +72,8 @@ Available themes include:
 - `one-dark`, `opencode`, `orng`, `lucent-orng`, `osaka-jade`, `palenight`, `rosepine`
 - `solarized`, `synthwave84`, `tokyonight`, `vercel`, `vesper`, `zenburn`
 
-The `system` theme is available when redsun can read your terminal palette.
+The `system` theme is available when redsun can read your terminal palette. It uses your terminal's foreground,
+background, and ANSI colors, has no separate dark and light variants, and always shows the terminal's own background.
 
 ## Files
 
