@@ -136,6 +136,50 @@ test("ctrl+b swaps the theme background for the terminal's own", async () => {
   }
 })
 
+test("the system theme is one row in both modes and always shows the terminal background", async () => {
+  await using root = await tmpdir()
+  using _themes = await shippedThemesOnly()
+  const [{ upsertTheme, removeTheme }, { systemTheme }] = await Promise.all([
+    import("../../../src/theme"),
+    import("../../../src/theme/system"),
+  ])
+  // Registered before the picker opens, as the terminal's reply is at startup.
+  upsertTheme(
+    "system",
+    systemTheme({
+      palette: [],
+      defaultForeground: "#c5c8c6",
+      defaultBackground: "#1d1f21",
+      cursorColor: null,
+      mouseForeground: null,
+      mouseBackground: null,
+      tekForeground: null,
+      tekBackground: null,
+      highlightBackground: null,
+      highlightForeground: null,
+    }),
+  )
+  const app = await renderThemes(root.path)
+  try {
+    const dark = await app.waitForFrame((frame) => frame.includes("system"))
+    expect(dark).not.toContain("system /")
+    app.mockInput.pressTab()
+    const light = await app.waitForFrame((frame) => frame.includes("dark themes"))
+    expect(rowOf(light, "system")).toBe(rowOf(dark, "system"))
+
+    // The setting is off, yet the system theme keeps the terminal's background.
+    expect(app.themes.terminalBackground()).toBe(false)
+    app.themes.select("system")
+    await app.waitForFrame(() => app.themes.selected === "system")
+    expect(app.themes.terminalBackground()).toBe(true)
+    expect(app.themes.current.background.base.intent).toBe("default")
+    expect(app.themes.current.background.base.toInts()).toEqual([0x1d, 0x1f, 0x21, 255])
+  } finally {
+    removeTheme("system")
+    app.renderer.destroy()
+  }
+})
+
 test("groups custom themes by suffix and keeps unpaired themes as a family of one", async () => {
   const [{ themeFamilies, familyMember }, { DEFAULT_THEMES }] = await Promise.all([
     import("../../../src/component/dialog-theme-list"),

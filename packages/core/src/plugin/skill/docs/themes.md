@@ -72,7 +72,8 @@ Available themes include:
 - `one-dark`, `opencode`, `orng`, `lucent-orng`, `osaka-jade`, `palenight`, `rosepine`
 - `solarized`, `synthwave84`, `tokyonight`, `vercel`, `vesper`, `zenburn`
 
-The `system` theme is available when redsun can read your terminal palette.
+The `system` theme is available when redsun can read your terminal palette. It uses your terminal's foreground,
+background, and ANSI colors, has no separate dark and light variants, and always shows the terminal's own background.
 
 ## Files
 

@@ -1,4 +1,4 @@
-import { RGBA, SyntaxStyle } from "@opentui/core"
+import { CliRenderEvents, RGBA, SyntaxStyle } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
@@ -17,6 +17,7 @@ import {
   type ThemeDocumentSource,
 } from "../theme"
 import { discoverThemes } from "../theme/discovery"
+import { SYSTEM_THEME, systemTheme } from "../theme/system"
 import { createComponentTheme, type ComponentTheme } from "../theme/component"
 import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
@@ -190,17 +191,19 @@ const themeContext = createSimpleContext({
       const sources = themeSources()
       const name = sources[store.active] ? store.active : FALLBACK_THEME
       try {
-        return loadTheme(sources[name], name)
+        return { name, ...loadTheme(sources[name], name) }
       } catch (error) {
         if (name === FALLBACK_THEME) throw error
         themeErrors.emit(name, error)
         setStore("active", FALLBACK_THEME)
-        return loadTheme(sources[FALLBACK_THEME], FALLBACK_THEME)
+        return { name: FALLBACK_THEME, ...loadTheme(sources[FALLBACK_THEME], FALLBACK_THEME) }
       }
     })
     const mode = () => selected().mode
+    // The system theme is the terminal's colours, so it always keeps the terminal's background too.
+    const terminalBackground = () => store.terminalBackground || selected().name === SYSTEM_THEME
     const tokens = createMemo(() =>
-      store.terminalBackground ? withTerminalBackground(selected().theme) : selected().theme,
+      terminalBackground() ? withTerminalBackground(selected().theme) : selected().theme,
     )
     tokens()
     themePerformance.set("Init", `${(performance.now() - initStarted).toFixed(2)} ms`)
@@ -220,6 +223,30 @@ const themeContext = createSimpleContext({
       createEffect(() => {
         background.update(tokens().background.base)
       })
+
+      // The system theme exists only once the terminal reports its colours. A user's own
+      // theme of that name wins.
+      let system: ReturnType<typeof systemTheme>
+      const syncSystemTheme = () =>
+        void renderer
+          .getPalette({ size: 16 })
+          .then((colors) => {
+            const theme = systemTheme(colors)
+            if (!theme || (hasTheme(SYSTEM_THEME) && allThemes()[SYSTEM_THEME] !== system)) return
+            system = theme
+            upsertTheme(SYSTEM_THEME, theme)
+          })
+          .catch(() => {})
+      // Follow the terminal when it switches palettes. Only while the system theme is
+      // shown: under any other theme the reported background is the one written above.
+      const refreshSystemTheme = () => {
+        if (selected().name !== SYSTEM_THEME) return
+        renderer.clearPaletteCache()
+        syncSystemTheme()
+      }
+      syncSystemTheme()
+      renderer.on(CliRenderEvents.THEME_MODE, refreshSystemTheme)
+      onCleanup(() => renderer.off(CliRenderEvents.THEME_MODE, refreshSystemTheme))
     }
 
     const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens()))
@@ -233,7 +260,7 @@ const themeContext = createSimpleContext({
       all: allThemes,
       has: hasTheme,
       mode,
-      terminalBackground: () => store.terminalBackground,
+      terminalBackground,
       setTerminalBackground(enabled: boolean) {
         setStore("terminalBackground", enabled)
         void configState

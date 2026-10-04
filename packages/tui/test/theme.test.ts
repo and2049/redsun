@@ -13,7 +13,7 @@ import {
 } from "../src/theme"
 import { discoverThemes } from "../src/theme/discovery"
 import { configDirectories } from "../src/util/config-directories"
-import { terminalMode } from "../src/theme/system"
+import { systemTheme, terminalMode } from "../src/theme/system"
 import { tmpdir, v1Theme } from "./fixture/fixture"
 import { getOpenCodeTheme } from "./fixture/opencode-v2-theme"
 import { resolveThemeDocument } from "@opencode/theme/tui"
@@ -172,6 +172,30 @@ test("terminalMode derives mode from refreshed background", () => {
 
 test("terminalMode does not derive mode from ANSI slot zero", () => {
   expect(terminalMode(terminalColors(null, ["#000000"]))).toBeUndefined()
+})
+
+test("systemTheme needs the terminal's default colours", () => {
+  expect(systemTheme(terminalColors("#1d1f21"))).toBeUndefined()
+  expect(systemTheme({ ...terminalColors(null), defaultForeground: "#c5c8c6" })).toBeUndefined()
+})
+
+test("systemTheme takes its colours from the terminal and its mode from the background", () => {
+  const palette = ["#1d1f21", "#cc6666", "#b5bd68", "#f0c674", "#81a2be", "#b294bb"]
+  const dark = systemTheme({ ...terminalColors("#1d1f21", palette), defaultForeground: "#c5c8c6" })!
+  expect(dark.mode).toBe("dark")
+  expect(dark.theme.background).toBe("#1d1f21")
+  expect(dark.theme.text).toBe("#c5c8c6")
+  expect(dark.theme.error).toBe("#cc6666")
+  expect(dark.theme.agentBuild).toBe("#81a2be")
+  // A slot the terminal did not report falls back to the standard ANSI colour.
+  expect(dark.theme.primary).toBe("#008080")
+  expect(systemTheme({ ...terminalColors("#fbf1c7", palette), defaultForeground: "#3c3836" })!.mode).toBe("light")
+
+  // Surfaces sit between the terminal's background and foreground, and the document resolves.
+  const resolved = resolveThemeDocument(parseTheme(dark, "system"), "dark")
+  expect(resolved.background.base.toInts()).toEqual([0x1d, 0x1f, 0x21, 255])
+  expect(resolved.background.raised.base.equals(resolved.background.base)).toBe(false)
+  expect(resolved.text.base.toInts()).toEqual([0xc5, 0xc8, 0xc6, 255])
 })
 
 test("custom theme precedence follows directory order", async () => {
