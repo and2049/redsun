@@ -163,6 +163,8 @@ test("the system theme is one row in both modes and always shows the terminal ba
   try {
     const dark = await app.waitForFrame((frame) => frame.includes("system"))
     expect(dark).not.toContain("system /")
+    // It leads the list rather than sorting among the named themes.
+    expect(rowOf(dark, "system")).toBeLessThan(rowOf(dark, "dusk / dawn"))
     app.mockInput.pressTab()
     const light = await app.waitForFrame((frame) => frame.includes("dark themes"))
     expect(rowOf(light, "system")).toBe(rowOf(dark, "system"))

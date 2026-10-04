@@ -4,6 +4,7 @@ import { DialogSelect, type DialogSelectRef } from "../ui/dialog-select"
 import { loadTheme, themeMode, useTheme, useThemes } from "../context/theme"
 import type { ThemeDocumentSource } from "../theme"
 import { tint } from "../theme/color"
+import { SYSTEM_THEME } from "../theme/system"
 import { useDialog } from "../ui/dialog"
 import { useLanguage } from "../i18n"
 
@@ -33,7 +34,7 @@ export type ThemeFamily = { key: string; dark?: string; light?: string }
 // One row per family: built-in siblings pair by table, custom themes by a
 // -dark/-light suffix, and anything else is a family of one. Two themes that
 // claim the same family and mode cannot share a row, so the later one keeps
-// its own.
+// its own. The system theme leads the list; the rest follow by name.
 export function themeFamilies(all: Record<string, ThemeDocumentSource>): ThemeFamily[] {
   const compare = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" })
   const families = new Map<string, ThemeFamily>()
@@ -47,7 +48,8 @@ export function themeFamilies(all: Record<string, ThemeDocumentSource>): ThemeFa
     }
     families.set(key, { ...(family ?? { key }), [mode]: name })
   }
-  return [...families.values()].sort((a, b) => compare(a.key, b.key))
+  const system = (family: ThemeFamily) => (family.key === SYSTEM_THEME ? 0 : 1)
+  return [...families.values()].sort((a, b) => system(a) - system(b) || compare(a.key, b.key))
 }
 
 function familyKey(name: string, mode: Mode) {
