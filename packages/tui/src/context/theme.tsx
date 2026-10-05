@@ -107,6 +107,8 @@ type Themes = {
   mode: Accessor<"dark" | "light">
   terminalBackground: Accessor<boolean>
   setTerminalBackground(enabled: boolean): void
+  /** A surface's fill, or the terminal's own background while that is shown, leaving the surface open. */
+  open(color: RGBA): RGBA
   set(theme: string): boolean
   select(theme: string): boolean
   register(name: string, document: unknown): (() => void) | undefined
@@ -269,6 +271,7 @@ const themeContext = createSimpleContext({
       has: hasTheme,
       mode,
       terminalBackground,
+      open: (color) => (terminalBackground() ? tokens().background.base : color),
       setTerminalBackground(enabled: boolean) {
         setStore("terminalBackground", enabled)
         void configState

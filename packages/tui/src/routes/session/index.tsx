@@ -166,6 +166,7 @@ export function Session() {
   const configState = useConfig()
   const config = configState.data
   const theme = useTheme()
+  const themes = useThemes()
   const language = useLanguage()
   const promptRef = usePromptRef()
   const session = createMemo(() => data.session.get(route.sessionID))
@@ -1412,7 +1413,7 @@ export function Session() {
                   paddingLeft: 1,
                   visible: showScrollbar(),
                   trackOptions: {
-                    backgroundColor: theme.decrease(theme.background.raised.base),
+                    backgroundColor: themes.open(theme.decrease(theme.background.raised.base)),
                     foregroundColor: theme.border.base,
                   },
                 }}
@@ -1457,14 +1458,14 @@ export function Session() {
                   id="session-jump-to-latest"
                   paddingLeft={1}
                   paddingRight={1}
-                  backgroundColor={theme.decrease(theme.background.base)}
+                  backgroundColor={themes.open(theme.decrease(theme.background.base))}
                   onMouseOver={() => setLatestHovered(true)}
                   onMouseOut={() => setLatestHovered(false)}
                   onMouseUp={toBottom}
                 >
                   <text
                     fg={latestHovered() ? theme.text.action.secondary.hovered : theme.text.action.secondary.base}
-                    bg={theme.decrease(theme.background.base)}
+                    bg={themes.open(theme.decrease(theme.background.base))}
                   >
                     Jump to latest (ctrl+end) ↓
                   </text>
@@ -2257,7 +2258,9 @@ function UserMessage(props: { message: SessionMessageUser }) {
   const surface = () =>
     ctx.navigationMessage() === props.message.id
       ? tint(theme.background.raised.base, color(), NAVIGATION_TINT)
-      : theme.background.raised.base
+      : hover()
+        ? theme.background.raised.base
+        : themes.open(theme.background.raised.base)
   const delivery = createMemo(() => ctx.pendingDelivery(props.message.id))
   const dialog = useDialog()
   const renderer = useRenderer()
@@ -2775,7 +2778,9 @@ const SHELL_BLOCK_ROWS = 5
 
 export function BlockTool(props: BlockToolProps) {
   const theme = useTheme()
+  const themes = useThemes()
   const background = () => theme.background.raised.base
+  const fill = () => (hover() ? theme.decrease(background()) : themes.open(background()))
   const ctx = use()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
@@ -2789,16 +2794,10 @@ export function BlockTool(props: BlockToolProps) {
       marginTop={1}
       paddingLeft={1}
       paddingRight={1}
-      backgroundColor={hover() ? theme.decrease(background()) : background()}
+      backgroundColor={fill()}
       customBorderChars={SplitBorder.customBorderChars}
-      // The terminal's own background has no colour to draw the gutter in, so it joins the block.
-      borderColor={
-        theme.background.base.intent === "default"
-          ? hover()
-            ? theme.decrease(background())
-            : background()
-          : theme.background.base
-      }
+      // An open block has no fill to set it apart, so its gutter is drawn as a bar.
+      borderColor={themes.terminalBackground() ? theme.border.base : theme.background.base}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={(event: MouseEvent) => {
@@ -3364,7 +3363,7 @@ function Edit(props: ToolProps) {
   const { t } = useLanguage()
   const ctx = use()
   const theme = useTheme()
-  const { currentSyntax: syntax } = useThemes()
+  const { currentSyntax: syntax, open } = useThemes()
   const pathFormatter = usePathFormatter()
 
   const view = createMemo(() => {
@@ -3396,11 +3395,11 @@ function Edit(props: ToolProps) {
                 fg={theme.text.base}
                 addedBg={theme.diff.background.added}
                 removedBg={theme.diff.background.removed}
-                contextBg={theme.diff.background.context}
+                contextBg={open(theme.diff.background.context)}
                 addedSignColor={theme.diff.highlight.added}
                 removedSignColor={theme.diff.highlight.removed}
                 lineNumberFg={theme.diff.lineNumber.text}
-                lineNumberBg={theme.diff.background.context}
+                lineNumberBg={open(theme.diff.background.context)}
                 addedLineNumberBg={theme.diff.lineNumber.background.added}
                 removedLineNumberBg={theme.diff.lineNumber.background.removed}
               />
@@ -3429,7 +3428,7 @@ function ApplyPatch(props: ToolProps) {
   const { t } = useLanguage()
   const ctx = use()
   const theme = useTheme()
-  const { currentSyntax: syntax } = useThemes()
+  const { currentSyntax: syntax, open } = useThemes()
   const pathFormatter = usePathFormatter()
   const files = createMemo(() => parseApplyPatchFiles(props.metadata.files))
   const targets = createMemo(() => {
@@ -3492,11 +3491,11 @@ function ApplyPatch(props: ToolProps) {
                       fg={theme.text.base}
                       addedBg={theme.diff.background.added}
                       removedBg={theme.diff.background.removed}
-                      contextBg={theme.diff.background.context}
+                      contextBg={open(theme.diff.background.context)}
                       addedSignColor={theme.diff.highlight.added}
                       removedSignColor={theme.diff.highlight.removed}
                       lineNumberFg={theme.diff.lineNumber.text}
-                      lineNumberBg={theme.diff.background.context}
+                      lineNumberBg={open(theme.diff.background.context)}
                       addedLineNumberBg={theme.diff.lineNumber.background.added}
                       removedLineNumberBg={theme.diff.lineNumber.background.removed}
                     />
