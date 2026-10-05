@@ -1,4 +1,4 @@
-import { CliRenderEvents, RGBA, SyntaxStyle } from "@opentui/core"
+import { CliRenderEvents, RGBA, SyntaxStyle, type OptimizedBuffer } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
@@ -25,7 +25,7 @@ import { createSimpleContext } from "./helper"
 import { useConfig } from "../config"
 import { DevTools } from "../devtools"
 import { configDirectories } from "../util/config-directories"
-import { createTerminalBackground } from "../util/terminal-background"
+import { createTerminalBackground, keepBackgroundAsForeground } from "../util/terminal-background"
 
 const themePerformance = DevTools.register({ id: "theme-performance", title: "Theme performance" })
 export type ThemeError = { name: string; error: Error }
@@ -210,6 +210,14 @@ const themeContext = createSimpleContext({
     const current = createComponentTheme(tokens)
 
     createEffect(() => renderer.setBackgroundColor(tokens().background.base))
+
+    createEffect(() => {
+      if (!terminalBackground()) return
+      const base = tokens().background.base
+      const repaint = (buffer: OptimizedBuffer) => keepBackgroundAsForeground(buffer, base)
+      renderer.addPostProcessFn(repaint)
+      onCleanup(() => renderer.removePostProcessFn(repaint))
+    })
 
     if (process.stdout.isTTY && !process.env.OPENCODE_DRIVE) {
       const background = createTerminalBackground(renderer, (sequence) => {

@@ -2,19 +2,16 @@ import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
 import { Keymap } from "../context/keymap"
 import { ThemeContextProvider, useTheme, useThemes } from "../context/theme"
-import { applyGain, InputRenderable, MouseButton, Renderable, RGBA, type OptimizedBuffer } from "@opentui/core"
+import { applyGain, InputRenderable, MouseButton, Renderable, type OptimizedBuffer } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
 import { useConfig } from "../config"
 import { SplitBorder } from "./border"
 import { copy, copyOnSelectRelease } from "../util/selection"
-import { setTerminalBackgroundGain } from "../util/terminal-background"
+import { DEFAULT_INTENT, setTerminalBackgroundGain } from "../util/terminal-background"
 
 const BACKDROP_GAIN = 1 - 150 / 255
-
-// A cell colour is four u16 channels; the intent sits in the high byte of the second.
-const DEFAULT_INTENT = RGBA.defaultBackground().buffer[1]! >>> 8
 
 // applyGain rewrites the terminal's default background as the dimmed theme colour, which
 // would paint over a transparent or image background. Put those cells back so only text
