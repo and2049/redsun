@@ -1,4 +1,22 @@
-import { parseColor, rgbToHex, RGBA, type CliRenderer, type ColorInput } from "@opentui/core"
+import { parseColor, rgbToHex, RGBA, type CliRenderer, type ColorInput, type OptimizedBuffer } from "@opentui/core"
+
+// A cell colour is four u16 channels: the colour in the low bytes, its metadata in the high
+// ones, with the intent in the high byte of the second.
+export const DEFAULT_INTENT = RGBA.defaultBackground().buffer[1]! >>> 8
+
+/**
+ * Repaints text drawn in the terminal-default `background` as that colour's own RGB. As a
+ * foreground the default colour is the terminal's default text colour, so a selection, which
+ * swaps a cell's colours, would otherwise put light text on its light highlight.
+ */
+export function keepBackgroundAsForeground(buffer: OptimizedBuffer, background: RGBA) {
+  const fg = buffer.buffers.fg
+  const [r, g, b] = background.buffer
+  for (let i = 0; i < fg.length; i += 4) {
+    if (fg[i + 1] !== g || fg[i] !== r || fg[i + 2] !== b) continue
+    for (let channel = i; channel < i + 4; channel++) fg[channel] = fg[channel]! & 255
+  }
+}
 
 const backgrounds = new WeakMap<object, ReturnType<typeof createTerminalBackground>>()
 
