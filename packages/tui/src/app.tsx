@@ -5,7 +5,7 @@ import { Service, type Endpoint } from "@opencode/client/effect/service"
 import { OpenCode, type SessionInfo } from "@opencode/client"
 import { Global } from "@opencode/util/global"
 import { ClipboardProvider, useClipboard } from "./context/clipboard"
-import { LogProvider, useLog, type LogSink } from "./context/log"
+import { LogProvider, type LogSink } from "./context/log"
 import { ExitProvider, useExit } from "./context/exit"
 import { EpilogueProvider } from "./context/epilogue"
 import { Selection } from "./util/selection"
@@ -100,7 +100,7 @@ import { DialogVariant } from "./component/dialog-variant"
 import { destroyRenderer } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 import { AttentionProvider } from "./context/attention"
-import { StorageProvider, useStorage } from "./context/storage"
+import { StorageProvider } from "./context/storage"
 import { Session } from "./routes/session"
 import { createTuiClipboard } from "./clipboard"
 import { useLanguage } from "./i18n"
@@ -320,12 +320,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                             <TuiTerminalEnvironmentProvider
                               value={{
                                 platform: process.platform,
-                                multiplexer: process.env.TMUX ? "tmux" : process.env.STY ? "screen" : undefined,
-                                displayServer: process.env.WAYLAND_DISPLAY
-                                  ? "wayland"
-                                  : process.env.DISPLAY
-                                    ? "x11"
-                                    : undefined,
                                 variables: input.environment,
                               }}
                             >
@@ -447,7 +441,6 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
 
 function App() {
   const { t } = useLanguage()
-  const log = useLog({ component: "app" })
   const app = useTuiApp()
   const startup = useTuiStartup()
   const config = useConfig()
@@ -467,11 +460,9 @@ function App() {
       .catch(() => toast.show({ variant: "error", message: t("ui.failedToRefreshModelCatalog") }))
   const updater = useUpdateNotification()
   const theme = useTheme()
-  const tabsTheme = useTheme().surface("dialog")
   const openWorkerModel = useWorkerModelDialog()
   const openWorkerVariant = useWorkerVariantDialog()
   const themes = useThemes()
-  const { mode } = themes
   const data = useData()
   const location = useLocation()
   const exit = useExit()

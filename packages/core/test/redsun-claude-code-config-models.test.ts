@@ -80,7 +80,6 @@ describe("Claude Code config-declared models", () => {
   it.effect("keeps the provider record intact when config only adds models", () =>
     Effect.gen(function* () {
       const providers = yield* Provider.Service
-      const models = yield* Model.Service
       yield* providers.transform(ClaudeCodeModels.applyCatalog)
       yield* addProviderPlugin([
         configDocument({

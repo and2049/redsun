@@ -36,7 +36,7 @@ import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../pro
 import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteOption, type AutocompleteRef, Autocomplete } from "./autocomplete"
-import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
+import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { createColors, createFrames } from "../../ui/spinner"
@@ -76,9 +76,6 @@ export type PromptProps = {
   onSubmit?: () => void
   onEmptySubmit?: () => boolean | Promise<boolean>
   ref?: (ref: PromptRef | undefined) => void
-  hint?: JSX.Element
-  right?: JSX.Element
-  showPlaceholder?: boolean
   placeholders?: {
     normal?: string[]
     shell?: string[]
@@ -251,7 +248,7 @@ export function Prompt(props: PromptProps) {
       (props.sessionID ? data.session.get(props.sessionID)?.projectID : undefined) ?? data.location.info()?.project.id,
     sessionID: () => props.sessionID,
   })
-  const [pendingDirectory, setPendingDirectory] = createSignal<string>()
+  const [, setPendingDirectory] = createSignal<string>()
   Keymap.createLayer(() => ({
     mode: "global",
     enabled: !disabled(),
@@ -306,7 +303,6 @@ export function Prompt(props: PromptProps) {
   const [cursorVersion, setCursorVersion] = createSignal(0)
   const interruptShortcut = createMemo(() => shortcuts.get("session.interrupt"))
   const connected = useConnected()
-  const hasRightContent = createMemo(() => Boolean(props.right))
 
   function promptModelWarning() {
     toast.show({
@@ -1613,7 +1609,6 @@ export function Prompt(props: PromptProps) {
   )
 
   const placeholderText = createMemo(() => {
-    if (props.showPlaceholder === false) return undefined
     const value = (() => {
       if (store.mode === "shell") {
         if (!shell().length) return undefined
@@ -1839,10 +1834,7 @@ export function Prompt(props: PromptProps) {
                 variantAlpha={variantMetaAlpha()}
               />
               <Show
-                when={
-                  hasRightContent() ||
-                  (props.sessionID !== undefined && (status() === "running" || editorFileReadout() !== undefined))
-                }
+                when={props.sessionID !== undefined && (status() === "running" || editorFileReadout() !== undefined)}
               >
                 <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
                   <Show when={props.sessionID !== undefined && status() === "running"}>
@@ -1873,7 +1865,6 @@ export function Prompt(props: PromptProps) {
                       </text>
                     )}
                   </Show>
-                  {props.right}
                 </box>
               </Show>
             </box>
@@ -1920,7 +1911,9 @@ export function Prompt(props: PromptProps) {
                         </text>
                       </box>
                     </Match>
-                    <Match when={true}>{props.hint ?? <text />}</Match>
+                    <Match when={true}>
+                      <text />
+                    </Match>
                   </Switch>
                 </box>
               </Slot>

@@ -8,6 +8,7 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { llmClient } from "@opencode/core/effect/app-node-platform"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Bus } from "@opencode/core/bus"
+import { Location } from "@opencode/core/location"
 import { CompactionExtractor } from "@opencode/core/session/compaction-extractor"
 import { SessionCompaction } from "@opencode/core/session/compaction"
 import { SessionEvent } from "@opencode/core/session/event"
@@ -24,9 +25,9 @@ import { ProjectTable } from "@opencode/core/project/sql"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Document, Info as ConfigInfo } from "@opencode/schema/config"
 import { Money } from "@opencode/schema/money"
-import { DateTime, Effect, Layer, Schema, Stream } from "effect"
-import { Location } from "@opencode/core/location"
+import { Effect, Layer, Schema, Stream } from "effect"
 import { testEffect } from "./lib/effect"
+import { tempLocationLayer } from "./fixture/location"
 
 const decodeMessage = Schema.decodeUnknownSync(SessionMessage.Info)
 const decodeConfig = Schema.decodeUnknownSync(ConfigInfo)
@@ -77,7 +78,13 @@ const harness = (compaction: Record<string, unknown>) => {
         SessionCompaction.node,
         SessionModelRequest.node,
       ]),
-      [Bus.node.replace(Bus.configured({ persist: true })), llmClient.replace(client), Config.node.replace(config)],
+      [
+        Bus.node.replace(Bus.configured({ persist: true })),
+        llmClient.replace(client),
+        Config.node.replace(config),
+        // Upstream's compaction node resolves the compaction agent's model, which needs a Location.
+        Location.node.replace(tempLocationLayer),
+      ],
     ),
   )
 }

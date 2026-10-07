@@ -24,7 +24,8 @@ available.
 ```
 
 An object also enables the built-ins and lets you override them or add custom
-formatters. An empty object is therefore equivalent to `true`.
+formatters. An empty object preserves inherited formatter settings, while `true`
+resets them to the built-ins.
 
 ```jsonc title="redsun.jsonc"
 {
@@ -175,8 +176,8 @@ redsun logs the failure and tries the next match.
 
 ## Disable
 
-Omit `formatter` or set it to `false` to disable all formatting. An explicit
-`false` can override a lower-priority configuration that enabled formatters.
+Formatting is disabled when no config file sets `formatter`. To disable
+formatting that a lower-priority file enabled, set it to `false`.
 
 ```jsonc title="redsun.jsonc"
 {

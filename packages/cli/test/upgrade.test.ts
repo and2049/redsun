@@ -18,8 +18,14 @@ describe("upgrade command", () => {
   test("detects the installation method and resolves the latest version", async () => {
     const result = await cli([])
     expect(result.exitCode).toBe(0)
-    expect(result.events).toEqual(["method", "latest", { method: "curl", version: "0.0.0-beta-new" }])
+    expect(result.events).toEqual(["method", { latest: "curl" }, { method: "curl", version: "0.0.0-beta-new" }])
     expect(result.stdout).toContain("Upgrade complete")
+  })
+
+  test("resolves the latest version for an explicit method without detection", async () => {
+    const result = await cli(["--method", "powershell"], { UPGRADE_TEST_METHOD: "curl" })
+    expect(result.exitCode).toBe(0)
+    expect(result.events).toEqual([{ latest: "powershell" }, { method: "powershell", version: "0.0.0-beta-new" }])
   })
 
   test("accepts an explicit version and method without detection or a version lookup", async () => {
@@ -58,7 +64,7 @@ describe("upgrade command", () => {
   test("reports version lookup failures without installing", async () => {
     const result = await cli([], { UPGRADE_TEST_LATEST_ERROR: "1" })
     expect(result.exitCode).toBe(1)
-    expect(result.events).toEqual(["method", "latest"])
+    expect(result.events).toEqual(["method", { latest: "curl" }])
     expect(result.stdout).toContain("Update check failed")
   })
 

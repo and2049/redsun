@@ -1041,6 +1041,11 @@ Provider callbacks receive the current location, working-copy root, canonical pr
 store. Diff callbacks also receive the selected mode, requested context, and output byte budget. Repository discovery
 continues to use redsun's built-in Git and Mercurial detectors.
 
+Providers can optionally implement `init(scope, { signal })` to create a repository in `scope.worktree`. Initialization
+selects the provider by ID (Git by default), not by the detected repository type. Register a provider with `init` even
+when the location has no repository yet; redsun checks that the directory exists and has no repository before calling
+it, then rediscovers the project. New repository formats still need discovery support beyond this callback.
+
 #### Reference
 
 Schemas: [`Vcs.Info`](https://opencode.ai/v2/docs/api#schema-Vcs.Info), [`Vcs.FileStatus`](https://opencode.ai/v2/docs/api#schema-Vcs.FileStatus),
@@ -1062,6 +1067,11 @@ interface VcsEditor {
     get(): string | undefined
     set(providerID: string): void
   }
+}
+
+interface VcsDefinition {
+  init?(scope: VcsScope, context: { signal: AbortSignal }): Promise<void>
+  // Existing info, branches, status, and diff callbacks are required.
 }
 ```
 

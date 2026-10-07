@@ -18,7 +18,12 @@ describe("ClaudeCodeModels", () => {
       "claude-fable-5",
       "claude-opus-5-5",
       "claude-sonnet-5-5",
+      "claude-opus-5",
+      "claude-sonnet-5",
       "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
       "claude-sonnet-4-5",
       "claude-haiku-4-5",
     ])
@@ -444,13 +449,13 @@ describe("ClaudeCodeModels", () => {
       "sonnet: Claude Sonnet 5.5 (latest) @ 1000000",
       "haiku: Claude Haiku 4.5 (latest) @ 200000",
       "claude-fable-5: Claude Fable 5 @ 1000000",
-      "claude-opus-4-8: Claude Opus 4.8 @ 1000000",
-      "claude-sonnet-4-5: Claude Sonnet 4.5 @ 200000",
-      "claude-sonnet-5: Claude Sonnet 5 @ 1000000",
       "claude-opus-5: Claude Opus 5 @ 1000000",
+      "claude-sonnet-5: Claude Sonnet 5 @ 1000000",
+      "claude-opus-4-8: Claude Opus 4.8 @ 1000000",
       "claude-opus-4-7: Claude Opus 4.7 @ 1000000",
       "claude-opus-4-6: Claude Opus 4.6 @ 200000",
       "claude-sonnet-4-6: Claude Sonnet 4.6 @ 200000",
+      "claude-sonnet-4-5: Claude Sonnet 4.5 @ 200000",
     ])
     // Duplicates of what an alias runs stay resolvable, named by version.
     expect(models.get("claude-fable-5-1")).toEqual({ name: "Claude Fable 5.1", enabled: false, context: 1_000_000 })

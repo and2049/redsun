@@ -11,7 +11,6 @@ import {
   review,
   type Services,
   type SessionApi,
-  type State,
 } from "@opencode/core/plugin/redsun/advisor"
 import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"

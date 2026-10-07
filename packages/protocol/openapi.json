@@ -786,6 +786,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Resolve the requested location or the server default location.",
@@ -917,6 +927,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve currently registered agents.",
@@ -1010,11 +1030,18 @@
             }
           },
           "404": {
-            "description": "AgentNotFoundError",
+            "description": "AgentNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -1057,6 +1084,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -1142,6 +1179,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         }
       }
@@ -1221,6 +1268,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -1318,6 +1375,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve enabled server plugins and their current status.",
@@ -1408,6 +1475,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -1504,6 +1581,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -2427,7 +2514,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -2437,6 +2524,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -2553,7 +2643,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | MessageNotFoundError",
+            "description": "SessionNotFoundError | MessageNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -2566,6 +2656,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -2642,7 +2735,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -2652,6 +2745,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -2721,7 +2817,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -2731,6 +2827,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -2910,7 +3009,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -2920,6 +3019,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3051,7 +3153,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | CommandNotFoundError",
+            "description": "SessionNotFoundError | CommandNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3064,6 +3166,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3174,7 +3279,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | SkillNotFoundError",
+            "description": "SessionNotFoundError | SkillNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3187,6 +3292,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3280,7 +3388,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3290,6 +3398,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3413,7 +3524,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3423,6 +3534,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3517,7 +3631,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3527,6 +3641,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3623,7 +3740,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3633,6 +3750,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3709,7 +3829,7 @@
             }
           },
           "404": {
-            "description": "MessageNotFoundError | SessionNotFoundError",
+            "description": "MessageNotFoundError | SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3722,6 +3842,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3822,7 +3945,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3832,6 +3955,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -3903,7 +4029,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -3913,6 +4039,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -4130,7 +4259,7 @@
             }
           },
           "404": {
-            "description": "MessageNotFoundError | SessionNotFoundError",
+            "description": "MessageNotFoundError | SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -4140,6 +4269,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -4444,7 +4576,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -4454,6 +4586,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -4514,7 +4649,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -4524,6 +4659,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -4607,7 +4745,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -4617,6 +4755,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -4676,7 +4817,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -4686,6 +4827,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5000,7 +5144,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5010,6 +5154,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5062,7 +5209,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5072,6 +5219,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5225,7 +5375,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5235,6 +5385,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5305,7 +5458,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5315,6 +5468,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5409,7 +5565,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | FormNotFoundError",
+            "description": "SessionNotFoundError | FormNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5422,6 +5578,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5495,7 +5654,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | FormNotFoundError",
+            "description": "SessionNotFoundError | FormNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5508,6 +5667,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -5585,7 +5747,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | FormNotFoundError",
+            "description": "SessionNotFoundError | FormNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -5598,6 +5760,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -6380,6 +6545,16 @@
               }
             }
           },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
           "503": {
             "description": "ServiceUnavailableError",
             "content": {
@@ -6452,6 +6627,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -6556,6 +6741,16 @@
               }
             }
           },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
           "503": {
             "description": "ServiceUnavailableError",
             "content": {
@@ -6611,6 +6806,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -6738,6 +6943,16 @@
               }
             }
           },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
           "503": {
             "description": "ServiceUnavailableError",
             "content": {
@@ -6840,11 +7055,18 @@
             }
           },
           "404": {
-            "description": "ProviderNotFoundError",
+            "description": "ProviderNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProviderNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProviderNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -6944,6 +7166,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve available integrations and their authentication methods.",
@@ -7037,11 +7269,18 @@
             }
           },
           "404": {
-            "description": "IntegrationNotFoundError",
+            "description": "IntegrationNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntegrationNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/IntegrationNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -7115,6 +7354,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -7218,11 +7467,18 @@
             }
           },
           "404": {
-            "description": "IntegrationNotFoundError",
+            "description": "IntegrationNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntegrationNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/IntegrationNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -7358,6 +7614,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -7499,7 +7765,7 @@
             }
           },
           "404": {
-            "description": "IntegrationNotFoundError | IntegrationAttemptNotFoundError",
+            "description": "IntegrationNotFoundError | IntegrationAttemptNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -7509,6 +7775,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/IntegrationAttemptNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -7591,6 +7860,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -7685,7 +7964,7 @@
             }
           },
           "404": {
-            "description": "IntegrationNotFoundError | IntegrationAttemptNotFoundError",
+            "description": "IntegrationNotFoundError | IntegrationAttemptNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -7695,6 +7974,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/IntegrationAttemptNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -7823,7 +8105,7 @@
             }
           },
           "404": {
-            "description": "IntegrationNotFoundError | IntegrationMethodNotFoundError",
+            "description": "IntegrationNotFoundError | IntegrationMethodNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -7833,6 +8115,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/IntegrationMethodNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -7966,7 +8251,7 @@
             }
           },
           "404": {
-            "description": "IntegrationNotFoundError | IntegrationAttemptNotFoundError",
+            "description": "IntegrationNotFoundError | IntegrationAttemptNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -7976,6 +8261,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/IntegrationAttemptNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -8058,6 +8346,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -8147,6 +8445,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve configured MCP servers and their connection status.",
@@ -8218,6 +8526,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -8319,11 +8637,18 @@
             }
           },
           "404": {
-            "description": "McpServerNotFoundError",
+            "description": "McpServerNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/McpServerNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/McpServerNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -8403,11 +8728,18 @@
             }
           },
           "404": {
-            "description": "McpServerNotFoundError",
+            "description": "McpServerNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/McpServerNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/McpServerNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -8487,11 +8819,18 @@
             }
           },
           "404": {
-            "description": "McpServerNotFoundError",
+            "description": "McpServerNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/McpServerNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/McpServerNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -8575,6 +8914,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -8889,6 +9238,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "List known projects.",
@@ -8942,11 +9301,18 @@
             }
           },
           "404": {
-            "description": "ProjectNotFoundError",
+            "description": "ProjectNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProjectNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -9061,6 +9427,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve pending forms for a location.",
@@ -9147,6 +9523,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve pending permission requests for a location.",
@@ -9203,6 +9589,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve manual, approve-all, or the delegated runtime's native approval mode.",
@@ -9233,6 +9629,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -9356,6 +9762,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Whether the model's delegated runtime has a native auto-approval mode, which enables native_auto.",
@@ -9424,6 +9840,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve saved permissions, optionally filtered by project.",
@@ -9465,6 +9891,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -9540,7 +9976,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -9550,6 +9986,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -9673,11 +10112,18 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError",
+            "description": "SessionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -9751,7 +10197,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | PermissionNotFoundError",
+            "description": "SessionNotFoundError | PermissionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -9764,6 +10210,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -9825,7 +10274,7 @@
             }
           },
           "404": {
-            "description": "SessionNotFoundError | PermissionNotFoundError",
+            "description": "SessionNotFoundError | PermissionNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
@@ -9838,6 +10287,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                     }
                   ]
                 }
@@ -9946,11 +10398,18 @@
             }
           },
           "404": {
-            "description": "FileNotFoundError",
+            "description": "FileNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FileNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FileNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -10053,6 +10512,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -10174,6 +10643,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Find recursively ranked filesystem entries relative to the requested location.",
@@ -10263,6 +10742,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -10363,6 +10852,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve currently registered commands.",
@@ -10446,6 +10945,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -10542,6 +11051,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -10774,6 +11293,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "List PTY sessions for a location, including exited sessions retained until removal.",
@@ -10852,6 +11381,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -10983,11 +11522,18 @@
             }
           },
           "404": {
-            "description": "PtyNotFoundError",
+            "description": "PtyNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -11083,11 +11629,18 @@
             }
           },
           "404": {
-            "description": "PtyNotFoundError",
+            "description": "PtyNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -11197,11 +11750,18 @@
             }
           },
           "404": {
-            "description": "PtyNotFoundError",
+            "description": "PtyNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -11324,11 +11884,18 @@
             }
           },
           "404": {
-            "description": "PtyNotFoundError",
+            "description": "PtyNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -11417,11 +11984,18 @@
             }
           },
           "404": {
-            "description": "PtyNotFoundError",
+            "description": "PtyNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PtyNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -12396,6 +12970,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "List currently running shell commands for a location. Exited commands are not included.",
@@ -12474,6 +13058,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -12598,11 +13192,18 @@
             }
           },
           "404": {
-            "description": "ShellNotFoundError",
+            "description": "ShellNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ShellNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ShellNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -12676,6 +13277,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -12809,11 +13420,18 @@
             }
           },
           "404": {
-            "description": "ShellNotFoundError",
+            "description": "ShellNotFoundError | LocationNotFoundError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ShellNotFoundErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ShellNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -12900,6 +13518,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -13166,6 +13794,134 @@
         }
       }
     },
+    "/api/vcs/init": {
+      "post": {
+        "tags": ["vcs"],
+        "operationId": "vcs.init",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictErrorEncoded"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "VcsInitNotSupportedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VcsInitNotSupportedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Initialize a repository using the selected VCS provider in a markerless project's directory and refresh its location services. Omitting provider defaults to git; built-in git and hg providers support initialization. An unknown provider returns 400; a registered provider without init returns 501.",
+        "summary": "Initialize VCS repository"
+      }
+    },
     "/api/vcs": {
       "get": {
         "tags": ["vcs"],
@@ -13240,6 +13996,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -13330,6 +14096,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -13426,6 +14202,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -13539,6 +14325,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -13656,6 +14452,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -13976,6 +14782,16 @@
               }
             }
           },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
           "503": {
             "description": "ServiceUnavailableError",
             "content": {
@@ -14072,6 +14888,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -14181,6 +15007,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Return configuration documents and discovery sources for the requested location, from lowest to highest priority.",
@@ -14258,6 +15094,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -14350,6 +15196,16 @@
               }
             }
           },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
+          },
           "500": {
             "description": "UnknownError",
             "content": {
@@ -14414,6 +15270,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Return shells available to terminal and agent execution.",
@@ -14446,6 +15312,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
                 }
               }
             }
@@ -17482,6 +18358,23 @@
         "required": ["directory"],
         "additionalProperties": false
       },
+      "LocationNotFoundErrorEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["LocationNotFoundError"]
+          },
+          "location": {
+            "$ref": "#/components/schemas/Location.PublicRef"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "location", "message"],
+        "additionalProperties": false
+      },
       "Mcp.LocalConfigEncoded": {
         "type": "object",
         "properties": {
@@ -19749,6 +20642,29 @@
             },
             "required": ["tmp"],
             "additionalProperties": false
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "persistentPty": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": ["version", "pid", "urls", "paths"],
@@ -21905,6 +22821,23 @@
         "type": "string",
         "enum": ["working", "branch", "committed"]
       },
+      "VcsInitNotSupportedErrorEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["VcsInitNotSupportedError"]
+          },
+          "providerID": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "providerID", "message"],
+        "additionalProperties": false
+      },
       "WebSearch.Provider": {
         "type": "object",
         "properties": {
@@ -22029,6 +22962,10 @@
       "WorktreeErrorEncoded": {
         "type": "object",
         "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["WorktreeError"]
+          },
           "name": {
             "type": "string",
             "enum": ["WorktreeError"]
@@ -22054,7 +22991,7 @@
             "additionalProperties": false
           }
         },
-        "required": ["name", "data"],
+        "required": ["_tag", "name", "data"],
         "additionalProperties": false
       }
     },

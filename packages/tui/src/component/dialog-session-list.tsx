@@ -1,9 +1,8 @@
-import { createMemo, createResource, createSignal, onMount, Show } from "solid-js"
+import { createMemo, createResource, createSignal, onMount, Show, type JSX } from "solid-js"
 import path from "path"
 import type { SessionInfo } from "@opencode/client"
 import { Project } from "@opencode/schema/project"
-import { TextAttributes } from "@opentui/core"
-import type { RGBA } from "@opentui/core"
+import { TextAttributes, type RGBA } from "@opentui/core"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect } from "../ui/dialog-select"
 import { useRoute } from "../context/route"
@@ -160,6 +159,7 @@ export function DialogSessionList() {
           : undefined
       const slot = slotByID.get(session.id)
       const deleting = toDelete() === session.id
+      const attention = sessionAttention(data, session.id)
       return {
         title: deleting
           ? t("ui.pressAgainToConfirm", { key: shortcuts.get("session.delete") ?? "" })
@@ -169,13 +169,16 @@ export function DialogSessionList() {
         footer,
         bg: deleting ? theme.background.action.destructive.focused : undefined,
         fg: deleting ? theme.text.action.destructive.focused : undefined,
-        gutter:
-          data.session.status(session.id) === "running" ||
-          data.session.family(session.id).some((id) => data.session.status(id) === "running")
-            ? (color: RGBA) => <Spinner color={color} />
-            : slot === undefined
-              ? undefined
-              : (color: RGBA, active: boolean) => <text fg={active ? color : theme.accent}>{slot}</text>,
+        gutter: sessionStatusGutter(
+          theme,
+          attention,
+          !attention &&
+            (data.session.status(session.id) === "running" ||
+              data.session.family(session.id).some((id) => data.session.status(id) === "running")),
+          slot === undefined
+            ? undefined
+            : (color: RGBA, active: boolean) => <text fg={active ? color : theme.accent}>{slot}</text>,
+        ),
       }
     }
 
@@ -294,4 +297,32 @@ function quickSwitchRange(first: string, last: string) {
   const prefix = first.slice(0, -1)
   if (first.endsWith("1") && last === `${prefix}9`) return `${prefix}1-9`
   return `${first} through ${last}`
+}
+
+/** Redsun has no session tabs: a session (or any of its family) holding a permission or form is awaiting input. */
+export function sessionAttention(data: ReturnType<typeof useData>, sessionID: string) {
+  const members = [sessionID, ...data.session.family(sessionID)]
+  if (members.some((id) => (data.session.permission.list(id)?.length ?? 0) > 0)) return "permission" as const
+  if (members.some((id) => (data.session.form.list(id)?.length ?? 0) > 0)) return "question" as const
+  return false as const
+}
+
+export function sessionStatusGutter(
+  theme: ReturnType<ReturnType<typeof useTheme>["surface"]>,
+  attention: "permission" | "question" | false,
+  running: boolean,
+  fallback?: (color: RGBA, active: boolean) => JSX.Element,
+) {
+  if (attention) {
+    return (color: RGBA) => (
+      <text
+        fg={color === theme.text.action.primary.focused ? color : theme.text.feedback.warning.base}
+        attributes={TextAttributes.BOLD}
+      >
+        {attention === "permission" ? "!" : "?"}
+      </text>
+    )
+  }
+  if (running) return (color: RGBA) => <Spinner color={color} />
+  return fallback
 }

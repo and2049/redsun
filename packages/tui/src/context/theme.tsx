@@ -2,18 +2,14 @@ import { CliRenderEvents, RGBA, SyntaxStyle, type OptimizedBuffer } from "@opent
 import { useRenderer } from "@opentui/solid"
 import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
-  DEFAULT_THEMES,
-  addTheme,
   allThemes,
   hasTheme,
   parseTheme,
   removeTheme,
-  selectedForeground,
   setCustomThemes,
   subscribeThemes,
   themeMode,
   upsertTheme,
-  type Theme,
   type ThemeDocumentSource,
 } from "../theme"
 import { discoverThemes } from "../theme/discovery"
