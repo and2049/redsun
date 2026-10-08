@@ -70,7 +70,7 @@ export interface Interface {
   readonly check: () => Effect.Effect<CheckResult | undefined, Error>
   readonly apply: (version: string) => Effect.Effect<void, Error>
   readonly method: () => Effect.Effect<Method | undefined>
-  readonly latest: () => Effect.Effect<string, Error>
+  readonly latest: (method?: Method) => Effect.Effect<string, Error>
   readonly upgrade: (method: Method, version: string) => Effect.Effect<void, Error>
 }
 

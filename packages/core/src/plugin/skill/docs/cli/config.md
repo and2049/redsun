@@ -63,14 +63,13 @@ Choose a theme, control interface motion, and override the terminal cursor:
 
 <div class="docs-table-scroll" role="region" aria-label="Appearance settings" tabIndex={0}>
 
-| Setting                     | Values                                  | Description                                                                      |
-| --------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- |
-| `theme.name`                | string                                  | Selects a built-in, custom, or terminal-derived theme.                           |
-| `theme.mode`                | `system`, `dark`, or `light`            | Follows the terminal appearance or locks the theme to one color mode.            |
-| `theme.terminal_background` | boolean                                 | Shows the terminal's own background instead of the theme's. Defaults to `false`. |
-| `animations`                | boolean                                 | Enables interface animations.                                                    |
-| `cursor.style`              | `block`, `underline`, `line`, `default` | Sets the cursor shape. `default` preserves the terminal's cursor shape.          |
-| `cursor.blinking`           | boolean                                 | Controls cursor blinking. It has no effect when the style is `default`.          |
+| Setting           | Values                                  | Description                                                             |
+| ----------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| `theme.name`      | string                                  | Selects a built-in, custom, or terminal-derived theme.                  |
+| `theme.mode`      | `system`, `dark`, or `light`            | Follows the terminal appearance or locks the theme to one color mode.   |
+| `animations`      | boolean                                 | Enables interface animations.                                           |
+| `cursor.style`    | `block`, `underline`, `line`, `default` | Sets the cursor shape. `default` preserves the terminal's cursor shape. |
+| `cursor.blinking` | boolean                                 | Controls cursor blinking. It has no effect when the style is `default`. |
 
 </div>
 

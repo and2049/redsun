@@ -860,13 +860,7 @@ export function FormPrompt(props: {
                 return (
                   <box
                     paddingRight={2}
-                    backgroundColor={
-                      isTab()
-                        ? theme.background.formfield.selected
-                        : tabHover() === index()
-                          ? theme.background.formfield.focused
-                          : theme.background.raised.base
-                    }
+                    backgroundColor={theme.background.raised.base}
                     onMouseOver={() => setTabHover(index())}
                     onMouseOut={() => setTabHover(null)}
                     onMouseUp={() => {
@@ -882,13 +876,7 @@ export function FormPrompt(props: {
               }}
             </For>
             <box
-              backgroundColor={
-                confirm()
-                  ? theme.background.formfield.selected
-                  : tabHover() === "confirm"
-                    ? theme.background.formfield.focused
-                    : theme.background.raised.base
-              }
+              backgroundColor={theme.background.raised.base}
               onMouseOver={() => setTabHover("confirm")}
               onMouseOut={() => setTabHover(null)}
               onMouseUp={() => {
@@ -995,7 +983,7 @@ export function FormPrompt(props: {
                       >
                         <box flexDirection="row">
                           <box
-                            backgroundColor={active() ? theme.background.formfield.focused : theme.background.raised.base}
+                            backgroundColor={theme.background.raised.base}
                             paddingRight={1}
                           >
                             <text
@@ -1003,7 +991,7 @@ export function FormPrompt(props: {
                             >{`${i() + 1}.`}</text>
                           </box>
                           <box
-                            backgroundColor={active() ? theme.background.formfield.focused : theme.background.raised.base}
+                            backgroundColor={theme.background.raised.base}
                             flexDirection="row"
                           >
                             <Show when={multi()}>
@@ -1049,7 +1037,7 @@ export function FormPrompt(props: {
                   >
                     <box flexDirection="row">
                       <box
-                        backgroundColor={other() ? theme.background.formfield.focused : theme.background.raised.base}
+                        backgroundColor={theme.background.raised.base}
                         paddingRight={1}
                       >
                         <text fg={other() ? theme.text.formfield.focused : theme.text.muted}>
@@ -1059,7 +1047,7 @@ export function FormPrompt(props: {
                       <box
                         flexDirection="row"
                         flexGrow={1}
-                        backgroundColor={other() ? theme.background.formfield.focused : theme.background.raised.base}
+                        backgroundColor={theme.background.raised.base}
                       >
                         <Show when={multi()}>
                           <text

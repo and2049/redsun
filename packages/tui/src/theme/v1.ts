@@ -1,6 +1,6 @@
-import { RGBA, SyntaxStyle } from "@opentui/core"
+import { SyntaxStyle } from "@opentui/core"
 import { selectedForeground } from "@opencode/theme/tui/v1"
-import type { SyntaxTheme, Theme, ThemeV1Json } from "@opencode/theme/tui/v1"
+import type { SyntaxTheme } from "@opencode/theme/tui/v1"
 
 export type {
   ColorValue,

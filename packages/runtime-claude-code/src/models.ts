@@ -85,7 +85,12 @@ export const MODELS = [
   pin("claude-fable-5", "Claude Fable 5", "claude-fable"),
   pin("claude-opus-5-5", "Claude Opus 5.5", "claude-opus"),
   pin("claude-sonnet-5-5", "Claude Sonnet 5.5", "claude-sonnet"),
+  pin("claude-opus-5", "Claude Opus 5", "claude-opus"),
+  pin("claude-sonnet-5", "Claude Sonnet 5", "claude-sonnet"),
   pin("claude-opus-4-8", "Claude Opus 4.8", "claude-opus"),
+  pin("claude-opus-4-7", "Claude Opus 4.7", "claude-opus"),
+  pin("claude-opus-4-6", "Claude Opus 4.6", "claude-opus"),
+  pin("claude-sonnet-4-6", "Claude Sonnet 4.6", "claude-sonnet"),
   pin("claude-sonnet-4-5", "Claude Sonnet 4.5", "claude-sonnet"),
   pin("claude-haiku-4-5", "Claude Haiku 4.5", "claude-haiku"),
 ] as const

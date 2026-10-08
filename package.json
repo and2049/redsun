@@ -12,6 +12,7 @@
     "dev:vite:live": "sh -c 'OPENCODE_TUI_CHANNEL=dev OPENCODE_PASSWORD=\"$(redsun service get password)\" exec bun run dev:vite \"$@\" --server \"$(redsun service status)\"' --",
     "dev:live": "OPENCODE_TUI_CHANNEL=dev OPENCODE_PASSWORD=\"$(redsun service get password)\" bun run dev --server \"$(redsun service status)\"",
     "lint": "oxlint",
+    "lint:changed": "bun script/lint-changed.ts",
     "lint:effect-patterns": "ast-grep scan -c script/ast-grep/sgconfig.yml packages/util/src packages/core/src packages/server/src packages/protocol/src packages/cli/src",
     "lint:effect-simplifications": "ast-grep scan -c script/ast-grep/effect-simplifications/sgconfig.yml --off=unused-suppression packages",
     "test:lint-rules": "ast-grep test -c script/ast-grep/sgconfig.yml",
@@ -30,7 +31,7 @@
       "packages/*"
     ],
     "catalog": {
-      "@anthropic-ai/claude-agent-sdk": "0.3.286",
+      "@anthropic-ai/claude-agent-sdk": "0.3.292",
       "@effect/opentelemetry": "4.0.0-rc.112",
       "@effect/platform-node": "4.0.0-rc.112",
       "@effect/platform-node-shared": "4.0.0-rc.112",

@@ -53,7 +53,7 @@ function companionEnvironment(directory: string) {
 
 test("managed companion starts, restarts, stops and round-trips settings without credentials in its view", async () => {
   await using dir = await tmpdir()
-  using environment = companionEnvironment(dir.path)
+  using _environment = companionEnvironment(dir.path)
   const file = path.join(dir.path, "service.json")
   const calls: unknown[] = []
   const pending = [{ requestID: "request", fingerprint: "ABCD-EFGH" }]
@@ -162,7 +162,7 @@ test("managed companion starts, restarts, stops and round-trips settings without
 
 test("companion startup errors do not disable policy and enrollment retries startup", async () => {
   await using dir = await tmpdir()
-  using environment = companionEnvironment(dir.path)
+  using _environment = companionEnvironment(dir.path)
   for (const failure of [new StorageError(), new Error("Port is busy")]) {
     let attempts = 0
     await Effect.runPromise(

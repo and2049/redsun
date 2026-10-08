@@ -132,7 +132,7 @@ function companionEnvironment(directory: string) {
 
 test("enable prompts for detected origin, configures, then enables", async () => {
   await using temporary = await tmpdir()
-  using environment = companionEnvironment(temporary.path)
+  using _environment = companionEnvironment(temporary.path)
   const actions: string[] = []
   let companion: RemoteControl.Companion = { running: false, port: 43123, pending: [] }
   let status: RemoteControl.Status = {
@@ -184,7 +184,7 @@ test.each(["success", "registered"] as const)(
   "phone registration %s reports the local approval flow",
   async (outcome) => {
     await using temporary = await tmpdir()
-    using environment = companionEnvironment(temporary.path)
+    using _environment = companionEnvironment(temporary.path)
     const actions: string[] = []
     await using setup = await createAppFixture({
       state: temporary.path,
@@ -247,7 +247,7 @@ test.each(["missing", "conflict", "ready"] as const)(
   "phone approvals and Tailscale %s stay local and confirmed",
   async (mapping) => {
     await using temporary = await tmpdir()
-    using environment = companionEnvironment(temporary.path)
+    using _environment = companionEnvironment(temporary.path)
     let approved = 0
     let applied = 0
     let inspected = 0
@@ -343,7 +343,7 @@ test.each(["success", "conflict", "network"] as const)(
   "enrollment %s is private and store-first",
   async (outcome) => {
     await using temporary = await tmpdir()
-    using environment = companionEnvironment(temporary.path)
+    using _environment = companionEnvironment(temporary.path)
     const file = path.join(temporary.path, "redsun-remote-control", "backend.json")
     let issued = 0
     let handoff: RemoteControl.Handoff | undefined

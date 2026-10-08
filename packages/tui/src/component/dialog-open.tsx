@@ -2,7 +2,6 @@ import { batch, createEffect, createMemo, createResource, createSignal, onCleanu
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
 import path from "path"
 import { useTerminalDimensions } from "@opentui/solid"
-import type { RGBA } from "@opentui/core"
 import { dialogWidth, useDialog } from "../ui/dialog"
 import { DialogSelect, dialogSelectContentWidth, type DialogSelectRef } from "../ui/dialog-select"
 import { DialogPrompt } from "../ui/dialog-prompt"
@@ -10,7 +9,7 @@ import { useRoute } from "../context/route"
 import { useData } from "../context/data"
 import { useClient } from "../context/client"
 import { useLocation } from "../context/location"
-import { useTheme, useThemes } from "../context/theme"
+import { useTheme } from "../context/theme"
 import { Keymap } from "../context/keymap"
 import { Locale } from "../util/locale"
 import { useLanguage } from "../i18n"
@@ -21,6 +20,7 @@ import { useToast } from "../ui/toast"
 import { errorMessage } from "../util/error"
 import { stringWidth } from "../util/string-width"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
+import { sessionAttention, sessionStatusGutter } from "./dialog-session-list"
 import { Spinner } from "./spinner"
 import { projectName } from "../util/project"
 
@@ -153,20 +153,48 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
   const currentSessionID = createMemo(() =>
     route.data.type === "session" ? data.session.root(route.data.sessionID) : undefined,
   )
+  const attention = (sessionID: string) => sessionAttention(data, sessionID)
   const sessions = createMemo(() => {
     const seen = new Set<string>()
     const match = matched()
-    return [...data.session.list(), ...props.sessions, ...(match ? [match] : [])]
-      .filter((session) => {
-        if (session.parentID || seen.has(session.id)) return false
-        seen.add(session.id)
-        return true
-      })
-      .toSorted((a, b) => b.time.updated - a.time.updated)
+    const list = [...data.session.list(), ...props.sessions, ...(match ? [match] : [])].filter((session) => {
+      if (session.parentID || seen.has(session.id)) return false
+      seen.add(session.id)
+      return true
+    })
+    const attentionByID = new Map(list.map((session) => [session.id, Boolean(attention(session.id))]))
+    return list.toSorted((a, b) => {
+      const attentionA = attentionByID.get(a.id) ?? false
+      const attentionB = attentionByID.get(b.id) ?? false
+      if (attentionA !== attentionB) return attentionA ? -1 : 1
+      return b.time.updated - a.time.updated
+    })
+  })
+
+  createEffect(() => {
+    const knownRoots = new Set(props.sessions.map((session) => session.id))
+    const active = data.session.active()
+    active.forEach((id) => {
+      void data.session.permission.sync(id).catch(() => undefined)
+      void data.session.form.sync(id).catch(() => undefined)
+    })
+    new Set(
+      [
+        ...data.session.permission.sessions(),
+        ...data.session.form.sessions(),
+        ...(recent() === true ? active : []),
+      ].map((id) => data.session.root(id)),
+    ).forEach((rootID) => {
+      if (!knownRoots.has(rootID) && !data.session.get(rootID)) {
+        void data.session.sync(rootID).catch(() => undefined)
+      }
+    })
   })
 
   const options = createMemo(() => {
-    const recent = filter().trim() ? sessions() : sessions().slice(0, RECENT_LIMIT)
+    // With an empty query every session awaiting input stays listed ahead of the recents.
+    const attentionCount = sessions().filter((session) => attention(session.id)).length
+    const recent = filter().trim() ? sessions() : sessions().slice(0, Math.max(RECENT_LIMIT, attentionCount))
     const sessionOptions = recent.map((session) => {
       const project = data.project.get(session.projectID)
       const name = projectName(project)
@@ -175,9 +203,11 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
         name && session.location.directory !== project?.canonical && name.toLowerCase() !== basename.toLowerCase()
           ? `${name} · ${basename}`
           : name || basename
+      const state = attention(session.id)
       const running =
-        data.session.status(session.id) === "running" ||
-        data.session.family(session.id).some((id) => data.session.status(id) === "running")
+        !state &&
+        (data.session.status(session.id) === "running" ||
+          data.session.family(session.id).some((id) => data.session.status(id) === "running"))
       return {
         title: withTimestampedFallback(session),
         searchText: `${session.id} ${session.location.directory}`,
@@ -185,7 +215,7 @@ export function DialogOpen(props: { sessions: SessionInfo[]; onLoad: (sessions: 
         category: "Sessions",
         footer: `${label ? `${Locale.truncate(label, 30)} · ` : ""}${timeAgo(session.time.updated)}`,
         onSelect: () => location.set(session.location),
-        gutter: running ? (color: RGBA) => <Spinner color={color} /> : undefined,
+        gutter: sessionStatusGutter(theme, state, running),
       }
     })
 

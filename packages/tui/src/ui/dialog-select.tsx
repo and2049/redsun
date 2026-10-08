@@ -30,6 +30,7 @@ export interface DialogSelectProps<T> {
   onSelect?: (option: DialogSelectOption<T>) => void
   onCancel?: () => void
   skipFilter?: boolean
+  search?: (query: string) => readonly DialogSelectOption<T>[]
   renderFilter?: boolean
   locked?: boolean
   preserveSelection?: boolean
@@ -49,6 +50,7 @@ export interface DialogSelectProps<T> {
 type DialogSelectActionBase<T> = {
   command: string
   title: string
+  bind?: string
   side?: "left" | "right"
   hidden?: boolean
   disabled?: boolean | ((option: DialogSelectOption<T> | undefined) => boolean)
@@ -78,8 +80,8 @@ export interface DialogSelectOption<T = any> {
   footerColor?: RGBA
   titleWidth?: number
   truncateTitle?: boolean | "left"
-  category?: string
   categoryView?: JSX.Element
+  category?: string
   disabled?: boolean
   bg?: RGBA
   fg?: RGBA
@@ -140,7 +142,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     on(
       [() => props.focusTarget ?? props.current, () => (props.focusTarget === undefined ? undefined : flat())],
       ([current]) => {
-        if (props.focusCurrent === false) return
+        if (props.search || props.focusCurrent === false) return
         if (props.focusTarget !== undefined && (props.preserveSelection || store.filter.length > 0)) return
         if (current !== undefined) {
           const currentIndex = flat().findIndex((opt) => isDeepEqual(opt.value, current))
@@ -187,6 +189,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   const filtered = createMemo(() => {
+    if (props.search) return props.search(store.filter).filter((x) => x.disabled !== true)
     if (props.skipFilter || props.renderFilter === false) return props.options.filter((x) => x.disabled !== true)
     const needle = store.filter.toLowerCase()
     const options = pipe(
@@ -213,7 +216,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     setFocusedAction(undefined)
   })
 
-  const flatten = createMemo(() => props.flat && store.filter.length > 0)
+  const flatten = createMemo(() => props.search !== undefined || (props.flat && store.filter.length > 0))
 
   const grouped = createMemo<[string, DialogSelectOption<T>[]][]>(() => {
     if (flatten()) return filtered().length ? [["", filtered()]] : []
@@ -254,6 +257,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     on(
       () => props.options,
       () => {
+        if (props.search) return
         if (
           !props.preserveSelection &&
           ((props.focusTarget ?? props.current) === undefined || props.focusCurrent === false)
@@ -310,6 +314,36 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       },
     ),
   )
+  createEffect(
+    on(
+      [
+        flat,
+        () => store.filter,
+        () => (props.focusCurrent === false ? undefined : (props.focusTarget ?? props.current)),
+      ],
+      ([options, query, current], previous) => {
+        if (!props.search) return
+        const queryChanged = previous !== undefined && query !== previous[1]
+        const currentChanged = current !== undefined && (previous === undefined || !isDeepEqual(current, previous[2]))
+        selection = intent()
+        const intended = selection
+        const index = intended ? options.findIndex((option) => isDeepEqual(option.value, intended.value)) : -1
+        const next = index >= 0 ? index : reconcileSelection(store.selected, options.length)
+        const option = options[next]
+        if (!option) return
+        setStore("selected", next)
+        selection = option
+        scrollAfterLayout(queryChanged || currentChanged, option.value)
+
+        function intent() {
+          if (queryChanged && query) return options[0]
+          if ((queryChanged || currentChanged) && current !== undefined) return { value: current }
+          if (queryChanged) return options[reconcileSelection(store.selected, options.length)]
+          return selection
+        }
+      },
+    ),
+  )
   onCleanup(() => {
     if (!pendingScroll) return
     renderer.off(CliRenderEvents.FRAME, pendingScroll)
@@ -318,6 +352,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   createEffect(
     on([() => store.filter, () => props.focusTarget ?? props.current], ([filter, current]) => {
+      if (props.search) return
       if (filter.length > 0) resetSelection = true
       if (filter.length > 0) {
         const option = flat()[0]
@@ -484,6 +519,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           id: item.command,
           title: item.title,
           group: "Dialog",
+          bind: item.bind,
           run: () => trigger(item),
         })),
         ...(visible.length

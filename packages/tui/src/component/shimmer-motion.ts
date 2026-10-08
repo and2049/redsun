@@ -1,4 +1,4 @@
-const clamp = (value: number) => Math.max(0, Math.min(1, value))
+export const clamp = (value: number) => Math.max(0, Math.min(1, value))
 export const smootherstep = (value: number) => value * value * value * (value * (value * 6 - 15) + 10)
 
 export const intensityAt = (index: number, front: number, head: number, tail: number) => {

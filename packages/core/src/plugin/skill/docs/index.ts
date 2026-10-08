@@ -42,7 +42,7 @@ import p38 from "./troubleshooting.md" with { type: "text" }
 import p39 from "./warming.md" with { type: "text" }
 import p40 from "./websearch.md" with { type: "text" }
 
-export const source = "05018b8862a8fc198ec9810aafd397c96bb7d86e"
+export const source = "32a67d2d0aae927d5cab5a471b43192cbff1199f"
 
 export const pages: ReadonlyArray<{ readonly path: string; readonly content: string }> = [
   { path: "agents.md", content: p0 },

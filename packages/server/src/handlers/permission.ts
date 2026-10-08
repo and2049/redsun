@@ -9,7 +9,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { PermissionNotFoundError } from "@opencode/protocol/errors"
-import { response, sessionInfo } from "../location"
+import { locationErrors, response, sessionInfo } from "../location"
 import { missingSession } from "./session-error"
 import { RemoteProjection } from "../remote-projection"
 
@@ -93,7 +93,7 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const session = yield* sessionInfo(sessions, ctx.params.sessionID)
           const requests = yield* Permission.Service.use((permission) =>
             permission.forSession(ctx.params.sessionID),
-          ).pipe(instances.provide(session))
+          ).pipe(instances.provide(session), locationErrors)
           return { data: yield* RemoteProjection.project(requests, (items) => items.map(RemoteProjection.permission)) }
         }),
       )

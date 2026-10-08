@@ -3,7 +3,6 @@ import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import type { OpenCodeEvent } from "@opencode/client"
 import { SessionMessage } from "@opencode/core/session/message"
-import { Bus } from "@opencode/core/bus"
 import { Event } from "@opencode/schema/event"
 import { Expected } from "../../../../core/test/lib/session-message"
 import { createEffect, onMount, type ParentProps } from "solid-js"
@@ -13,12 +12,13 @@ import { DataProvider as DataProviderBase, useData } from "../../../src/context/
 import { Keymap } from "../../../src/context/keymap"
 import { LocationProvider, useLocation } from "../../../src/context/location"
 import { RouteProvider } from "../../../src/context/route"
+import { TuiAppProvider } from "../../../src/context/runtime"
+import { StorageProvider } from "../../../src/context/storage"
 import { ThemeProvider } from "../../../src/context/theme"
 import { createSessionRows, type SessionRow } from "../../../src/routes/session/rows"
-import { groupRefs } from "../../../src/routes/session/grouping/session"
 import { unwrap } from "solid-js/store"
 import { createApi, createEventStream, createFetch, directory, json, worktree } from "../../fixture/tui-client"
-import { emptyThemeSource } from "../../fixture/fixture"
+import { emptyThemeSource, tmpdir } from "../../fixture/fixture"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 
@@ -944,7 +944,7 @@ test("reconnects the event stream and resyncs active data", async () => {
   }
 })
 
-test("completes exploration when a queued prompt is promoted", async () => {
+test("completes exploration and keeps live rows when a queued prompt is promoted", async () => {
   const events = createEventStream()
   const sessionID = "session-promotion"
   const calls = createFetch((url) => {
@@ -952,10 +952,16 @@ test("completes exploration when a queued prompt is promoted", async () => {
   }, events)
   let rows!: ReturnType<typeof createSessionRows>
   let client!: ReturnType<typeof useClient>
+  let data!: ReturnType<typeof useData>
+  let synced = false
 
   function Probe() {
     client = useClient()
-    rows = createSessionRows(() => sessionID)
+    data = useData()
+    rows = createSessionRows(
+      () => sessionID,
+      () => (synced = true),
+    )
     return <box />
   }
 
@@ -973,6 +979,9 @@ test("completes exploration when a queued prompt is promoted", async () => {
 
   try {
     await wait(() => client.connection.status() === "connected")
+    // Rebuilds from the history sync and the new assistant message must land before the parts stream in,
+    // as they do live; otherwise those rebuilds, not the live append, create the part rows.
+    await wait(() => synced)
     emitEvent(events, {
       id: "evt_step_started",
       created: 1,
@@ -986,11 +995,25 @@ test("completes exploration when a queued prompt is promoted", async () => {
         model: { id: "model", providerID: "provider" },
       },
     })
+    await wait(() => data.session.message.get(sessionID, "message-assistant") !== undefined)
+    emitEvent(events, {
+      id: "evt_text_started",
+      created: 1,
+      type: "session.text.started",
+      durable: durable(sessionID, 1),
+      data: { sessionID, assistantMessageID: "message-assistant", ordinal: 0 },
+    })
+    emitEvent(events, {
+      id: "evt_text_delta",
+      created: 1,
+      type: "session.text.delta",
+      data: { sessionID, assistantMessageID: "message-assistant", ordinal: 0, delta: "Looking" },
+    })
     emitEvent(events, {
       id: "evt_tool_started",
       created: 2,
       type: "session.tool.input.started",
-      durable: durable(sessionID, 1),
+      durable: durable(sessionID, 2),
       data: {
         sessionID,
         assistantMessageID: "message-assistant",
@@ -1004,7 +1027,7 @@ test("completes exploration when a queued prompt is promoted", async () => {
       id: "evt_prompt_admitted",
       created: 3,
       type: "session.inbox.enqueued",
-      durable: durable(sessionID, 2),
+      durable: durable(sessionID, 3),
       data: {
         sessionID,
         inboxID: "message-user",
@@ -1018,7 +1041,7 @@ test("completes exploration when a queued prompt is promoted", async () => {
       id: "evt_prompt_promoted",
       created: 4,
       type: "session.inbox.delivered",
-      durable: durable(sessionID, 3),
+      durable: durable(sessionID, 4),
       data: {
         sessionID,
         inboxID: "message-user",
@@ -1026,8 +1049,9 @@ test("completes exploration when a queued prompt is promoted", async () => {
     })
     await wait(() => rows.find((row) => row.type === "group")?.completed === true)
     await wait(() => rows.at(-1)?.type === "assistant-footer")
-    expect(rows.at(-1)).toEqual({ type: "assistant-footer", messageID: "message-assistant" })
-    expect(rows.at(-2)).toEqual({ type: "message", messageID: "message-user" })
+    // Rows carry a reconcile key, so match the shape rather than the whole object.
+    expect(rows.at(-1)).toMatchObject({ type: "assistant-footer", messageID: "message-assistant" })
+    expect(rows.at(-2)).toMatchObject({ type: "message", messageID: "message-user" })
   } finally {
     app.renderer.destroy()
   }
@@ -1076,7 +1100,7 @@ test("updates and removes queued inputs from durable lifecycle events", async ()
       },
     })
     await wait(() => data.session.pending.list(sessionID).length === 1)
-    expect(rows).not.toContainEqual({ type: "message", messageID: "message-queued" })
+    expect(rows).not.toContainEqual(expect.objectContaining({ type: "message", messageID: "message-queued" }))
 
     emitEvent(events, {
       id: "evt_queue_steered",
@@ -1090,7 +1114,7 @@ test("updates and removes queued inputs from durable lifecycle events", async ()
         .list(sessionID)
         .some((item) => item.id === "message-queued" && item.type !== "compaction" && item.delivery === "steer"),
     )
-    expect(rows).toContainEqual({ type: "message", messageID: "message-queued" })
+    expect(rows).toContainEqual(expect.objectContaining({ type: "message", messageID: "message-queued" }))
 
     emitEvent(events, {
       id: "evt_queue_restored",
@@ -1104,7 +1128,7 @@ test("updates and removes queued inputs from durable lifecycle events", async ()
         .list(sessionID)
         .some((item) => item.id === "message-queued" && item.type !== "compaction" && item.delivery === "queue"),
     )
-    expect(rows).not.toContainEqual({ type: "message", messageID: "message-queued" })
+    expect(rows).not.toContainEqual(expect.objectContaining({ type: "message", messageID: "message-queued" }))
 
     emitEvent(events, {
       id: "evt_cancel_admitted",
@@ -1176,7 +1200,9 @@ test("classifies live tool rows independently of their call ID", async () => {
     })
 
     await wait(() => rows.length > 0)
-    expect(rows).toEqual([{ type: "part", ref: { messageID: "message-assistant", partID: "reasoning:0" } }])
+    expect(unwrap(rows)).toMatchObject([
+      { type: "part", ref: { messageID: "message-assistant", partID: "reasoning:0" } },
+    ])
   } finally {
     app.renderer.destroy()
   }
@@ -1626,7 +1652,7 @@ test("tracks session status from active sessions and execution events", async ()
       const message = data.session.message.get("session-manual", "message-compaction")
       return message?.type === "compaction" && message.status === "completed"
     })
-    expect(manualRows.filter((row) => row.type === "message")).toEqual([
+    expect(manualRows.filter((row) => row.type === "message")).toMatchObject([
       { type: "message", messageID: "message-compaction" },
     ])
     expect(manualRows.find((row) => row.type === "message" && row.messageID === "message-compaction")).toBe(
@@ -1729,7 +1755,7 @@ test.each(["before", "between", "after"])("shows compaction admitted %s steers i
       }),
     )
     await wait(() => rows.length === 3)
-    expect(rows).toEqual([
+    expect(unwrap(rows)).toMatchObject([
       { type: "compaction-queued", inboxID: "compact" },
       { type: "message", messageID: "a" },
       { type: "message", messageID: "b" },
@@ -1742,7 +1768,7 @@ test.each(["before", "between", "after"])("shows compaction admitted %s steers i
       data: { sessionID, reason: "manual", recent: "", inputID: "compact" },
     })
     await wait(() => rows[0]?.type === "message")
-    expect(rows).toEqual(["compact", "a", "b"].map((messageID) => ({ type: "message", messageID })))
+    expect(unwrap(rows)).toMatchObject(["compact", "a", "b"].map((messageID) => ({ type: "message", messageID })))
     emitEvent(events, {
       id: "evt_compaction_ended",
       created: 5,
@@ -1760,7 +1786,7 @@ test.each(["before", "between", "after"])("shows compaction admitted %s steers i
       })
     }
     await app.renderOnce()
-    expect(rows).toEqual(["compact", "a", "b"].map((messageID) => ({ type: "message", messageID })))
+    expect(unwrap(rows)).toMatchObject(["compact", "a", "b"].map((messageID) => ({ type: "message", messageID })))
   } finally {
     app.renderer.destroy()
   }
@@ -1822,7 +1848,7 @@ test("restores queued compaction from durable pending input", async () => {
       "message-compaction-later",
     ])
     await wait(() => rows.filter((row) => row.type === "compaction-queued").length === 2)
-    expect(rows.filter((row) => row.type === "compaction-queued")).toEqual([
+    expect(rows.filter((row) => row.type === "compaction-queued")).toMatchObject([
       { type: "compaction-queued", inboxID: "message-compaction-queued" },
       { type: "compaction-queued", inboxID: "message-compaction-later" },
     ])
@@ -2201,6 +2227,7 @@ test("keeps shell state scoped to location", async () => {
     })
   }, events)
   let data!: ReturnType<typeof useData>
+  await using state = await tmpdir()
 
   function Probe() {
     data = useData()
@@ -2214,14 +2241,18 @@ test("keeps shell state scoped to location", async () => {
   }
 
   const app = await testRender(() => (
-    <TestTuiContexts>
-      <ClientProvider api={createApi(calls.fetch)}>
-        <ProjectProvider>
-          <DataProvider>
-            <Probe />
-          </DataProvider>
-        </ProjectProvider>
-      </ClientProvider>
+    <TestTuiContexts paths={{ state: state.path }}>
+      <TuiAppProvider value={{ name: "test", version: "test", channel: "test" }}>
+        <StorageProvider>
+          <ClientProvider api={createApi(calls.fetch)}>
+            <ProjectProvider>
+              <DataProvider>
+                <Probe />
+              </DataProvider>
+            </ProjectProvider>
+          </ClientProvider>
+        </StorageProvider>
+      </TuiAppProvider>
     </TestTuiContexts>
   ))
   app.renderer.start()
