@@ -495,9 +495,9 @@
       "legacy": ["MCP server: {{name}}"]
     },
     "ui.remoteControl": {
-      "message": "Remote control: {{status}}",
+      "message": "Remote access: {{status}}",
       "context": "ui",
-      "legacy": ["Remote control: {{status}}"]
+      "legacy": ["Remote control: {{status}}", "Remote access: {{status}}"]
     },
     "ui.companionOrigin": {
       "message": "Companion origin",
@@ -1717,7 +1717,9 @@
     "settings.autoCompactionThresholdDescription": {
       "message": "Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default.",
       "context": "settings",
-      "legacy": ["Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default."]
+      "legacy": [
+        "Share of the context window at which conversations compact automatically, for redsun agents, Claude Code (from its next turn) and Kiro (at 80% at most). Auto keeps each one's default."
+      ]
     },
     "settings.needsNewerServer": {
       "message": "needs a newer server",
@@ -1727,7 +1729,9 @@
     "settings.needsNewerServerDetail": {
       "message": "The connected redsun server does not support this setting yet. Restart it on a newer version to change it.",
       "context": "settings",
-      "legacy": ["The connected redsun server does not support this setting yet. Restart it on a newer version to change it."]
+      "legacy": [
+        "The connected redsun server does not support this setting yet. Restart it on a newer version to change it."
+      ]
     },
     "settings.chatgptContextWindow": {
       "message": "ChatGPT context window",
@@ -1737,7 +1741,9 @@
     "settings.chatgptContextWindowDescription": {
       "message": "OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows.",
       "context": "settings",
-      "legacy": ["OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows."]
+      "legacy": [
+        "OpenAI models used through a ChatGPT sign-in: the backend's default input window (272K), or the largest each model allows."
+      ]
     },
     "settings.maximum": {
       "message": "Maximum",
@@ -2189,16 +2195,6 @@
       "context": "remote",
       "legacy": ["Requires a managed service (`redsun serve --service`); this backend does not support remote control."]
     },
-    "remote.enrollACompanionBelowOrRunRedsunRemote": {
-      "message": "Enroll a companion below, or run `redsun remote enroll --handoff <new-private-file>`.",
-      "context": "remote",
-      "legacy": ["Enroll a companion below, or run `redsun remote enroll --handoff <new-private-file>`."]
-    },
-    "remote.enableRemoteControlSoTheCompanionCanAttach": {
-      "message": "Enable remote control so the companion can attach.",
-      "context": "remote",
-      "legacy": ["Enable remote control so the companion can attach."]
-    },
     "remote.openOnThePhoneWithinFiveMinutesAnd": {
       "message": "Open {{origin}} on the phone within five minutes and choose Register this device; approve the fingerprint here.",
       "context": "remote",
@@ -2211,80 +2207,10 @@
       "context": "remote",
       "legacy": ["Companion starting"]
     },
-    "remote.configureACompanionOriginToStartTheCompanion": {
-      "message": "Configure a companion origin to start the companion.",
-      "context": "remote",
-      "legacy": ["Configure a companion origin to start the companion."]
-    },
-    "remote.companionAttachedRegisterOrConnectAPhone": {
-      "message": "Companion attached; register or connect a phone",
-      "context": "remote",
-      "legacy": ["Companion attached; register or connect a phone"]
-    },
     "remote.phoneConnected": {
       "message": "Phone connected",
       "context": "remote",
       "legacy": ["Phone connected"]
-    },
-    "remote.enableRemoteControl": {
-      "message": "Enable remote control",
-      "context": "remote",
-      "legacy": ["Enable remote control"]
-    },
-    "remote.disableRemoteControl": {
-      "message": "Disable remote control",
-      "context": "remote",
-      "legacy": ["Disable remote control"]
-    },
-    "remote.theEnrolledCompanionMayAttachPersistsInThe": {
-      "message": "Lets the enrolled companion attach.",
-      "context": "remote",
-      "legacy": ["The enrolled companion may attach. Persists in the service configuration."]
-    },
-    "remote.companionAccessEndsImmediatelyEnrollmentAndRunningTasks": {
-      "message": "Enrollment and running tasks are kept.",
-      "context": "remote",
-      "legacy": ["Companion access ends immediately; enrollment and running tasks are kept."]
-    },
-    "remote.confirmEnrollACompanionOnThisHost": {
-      "message": "Confirm: enroll a companion on this host",
-      "context": "remote",
-      "legacy": ["Confirm: enroll a companion on this host"]
-    },
-    "remote.enrollACompanion": {
-      "message": "Enroll a companion",
-      "context": "remote",
-      "legacy": ["Enroll a companion"]
-    },
-    "remote.storesTheCredentialForTheCompanionOnThis": {
-      "message": "Stores the credential on this host.",
-      "context": "remote",
-      "legacy": ["Stores the credential for the companion on this host. Does not enable remote control."]
-    },
-    "remote.confirmRevokeAllCompanionCredentials": {
-      "message": "Confirm: revoke all companion credentials",
-      "context": "remote",
-      "legacy": ["Confirm: revoke all companion credentials"]
-    },
-    "remote.revokeCompanionCredentials": {
-      "message": "Revoke companion credentials",
-      "context": "remote",
-      "legacy": ["Revoke companion credentials"]
-    },
-    "remote.allCompanionCredentialsAreRemovedCompanionMustEnroll": {
-      "message": "The companion must enroll again.",
-      "context": "remote",
-      "legacy": ["All companion credentials are removed; companion must enroll again. Requires confirmation."]
-    },
-    "remote.changeCompanionOrigin": {
-      "message": "Change companion origin",
-      "context": "remote",
-      "legacy": ["Change companion origin"]
-    },
-    "remote.registerAPhone": {
-      "message": "Register a phone",
-      "context": "remote",
-      "legacy": ["Register a phone"]
     },
     "remote.cancelPhoneRegistration": {
       "message": "Cancel phone registration",
@@ -2306,45 +2232,15 @@
       "context": "remote",
       "legacy": ["The fingerprint must match the phone screen exactly."]
     },
-    "remote.enablePhoneAccess": {
-      "message": "Enable phone access",
-      "context": "remote",
-      "legacy": ["Enable phone access"]
-    },
-    "remote.createsAPublicHttpsAddressForTheCompanion": {
-      "message": "Public HTTPS address through OpenTunnel.",
-      "context": "remote",
-      "legacy": ["Creates a public HTTPS address for the companion through OpenTunnel; phones open it directly."]
-    },
-    "remote.disablePhoneAccess": {
-      "message": "Disable phone access",
-      "context": "remote",
-      "legacy": ["Disable phone access"]
-    },
-    "remote.theAddressIsKeptSoEnrolledPhonesKeepWorking": {
-      "message": "The address is kept for enrolled phones.",
-      "context": "remote",
-      "legacy": ["The address is kept, so enrolled phones keep working when it is enabled again."]
-    },
     "remote.showPhoneLink": {
       "message": "Show phone link",
       "context": "remote",
       "legacy": ["Show phone link"]
     },
-    "remote.rotatePhoneAddress": {
-      "message": "Rotate phone address",
-      "context": "remote",
-      "legacy": ["Rotate phone address"]
-    },
     "remote.confirmNewPhoneAddressEveryPhoneMustEnrollAgain": {
       "message": "Confirm: new phone address; every phone must enroll again",
       "context": "remote",
       "legacy": ["Confirm: new phone address; every phone must enroll again"]
-    },
-    "remote.phoneAccess": {
-      "message": "Phone access: {{state}}",
-      "context": "remote; state is one of the remote.tunnel* messages",
-      "legacy": ["Phone access: {{state}}"]
     },
     "remote.tunnelOff": { "message": "off", "context": "remote phone access state", "legacy": [] },
     "remote.tunnelIssuing": {
@@ -2357,34 +2253,22 @@
       "context": "remote phone access state",
       "legacy": []
     },
-    "remote.tunnelAttaching": { "message": "connecting to the relay", "context": "remote phone access state", "legacy": [] },
+    "remote.tunnelAttaching": {
+      "message": "connecting to the relay",
+      "context": "remote phone access state",
+      "legacy": []
+    },
     "remote.tunnelReady": { "message": "ready", "context": "remote phone access state", "legacy": [] },
     "remote.tunnelFailed": { "message": "failed", "context": "remote phone access state", "legacy": [] },
-    "remote.phoneLink": { "message": "Phone link", "context": "remote phone link dialog title", "legacy": ["Phone link"] },
+    "remote.phoneLink": {
+      "message": "Phone link",
+      "context": "remote phone link dialog title",
+      "legacy": ["Phone link"]
+    },
     "remote.scanToOpenTheCompanionOnAPhone": {
       "message": "Scan to open the companion on a phone, then register the phone here.",
       "context": "remote phone link dialog",
       "legacy": ["Scan to open the companion on a phone, then register the phone here."]
-    },
-    "remote.enrolled": {
-      "message": "Enrolled",
-      "context": "remote",
-      "legacy": ["Enrolled"]
-    },
-    "remote.notEnrolled": {
-      "message": "Not enrolled",
-      "context": "remote",
-      "legacy": ["Not enrolled"]
-    },
-    "remote.remoteControl": {
-      "message": "Remote control — {{status}}",
-      "context": "remote",
-      "legacy": ["Remote control — {{status}}"]
-    },
-    "remote.remoteControl2": {
-      "message": "Remote control —",
-      "context": "remote",
-      "legacy": ["Remote control —"]
     },
     "remote.backendIdentityHasNotBeenPersistedFixService": {
       "message": "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it.",
@@ -2393,55 +2277,15 @@
         "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it."
       ]
     },
-    "remote.companionReportedStatusNotAPhoneConnectivityTest": {
-      "message": "Companion-reported status; not a phone connectivity test.",
-      "context": "remote",
-      "legacy": ["Companion-reported status; not a phone connectivity test."]
-    },
-    "remote.pair": {
-      "message": "Pair",
-      "context": "remote",
-      "legacy": ["Pair"]
-    },
     "remote.thisDevice": {
       "message": "This device",
       "context": "remote",
       "legacy": ["This device"]
     },
-    "remote.urls": {
-      "message": "URLs",
-      "context": "remote",
-      "legacy": ["URLs"]
-    },
-    "remote.username": {
-      "message": "Username",
-      "context": "remote",
-      "legacy": ["Username"]
-    },
-    "remote.password": {
-      "message": "Password",
-      "context": "remote",
-      "legacy": ["Password"]
-    },
     "remote.runRedsunServiceSetHostname000": {
       "message": "Run `redsun service set hostname 0.0.0.0` to access the service remotely.",
       "context": "remote",
       "legacy": ["Run `redsun service set hostname 0.0.0.0` to access the service remotely."]
-    },
-    "remote.loadingServerInformation": {
-      "message": "Loading server information…",
-      "context": "remote",
-      "legacy": ["Loading server information…"]
-    },
-    "remote.couldNotLoadServerInformation": {
-      "message": "Could not load server information",
-      "context": "remote",
-      "legacy": ["Could not load server information"]
-    },
-    "remote.closeAndReopenPairToTryAgain": {
-      "message": "Close and reopen Pair to try again.",
-      "context": "remote",
-      "legacy": ["Close and reopen Pair to try again."]
     },
     "ai.newCachedTotal": {
       "message": "{{new}} new · {{cached}} cached · {{total}} total",
@@ -3492,6 +3336,196 @@
         "pin": "20aff6d9f643afe9abf8a048e68f019d049f5329",
         "match": "semantic"
       }
+    },
+    "remote.phones": {
+      "message": "Phones",
+      "context": "remote",
+      "legacy": ["Phones"]
+    },
+    "remote.computers": {
+      "message": "Computers",
+      "context": "remote",
+      "legacy": ["Computers"]
+    },
+    "remote.advanced": {
+      "message": "Advanced",
+      "context": "remote",
+      "legacy": ["Advanced"]
+    },
+    "remote.turnOnPhoneAccess": {
+      "message": "Turn on phone access",
+      "context": "remote",
+      "legacy": ["Turn on phone access"]
+    },
+    "remote.enrollsCreatesTheAddressAndStartsTheCompanion": {
+      "message": "Enrolls, creates the address and starts the companion.",
+      "context": "remote",
+      "legacy": ["Enrolls, creates the address and starts the companion."]
+    },
+    "remote.addAPhone": {
+      "message": "Add a phone",
+      "context": "remote",
+      "legacy": ["Add a phone"]
+    },
+    "remote.opensAFiveMinuteWindowAndShowsTheLink": {
+      "message": "Opens a five-minute window and shows the link.",
+      "context": "remote",
+      "legacy": ["Opens a five-minute window and shows the link."]
+    },
+    "remote.turnOffPhoneAccess": {
+      "message": "Turn off phone access",
+      "context": "remote",
+      "legacy": ["Turn off phone access"]
+    },
+    "remote.theAddressAndRegisteredPhonesAreKept": {
+      "message": "The address and registered phones are kept.",
+      "context": "remote",
+      "legacy": ["The address and registered phones are kept."]
+    },
+    "remote.turnOnComputerAccess": {
+      "message": "Turn on computer access",
+      "context": "remote",
+      "legacy": ["Turn on computer access"]
+    },
+    "remote.confirmAnyoneWhoPairsGetsFullAccess": {
+      "message": "Confirm: any computer that pairs gets full access to this redsun",
+      "context": "remote",
+      "legacy": ["Confirm: any computer that pairs gets full access to this redsun"]
+    },
+    "remote.fullAccessForAnyComputerThatPairs": {
+      "message": "Full access for any computer that pairs.",
+      "context": "remote",
+      "legacy": ["Full access for any computer that pairs."]
+    },
+    "remote.addAComputer": {
+      "message": "Add a computer",
+      "context": "remote",
+      "legacy": ["Add a computer"]
+    },
+    "remote.aOneTimeLinkForRedsunAttach": {
+      "message": "A one-time link for `redsun attach`.",
+      "context": "remote",
+      "legacy": ["A one-time link for `redsun attach`."]
+    },
+    "remote.showComputerAddress": {
+      "message": "Show computer address",
+      "context": "remote",
+      "legacy": ["Show computer address"]
+    },
+    "remote.turnOffComputerAccess": {
+      "message": "Turn off computer access",
+      "context": "remote",
+      "legacy": ["Turn off computer access"]
+    },
+    "remote.theAddressIsKeptForAttachedComputers": {
+      "message": "The address is kept for attached computers.",
+      "context": "remote",
+      "legacy": ["The address is kept for attached computers."]
+    },
+    "remote.newPhoneAddress": {
+      "message": "New phone address",
+      "context": "remote",
+      "legacy": ["New phone address"]
+    },
+    "remote.everyPhoneMustRegisterAgain": {
+      "message": "Every phone must register again.",
+      "context": "remote",
+      "legacy": ["Every phone must register again."]
+    },
+    "remote.newComputerAddress": {
+      "message": "New computer address",
+      "context": "remote",
+      "legacy": ["New computer address"]
+    },
+    "remote.confirmNewComputerAddressEveryComputerMustPairAgain": {
+      "message": "Confirm: new computer address; every computer must pair again",
+      "context": "remote",
+      "legacy": ["Confirm: new computer address; every computer must pair again"]
+    },
+    "remote.everyComputerMustPairAgain": {
+      "message": "Every computer must pair again.",
+      "context": "remote",
+      "legacy": ["Every computer must pair again."]
+    },
+    "remote.useACustomPhoneAddress": {
+      "message": "Use a custom phone address",
+      "context": "remote",
+      "legacy": ["Use a custom phone address"]
+    },
+    "remote.anHttpsAddressYouServeYourself": {
+      "message": "An HTTPS address you serve yourself.",
+      "context": "remote",
+      "legacy": ["An HTTPS address you serve yourself."]
+    },
+    "remote.forgetAllPhonesAndCredentials": {
+      "message": "Forget all phones and credentials",
+      "context": "remote",
+      "legacy": ["Forget all phones and credentials"]
+    },
+    "remote.confirmForgetAllPhonesAndCredentials": {
+      "message": "Confirm: forget all phones and credentials",
+      "context": "remote",
+      "legacy": ["Confirm: forget all phones and credentials"]
+    },
+    "remote.phoneAccessStartsOverFromEnrollment": {
+      "message": "Phone access starts over from enrollment.",
+      "context": "remote",
+      "legacy": ["Phone access starts over from enrollment."]
+    },
+    "remote.phonesLine": {
+      "message": "Phones: {{state}}",
+      "context": "remote",
+      "legacy": ["Phones: {{state}}"]
+    },
+    "remote.computersLine": {
+      "message": "Computers: {{state}}",
+      "context": "remote",
+      "legacy": ["Computers: {{state}}"]
+    },
+    "remote.phoneRegisteredNotConnected": {
+      "message": "Phone registered, not connected",
+      "context": "remote",
+      "legacy": ["Phone registered, not connected"]
+    },
+    "remote.noPhoneYetChooseAddAPhone": {
+      "message": "No phone yet; choose Add a phone.",
+      "context": "remote",
+      "legacy": ["No phone yet; choose Add a phone."]
+    },
+    "remote.remoteAccess": {
+      "message": "Remote access —",
+      "context": "remote",
+      "legacy": ["Remote access —"]
+    },
+    "remote.manageRemoteAccessOnTheHostComputer": {
+      "message": "Manage remote access on the host computer.",
+      "context": "remote",
+      "legacy": ["Manage remote access on the host computer."]
+    },
+    "remote.checkingRemoteAccess": {
+      "message": "Checking remote access…",
+      "context": "remote; shown in place of the rows until the phone and computer states have loaded",
+      "legacy": []
+    },
+    "remote.computerLink": {
+      "message": "Computer link",
+      "context": "remote",
+      "legacy": ["Computer link"]
+    },
+    "remote.computerAddress": {
+      "message": "Computer address",
+      "context": "remote",
+      "legacy": ["Computer address"]
+    },
+    "remote.runThisOnTheOtherComputerWithinMinutes": {
+      "message": "Run this on the other computer within {{minutes}} minutes; the link works once.",
+      "context": "remote",
+      "legacy": ["Run this on the other computer within {{minutes}} minutes; the link works once."]
+    },
+    "remote.attachedComputersReachThisRedsunHere": {
+      "message": "Attached computers reach this redsun at this address.",
+      "context": "remote",
+      "legacy": ["Attached computers reach this redsun at this address."]
     }
   }
 }
