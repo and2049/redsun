@@ -1,12 +1,13 @@
 # Remote-control integration contract, version 1
 
 This implements the **redsun backend foundation**, not a companion/browser app. No
-browser authentication is supplied by the backend. The companion listens on loopback;
-the managed service can front it with a route on the device's OpenTunnel tunnel (phone
-access, below), terminating TLS in the service process and forwarding plain HTTP to the
-companion. A route is unguessable but is not authentication: the companion's passkeys
-remain the only browser authentication. Use a trusted same-OS-user companion. Never
-forward backend credentials or local registration files to browsers.
+browser authentication is supplied by the backend. Remote access has two audiences, both
+served by routes on the device's OpenTunnel tunnel that the managed service owns at runtime
+(section "Remote access", below): **phones** reach the companion, which listens on loopback
+and authenticates with passkeys; **computers** reach the backend itself with a pairing link
+redeemed for a session token. A route is unguessable but is not authentication: the
+companion's passkeys remain the only browser authentication. Use a trusted same-OS-user
+companion. Never forward backend credentials or local registration files to browsers.
 
 ## Policy and identity
 
@@ -65,10 +66,11 @@ redsun remote disable
 redsun remote revoke
 ```
 
-`/remote` opens the local TUI controls from Home or a session without submitting a model
-prompt. The shared Home/session footer shows effective backend status. Disable and
-revoke are distinct; revocation requires confirmation in the dialog. Enrollment is a
-local CLI operation, never a browser endpoint.
+`/remote` opens the local TUI controls (the "Remote access" dialog, described below) from
+Home or a session without submitting a model prompt. The shared Home/session footer shows
+effective backend status. Disable and revoke are distinct; revocation requires confirmation
+in the dialog. Enrollment is a local operation (the CLI verb above, or the backend's own
+atomic enable), never a browser endpoint.
 
 The CLI uses passive `Service.discover`, never `ensure`, start, stop, replacement or
 restart. It rejects non-loopback registration URLs before discovery, requires a ready
@@ -109,13 +111,21 @@ import. Do not accept a remote/browser-provided file path or backend URL. Do not
 the handoff, token, Authorization header, request options, or unrestricted registration.
 The trusted OS user, root and Windows administrators are outside this isolation boundary.
 
-## Phone access through OpenTunnel
+## Remote access: phones and computers
 
-The companion's public HTTPS origin comes from the device's shared OpenTunnel tunnel
-(`@opentunnel/client`, default profile, Anomaly's hosted relay at `opentunnel.xyz`). The
-tunnel's certificate covers `*.<id>.opentunnel.xyz`; the private key never leaves the
-host; the relay routes by SNI and forwards ciphertext. The managed service claims one
-route per purpose on that tunnel, never the bare hostname.
+Public HTTPS origins come from the device's shared OpenTunnel tunnel (`@opentunnel/client`,
+default profile, Anomaly's hosted relay at `opentunnel.xyz`). The tunnel's certificate covers
+`*.<id>.opentunnel.xyz`; the private key never leaves the host; the relay routes by SNI and
+forwards ciphertext. The managed service claims one route per audience on that tunnel, never
+the bare hostname, and owns both at runtime: nothing in either flow needs a service restart,
+the shell, or a copied password.
+
+| Audience | Route target | Auth | Persisted as | Route across off |
+| --- | --- | --- | --- | --- |
+| Phones | companion loopback port (43123) | passkey in the companion | `remote_control.tunnel {enabled, route}` | kept (passkeys bind to it) |
+| Computers | the backend's own loopback port | pairing code → session token (or the password) | `remote_control.computers {enabled, route, origin?}` | kept (attached TUIs store the URL) |
+
+### Phones
 
 Companion route (`remote_control.tunnel {enabled, route}` in the service configuration):
 
@@ -137,11 +147,12 @@ Companion route (`remote_control.tunnel {enabled, route}` in the service configu
 - Local-only administration: `GET /api/remote/tunnel` and `PUT /api/remote/tunnel` with
   `{enabled, rotate?}` return `RemoteControl.Tunnel` (`enabled`, `origin?`, `state:
   off|issuing|waiting|attaching|ready|failed`, `error?`); `waiting` means enabled while
-  the companion is not running. CLI: `redsun remote tunnel status|enable|disable|rotate`.
-  TUI `/remote`: enable/disable phone access, show phone link (QR of the origin), rotate
-  with confirmation; enabling remote control without an origin enables phone access first.
+  the companion is not running. CLI: `redsun remote tunnel status|enable|disable|rotate`;
+  enabling remote control without an origin enables phone access first.
 - Tests never create a tunnel: `RemoteService.make` takes a `TunnelHost` (`ensure`, `run`)
   and the suites pass fakes; the real host is `packages/server/src/remote-tunnel.ts`.
+
+### Computers
 
 Computer access (a redsun TUI on another computer; `remote_control.computers {enabled,
 route, origin?}` in the service configuration): the backend itself on a second route of the
@@ -158,10 +169,8 @@ it is a separate opt-in from phone access.
 - Local administration: `GET/PUT /api/remote/computers` (`RemoteControl.Computers`, the
   `Tunnel` shape; `ComputersConfig {enabled, rotate?}`), `POST /api/remote/computers/pairing`
   → `RemoteControl.Pairing {link, code, expires_in}` (503 while the route is not ready). CLI:
-  `redsun remote computers status|enable|disable|rotate|pair` (`remote attach` is the older
-  name of `pair`); `redsun service set|get|unset remote` are aliases that go through the API
-  while a service runs and edit the file otherwise (`unset` forgets the route only for a
-  stopped service).
+  `redsun remote computers status|enable|disable|rotate|pair`. The service configuration
+  CLI has no `remote` key: `service get` only reports whether computer access is on.
 - Pairing instead of passwords: the link is `https://<route>.<hostname>/auth/connect/<code>`
   (upstream's `ServerPairing`: 16 random bytes, single use, 5 minutes). `redsun attach <link>`
   redeems it with `Accept: application/json` for a session token (accepted anywhere the
@@ -178,7 +187,35 @@ Atomic phone enable: `POST /api/remote/enable` → `RemoteControl.Access {status
 companion}` enrolls a companion when none is (the server generates the credential, stores the
 handoff in the companion's private store through `importHandoff`, pointing at the registration
 sidecar passed in `ServerOptions.remoteControl.registration`), enables phone access when it is
-off or has no origin, and enables the policy; a second call changes nothing.
+off or has no origin, and enables the policy; a second call changes nothing. The TUI does not
+enroll on its own any more; the dialog calls this endpoint.
+
+### The `/remote` dialog
+
+Titled **Remote access**, with the backend status beside the title. Three groups whose rows
+follow state; an action that needs confirmation turns its own row into the confirmation.
+
+- **Phones.** Off: "Turn on phone access" (`POST /api/remote/enable`). On: "Add a phone"
+  (opens the five-minute registration window and shows the origin as a link and QR; hidden
+  while a phone is connected), pending approvals ("Approve phone <fingerprint>", confirmed),
+  "Show phone link", "Turn off phone access" (policy off; the address and registered phones
+  are kept).
+- **Computers.** Off: "Turn on computer access", confirmed first because it exposes the whole
+  local API to anyone who pairs. On: "Add a computer" (issues a pairing and shows
+  `redsun attach <link>` as text and QR), "Show computer address" (the bare URL for a machine
+  that already holds a token), "Turn off computer access" (the address is kept).
+- **Advanced.** "New phone address" and "New computer address" (confirmed rotates), "Use a
+  custom phone address" (manual companion origin), "Forget all phones and credentials"
+  (confirmed revoke).
+
+Footer: `Phones: <state> — <origin>`, one line of phone guidance (companion error, "Phone
+connected", "No phone yet; choose Add a phone", "Companion starting"), `Computers: <state> —
+<origin>`, then warnings. Rows and status lines appear only once the companion, tunnel and
+computers states have all answered ("Checking remote access…" meanwhile), so the first row
+is never stale; while an action runs the list is locked, not emptied. A TUI attached from
+another computer (no local service registration) sees the status lines and "Manage remote
+access on the host computer" instead of rows. The `state` labels are shared with the CLI:
+off, issuing, waiting, attaching, ready, failed.
 
 Trust: Anomaly operates the relay, the zone and certificate issuance (ZeroSSL); traffic
 is end-to-end TLS to this host. Self-hosting is a Cloudflare Worker deployment under
@@ -381,14 +418,17 @@ Canonical contracts: `packages/schema/src/remote-control.ts`, event manifest;
 `packages/protocol/src/groups/remote-{control,catalog}.ts`, API and client group mappings.
 Backend: `packages/server/src/remote-{control,access,projection,tunnel}.ts`, handlers,
 authorization, process/options/routes and scoped event handling.
-CLI: `commands/handlers/remote{,-tunnel}.ts`, `services/remote-local.ts` (loopback
-preflight shared by both), command registry, server-process (backend route fork), service
-config and registration. Secure file helper: `packages/util/src/private-file.ts`.
-TUI: remote context/dialog, app provider/command and shared workspace status.
-Client: normal generated trees, build type references, export script and test.
+CLI: `commands/handlers/remote{,-tunnel,-computers}.ts` and `attach.ts`,
+`services/remote-local.ts` (loopback preflight shared by all), `services/attachments.ts`
+(private token store), `services/server-connection.ts` (stored-token lookup and renewal),
+command registry, service config and registration. Secure file helper:
+`packages/util/src/private-file.ts`. TUI: remote context/dialog, app provider/command and
+shared workspace status. Client: normal generated trees, build type references, export
+script and test.
 
 Focused coverage is in server `remote-control`, `remote-admission`, `remote-projection`
-tests; CLI `redsun-remote-handoff`; TUI `remote-control`; client `remote-export`.
+tests; CLI `redsun-remote-handoff`, `redsun-remote-attach`; TUI `remote-control`; client
+`remote-export`.
 Tests use temporary enrollment/configuration, isolated DBs and loopback/in-memory APIs,
 not the developer backend, a real tunnel, or provider credentials. The execution-survival
 test uses a deterministic runner barrier, not a paid model request.
@@ -396,35 +436,23 @@ test uses a deterministic runner barrier, not a paid model request.
 Verification commands are run from their package directories:
 
 - Core wrapper: `bun run test ../server/test` (offline/environment isolation).
-- Core wrapper: `bun run test ../cli/test/redsun-remote-handoff.test.ts`.
+- Core wrapper: `bun run test ../cli/test/redsun-remote-handoff.test.ts ../cli/test/redsun-remote-attach.test.ts`.
 - TUI: `bun test test/remote-control.test.tsx test/app-lifecycle.test.tsx`.
 - TUI themes: `bun test test/theme.test.ts test/theme test/cli/tui/theme-mode.test.tsx test/cli/tui/dialog-theme-list.test.tsx`.
 - Theme: `bun test`.
 - Client: `bun test test/remote-export.test.ts`; `bun run generate`.
 - Root: `bun turbo typecheck --concurrency=3`; `bun lint`.
 
-Theme-route verification on Windows, 2026-09-07: full server suite **66 passed, 3 skipped,
-0 failed**; TUI remote-control **4 passed**, TUI themes (including mode and picker)
-**72 passed**; theme package **9 passed**; client export **1 passed**. Client generation
-and an explicit temporary-directory export succeeded, and the temporary export was
-deleted. All **18 workspace typecheck tasks** passed. Root lint reported **0 errors,
-2,601 warnings**. No managed service was started, stopped or restarted.
+Live verification on one Linux device against the hosted relay (2026-10-09): phone access
+end to end with a headless browser and a virtual authenticator (register, approve, passkey
+sign-in, `connected`), and computer access (enable, pair, `redsun attach <link>`, `--server`
+with the stored token and no password, token renewal, disable, rotate, service restart).
+The `service.test.ts` managed-service subprocess cases time out on this host independently
+of remote control; the RC tests do not share that fixture.
 
-Verified on Windows, 2026-09-06: the combined full server suite plus CLI handoff tests
-passed **67 tests, 3 skipped, 0 failed**; TUI remote/lifecycle tests passed **36**;
-client export passed **1**. All **18 workspace typecheck tasks** passed after normal
-client regeneration. `git diff --check` passed. Root lint exited successfully with
-**0 errors and 2,594 warnings** (not a warning-free result).
-An additional isolated managed-CLI launch test then verified password-free discovery
-and matching RC process identity; the final CLI handoff file alone passed **3 tests**.
-
-The additional legacy CLI `service.test.ts` subprocess suite timed out waiting for
-registrations. Its fixtures still use `state/opencode` rather than `state/redsun`, a
-known mismatch recorded in project memory; that broader suite is **not** reported as
-passing. The RC tests use correct isolated paths and do not share that fixture.
-
-No browser, tunnel or cross-host end-to-end validation is claimed. Windows private
-file creation/ACL is exercised here; POSIX exclusive 0600 creation needs execution on
-Linux/macOS CI. There is no automatic reconciling import/resume CLI, no optional directory
-root policy, no external authorization-form UI, no per-browser lease identity, and no
-global SSE replay. Those are limitations, not implemented companion features.
+No cross-host end-to-end validation is claimed. The CLI handoff test exercises private file
+creation on the platform it runs on (POSIX exclusive 0600 here; the Windows ACL path needs a
+Windows run). There is no automatic
+reconciling import/resume CLI, no optional directory root policy, no external
+authorization-form UI, no per-browser lease identity, and no global SSE replay. Those are
+limitations, not implemented companion features.

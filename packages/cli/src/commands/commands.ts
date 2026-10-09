@@ -66,11 +66,9 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
   },
   commands: [
     Spec.make("remote", {
-      description: "Manage local remote-control policy, enrollment, the companion, and remote attachment",
+      description: "Manage local remote-control policy, enrollment, the companion, phone and computer access",
       params: {
-        action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke", "attach"]).pipe(
-          Argument.withDescription("attach is the older name of `remote computers pair`"),
-        ),
+        action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke"]),
         handoff: Flag.string("handoff").pipe(
           Flag.withDescription("New private local handoff file for enrollment"),
           Flag.optional,

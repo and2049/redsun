@@ -14,7 +14,8 @@ import { RemoteControl } from "@opencode/schema/remote-control"
 
 export const Info = Schema.Struct({
   disabled: Schema.optional(Schema.Boolean),
-  // Upstream's key for the backend route; the service folds it into `remote_control.computers` on its next start.
+  // Upstream's key for the backend route. Redsun does not write it; the service folds one it finds into
+  // `remote_control.computers` on its next start, and the CLI only keeps it out of `service get` meanwhile.
   remote: Schema.optional(Schema.Struct({ route: Schema.String })),
   hostname: Schema.optional(Schema.String),
   port: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(65_535))),
@@ -25,14 +26,10 @@ export const Info = Schema.Struct({
 })
 export type Info = typeof Info.Type
 
-const keys = ["disabled", "remote", "hostname", "port", "password", "cors", "env"] as const
+const keys = ["disabled", "hostname", "port", "password", "cors", "env"] as const
 type Key = (typeof keys)[number]
 
 const decodeInfo = Schema.decodeUnknownEffect(Schema.fromJsonString(Info))
-// Earlier builds stored remote access as a boolean.
-const decodeLegacy = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ ...Info.fields, remote: Schema.Boolean })),
-)
 const decodeRegistration = Schema.decodeUnknownEffect(Schema.fromJsonString(Service.Info))
 
 export function filename(channel = OPENCODE_CHANNEL) {
@@ -89,7 +86,6 @@ export const migrateConfig = Effect.fnUntraced(function* (legacy: string, file: 
 function configKey(key: string): Key {
   if (
     key === "disabled" ||
-    key === "remote" ||
     key === "hostname" ||
     key === "port" ||
     key === "password" ||
@@ -137,36 +133,8 @@ export const read = Effect.fn("cli.service-config.read")(function* () {
   const text = yield* fs.readFileString(configFile).pipe(Effect.option)
   if (Option.isNone(text)) return {} as Info
   const info = yield* decodeInfo(text.value).pipe(Effect.option)
-  if (Option.isSome(info)) return info.value
-  const legacy = decodeLegacy(text.value)
-  if (Option.isNone(legacy)) return {} as Info
-  // Repair the file in place so every reader sees the same route.
-  const { remote: enabled, ...rest } = legacy.value
-  const repaired: Info = enabled ? withComputers(rest, true) : rest
-  yield* write(repaired)
-  return repaired
+  return Option.isSome(info) ? info.value : ({} as Info)
 })
-
-// Computer access lives under `remote_control.computers`, which the running service owns; editing the file is for
-// a stopped service. The route is 64 random bits, created once and kept so attached computers keep their address.
-function withComputers(info: Info, enabled: boolean): Info {
-  const { remote: legacy, ...rest } = info
-  const existing = rest.remote_control?.computers?.route ?? legacy?.route
-  // Turning off what was never on records nothing.
-  if (!enabled && existing === undefined) return rest
-  const route = existing ?? randomBytes(8).toString("hex")
-  return {
-    ...rest,
-    remote_control: { ...rest.remote_control, computers: { ...rest.remote_control?.computers, enabled, route } },
-  }
-}
-
-export function computers(info: Info) {
-  return (
-    info.remote_control?.computers ??
-    (info.remote === undefined ? undefined : { enabled: true, route: info.remote.route })
-  )
-}
 
 const write = Effect.fn("cli.service-config.write")(function* (value: Info) {
   const { fs, configFile } = yield* paths
@@ -189,19 +157,20 @@ export const password = Effect.fn("cli.service-config.password")(function* (valu
 
 export const get = Effect.fn("cli.service-config.get")(function* (key?: string, name?: string) {
   if (key === undefined) {
-    const { password: _password, remote_control, remote: _legacy, ...safe } = yield* read()
-    // Routes are as sensitive as the password: the unguessable half of a public address.
-    const access = computers(yield* read())
+    const { password: _password, remote_control, remote: legacy, ...safe } = yield* read()
+    // Routes are as sensitive as the password: the unguessable half of a public address. The running service owns
+    // phone and computer access (`redsun remote tunnel|computers`); this only shows whether they are on.
+    const computers = remote_control?.computers ?? (legacy === undefined ? undefined : { enabled: true })
     return JSON.stringify(
       {
         ...safe,
-        ...(remote_control || access
+        ...(remote_control || computers
           ? {
               remote_control: {
                 enabled: remote_control?.enabled,
                 origin: remote_control?.origin,
                 port: remote_control?.port,
-                ...(access ? { computers: { enabled: access.enabled } } : {}),
+                ...(computers ? { computers: { enabled: computers.enabled } } : {}),
               },
             }
           : {}),
@@ -215,9 +184,6 @@ export const get = Effect.fn("cli.service-config.get")(function* (key?: string, 
   switch (selected) {
     case "disabled": {
       return String((yield* read()).disabled ?? false)
-    }
-    case "remote": {
-      return String(computers(yield* read())?.enabled ?? false)
     }
     case "hostname": {
       return (yield* read()).hostname ?? ""
@@ -249,12 +215,6 @@ export const set = Effect.fn("cli.service-config.set")(function* (key: string, v
       if (value !== "true" && value !== "false") throw new Error("Disabled must be true or false")
       if (value === "true") yield* Service.stop(yield* options())
       yield* write({ ...(yield* read()), disabled: value === "true" })
-      return
-    }
-    case "remote": {
-      if (value !== "true" && value !== "false") throw new Error("Remote must be true or false")
-      // The running service owns this setting (`redsun remote computers`); the file is for a stopped one.
-      yield* write(withComputers(yield* read(), value === "true"))
       return
     }
     case "hostname": {
@@ -304,13 +264,6 @@ export const unset = Effect.fn("cli.service-config.unset")(function* (key: strin
     case "disabled": {
       const { disabled: _disabled, ...next } = yield* read()
       yield* write(next)
-      return
-    }
-    case "remote": {
-      // Forgetting the route is what makes `unset` differ from `set remote false`: the next enable gets a new address.
-      const { remote: _remote, remote_control, ...next } = yield* read()
-      const { computers: _computers, ...rest } = remote_control ?? {}
-      yield* write(remote_control === undefined ? next : { ...next, remote_control: rest })
       return
     }
     case "hostname": {
