@@ -36,7 +36,9 @@ const Handlers = Runtime.handlers(Commands, {
     $: () => import("./commands/handlers/remote"),
     companion: () => import("./commands/handlers/remote-companion"),
     tunnel: () => import("./commands/handlers/remote-tunnel"),
+    computers: () => import("./commands/handlers/remote-computers"),
   },
+  attach: () => import("./commands/handlers/attach"),
   auth: {
     list: () => import("./commands/handlers/auth/list"),
     login: () => import("./commands/handlers/auth/login"),

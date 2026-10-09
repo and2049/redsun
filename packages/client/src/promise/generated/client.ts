@@ -9,6 +9,11 @@ import type {
   RemoteTunnelGetOutput,
   RemoteTunnelConfigureInput,
   RemoteTunnelConfigureOutput,
+  RemoteComputersGetOutput,
+  RemoteComputersConfigureInput,
+  RemoteComputersConfigureOutput,
+  RemoteComputersPairingOutput,
+  RemoteEnableOutput,
   RemoteStatusOutput,
   RemotePolicyInput,
   RemotePolicyOutput,
@@ -21,6 +26,7 @@ import type {
   ServerPairOutput,
   ServerConnectInput,
   ServerConnectOutput,
+  ServerSessionOutput,
   LocationGetInput,
   LocationGetOutput,
   LocationReloadOutput,
@@ -547,6 +553,53 @@ export function make(options: ClientOptions) {
             requestOptions,
           ),
       },
+      computers: {
+        get: (requestOptions?: RequestOptions) =>
+          request<RemoteComputersGetOutput>(
+            {
+              method: "GET",
+              path: `/api/remote/computers`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        configure: (input: RemoteComputersConfigureInput, requestOptions?: RequestOptions) =>
+          request<RemoteComputersConfigureOutput>(
+            {
+              method: "PUT",
+              path: `/api/remote/computers`,
+              body: { enabled: input["enabled"], rotate: input["rotate"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401, 503],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        pairing: (requestOptions?: RequestOptions) =>
+          request<RemoteComputersPairingOutput>(
+            {
+              method: "POST",
+              path: `/api/remote/computers/pairing`,
+              successStatus: 200,
+              declaredStatuses: [400, 401, 503],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      enable: (requestOptions?: RequestOptions) =>
+        request<RemoteEnableOutput>(
+          {
+            method: "POST",
+            path: `/api/remote/enable`,
+            successStatus: 200,
+            declaredStatuses: [400, 401, 503],
+            empty: false,
+          },
+          requestOptions,
+        ),
       status: (requestOptions?: RequestOptions) =>
         request<RemoteStatusOutput>(
           { method: "GET", path: `/api/remote`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
@@ -620,6 +673,11 @@ export function make(options: ClientOptions) {
             declaredStatuses: [400, 401],
             empty: false,
           },
+          requestOptions,
+        ),
+      session: (requestOptions?: RequestOptions) =>
+        request<ServerSessionOutput>(
+          { method: "POST", path: `/api/auth/session`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
           requestOptions,
         ),
     },

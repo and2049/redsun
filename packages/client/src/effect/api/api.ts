@@ -70,6 +70,21 @@ export type RemoteTunnelConfigureOperation<E = never> = (
   input: RemoteTunnelConfigureInput,
 ) => Effect.Effect<RemoteTunnelConfigureOutput, E>
 
+export type RemoteComputersGetOutput = RemoteControl.Computers
+export type RemoteComputersGetOperation<E = never> = () => Effect.Effect<RemoteComputersGetOutput, E>
+
+export type RemoteComputersConfigureInput = { readonly enabled: boolean; readonly rotate?: boolean | undefined }
+export type RemoteComputersConfigureOutput = RemoteControl.Computers
+export type RemoteComputersConfigureOperation<E = never> = (
+  input: RemoteComputersConfigureInput,
+) => Effect.Effect<RemoteComputersConfigureOutput, E>
+
+export type RemoteComputersPairingOutput = RemoteControl.Pairing
+export type RemoteComputersPairingOperation<E = never> = () => Effect.Effect<RemoteComputersPairingOutput, E>
+
+export type RemoteEnableOutput = RemoteControl.Access
+export type RemoteEnableOperation<E = never> = () => Effect.Effect<RemoteEnableOutput, E>
+
 export type RemoteStatusOutput = RemoteControl.Status
 export type RemoteStatusOperation<E = never> = () => Effect.Effect<RemoteStatusOutput, E>
 
@@ -99,6 +114,12 @@ export interface RemoteApi<E = never> {
     readonly approve: RemoteCompanionApproveOperation<E>
   }
   readonly tunnel: { readonly get: RemoteTunnelGetOperation<E>; readonly configure: RemoteTunnelConfigureOperation<E> }
+  readonly computers: {
+    readonly get: RemoteComputersGetOperation<E>
+    readonly configure: RemoteComputersConfigureOperation<E>
+    readonly pairing: RemoteComputersPairingOperation<E>
+  }
+  readonly enable: RemoteEnableOperation<E>
   readonly status: RemoteStatusOperation<E>
   readonly policy: RemotePolicyOperation<E>
   readonly enroll: RemoteEnrollOperation<E>
@@ -122,10 +143,14 @@ export type ServerConnectInput = { readonly code: string }
 export type ServerConnectOutput = { readonly token: string }
 export type ServerConnectOperation<E = never> = (input: ServerConnectInput) => Effect.Effect<ServerConnectOutput, E>
 
+export type ServerSessionOutput = { readonly token: string }
+export type ServerSessionOperation<E = never> = () => Effect.Effect<ServerSessionOutput, E>
+
 export interface ServerApi<E = never> {
   readonly info: ServerInfoOperation<E>
   readonly pair: ServerPairOperation<E>
   readonly connect: ServerConnectOperation<E>
+  readonly session: ServerSessionOperation<E>
 }
 
 export type LocationGetInput = { readonly location?: { readonly directory?: string | undefined } | undefined }

@@ -47,6 +47,30 @@ export const RemoteControlGroup = HttpApiGroup.make("server.remote")
     }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.tunnel.configure" })),
   )
   .add(
+    HttpApiEndpoint.get("remote.computers", "/api/remote/computers", {
+      success: RemoteControl.Computers,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.computers.get" })),
+  )
+  .add(
+    HttpApiEndpoint.put("remote.computers.configure", "/api/remote/computers", {
+      payload: RemoteControl.ComputersConfig,
+      success: RemoteControl.Computers,
+      error: [InvalidRequestError, ServiceUnavailableError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.computers.configure" })),
+  )
+  .add(
+    HttpApiEndpoint.post("remote.computers.pairing", "/api/remote/computers/pairing", {
+      success: RemoteControl.Pairing,
+      error: ServiceUnavailableError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.computers.pairing" })),
+  )
+  .add(
+    HttpApiEndpoint.post("remote.enable", "/api/remote/enable", {
+      success: RemoteControl.Access,
+      error: [InvalidRequestError, ServiceUnavailableError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.enable" })),
+  )
+  .add(
     HttpApiEndpoint.get("remote.status", "/api/remote", { success: RemoteControl.Status }).annotateMerge(
       OpenApi.annotations({ identifier: "v2.remote.status" }),
     ),

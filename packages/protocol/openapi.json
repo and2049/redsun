@@ -343,6 +343,218 @@
         }
       }
     },
+    "/api/remote/computers": {
+      "get": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.computers.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Computers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Computers"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.computers.configure",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Computers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Computers"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.ComputersConfig"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/remote/computers/pairing": {
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.computers.pairing",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Pairing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Pairing"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remote/enable": {
+      "post": {
+        "tags": ["server.remote"],
+        "operationId": "v2.remote.enable",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "RemoteControl.Access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteControl.Access"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/remote": {
       "get": {
         "tags": ["server.remote"],
@@ -724,6 +936,55 @@
         },
         "description": "Redeem a pairing code. Browsers receive a session cookie and a redirect to the web app; requests that accept JSON receive a session token to use as the password.",
         "summary": "Redeem pairing code"
+      }
+    },
+    "/api/auth/session": {
+      "post": {
+        "tags": ["server"],
+        "operationId": "server.session",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "PairingSession",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairingSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Issue a fresh session token to an authorized client, so an attached TUI renews before its pairing token expires.",
+        "summary": "Renew session token"
       }
     },
     "/api/location": {
@@ -20283,6 +20544,22 @@
           }
         ]
       },
+      "RemoteControl.Access": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/RemoteControl.Status"
+          },
+          "tunnel": {
+            "$ref": "#/components/schemas/RemoteControl.Tunnel"
+          },
+          "companion": {
+            "$ref": "#/components/schemas/RemoteControl.Companion"
+          }
+        },
+        "required": ["status", "tunnel", "companion"],
+        "additionalProperties": false
+      },
       "RemoteControl.AgentChoice": {
         "type": "object",
         "properties": {
@@ -20355,6 +20632,39 @@
         "required": ["origin"],
         "additionalProperties": false
       },
+      "RemoteControl.Computers": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["off", "issuing", "waiting", "attaching", "ready", "failed"]
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": ["enabled", "state"],
+        "additionalProperties": false
+      },
+      "RemoteControl.ComputersConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rotate": {
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
+        "additionalProperties": false
+      },
       "RemoteControl.Enrollment": {
         "type": "object",
         "properties": {
@@ -20410,6 +20720,22 @@
           }
         },
         "required": ["id", "providerID", "name", "variants"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Pairing": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer"
+          }
+        },
+        "required": ["link", "code", "expires_in"],
         "additionalProperties": false
       },
       "RemoteControl.PolicyResult": {

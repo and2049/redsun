@@ -16,7 +16,10 @@ import { OpenCode } from "@opencode/client/promise"
 import { findSession } from "../../session-target"
 import { errorMessage } from "../../util/error"
 
-export default Runtime.handler(Commands, (input) =>
+export default Runtime.handler(Commands, (input) => launch(input))
+
+/** Opens the TUI for the root command's arguments; `redsun attach` reuses it after pairing. */
+export const launch = (input: Runtime.Input<typeof Commands>) =>
   Effect.gen(function* () {
     const requestedDirectory = Option.getOrUndefined(input.directory)
     const requestedServer = Option.getOrUndefined(input.server)
@@ -161,5 +164,4 @@ export default Runtime.handler(Commands, (input) =>
         runFork(effect)
       },
     }).pipe(Effect.provide(LayerNode.compile(Global.node)))
-  }),
-)
+  })

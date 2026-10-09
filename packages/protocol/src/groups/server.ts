@@ -74,4 +74,17 @@ export const ServerGroup = HttpApiGroup.make("server.server")
       }),
     ),
   )
+  .add(
+    HttpApiEndpoint.post("server.session", "/api/auth/session", {
+      success: PairingSession,
+      error: UnauthorizedError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "server.session",
+        summary: "Renew session token",
+        description:
+          "Issue a fresh session token to an authorized client, so an attached TUI renews before its pairing token expires.",
+      }),
+    ),
+  )
   .annotateMerge(OpenApi.annotations({ title: "server" }))

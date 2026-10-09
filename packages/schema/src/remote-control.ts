@@ -121,6 +121,23 @@ export const TunnelConfig = Schema.Struct({ enabled: Schema.Boolean, rotate: opt
   identifier: "RemoteControl.TunnelConfig",
 })
 export interface TunnelConfig extends Schema.Schema.Type<typeof TunnelConfig> {}
+/** Computer access: the backend itself on its own route of the device tunnel, for a redsun TUI on another computer. */
+export const Computers = Schema.Struct(Tunnel.fields).annotate({ identifier: "RemoteControl.Computers" })
+export interface Computers extends Schema.Schema.Type<typeof Computers> {}
+export const ComputersConfig = Schema.Struct(TunnelConfig.fields).annotate({
+  identifier: "RemoteControl.ComputersConfig",
+})
+export interface ComputersConfig extends Schema.Schema.Type<typeof ComputersConfig> {}
+/** A one-time link another computer redeems for a session token with `redsun attach <link>`. */
+export const Pairing = Schema.Struct({ link: Schema.String, code: Schema.String, expires_in: Schema.Int }).annotate({
+  identifier: "RemoteControl.Pairing",
+})
+export interface Pairing extends Schema.Schema.Type<typeof Pairing> {}
+/** Everything phone access needs, after the one call that turns it on. */
+export const Access = Schema.Struct({ status: Status, tunnel: Tunnel, companion: Companion }).annotate({
+  identifier: "RemoteControl.Access",
+})
+export interface Access extends Schema.Schema.Type<typeof Access> {}
 
 export const Settings = Schema.Struct({
   enabled: optional(Schema.Boolean),
@@ -134,6 +151,14 @@ export const Settings = Schema.Struct({
       enabled: Schema.Boolean,
       // One DNS label, as OpenTunnel requires of a route.
       route: Schema.String.check(Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/)),
+    }),
+  ),
+  // The backend's own route; kept across disabling so attached computers keep their address.
+  computers: optional(
+    Schema.Struct({
+      enabled: Schema.Boolean,
+      route: Schema.String.check(Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/)),
+      origin: optional(Schema.String),
     }),
   ),
 }).annotate({ identifier: "RemoteControl.Settings" })
