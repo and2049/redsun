@@ -109,13 +109,18 @@ export const CompanionConfig = Schema.Struct({ origin: Schema.String, port: opti
   identifier: "RemoteControl.CompanionConfig",
 })
 export interface CompanionConfig extends Schema.Schema.Type<typeof CompanionConfig> {}
-export const Tailscale = Schema.Struct({
-  host: Schema.String,
-  origin: Schema.String,
-  certificate: Schema.Boolean,
-  mapping: Schema.Literals(["missing", "ready", "conflict"]),
-}).annotate({ identifier: "RemoteControl.Tailscale" })
-export interface Tailscale extends Schema.Schema.Type<typeof Tailscale> {}
+/** Phone access through the device's OpenTunnel tunnel: the companion is served on its own route. */
+export const Tunnel = Schema.Struct({
+  enabled: Schema.Boolean,
+  origin: optional(Schema.String),
+  state: Schema.Literals(["off", "issuing", "waiting", "attaching", "ready", "failed"]),
+  error: optional(Schema.String),
+}).annotate({ identifier: "RemoteControl.Tunnel" })
+export interface Tunnel extends Schema.Schema.Type<typeof Tunnel> {}
+export const TunnelConfig = Schema.Struct({ enabled: Schema.Boolean, rotate: optional(Schema.Boolean) }).annotate({
+  identifier: "RemoteControl.TunnelConfig",
+})
+export interface TunnelConfig extends Schema.Schema.Type<typeof TunnelConfig> {}
 
 export const Settings = Schema.Struct({
   enabled: optional(Schema.Boolean),
@@ -123,6 +128,14 @@ export const Settings = Schema.Struct({
   port: optional(Port),
   backendID: optional(Schema.String),
   credentials: optional(Schema.Array(Enrollment).check(Schema.isMaxLength(8))),
+  // The route outlives disabling: passkeys are bound to the origin it forms.
+  tunnel: optional(
+    Schema.Struct({
+      enabled: Schema.Boolean,
+      // One DNS label, as OpenTunnel requires of a route.
+      route: Schema.String.check(Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/)),
+    }),
+  ),
 }).annotate({ identifier: "RemoteControl.Settings" })
 export interface Settings extends Schema.Schema.Type<typeof Settings> {}
 

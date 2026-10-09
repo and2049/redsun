@@ -504,10 +504,10 @@
       "context": "ui",
       "legacy": ["Companion origin"]
     },
-    "ui.mustBeTheHttpsMagicdnsOriginPhonesWill": {
-      "message": "Must be the https MagicDNS origin phones will open.",
-      "context": "ui",
-      "legacy": ["Must be the https MagicDNS origin phones will open."]
+    "ui.anHttpsOriginYouServeYourselfPhonesWill": {
+      "message": "An HTTPS origin you serve yourself; phones will open it. Prefer Enable phone access.",
+      "context": "ui; companion origin prompt",
+      "legacy": ["An HTTPS origin you serve yourself; phones will open it. Prefer Enable phone access."]
     },
     "ui.modelCatalogRefreshed": {
       "message": "Model catalog refreshed",
@@ -2306,20 +2306,65 @@
       "context": "remote",
       "legacy": ["The fingerprint must match the phone screen exactly."]
     },
-    "remote.confirm": {
-      "message": "Confirm: {{command}}",
+    "remote.enablePhoneAccess": {
+      "message": "Enable phone access",
       "context": "remote",
-      "legacy": ["Confirm: {{command}}"]
+      "legacy": ["Enable phone access"]
     },
-    "remote.mapTailscaleServeToTheCompanion": {
-      "message": "Map Tailscale Serve to the companion",
+    "remote.createsAPublicHttpsAddressForTheCompanion": {
+      "message": "Creates a public HTTPS address for the companion through OpenTunnel; phones open it directly.",
       "context": "remote",
-      "legacy": ["Map Tailscale Serve to the companion"]
+      "legacy": ["Creates a public HTTPS address for the companion through OpenTunnel; phones open it directly."]
     },
-    "remote.inspectTailscaleServe": {
-      "message": "Inspect Tailscale Serve",
+    "remote.disablePhoneAccess": {
+      "message": "Disable phone access",
       "context": "remote",
-      "legacy": ["Inspect Tailscale Serve"]
+      "legacy": ["Disable phone access"]
+    },
+    "remote.theAddressIsKeptSoEnrolledPhonesKeepWorking": {
+      "message": "The address is kept, so enrolled phones keep working when it is enabled again.",
+      "context": "remote",
+      "legacy": ["The address is kept, so enrolled phones keep working when it is enabled again."]
+    },
+    "remote.showPhoneLink": {
+      "message": "Show phone link",
+      "context": "remote",
+      "legacy": ["Show phone link"]
+    },
+    "remote.rotatePhoneAddress": {
+      "message": "Rotate phone address",
+      "context": "remote",
+      "legacy": ["Rotate phone address"]
+    },
+    "remote.confirmNewPhoneAddressEveryPhoneMustEnrollAgain": {
+      "message": "Confirm: new phone address; every phone must enroll again",
+      "context": "remote",
+      "legacy": ["Confirm: new phone address; every phone must enroll again"]
+    },
+    "remote.phoneAccess": {
+      "message": "Phone access: {{state}}",
+      "context": "remote; state is one of the remote.tunnel* messages",
+      "legacy": ["Phone access: {{state}}"]
+    },
+    "remote.tunnelOff": { "message": "off", "context": "remote phone access state", "legacy": [] },
+    "remote.tunnelIssuing": {
+      "message": "setting up the certificate; this can take a minute",
+      "context": "remote phone access state",
+      "legacy": []
+    },
+    "remote.tunnelWaiting": {
+      "message": "waiting for the companion to start",
+      "context": "remote phone access state",
+      "legacy": []
+    },
+    "remote.tunnelAttaching": { "message": "connecting to the relay", "context": "remote phone access state", "legacy": [] },
+    "remote.tunnelReady": { "message": "ready", "context": "remote phone access state", "legacy": [] },
+    "remote.tunnelFailed": { "message": "failed", "context": "remote phone access state", "legacy": [] },
+    "remote.phoneLink": { "message": "Phone link", "context": "remote phone link dialog title", "legacy": ["Phone link"] },
+    "remote.scanToOpenTheCompanionOnAPhone": {
+      "message": "Scan to open the companion on a phone, then register the phone here.",
+      "context": "remote phone link dialog",
+      "legacy": ["Scan to open the companion on a phone, then register the phone here."]
     },
     "remote.enrolled": {
       "message": "Enrolled",
@@ -2348,20 +2393,10 @@
         "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it."
       ]
     },
-    "remote.tailscaleServeMappingConflictsInspectTailscaleServeStatus": {
-      "message": "Tailscale Serve mapping conflicts; inspect tailscale serve status.",
+    "remote.companionReportedStatusNotAPhoneConnectivityTest": {
+      "message": "Companion-reported status; not a phone connectivity test.",
       "context": "remote",
-      "legacy": ["Tailscale Serve mapping conflicts; inspect tailscale serve status."]
-    },
-    "remote.enableHttpsCertificates": {
-      "message": "Enable HTTPS certificates: {{url}}",
-      "context": "remote",
-      "legacy": ["Enable HTTPS certificates: {{url}}"]
-    },
-    "remote.companionReportedStatusNotATailscaleConnectivityTest": {
-      "message": "Companion-reported status; not a Tailscale connectivity test.",
-      "context": "remote",
-      "legacy": ["Companion-reported status; not a Tailscale connectivity test."]
+      "legacy": ["Companion-reported status; not a phone connectivity test."]
     },
     "remote.pair": {
       "message": "Pair",

@@ -1,63 +1,25 @@
-import { Effect, Option, Schema } from "effect"
-import { Service } from "@opencode/client/effect/service"
+import { Effect, Option, Schedule, Schema } from "effect"
 import { RemoteControl } from "@opencode/schema/remote-control"
+import { RemoteTunnel } from "@opencode/server/remote-tunnel"
 import { createHash, randomBytes } from "node:crypto"
 import path from "node:path"
-import { readFile } from "node:fs/promises"
+import { EOL } from "node:os"
+import { renderUnicodeCompact } from "uqr"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
+import { RemoteLocal } from "../../services/remote-local"
 import { ServiceConfig } from "../../services/service-config"
 import { createPrivateFile } from "@opencode/util/private-file"
 
 export default Runtime.handler(
   Commands.commands.remote,
   Effect.fn("cli.remote")(function* (input) {
-    const options = yield* ServiceConfig.options()
-    const registration = yield* Effect.tryPromise({
-      try: () => readFile(options.file, "utf8"),
-      catch: () => new Error("No managed service registration; remote setup never starts a server"),
-    }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Service.Info))),
-      Effect.mapError(() => new Error("Missing or invalid local service registration")),
-    )
-    const registeredURL = new URL(registration.url)
-    if (
-      registeredURL.protocol !== "http:" ||
-      !["127.0.0.1", "[::1]", "localhost"].includes(registeredURL.hostname) ||
-      registeredURL.username ||
-      registeredURL.password
-    )
-      return yield* Effect.fail(new Error("Remote setup requires a loopback managed service"))
-    const endpoint = yield* Service.discover({ ...options, version: undefined })
-    if (!endpoint)
-      return yield* Effect.fail(new Error("No ready managed service; remote setup never starts or replaces a server"))
-    const url = new URL(endpoint.url)
-    if (url.protocol !== "http:" || !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname))
-      return yield* Effect.fail(new Error("Remote setup requires a loopback managed service"))
-    const request = (route: string, method = "GET", body?: unknown) =>
-      Effect.tryPromise({
-        try: () =>
-          fetch(new URL(route, endpoint.url), {
-            method,
-            headers: { ...Service.headers(endpoint), "content-type": "application/json" },
-            body: body === undefined ? undefined : JSON.stringify(body),
-            redirect: "error",
-            signal: AbortSignal.timeout(10_000),
-          }),
-        catch: () => new Error("Local remote-control request failed; no credential material was printed"),
-      })
-    const statusResponse = yield* request("/api/remote")
-    if (!statusResponse.ok) return yield* Effect.fail(new Error("Backend does not support remote-control setup"))
-    const status = yield* Effect.tryPromise({
-      try: () => statusResponse.json(),
-      catch: () => new Error("Invalid remote status"),
-    }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(RemoteControl.Status)))
-    if (status.processID !== registration.id)
-      return yield* Effect.fail(new Error("Managed service changed during discovery; retry local setup"))
+    const { options, status, request } = yield* RemoteLocal.connect()
     if (input.action === "status") {
       console.log(JSON.stringify(status, null, 2))
       return
     }
+    if (input.action === "attach") return yield* attach(request)
     if (!status.supported) return yield* Effect.fail(new Error("Backend does not support managed remote control"))
     if (input.action === "enroll") {
       if (!status.backendID)
@@ -115,3 +77,59 @@ export default Runtime.handler(
       return yield* Effect.fail(new Error("Running state is shown above; restart persistence was NOT updated"))
   }),
 )
+
+type Request = Effect.Success<ReturnType<typeof RemoteLocal.connect>>["request"]
+
+// The backend's own route on the device tunnel, which `redsun service set remote true` creates: a redsun TUI
+// on another computer attaches with `--server`. The service password is its only protection, so it is opt-in
+// and never printed here.
+const attach = Effect.fnUntraced(function* (request: Request) {
+  const route = (yield* ServiceConfig.read()).remote?.route
+  if (route === undefined)
+    return yield* Effect.fail(
+      new Error("The attach address is off; run `redsun service set remote true` to create it, then run this again"),
+    )
+  const url = yield* attachURL(request, route)
+  process.stdout.write(
+    [
+      "",
+      "  Attach a redsun TUI from another computer:",
+      "",
+      `  OPENCODE_PASSWORD=<password> redsun --server ${url}`,
+      "",
+      "  The password is this computer's service password (`redsun service get password`); it is the only",
+      "  protection on this address, which exposes the whole local API.",
+      "",
+      renderUnicodeCompact(url, { border: 2 })
+        .split("\n")
+        .map((line) => "  " + line)
+        .join(EOL),
+      "",
+    ].join(EOL) + EOL,
+  )
+})
+
+// The service attaches the tunnel in the background, so wait for its URL to appear in server info.
+const attachURL = Effect.fnUntraced(function* (request: Request, route: string) {
+  const decodeInfo = Schema.decodeUnknownEffect(Schema.Struct({ urls: Schema.Array(Schema.String) }))
+  const tunnelURL = Effect.gen(function* () {
+    const hostname = yield* RemoteTunnel.hostname()
+    const response = yield* request("/api/info")
+    if (!response.ok) return yield* Effect.fail(new Error("Server info is unavailable"))
+    const info = yield* Effect.tryPromise({ try: () => response.json(), catch: () => new Error("Invalid server info") }).pipe(
+      Effect.flatMap(decodeInfo),
+    )
+    const expected = hostname === undefined ? undefined : `${route}.${hostname}`
+    const url = info.urls.find((candidate) => expected !== undefined && new URL(candidate).hostname === expected)
+    if (url === undefined) return yield* Effect.fail(new Error("Remote tunnel is not ready"))
+    return url
+  })
+  return yield* tunnelURL.pipe(
+    Effect.retry({ schedule: Schedule.spaced("1 second") }),
+    Effect.timeoutOrElse({
+      duration: "3 minutes",
+      orElse: () =>
+        Effect.fail(new Error("Timed out waiting for the remote tunnel; run `redsun remote attach` again to retry")),
+    }),
+  )
+})

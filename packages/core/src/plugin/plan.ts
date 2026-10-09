@@ -53,7 +53,6 @@ export const Plugin = define({
             resource: path.join(path.relative(location.directory, plans), "*"),
             effect: "allow",
           })
-        item.permissions.push({ action: "external_directory", resource: path.join(plans, "*"), effect: "allow" })
       })
     })
 

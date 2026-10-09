@@ -61,11 +61,14 @@ export type RemoteCompanionApproveOperation<E = never> = (
   input: RemoteCompanionApproveInput,
 ) => Effect.Effect<RemoteCompanionApproveOutput, E>
 
-export type RemoteTailscaleGetOutput = RemoteControl.Tailscale
-export type RemoteTailscaleGetOperation<E = never> = () => Effect.Effect<RemoteTailscaleGetOutput, E>
+export type RemoteTunnelGetOutput = RemoteControl.Tunnel
+export type RemoteTunnelGetOperation<E = never> = () => Effect.Effect<RemoteTunnelGetOutput, E>
 
-export type RemoteTailscaleApplyOutput = RemoteControl.Tailscale
-export type RemoteTailscaleApplyOperation<E = never> = () => Effect.Effect<RemoteTailscaleApplyOutput, E>
+export type RemoteTunnelConfigureInput = { readonly enabled: boolean; readonly rotate?: boolean | undefined }
+export type RemoteTunnelConfigureOutput = RemoteControl.Tunnel
+export type RemoteTunnelConfigureOperation<E = never> = (
+  input: RemoteTunnelConfigureInput,
+) => Effect.Effect<RemoteTunnelConfigureOutput, E>
 
 export type RemoteStatusOutput = RemoteControl.Status
 export type RemoteStatusOperation<E = never> = () => Effect.Effect<RemoteStatusOutput, E>
@@ -95,7 +98,7 @@ export interface RemoteApi<E = never> {
     readonly cancel: RemoteCompanionCancelOperation<E>
     readonly approve: RemoteCompanionApproveOperation<E>
   }
-  readonly tailscale: { readonly get: RemoteTailscaleGetOperation<E>; readonly apply: RemoteTailscaleApplyOperation<E> }
+  readonly tunnel: { readonly get: RemoteTunnelGetOperation<E>; readonly configure: RemoteTunnelConfigureOperation<E> }
   readonly status: RemoteStatusOperation<E>
   readonly policy: RemotePolicyOperation<E>
   readonly enroll: RemoteEnrollOperation<E>
@@ -1737,6 +1740,18 @@ export type IntegrationConnectKeyOperation<E = never> = (
   input: IntegrationConnectKeyInput,
 ) => Effect.Effect<IntegrationConnectKeyOutput, E>
 
+export type IntegrationConnectExternalInput = {
+  readonly integrationID: Integration.ID
+  readonly location?: { readonly directory?: string | undefined } | undefined
+  readonly methodID: Integration.MethodID
+  readonly answer?: Form.Answer | undefined
+  readonly label?: string | undefined
+}
+export type IntegrationConnectExternalOutput = void
+export type IntegrationConnectExternalOperation<E = never> = (
+  input: IntegrationConnectExternalInput,
+) => Effect.Effect<IntegrationConnectExternalOutput, E>
+
 export type IntegrationOauthConnectInput = {
   readonly integrationID: Integration.ID
   readonly location?: { readonly directory?: string | undefined } | undefined
@@ -1827,7 +1842,10 @@ export interface IntegrationApi<E = never> {
   readonly list: IntegrationListOperation<E>
   readonly get: IntegrationGetOperation<E>
   readonly wellknown: { readonly add: IntegrationWellknownAddOperation<E> }
-  readonly connect: { readonly key: IntegrationConnectKeyOperation<E> }
+  readonly connect: {
+    readonly key: IntegrationConnectKeyOperation<E>
+    readonly external: IntegrationConnectExternalOperation<E>
+  }
   readonly oauth: {
     readonly connect: IntegrationOauthConnectOperation<E>
     readonly status: IntegrationOauthStatusOperation<E>

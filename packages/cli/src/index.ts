@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { ensurePluginRuntime } from "@opencode/plugin/runtime"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Env } from "./env"
 import { Cause, Effect } from "effect"
@@ -18,6 +19,8 @@ import { EffectFlock } from "@opencode/util/effect-flock"
 import { Heap } from "./heap"
 import { CpuProfile } from "./cpu-profile"
 
+ensurePluginRuntime()
+
 if (process.env.OPENCODE_SSH_ASKPASS_PORT) {
   const { askpass } = await import("./ssh-askpass")
   process.exit(await Effect.runPromise(askpass.pipe(Effect.provide(NodeServices.layer))))
@@ -32,6 +35,7 @@ const Handlers = Runtime.handlers(Commands, {
   remote: {
     $: () => import("./commands/handlers/remote"),
     companion: () => import("./commands/handlers/remote-companion"),
+    tunnel: () => import("./commands/handlers/remote-tunnel"),
   },
   auth: {
     list: () => import("./commands/handlers/auth/list"),

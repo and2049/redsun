@@ -38,7 +38,7 @@ reviewed in their TUI context.
 - **Tab in keyboard hints is a keycap.** Preserve `Tab` rather than translating it
   as an application tab or the verb “switch”.
 - **Canonical commands remain runnable.** Preserve `redsun remote disable` and
-  `tailscale serve status`, as well as flags, URLs, model IDs and placeholders.
+  `redsun service set hostname 0.0.0.0`, as well as flags, URLs, model IDs and placeholders.
 - **User text remains untouched.** Task descriptions, messages,
   session names and provider errors are interpolated as values, never looked up
   as translation keys.

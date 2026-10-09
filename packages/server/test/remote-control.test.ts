@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Effect, Schedule, Schema, Logger, References } from "effect"
+import { Effect, Fiber, Schedule, Schema, Logger, References } from "effect"
 import { RemoteControl } from "@opencode/schema/remote-control"
 import { Session } from "@opencode/schema/session"
 import { HttpServer } from "effect/unstable/http"
@@ -11,6 +11,7 @@ import { it } from "../../core/test/lib/effect"
 import type { BackendSnapshot } from "redsun-remote-control"
 import { RemoteService } from "../src/remote-control"
 import { RemoteAccess } from "../src/remote-access"
+import type { RemoteTunnel } from "../src/remote-tunnel"
 import { ServerProcess } from "../src/process"
 import { DEFAULT_THEMES } from "@opencode/theme/tui"
 import { StorageError } from "redsun-remote-control"
@@ -61,6 +62,9 @@ test("managed companion starts, restarts, stops and round-trips settings without
   const host: RemoteService.CompanionHost = {
     clear: Effect.sync(() => {
       calls.push("clear")
+    }),
+    reset: Effect.sync(() => {
+      calls.push("reset")
     }),
     start: (options) =>
       Effect.sync(() => {
@@ -118,7 +122,8 @@ test("managed companion starts, restarts, stops and round-trips settings without
         yield* service.enroll({ backendID: service.status().backendID!, credentialID, digest })
         expect(calls.slice(-2)).toEqual(["stop", { origin: "https://fixture.ts.net", port: 43123 }])
         yield* service.configure({ origin: "https://changed.ts.net", port: 43124 })
-        expect(calls.slice(-2)).toEqual(["stop", { origin: "https://changed.ts.net", port: 43124 }])
+        // A new origin invalidates the phone's passkey, so the companion forgets the phone before restarting.
+        expect(calls.slice(-3)).toEqual(["stop", "reset", { origin: "https://changed.ts.net", port: 43124 }])
         for (const origin of [
           "http://fixture.ts.net",
           "https://user:secret@fixture.ts.net",
@@ -175,6 +180,7 @@ test("companion startup errors do not disable policy and enrollment retries star
             undefined,
             {
               clear: Effect.void,
+              reset: Effect.void,
               start: () =>
                 Effect.suspend(() => {
                   attempts++
@@ -572,8 +578,9 @@ it.live(
       const permission = decodePermission(
         yield* read(
           yield* request(`/api/session/${created.data.id}/permission`, "POST", {
-            action: "external_directory",
-            resources: [path.dirname(dir.path)],
+            // Reading an env file still asks by default; external directories stopped asking upstream (v2.0.25).
+            action: "read",
+            resources: [path.join(dir.path, "secrets.env")],
             agent: "compose",
             metadata: { fixtureSecret: "private-permission-metadata" },
           }),
@@ -699,3 +706,165 @@ it.live(
     }).pipe(Effect.provide(captureLogs)),
   30_000,
 )
+
+test("phone access creates a stable tunnel route, fronts the companion and survives disable", async () => {
+  await using dir = await tmpdir()
+  using _environment = companionEnvironment(dir.path)
+  const file = path.join(dir.path, "service.json")
+  const calls: unknown[] = []
+  const host: RemoteService.CompanionHost = {
+    clear: Effect.void,
+    reset: Effect.sync(() => {
+      calls.push("reset")
+    }),
+    start: (options) =>
+      Effect.sync(() => {
+        calls.push(options)
+        return {
+          backend: () => ({ state: "connecting" }) as BackendSnapshot,
+          stop: Effect.sync(() => {
+            calls.push("stop")
+          }),
+          local: {
+            pending: Effect.succeed([]),
+            open: Effect.succeed({ lifetimeMs: 1 }),
+            cancel: Effect.void,
+            recover: Effect.void,
+            approve: () => Effect.void,
+          },
+        }
+      }),
+  }
+  let issued = 0
+  const routes: RemoteTunnel.Routes[] = []
+  let report: RemoteTunnel.Input | undefined
+  // Ends the running attachment the way a fatal tunnel error does: the fiber completes without an interrupt.
+  let stopped: (() => void) | undefined
+  const tunnel: RemoteService.TunnelHost = {
+    ensure: (onIssuing) =>
+      Effect.sync(() => {
+        if (issued++ === 0) onIssuing()
+        return "device.opentunnel.xyz"
+      }),
+    run: (input) =>
+      Effect.callback<void>((resume) => {
+        routes.push(input.routes)
+        report = input
+        stopped = () => resume(Effect.void)
+        return Effect.sync(() => {
+          calls.push("detach")
+          report = undefined
+        })
+      }),
+  }
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* RemoteService.make(file, undefined, undefined, undefined, host, tunnel)
+        expect(yield* service.tunnel.status).toEqual({ enabled: false, state: "off" })
+        const enabled = yield* service.tunnel.configure({ enabled: true })
+        const route = new URL(enabled.origin!).hostname.split(".")[0]!
+        expect(route).toMatch(/^[a-f0-9]{16}$/)
+        expect(enabled).toEqual({ enabled: true, origin: `https://${route}.device.opentunnel.xyz`, state: "waiting" })
+        expect(issued).toBe(1)
+        expect(calls).toEqual([])
+        yield* service.policy(true)
+        expect(calls).toEqual([{ origin: enabled.origin, port: 43123 }])
+        // The route attaches on a forked fiber.
+        yield* Effect.sleep("1 millis")
+        expect(routes).toEqual([{ [route]: "127.0.0.1:43123" }])
+        expect((yield* service.tunnel.status).state).toBe("attaching")
+        report!.onHostname("device.opentunnel.xyz")
+        expect(yield* service.tunnel.status).toEqual({ enabled: true, origin: enabled.origin, state: "ready" })
+        report!.onHostname("other.opentunnel.xyz")
+        expect((yield* service.tunnel.status).error).toContain("hostname changed")
+        expect(yield* service.tunnel.configure({ enabled: false })).toEqual({ enabled: false, state: "off" })
+        expect(calls.at(-1)).toBe("detach")
+        expect((yield* service.companion()).origin).toBe(enabled.origin)
+        const again = yield* service.tunnel.configure({ enabled: true })
+        expect(again.origin).toBe(enabled.origin)
+        yield* Effect.sleep("1 millis")
+        expect(routes.length).toBe(2)
+        expect(calls.filter((call) => call === "stop" || call === "reset")).toEqual([])
+        const rotated = yield* service.tunnel.configure({ enabled: true, rotate: true })
+        expect(rotated.origin).not.toBe(enabled.origin)
+        yield* Effect.sleep("1 millis")
+        // The phone's passkey was bound to the old origin, so the companion forgets it before restarting.
+        expect(calls.slice(-4)).toEqual(["detach", "stop", "reset", { origin: rotated.origin, port: 43123 }])
+        expect(routes.at(-1)).toEqual({ [new URL(rotated.origin!).hostname.split(".")[0]!]: "127.0.0.1:43123" })
+        report!.onFailure!("token rejected")
+        stopped!()
+        yield* Effect.sleep("1 millis")
+        expect(yield* service.tunnel.status).toMatchObject({ state: "failed", error: "token rejected" })
+        // Enabling again after a fatal failure attaches afresh instead of keeping the dead fiber.
+        expect((yield* service.tunnel.configure({ enabled: true })).origin).toBe(rotated.origin)
+        yield* Effect.sleep("1 millis")
+        expect(routes.length).toBe(4)
+        expect(yield* service.tunnel.status).toMatchObject({ state: "attaching" })
+        yield* service.policy(false)
+        expect(calls.slice(-2)).toEqual(["detach", "stop"])
+        expect(yield* service.tunnel.status).toEqual({ enabled: true, origin: rotated.origin, state: "waiting" })
+        const stored = Schema.decodeUnknownSync(
+          Schema.fromJsonString(Schema.Struct({ remote_control: RemoteControl.Settings })),
+        )(yield* Effect.promise(() => readFile(file, "utf8")))
+        expect(stored.remote_control.tunnel).toEqual({
+          enabled: true,
+          route: new URL(rotated.origin!).hostname.split(".")[0],
+        })
+        expect(stored.remote_control.origin).toBe(rotated.origin)
+      }),
+    ),
+  )
+  expect(issued).toBe(4)
+})
+
+test("certificate issuance outlives the request that started it and is shared by overlapping enables", async () => {
+  await using dir = await tmpdir()
+  using _environment = companionEnvironment(dir.path)
+  const file = path.join(dir.path, "service.json")
+  const host: RemoteService.CompanionHost = {
+    clear: Effect.void,
+    reset: Effect.void,
+    start: () => Effect.die("never hosted"),
+  }
+  let issued = 0
+  let finish: ((hostname: string) => void) | undefined
+  let interrupted = 0
+  const tunnel: RemoteService.TunnelHost = {
+    ensure: (onIssuing) =>
+      Effect.callback<string, Error>((resume) => {
+        onIssuing()
+        issued++
+        finish = (hostname) => resume(Effect.succeed(hostname))
+        return Effect.sync(() => {
+          interrupted++
+        })
+      }),
+    run: () => Effect.never,
+  }
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* RemoteService.make(file, undefined, undefined, undefined, host, tunnel)
+        // A CLI that times out, or a TUI that closes, interrupts its request mid-issuance.
+        const first = yield* Effect.forkScoped(service.tunnel.configure({ enabled: true }))
+        yield* Effect.sleep("1 millis")
+        expect(yield* service.tunnel.status).toEqual({ enabled: false, state: "issuing" })
+        yield* Fiber.interrupt(first)
+        expect(interrupted).toBe(0)
+        expect(yield* service.tunnel.status).toEqual({ enabled: false, state: "issuing" })
+        // The next enable joins the issuance in flight instead of starting another.
+        const second = yield* Effect.forkScoped(service.tunnel.configure({ enabled: true }))
+        yield* Effect.sleep("1 millis")
+        expect(issued).toBe(1)
+        finish!("device.opentunnel.xyz")
+        const enabled = yield* Fiber.join(second)
+        expect(enabled).toMatchObject({ enabled: true, state: "waiting" })
+        expect(enabled.origin).toMatch(/^https:\/\/[a-f0-9]{16}\.device\.opentunnel\.xyz$/)
+        expect(yield* service.tunnel.status).toMatchObject({ enabled: true, state: "waiting" })
+      }),
+    ),
+  )
+  expect(issued).toBe(1)
+  expect(interrupted).toBe(0)
+})

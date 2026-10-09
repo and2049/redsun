@@ -82,8 +82,8 @@ it.live(
         ["POST", "/api/remote/companion/registration"],
         ["DELETE", "/api/remote/companion/registration"],
         ["POST", "/api/remote/companion/approval"],
-        ["GET", "/api/remote/tailscale"],
-        ["POST", "/api/remote/tailscale"],
+        ["GET", "/api/remote/tunnel"],
+        ["PUT", "/api/remote/tunnel"],
       ]) {
         const response = yield* Effect.promise(() =>
           handler(

@@ -1,15 +1,15 @@
-import { Context, Effect, Exit, Layer, Schema, Scope, Semaphore, Schedule } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Schema, Scope, Semaphore, Schedule } from "effect"
 import {
   serveCompanion,
-  inspectTailscale,
-  applyServe,
   removeHandoff,
+  recoverBrowser,
   StorageError,
   type BackendSnapshot,
   type Local,
 } from "redsun-remote-control"
 import { RemoteControl } from "@opencode/schema/remote-control"
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto"
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
+import { RemoteTunnel } from "./remote-tunnel"
 import { readFile, rename, mkdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { Bus } from "@opencode/core/bus"
@@ -20,19 +20,23 @@ const Stored = Schema.Struct({
   credentials: Schema.Array(RemoteControl.Enrollment),
   origin: RemoteControl.Settings.fields.origin,
   port: RemoteControl.Settings.fields.port,
+  tunnel: RemoteControl.Settings.fields.tunnel,
 })
 type Stored = typeof Stored.Type
 const decode = Schema.decodeUnknownSync(RemoteControl.Settings)
 
 export type CompanionHost = {
-  start(options: { origin: string; port: number }): Effect.Effect<
-    { local: Local; stop: Effect.Effect<void>; backend: () => BackendSnapshot | undefined },
-    Error
-  >
+  start(options: {
+    origin: string
+    port: number
+  }): Effect.Effect<{ local: Local; stop: Effect.Effect<void>; backend: () => BackendSnapshot | undefined }, Error>
   clear: Effect.Effect<void, Error>
+  /** Forgets the registered phone: its passkey is bound to the companion origin, so a new origin invalidates it. */
+  reset: Effect.Effect<void, Error>
 }
 const defaultHost: CompanionHost = {
   clear: Effect.suspend(() => removeHandoff()),
+  reset: Effect.suspend(() => recoverBrowser()),
   start: (options) =>
     Effect.gen(function* () {
       const scope = yield* Scope.make()
@@ -45,6 +49,18 @@ const defaultHost: CompanionHost = {
     }).pipe(Effect.uninterruptible),
 }
 
+/** The device tunnel that fronts the companion; tests supply a fake so no real tunnel is ever created. */
+export type TunnelHost = {
+  /** Creates the device tunnel when missing and waits for its certificate; resolves to the tunnel hostname. */
+  ensure(onIssuing: () => void): Effect.Effect<string, Error>
+  /** Attaches routes until interrupted; transient failures retry inside, fatal ones report through `onFailure`. */
+  run(input: RemoteTunnel.Input): Effect.Effect<void>
+}
+const defaultTunnel: TunnelHost = {
+  ensure: (onIssuing) => RemoteTunnel.ensure({ onIssuing }).pipe(Effect.mapError((error) => new Error(error.message))),
+  run: (input) => RemoteTunnel.run(input),
+}
+
 export class Principal extends Context.Service<Principal, { readonly id: string; readonly epoch: number }>()(
   "redsun/RemotePrincipal",
 ) {}
@@ -55,8 +71,10 @@ export const make = Effect.fnUntraced(function* (
   now: () => number = () => performance.now(),
   processID = randomUUID(),
   host: CompanionHost = defaultHost,
+  tunnel: TunnelHost = defaultTunnel,
 ) {
   const lock = yield* Semaphore.make(1)
+  const scope = yield* Effect.scope
   let state: Stored = { enabled: false, backendID: randomUUID(), credentials: [] }
   let durableIdentity = false
   let epoch = 0
@@ -112,6 +130,7 @@ export const make = Effect.fnUntraced(function* (
         credentials,
         origin: settings.origin,
         port: settings.port,
+        tunnel: settings.tunnel,
       }
       durableIdentity = settings.backendID !== undefined || (yield* persist(state))
     } else durableIdentity = yield* persist(state)
@@ -126,29 +145,98 @@ export const make = Effect.fnUntraced(function* (
   let hosted: Effect.Success<ReturnType<CompanionHost["start"]>> | undefined
   let error: string | undefined
   const port = () => state.port ?? 43123
+  // The companion's route on the device tunnel runs only while the companion does; the relay has nothing to
+  // forward to otherwise.
+  let attached: Fiber.Fiber<void> | undefined
+  let link: { state: "attaching" | "ready" | "failed"; error?: string } = { state: "attaching" }
+  let issuing = false
+  // Issuing the certificate takes minutes and must outlive the request that started it: a client that gives up
+  // (a CLI timeout, a closed TUI) would otherwise interrupt the issuance. Requests that overlap share one.
+  let issuance: Fiber.Fiber<string, Error> | undefined
+  const ensureHostname = Effect.gen(function* () {
+    if (issuance === undefined || issuance.pollUnsafe() !== undefined)
+      issuance = yield* tunnel
+        .ensure(() => {
+          issuing = true
+        })
+        .pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              issuing = false
+            }),
+          ),
+          Effect.forkIn(scope),
+        )
+    return yield* Fiber.join(issuance)
+  })
+  const stopTunnel = Effect.gen(function* () {
+    const fiber = attached
+    attached = undefined
+    if (fiber) yield* Fiber.interrupt(fiber)
+  })
+  const startTunnel = Effect.gen(function* () {
+    // A fiber that ended (the tunnel stopped for good) is replaced; a live one is kept.
+    if ((attached !== undefined && attached.pollUnsafe() === undefined) || !hosted || !state.tunnel?.enabled) return
+    const route = state.tunnel.route
+    const expected = state.origin === undefined ? undefined : new URL(state.origin).hostname
+    link = { state: "attaching" }
+    attached = yield* tunnel
+      .run({
+        routes: { [route]: `127.0.0.1:${port()}` },
+        onHostname: (hostname) => {
+          if (hostname === undefined) {
+            link = { state: "attaching" }
+            return
+          }
+          link =
+            expected === `${route}.${hostname}`
+              ? { state: "ready" }
+              : {
+                  state: "ready",
+                  error: "Tunnel hostname changed; disable and enable phone access to update the companion origin",
+                }
+        },
+        onFailure: (message) => {
+          link = { state: "failed", error: message }
+        },
+      })
+      .pipe(Effect.forkIn(scope))
+  })
   const stop = Effect.gen(function* () {
+    yield* stopTunnel
     const previous = hosted
     hosted = undefined
     error = undefined
     if (previous) yield* previous.stop
   })
   const start = Effect.gen(function* () {
-    if (hosted || !file || !state.enabled || !state.origin) return
-    yield* host.start({ origin: state.origin, port: port() }).pipe(
-      Effect.match({
-        onSuccess: (value) => {
-          hosted = value
-          error = undefined
-        },
-        onFailure: (failure) => {
-          error =
-            failure instanceof StorageError
-              ? "Companion is not enrolled on this host; enroll a companion first"
-              : failure.message
-        },
-      }),
-    )
+    if (!file || !state.enabled || !state.origin) return
+    if (!hosted)
+      yield* host.start({ origin: state.origin, port: port() }).pipe(
+        Effect.match({
+          onSuccess: (value) => {
+            hosted = value
+            error = undefined
+          },
+          onFailure: (failure) => {
+            error =
+              failure instanceof StorageError
+                ? "Companion is not enrolled on this host; enroll a companion first"
+                : failure.message
+          },
+        }),
+      )
+    yield* startTunnel
   })
+  const tunnelView = (): RemoteControl.Tunnel => {
+    if (!state.tunnel?.enabled) return { enabled: false, state: issuing ? "issuing" : "off" }
+    return {
+      enabled: true,
+      origin: state.origin,
+      state: issuing ? "issuing" : attached === undefined ? "waiting" : link.state,
+      error: attached === undefined ? undefined : link.error,
+    }
+  }
   const stopped = (snapshot: BackendSnapshot | undefined) => {
     if (snapshot?.state !== "stopped") return undefined
     if (snapshot.reason === "refused")
@@ -157,7 +245,13 @@ export const make = Effect.fnUntraced(function* (
   }
   const view = Effect.gen(function* (): Effect.fn.Return<RemoteControl.Companion> {
     const pending = hosted ? yield* hosted.local.pending.pipe(Effect.orElseSucceed(() => [])) : []
-    return { running: hosted !== undefined, error: error ?? stopped(hosted?.backend()), origin: state.origin, port: port(), pending }
+    return {
+      running: hosted !== undefined,
+      error: error ?? stopped(hosted?.backend()),
+      origin: state.origin,
+      port: port(),
+      pending,
+    }
   })
   const localAction = <A>(action: (local: Local) => Effect.Effect<A, Error>) =>
     lock
@@ -228,9 +322,11 @@ export const make = Effect.fnUntraced(function* (
             if (!(yield* persist(next)))
               return yield* Effect.fail(new Error("Unable to persist companion configuration"))
             const changed = state.origin !== next.origin || port() !== next.port
+            const rebound = state.origin !== undefined && state.origin !== next.origin
             state = next
             durableIdentity = true
             if (changed) yield* stop
+            if (rebound) yield* host.reset.pipe(Effect.ignore)
             yield* start
             return yield* view
           }),
@@ -238,9 +334,48 @@ export const make = Effect.fnUntraced(function* (
         .pipe(Effect.uninterruptible),
     registration: { open: localAction((local) => local.open), cancel: localAction((local) => local.cancel) },
     approve: (requestID: string, fingerprint: string) => localAction((local) => local.approve(requestID, fingerprint)),
-    tailscale: {
-      inspect: lock.withPermits(1)(Effect.suspend(() => inspectTailscale(port()))),
-      apply: lock.withPermits(1)(Effect.suspend(() => applyServe(port()))),
+    tunnel: {
+      status: lock.withPermits(1)(Effect.sync(tunnelView)),
+      configure: (config: RemoteControl.TunnelConfig) =>
+        Effect.gen(function* () {
+          if (!file) return yield* Effect.fail(new Error("Remote control requires a managed service"))
+          if (!config.enabled)
+            return yield* lock.withPermits(1)(
+              Effect.gen(function* () {
+                if (state.tunnel?.enabled) {
+                  const next = { ...state, tunnel: { ...state.tunnel, enabled: false } }
+                  if (!(yield* persist(next)))
+                    return yield* Effect.fail(new Error("Unable to persist phone access configuration"))
+                  state = next
+                  yield* stopTunnel
+                }
+                return tunnelView()
+              }).pipe(Effect.uninterruptible),
+            )
+          // Issuing the certificate can take minutes, so it runs outside the lock; nothing is persisted until the
+          // hostname is known, and an interrupted issuance resumes on the next attempt.
+          const route =
+            config.rotate || state.tunnel === undefined ? randomBytes(8).toString("hex") : state.tunnel.route
+          const hostname = yield* ensureHostname
+          const origin = `https://${route}.${hostname}`
+          return yield* lock.withPermits(1)(
+            Effect.gen(function* () {
+              const next = { ...state, tunnel: { enabled: true, route }, origin }
+              if (!(yield* persist(next)))
+                return yield* Effect.fail(new Error("Unable to persist phone access configuration"))
+              const changed = state.origin !== origin || state.tunnel?.route !== route
+              // A companion that starts at a new origin with the old phone's record refuses to run, so the phone is
+              // forgotten here: rotate promises exactly that, and a tunnel whose hostname changed is the same case.
+              const rebound = state.origin !== undefined && state.origin !== origin
+              state = next
+              durableIdentity = true
+              if (changed) yield* stop
+              if (rebound) yield* host.reset.pipe(Effect.ignore)
+              yield* start
+              return tunnelView()
+            }).pipe(Effect.uninterruptible),
+          )
+        }),
     },
     authenticate(header: string) {
       const match = /^Bearer rc1\.([a-f0-9]{32})\.([A-Za-z0-9_-]{43})$/.exec(header)

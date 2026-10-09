@@ -30,14 +30,14 @@ export const RemoteHandler = HttpApiBuilder.group(Api, "server.remote", (handler
           Effect.as(HttpApiSchema.NoContent.make()),
         ),
       )
-      .handle("remote.tailscale", () =>
-        remote.tailscale.inspect.pipe(
-          Effect.mapError((error) => new ServiceUnavailableError({ message: error.message })),
-        ),
-      )
-      .handle("remote.tailscale.apply", () =>
-        remote.tailscale.apply.pipe(
-          Effect.mapError((error) => new ServiceUnavailableError({ message: error.message })),
+      .handle("remote.tunnel", () => remote.tunnel.status)
+      .handle("remote.tunnel.configure", ({ payload }) =>
+        remote.tunnel.configure(payload).pipe(
+          Effect.mapError((error) =>
+            error.message.startsWith("Remote control requires")
+              ? new InvalidRequestError({ message: error.message })
+              : new ServiceUnavailableError({ message: error.message }),
+          ),
         ),
       )
       .handle("remote.status", () => Effect.sync(remote.status))
