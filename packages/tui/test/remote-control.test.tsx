@@ -295,7 +295,7 @@ test("phone approvals stay local and confirmed", async () => {
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Confirm: approve ABCD-EFGH"))
   expect(approved).toBe(0)
-  expect(setup.captureCharFrame()).toContain("must match the phone screen exactly")
+  expect(setup.captureCharFrame()).toContain("match the phone screen exactly")
   setup.mockInput.pressEnter()
   await setup.waitFor(() => approved === 1)
   await setup.waitForFrame((frame) => !frame.includes("Approve phone ABCD-EFGH"))
@@ -433,7 +433,7 @@ test.each(["success", "conflict", "network"] as const)(
     await setup.waitForFrame(
       (frame) =>
         frame.includes(outcome === "success" ? "Change companion origin" : "Enrollment not confirmed") &&
-        frame.includes("Stores the credential for the companion on this host") &&
+        frame.includes("Stores the credential on this host") &&
         !frame.includes("Confirm: enroll a companion on this host"),
       { maxPasses: 500 },
     )
