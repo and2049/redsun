@@ -1,9 +1,12 @@
 # Remote-control integration contract, version 1
 
 This implements the **redsun backend foundation**, not a companion/browser app. No
-Tailscale installation, Serve/Funnel configuration, browser authentication, or public
-listener is supplied. Use a trusted same-OS-user companion. Never forward backend
-credentials or local registration files to browsers.
+browser authentication is supplied by the backend. The companion listens on loopback;
+the managed service can front it with a route on the device's OpenTunnel tunnel (phone
+access, below), terminating TLS in the service process and forwarding plain HTTP to the
+companion. A route is unguessable but is not authentication: the companion's passkeys
+remain the only browser authentication. Use a trusted same-OS-user companion. Never
+forward backend credentials or local registration files to browsers.
 
 ## Policy and identity
 
@@ -105,6 +108,55 @@ credential with equivalent protection, and remove the handoff only after durable
 import. Do not accept a remote/browser-provided file path or backend URL. Do not log
 the handoff, token, Authorization header, request options, or unrestricted registration.
 The trusted OS user, root and Windows administrators are outside this isolation boundary.
+
+## Phone access through OpenTunnel
+
+The companion's public HTTPS origin comes from the device's shared OpenTunnel tunnel
+(`@opentunnel/client`, default profile, Anomaly's hosted relay at `opentunnel.xyz`). The
+tunnel's certificate covers `*.<id>.opentunnel.xyz`; the private key never leaves the
+host; the relay routes by SNI and forwards ciphertext. The managed service claims one
+route per purpose on that tunnel, never the bare hostname.
+
+Companion route (`remote_control.tunnel {enabled, route}` in the service configuration):
+
+- The route is one random DNS label (16 hex characters), generated on first enable and
+  **kept across disable**, because every phone's passkey is bound to the origin it forms.
+  Only `rotate` replaces it, after which every phone must enroll again: whenever the companion
+  origin changes (rotate, a tunnel whose hostname changed, a manually configured origin), the
+  service forgets the registered phone (the companion's `recoverBrowser`) before restarting the
+  companion, because a companion started at a new origin with the old phone record refuses to run.
+- Enabling resolves the tunnel hostname (`RemoteTunnel.ensure`: creates the tunnel and
+  waits for its certificate the first time, which can take minutes and runs outside the
+  RC lock), then persists `tunnel` and `origin = https://<route>.<hostname>` together,
+  restarting the companion when the origin changed. Nothing is persisted when issuance
+  fails. Manual `PUT /api/remote/companion` origins remain supported for self-served HTTPS.
+- The route is attached only while the companion runs (`127.0.0.1:<companion port>`),
+  on a fiber the RC service owns; disable, policy off, revoke and enrollment restarts
+  detach it. A tunnel hostname that no longer matches the persisted origin is reported,
+  not silently adopted.
+- Local-only administration: `GET /api/remote/tunnel` and `PUT /api/remote/tunnel` with
+  `{enabled, rotate?}` return `RemoteControl.Tunnel` (`enabled`, `origin?`, `state:
+  off|issuing|waiting|attaching|ready|failed`, `error?`); `waiting` means enabled while
+  the companion is not running. CLI: `redsun remote tunnel status|enable|disable|rotate`.
+  TUI `/remote`: enable/disable phone access, show phone link (QR of the origin), rotate
+  with confirmation; enabling remote control without an origin enables phone access first.
+- Tests never create a tunnel: `RemoteService.make` takes a `TunnelHost` (`ensure`, `run`)
+  and the suites pass fakes; the real host is `packages/server/src/remote-tunnel.ts`.
+
+Backend route (TUI attach from another computer): `redsun service set remote true` keeps
+upstream OpenCode's mechanism (`remote.route` in the service configuration, created with
+the tunnel in the foreground, forgotten on disable). The service forks the same tunnel
+module with `<route> -> <bound host>:<port>` and lists the URL in `/api/info`.
+`redsun remote attach` waits for that URL and prints it with a QR code; the other
+computer runs `OPENCODE_PASSWORD=<service password> redsun --server <url>`. This exposes
+the **whole local API behind the service password** on a public hostname, so it is a
+separate opt-in from phone access and the password is never printed by `attach`.
+`pair` has no `--remote` flag: redsun ships no web UI, so a pairing link on the backend
+route would only reach a 404.
+
+Trust: Anomaly operates the relay, the zone and certificate issuance (ZeroSSL); traffic
+is end-to-end TLS to this host. Self-hosting is a Cloudflare Worker deployment under
+your own zone (`OPENTUNNEL_API` selects the API origin), not a container.
 
 ## Passive attachment and restart
 
@@ -245,7 +297,7 @@ principal ID. Lease is **30 seconds**, measured with a monotonic clock; send hea
 roughly every 10 seconds. `connected:false` reports companion-ready; `true` reports an
 authenticated browser/control connection. Across live leases, any connected report
 wins. All leases expire and reset at process restart. SSE comments alone never renew
-the lease. This is companion-reported liveness, not a Tailscale connectivity probe.
+the lease. This is companion-reported liveness, not a phone connectivity probe.
 
 Status fields: `supported,enabled,enrolled,backendID?,processID,version:1,leaseSeconds:30`
 and `state:disabled|unavailable|ready|connected`. Enabled without a live lease is
@@ -301,17 +353,18 @@ server-side fetch wrapper. No separate npm package was published.
 
 Canonical contracts: `packages/schema/src/remote-control.ts`, event manifest;
 `packages/protocol/src/groups/remote-{control,catalog}.ts`, API and client group mappings.
-Backend: `packages/server/src/remote-{control,access,projection}.ts`, handlers,
+Backend: `packages/server/src/remote-{control,access,projection,tunnel}.ts`, handlers,
 authorization, process/options/routes and scoped event handling.
-CLI: `commands/handlers/remote.ts`, command registry, server-process, service config and
-registration. Secure file helper: `packages/util/src/private-file.ts`.
+CLI: `commands/handlers/remote{,-tunnel}.ts`, `services/remote-local.ts` (loopback
+preflight shared by both), command registry, server-process (backend route fork), service
+config and registration. Secure file helper: `packages/util/src/private-file.ts`.
 TUI: remote context/dialog, app provider/command and shared workspace status.
 Client: normal generated trees, build type references, export script and test.
 
 Focused coverage is in server `remote-control`, `remote-admission`, `remote-projection`
 tests; CLI `redsun-remote-handoff`; TUI `remote-control`; client `remote-export`.
 Tests use temporary enrollment/configuration, isolated DBs and loopback/in-memory APIs,
-not the developer backend or Tailscale/provider credentials. The execution-survival
+not the developer backend, a real tunnel, or provider credentials. The execution-survival
 test uses a deterministic runner barrier, not a paid model request.
 
 Verification commands are run from their package directories:
@@ -344,7 +397,7 @@ registrations. Its fixtures still use `state/opencode` rather than `state/redsun
 known mismatch recorded in project memory; that broader suite is **not** reported as
 passing. The RC tests use correct isolated paths and do not share that fixture.
 
-No browser, Tailscale or cross-host end-to-end validation is claimed. Windows private
+No browser, tunnel or cross-host end-to-end validation is claimed. Windows private
 file creation/ACL is exercised here; POSIX exclusive 0600 creation needs execution on
 Linux/macOS CI. There is no automatic reconciling import/resume CLI, no optional directory
 root policy, no external authorization-form UI, no per-browser lease identity, and no

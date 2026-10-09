@@ -238,19 +238,19 @@
         }
       }
     },
-    "/api/remote/tailscale": {
+    "/api/remote/tunnel": {
       "get": {
         "tags": ["server.remote"],
-        "operationId": "v2.remote.tailscale.get",
+        "operationId": "v2.remote.tunnel.get",
         "parameters": [],
         "security": [],
         "responses": {
           "200": {
-            "description": "RemoteControl.Tailscale",
+            "description": "RemoteControl.Tunnel",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RemoteControl.Tailscale"
+                  "$ref": "#/components/schemas/RemoteControl.Tunnel"
                 }
               }
             }
@@ -271,34 +271,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServiceUnavailableErrorEncoded"
                 }
               }
             }
           }
         }
       },
-      "post": {
+      "put": {
         "tags": ["server.remote"],
-        "operationId": "v2.remote.tailscale.apply",
+        "operationId": "v2.remote.tunnel.configure",
         "parameters": [],
         "security": [],
         "responses": {
           "200": {
-            "description": "RemoteControl.Tailscale",
+            "description": "RemoteControl.Tunnel",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RemoteControl.Tailscale"
+                  "$ref": "#/components/schemas/RemoteControl.Tunnel"
                 }
               }
             }
@@ -308,7 +298,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -333,6 +330,16 @@
               }
             }
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteControl.TunnelConfig"
+              }
+            }
+          },
+          "required": true
         }
       }
     },
@@ -7525,6 +7532,141 @@
         }
       }
     },
+    "/api/integration/{integrationID}/connect/external": {
+      "post": {
+        "tags": ["integration"],
+        "operationId": "integration.connect.external",
+        "parameters": [
+          {
+            "name": "integrationID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "directory": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "IntegrationNotFoundError | LocationNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/IntegrationNotFoundErrorEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocationNotFoundErrorEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Run an external authentication method and store a reference to its credential source.",
+        "summary": "Connect with external credentials",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "methodID": {
+                    "type": "string"
+                  },
+                  "answer": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Form.Answer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": ["methodID"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/integration/{integrationID}/connect/oauth": {
       "post": {
         "tags": ["integration"],
@@ -10415,7 +10557,7 @@
             }
           }
         },
-        "description": "Serve one file relative to the requested location.",
+        "description": "Stream one file relative to the requested location with ETag, Last-Modified, and single-range HTTP Range support (206 Partial Content, 416 Range Not Satisfiable, and 304 Not Modified; multi-range and malformed Range headers fall back to 200).",
         "summary": "Read file"
       }
     },
@@ -16089,7 +16231,7 @@
                   "properties": {
                     "action": {
                       "type": "string",
-                      "enum": ["provider.use", "permission"]
+                      "enum": ["provider.use", "tool.use", "integration.use"]
                     },
                     "resource": {
                       "type": "string"
@@ -16742,7 +16884,7 @@
           },
           "method": {
             "type": "string",
-            "enum": ["key", "oauth"]
+            "enum": ["key", "oauth", "external"]
           },
           "status": {
             "$ref": "#/components/schemas/Connection.Status"
@@ -16843,6 +16985,23 @@
         "required": ["id", "integrationID", "label", "active", "value"],
         "additionalProperties": false
       },
+      "Credential.External": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["external"]
+          },
+          "methodID": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": ["type", "methodID"],
+        "additionalProperties": false
+      },
       "Credential.Key": {
         "type": "object",
         "properties": {
@@ -16897,6 +17056,9 @@
           },
           {
             "$ref": "#/components/schemas/Credential.Key"
+          },
+          {
+            "$ref": "#/components/schemas/Credential.External"
           }
         ]
       },
@@ -17150,6 +17312,18 @@
         }
       },
       "Form.Fields_2": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "$ref": "#/components/schemas/Form.Field"
+          }
+        ],
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/Form.Field"
+        }
+      },
+      "Form.Fields_3": {
         "type": "array",
         "prefixItems": [
           {
@@ -18136,6 +18310,26 @@
         "required": ["type", "names"],
         "additionalProperties": false
       },
+      "Integration.ExternalMethod": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["external"]
+          },
+          "label": {
+            "type": "string"
+          },
+          "form": {
+            "$ref": "#/components/schemas/Form.Fields_3"
+          }
+        },
+        "required": ["id", "type", "label"],
+        "additionalProperties": false
+      },
       "Integration.Info": {
         "type": "object",
         "properties": {
@@ -18191,6 +18385,9 @@
           },
           {
             "$ref": "#/components/schemas/Integration.KeyMethod"
+          },
+          {
+            "$ref": "#/components/schemas/Integration.ExternalMethod"
           },
           {
             "$ref": "#/components/schemas/Integration.EnvMethod"
@@ -18751,6 +18948,12 @@
             "type": "boolean"
           },
           "supportsPromptCacheKey": {
+            "type": "boolean"
+          },
+          "supportsThinkingBlockBinding": {
+            "type": "boolean"
+          },
+          "supportsEffortUpdates": {
             "type": "boolean"
           }
         },
@@ -20266,26 +20469,6 @@
         "required": ["supported", "enabled", "state", "enrolled", "processID", "version", "leaseSeconds"],
         "additionalProperties": false
       },
-      "RemoteControl.Tailscale": {
-        "type": "object",
-        "properties": {
-          "host": {
-            "type": "string"
-          },
-          "origin": {
-            "type": "string"
-          },
-          "certificate": {
-            "type": "boolean"
-          },
-          "mapping": {
-            "type": "string",
-            "enum": ["missing", "ready", "conflict"]
-          }
-        },
-        "required": ["host", "origin", "certificate", "mapping"],
-        "additionalProperties": false
-      },
       "RemoteControl.Theme": {
         "type": "object",
         "properties": {
@@ -20550,6 +20733,39 @@
           }
         },
         "required": ["name", "mode", "colors"],
+        "additionalProperties": false
+      },
+      "RemoteControl.Tunnel": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["off", "issuing", "waiting", "attaching", "ready", "failed"]
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": ["enabled", "state"],
+        "additionalProperties": false
+      },
+      "RemoteControl.TunnelConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rotate": {
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
         "additionalProperties": false
       },
       "Rpc.Input": {

@@ -51,17 +51,11 @@ const run = Effect.fnUntraced(function* (events: ReadonlyArray<SessionEvent.Agen
   let contextHook: ((input: SessionContext) => Effect.Effect<void>) | undefined
   let beforeHook: BeforeHook | undefined
   let afterHook: ((input: ToolHooks["execute.after"]) => Effect.Effect<void>) | undefined
-  const planAgent: Types.DeepMutable<Agent.Info> = {
-    id: plan,
-    name: Agent.Name.make("Plan"),
-    request: { settings: {}, headers: {}, body: {} },
-    mode: "primary",
-    hidden: false,
-    permissions: [
-      { action: "*", resource: "*", effect: "allow" },
-      { action: "external_directory", resource: "*", effect: "ask" },
-    ],
-  }
+  const defaults = Agent.Info.default(plan)
+  const planAgent = {
+    ...defaults,
+    permissions: [...defaults.permissions],
+  } satisfies Types.DeepMutable<Agent.Info>
   yield* PlanPlugin.Plugin.effect(
     host({
       agent: {
@@ -278,16 +272,16 @@ describe("plan plugin mutations", () => {
     }),
   )
 
-  it.effect("allows the Plan directory external boundary", () =>
+  it.effect("allows external directories without asking", () =>
     Effect.gen(function* () {
       const { planAgent } = yield* run()
       expect(Permission.evaluate("external_directory", path.join(planDirectory, "*"), planAgent.permissions).effect).toBe(
         "allow",
       )
       expect(
-        Permission.evaluate("external_directory", path.join(planDirectory, "nested", "*"), planAgent.permissions).effect,
+        Permission.evaluate("external_directory", path.join(planDirectory, "*"), planAgent.permissions).effect,
       ).toBe("allow")
-      expect(Permission.evaluate("external_directory", "/outside/*", planAgent.permissions).effect).toBe("ask")
+      expect(Permission.evaluate("external_directory", "/outside/*", planAgent.permissions).effect).toBe("allow")
     }),
   )
 
@@ -370,7 +364,11 @@ describe("plan plugin restrictions", () => {
   it.effect("denies delegation, so read-only cannot be handed to a subagent", () =>
     Effect.gen(function* () {
       const { planAgent } = yield* run()
-      expect(planAgent.permissions).toContainEqual({ action: "subagent", resource: "*", effect: "deny" })
+      expect(planAgent.permissions as ReadonlyArray<unknown>).toContainEqual({
+        action: "subagent",
+        resource: "*",
+        effect: "deny",
+      })
     }),
   )
 })

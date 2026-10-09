@@ -57,6 +57,8 @@ const npmLayer = Layer.succeed(
 
 const generateLayer = Layer.succeed(Generate.Service, Generate.Service.of({ text: () => Effect.succeed("") }))
 
+const configLayer = Config.testLayer()
+
 const permissionLayer = Layer.succeed(
   Permission.Service,
   Permission.Service.of({
@@ -80,6 +82,7 @@ const nodes = LayerNode.group([
   Location.node,
   Npm.node,
   Credential.node,
+  Config.node,
   Bus.node,
   DelegatedRuntime.node,
   Form.node,
@@ -119,12 +122,15 @@ const nodes = LayerNode.group([
 const replacements = [
   Location.node.replace(tempLocationLayer),
   Npm.node.replace(npmLayer),
-  Config.node.replace(Config.testLayer()),
+  Config.node.replace(configLayer),
   Mcp.node.replace(emptyMcpLayer),
   Generate.node.replace(generateLayer),
 ]
 
-export const PluginTestLayer = AppNodeBuilder.build(nodes, [...replacements, Permission.node.replace(permissionLayer)])
+export const PluginTestLayer = AppNodeBuilder.build(nodes, [
+  ...replacements,
+  Permission.node.replace(permissionLayer),
+]).pipe(Layer.provideMerge(configLayer))
 
 /** The same graph with the real permission service, for tests that exercise host policy. */
-export const PluginPermissionTestLayer = AppNodeBuilder.build(nodes, replacements)
+export const PluginPermissionTestLayer = AppNodeBuilder.build(nodes, replacements).pipe(Layer.provideMerge(configLayer))

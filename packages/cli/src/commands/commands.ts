@@ -66,9 +66,11 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
   },
   commands: [
     Spec.make("remote", {
-      description: "Manage local remote-control policy, enrollment, and the companion",
+      description: "Manage local remote-control policy, enrollment, the companion, and remote attachment",
       params: {
-        action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke"]),
+        action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke", "attach"]).pipe(
+          Argument.withDescription("attach prints the address another computer's TUI uses with --server"),
+        ),
         handoff: Flag.string("handoff").pipe(
           Flag.withDescription("New private local handoff file for enrollment"),
           Flag.optional,
@@ -78,6 +80,14 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         Spec.make("companion", {
           description: "Run the local remote-control companion",
           params: { args: Argument.string("args").pipe(Argument.variadic({ min: 0 })) },
+        }),
+        Spec.make("tunnel", {
+          description: "Phone access to the companion through the device's OpenTunnel tunnel",
+          params: {
+            action: Argument.choice("action", ["status", "enable", "disable", "rotate"]).pipe(
+              Argument.withDescription("rotate issues a new address; every phone must enroll again"),
+            ),
+          },
         }),
       ],
     }),
@@ -97,18 +107,8 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       },
     }),
     Spec.make("uninstall", {
-      description: "Uninstall redsun and remove all related files",
+      description: "Uninstall redsun, keeping session data, configuration, and state",
       params: {
-        keepConfig: Flag.boolean("keep-config").pipe(
-          Flag.withAlias("c"),
-          Flag.withDescription("Keep configuration files"),
-          Flag.withDefault(false),
-        ),
-        keepData: Flag.boolean("keep-data").pipe(
-          Flag.withAlias("d"),
-          Flag.withDescription("Keep session data and snapshots"),
-          Flag.withDefault(false),
-        ),
         dryRun: Flag.boolean("dry-run").pipe(
           Flag.withDescription("Show what would be removed without removing"),
           Flag.withDefault(false),
@@ -120,7 +120,15 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
         ),
       },
     }),
-    Spec.make("acp", { description: "Start an Agent Client Protocol server" }),
+    Spec.make("acp", {
+      description: "Start an Agent Client Protocol server",
+      params: {
+        login: Flag.boolean("login").pipe(
+          Flag.withDescription("Run auth login instead of starting the server"),
+          Flag.withDefault(false),
+        ),
+      },
+    }),
     Spec.make("api", {
       description: "Make a request to the running server",
       params: {

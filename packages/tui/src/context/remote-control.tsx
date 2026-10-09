@@ -23,7 +23,7 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
     const [status, setStatus] = createSignal<RemoteControl.Status>()
     const [error, setError] = createSignal<string>()
     const [companion, setCompanion] = createSignal<RemoteControl.Companion>()
-    const [tailscaleState, setTailscaleState] = createSignal<RemoteControl.Tailscale>()
+    const [tunnelState, setTunnelState] = createSignal<RemoteControl.Tunnel>()
     const [phoneRegistered, setPhoneRegistered] = createSignal(false)
     createEffect(() => {
       if (status()?.state === "connected") setPhoneRegistered(true)
@@ -39,9 +39,20 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         if (active && request === companionGeneration) setCompanion(undefined)
       }
     }
+    let tunnelGeneration = 0
+    const refreshTunnel = async () => {
+      const request = ++tunnelGeneration
+      try {
+        const value = await client.api.remote.tunnel.get()
+        if (active && request === tunnelGeneration) setTunnelState(value)
+      } catch {
+        if (active && request === tunnelGeneration) setTunnelState(undefined)
+      }
+    }
     const subscribe = () => {
       subscribers++
       void refreshCompanion()
+      void refreshTunnel()
       onCleanup(() => subscribers--)
     }
     let active = true
@@ -65,7 +76,9 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
     const unsubscribe = client.event.on("remote.status", () => void refresh())
     const timer = setInterval(() => void refresh(), 5000)
     const companionTimer = setInterval(() => {
-      if (subscribers > 0) void refreshCompanion()
+      if (subscribers === 0) return
+      void refreshCompanion()
+      void refreshTunnel()
     }, 2000)
     onCleanup(() => {
       active = false
@@ -110,21 +123,21 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
     }
     const configure = (config: RemoteControl.CompanionConfig) =>
       action(async () => {
+        const previous = companion()?.origin
         const result = await client.api.remote.companion.configure(config)
         setCompanion(result)
-        setTailscaleState(undefined)
+        // The phone's passkey is bound to the origin; a new origin means registering again.
+        if (previous !== undefined && result.origin !== previous) setPhoneRegistered(false)
+        await refreshTunnel()
         return result
       })
-    const tailscale = () =>
+    const configureTunnel = (config: RemoteControl.TunnelConfig) =>
       action(async () => {
-        const result = await client.api.remote.tailscale.get()
-        setTailscaleState(result)
-        return result
-      })
-    const applyTailscale = () =>
-      action(async () => {
-        const result = await client.api.remote.tailscale.apply()
-        setTailscaleState(result)
+        const previous = tunnelState()?.origin
+        const result = await client.api.remote.tunnel.configure(config)
+        tunnelGeneration++
+        setTunnelState(result)
+        if (previous !== undefined && result.origin !== previous) setPhoneRegistered(false)
         return result
       })
     const enroll = async () => {
@@ -186,9 +199,9 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
       phoneRegistered,
       subscribe,
       configure,
-      tailscale,
-      tailscaleState,
-      applyTailscale,
+      tunnelState,
+      refreshTunnel,
+      configureTunnel,
       register: () =>
         action(async () => {
           await client.api.remote.companion.register()

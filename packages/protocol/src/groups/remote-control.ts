@@ -35,16 +35,16 @@ export const RemoteControlGroup = HttpApiGroup.make("server.remote")
     }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.companion.approve" })),
   )
   .add(
-    HttpApiEndpoint.get("remote.tailscale", "/api/remote/tailscale", {
-      success: RemoteControl.Tailscale,
-      error: ServiceUnavailableError,
-    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.tailscale.get" })),
+    HttpApiEndpoint.get("remote.tunnel", "/api/remote/tunnel", {
+      success: RemoteControl.Tunnel,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.tunnel.get" })),
   )
   .add(
-    HttpApiEndpoint.post("remote.tailscale.apply", "/api/remote/tailscale", {
-      success: RemoteControl.Tailscale,
-      error: ServiceUnavailableError,
-    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.tailscale.apply" })),
+    HttpApiEndpoint.put("remote.tunnel.configure", "/api/remote/tunnel", {
+      payload: RemoteControl.TunnelConfig,
+      success: RemoteControl.Tunnel,
+      error: [InvalidRequestError, ServiceUnavailableError],
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.remote.tunnel.configure" })),
   )
   .add(
     HttpApiEndpoint.get("remote.status", "/api/remote", { success: RemoteControl.Status }).annotateMerge(

@@ -31,7 +31,7 @@
       "packages/*"
     ],
     "catalog": {
-      "@anthropic-ai/claude-agent-sdk": "0.3.292",
+      "@anthropic-ai/claude-agent-sdk": "0.3.295",
       "@effect/opentelemetry": "4.0.0-rc.112",
       "@effect/platform-node": "4.0.0-rc.112",
       "@effect/platform-node-shared": "4.0.0-rc.112",
@@ -42,9 +42,9 @@
       "@octokit/rest": "22.0.0",
       "@hono/standard-validator": "0.2.0",
       "@hono/zod-validator": "0.4.2",
-      "@opentui/core": "0.5.14",
-      "@opentui/keymap": "0.5.14",
-      "@opentui/solid": "0.5.14",
+      "@opentui/core": "0.5.17",
+      "@opentui/keymap": "0.5.17",
+      "@opentui/solid": "0.5.17",
       "@tanstack/solid-virtual": "3.13.37",
       "@shikijs/stream": "4.4.3",
       "@standard-schema/spec": "1.1.0",
@@ -165,6 +165,6 @@
     "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
     "@ff-labs/fff-bun@0.10.5": "patches/@ff-labs%2Ffff-bun@0.10.5.patch",
     "@modelcontextprotocol/client@2.0.0": "patches/@modelcontextprotocol%2Fclient@2.0.0.patch",
-    "@opentui/core@0.5.14": "patches/@opentui%2Fcore@0.5.14.patch"
+    "@opentui/core@0.5.17": "patches/@opentui%2Fcore@0.5.17.patch"
   }
 }

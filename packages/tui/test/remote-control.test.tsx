@@ -130,7 +130,7 @@ function companionEnvironment(directory: string) {
   }
 }
 
-test("enable prompts for detected origin, configures, then enables", async () => {
+test("enable turns on phone access to obtain the origin, then enables", async () => {
   await using temporary = await tmpdir()
   using _environment = companionEnvironment(temporary.path)
   const actions: string[] = []
@@ -158,8 +158,14 @@ test("enable prompts for detected origin, configures, then enables", async () =>
         }
         return json(companion)
       }
-      if (url.pathname === "/api/remote/tailscale")
-        return json({ host: "fixture.ts.net", origin: "https://fixture.ts.net", certificate: true, mapping: "ready" })
+      if (url.pathname === "/api/remote/tunnel") {
+        if (request.method === "PUT") {
+          actions.push("tunnel:enable")
+          companion = { ...companion, origin: "https://abcd1234abcd1234.device.opentunnel.xyz" }
+          return json({ enabled: true, origin: companion.origin, state: "waiting" })
+        }
+        return json({ enabled: false, state: "off" })
+      }
       if (url.pathname === "/api/remote/policy") {
         actions.push("enable")
         status = { ...status, enabled: true, state: "unavailable" }
@@ -171,13 +177,12 @@ test("enable prompts for detected origin, configures, then enables", async () =>
   await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Enable remote control"))
+  await setup.waitForFrame((frame) => frame.includes("Enable remote control") && frame.includes("Phone access: off"))
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Companion origin") && frame.includes("https://fixture.ts.net"))
-  expect(actions).toEqual([])
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Disable remote control"))
-  expect(actions).toEqual(["configure:https://fixture.ts.net", "enable"])
+  await setup.waitForFrame(
+    (frame) => frame.includes("Disable remote control") && frame.includes("abcd1234abcd1234.device.opentunnel.xyz"),
+  )
+  expect(actions).toEqual(["tunnel:enable", "enable"])
 })
 
 test.each(["success", "registered"] as const)(
@@ -204,8 +209,7 @@ test.each(["success", "registered"] as const)(
           })
         if (url.pathname === "/api/remote/companion")
           return json({ running: true, origin: "https://fixture.ts.net", port: 43123, pending: [] })
-        if (url.pathname === "/api/remote/tailscale")
-          return json({ host: "fixture.ts.net", origin: "https://fixture.ts.net", certificate: true, mapping: "ready" })
+        if (url.pathname === "/api/remote/tunnel") return json({ enabled: false, state: "off" })
         if (url.pathname === "/api/remote/companion/registration") {
           actions.push(request.method)
           if (outcome === "registered")
@@ -223,7 +227,8 @@ test.each(["success", "registered"] as const)(
     await setup.mockInput.typeText("/remote")
     setup.mockInput.pressEnter()
     await setup.waitForFrame((frame) => frame.includes("Register a phone"))
-    for (let i = 0; i < 4; i++) setup.mockInput.pressArrow("down")
+    // disable, enroll, revoke, enable phone access, change origin, register
+    for (let i = 0; i < 5; i++) setup.mockInput.pressArrow("down")
     setup.mockInput.pressEnter()
     await setup.waitForFrame((frame) =>
       frame.includes(
@@ -243,101 +248,126 @@ test.each(["success", "registered"] as const)(
   },
 )
 
-test.each(["missing", "conflict", "ready"] as const)(
-  "phone approvals and Tailscale %s stay local and confirmed",
-  async (mapping) => {
-    await using temporary = await tmpdir()
-    using _environment = companionEnvironment(temporary.path)
-    let approved = 0
-    let applied = 0
-    let inspected = 0
-    let companion: RemoteControl.Companion = {
-      running: true,
-      origin: "https://fixture.ts.net",
-      port: 43123,
-      pending: [{ requestID: "fixture-request", fingerprint: "ABCD-EFGH" }],
-    }
-    let tailscale: RemoteControl.Tailscale = {
-      host: "fixture.ts.net",
-      origin: "https://fixture.ts.net",
-      certificate: mapping !== "conflict",
-      mapping,
-    }
-    const status: RemoteControl.Status = {
-      supported: true,
-      enabled: true,
-      enrolled: true,
-      state: "ready",
-      backendID: "fixture",
-      processID: "process",
-      version: 1,
-      leaseSeconds: 30,
-    }
-    await using setup = await createAppFixture({
-      state: temporary.path,
-      width: 160,
-      height: 60,
-      fetch: async (url, request) => {
-        if (url.pathname === "/api/remote") return json(status)
-        if (url.pathname === "/api/remote/companion") return json(companion)
-        if (url.pathname === "/api/remote/tailscale") {
-          if (request.method === "POST") {
-            applied++
-            tailscale = { ...tailscale, mapping: "ready" }
-          } else inspected++
-          return json(tailscale)
-        }
-        if (url.pathname === "/api/remote/companion/approval") {
-          expect(Schema.decodeUnknownSync(RemoteControl.Approval)(await request.json())).toEqual(companion.pending[0])
-          approved++
-          companion = { ...companion, pending: [] }
-          return new Response(null, { status: 204 })
-        }
-      },
-    })
-    await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("/RC"))
-    expect(inspected).toBe(0)
-    await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
-    await setup.mockInput.typeText("/remote")
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame(
-      (frame) => frame.includes("Approve phone ABCD-EFGH") && frame.includes("Inspect Tailscale Serve"),
-    )
-    expect(applied).toBe(0)
-    expect(inspected).toBe(1)
-    for (let i = 0; i < 5; i++) setup.mockInput.pressArrow("down")
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Confirm: approve ABCD-EFGH"))
-    expect(approved).toBe(0)
-    expect(setup.captureCharFrame()).toContain("must match the phone screen exactly")
-    setup.mockInput.pressEnter()
-    await setup.waitFor(() => approved === 1)
-    await setup.waitForFrame((frame) => !frame.includes("Approve phone ABCD-EFGH"))
-    await setup.renderOnce()
-    if (mapping === "missing") {
-      setup.mockInput.pressArrow("up")
-      setup.mockInput.pressEnter()
-      await setup.waitForFrame((frame) =>
-        frame.includes("Confirm: tailscale serve --bg --https=443 http://127.0.0.1:43123"),
-      )
-      expect(applied).toBe(0)
-      setup.mockInput.pressEnter()
-      await setup.waitForFrame(
-        (frame) => !frame.includes("Map Tailscale Serve") && !frame.includes("Confirm: tailscale"),
-      )
-      expect(applied).toBe(1)
-    } else {
-      expect(setup.captureCharFrame()).not.toContain("Map Tailscale Serve to the companion")
-      if (mapping === "conflict") {
-        expect(setup.captureCharFrame()).toContain("inspect tailscale serve status")
-        expect(setup.captureCharFrame()).toContain(
-          "Enable HTTPS certificates: https://tailscale.com/kb/1153/enabling-https",
-        )
+test("phone approvals stay local and confirmed", async () => {
+  await using temporary = await tmpdir()
+  using _environment = companionEnvironment(temporary.path)
+  let approved = 0
+  let companion: RemoteControl.Companion = {
+    running: true,
+    origin: "https://fixture.ts.net",
+    port: 43123,
+    pending: [{ requestID: "fixture-request", fingerprint: "ABCD-EFGH" }],
+  }
+  const status: RemoteControl.Status = {
+    supported: true,
+    enabled: true,
+    enrolled: true,
+    state: "ready",
+    backendID: "fixture",
+    processID: "process",
+    version: 1,
+    leaseSeconds: 30,
+  }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    width: 160,
+    height: 60,
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion") return json(companion)
+      if (url.pathname === "/api/remote/tunnel") return json({ enabled: false, state: "off" })
+      if (url.pathname === "/api/remote/companion/approval") {
+        expect(Schema.decodeUnknownSync(RemoteControl.Approval)(await request.json())).toEqual(companion.pending[0])
+        approved++
+        companion = { ...companion, pending: [] }
+        return new Response(null, { status: 204 })
       }
-    }
-  },
-)
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Approve phone ABCD-EFGH") && frame.includes("Phone access: off"))
+  // disable, enroll, revoke, enable phone access, change origin, register, approve
+  for (let i = 0; i < 6; i++) setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Confirm: approve ABCD-EFGH"))
+  expect(approved).toBe(0)
+  expect(setup.captureCharFrame()).toContain("must match the phone screen exactly")
+  setup.mockInput.pressEnter()
+  await setup.waitFor(() => approved === 1)
+  await setup.waitForFrame((frame) => !frame.includes("Approve phone ABCD-EFGH"))
+})
+
+test("phone access is enabled, shown as a link and rotated through the tunnel endpoint", async () => {
+  await using temporary = await tmpdir()
+  using _environment = companionEnvironment(temporary.path)
+  const configured: RemoteControl.TunnelConfig[] = []
+  let tunnel: RemoteControl.Tunnel = { enabled: false, state: "off" }
+  let companion: RemoteControl.Companion = { running: false, port: 43123, pending: [] }
+  const status: RemoteControl.Status = {
+    supported: true,
+    enabled: true,
+    enrolled: true,
+    state: "unavailable",
+    backendID: "fixture",
+    processID: "process",
+    version: 1,
+    leaseSeconds: 30,
+  }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    width: 160,
+    height: 60,
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion") return json(companion)
+      if (url.pathname === "/api/remote/tunnel") {
+        if (request.method === "PUT") {
+          const config = Schema.decodeUnknownSync(RemoteControl.TunnelConfig)(await request.json())
+          configured.push(config)
+          const origin = `https://${config.rotate ? "feedbeefcafe0123" : "abcd1234abcd1234"}.device.opentunnel.xyz`
+          tunnel = config.enabled ? { enabled: true, origin, state: "ready" } : { enabled: false, state: "off" }
+          companion = { ...companion, origin: config.enabled ? origin : companion.origin }
+        }
+        return json(tunnel)
+      }
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Enable phone access") && frame.includes("Phone access: off"))
+  expect(setup.captureCharFrame()).not.toContain("Show phone link")
+  // disable, enroll, revoke, enable phone access
+  for (let i = 0; i < 3; i++) setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame(
+    (frame) =>
+      frame.includes("Phone access: ready") &&
+      frame.includes("https://abcd1234abcd1234.device.opentunnel.xyz") &&
+      frame.includes("Rotate phone address"),
+  )
+  expect(configured).toEqual([{ enabled: true }])
+  // disable, enroll, revoke, disable phone access, show phone link, rotate
+  for (let i = 0; i < 2; i++) setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Confirm: new phone address; every phone must enroll again"))
+  expect(configured.length).toBe(1)
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("https://feedbeefcafe0123.device.opentunnel.xyz"))
+  expect(configured).toEqual([{ enabled: true }, { enabled: true, rotate: true }])
+  setup.mockInput.pressArrow("up")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame(
+    (frame) => frame.includes("Phone link") && frame.includes("Scan to open the companion on a phone"),
+  )
+  expect(setup.captureCharFrame()).toContain("https://feedbeefcafe0123.device.opentunnel.xyz")
+})
 
 test.each(["success", "conflict", "network"] as const)(
   "enrollment %s is private and store-first",
@@ -420,7 +450,7 @@ test.each(["success", "conflict", "network"] as const)(
       for (const line of [
         "Enable remote control so the companion can attach.",
         "Change companion origin",
-        "Companion-reported status; not a Tailscale connectivity test.",
+        "Companion-reported status; not a phone connectivity test.",
       ])
         expect(frame.replace(/\s/g, "")).toContain(line.replace(/\s/g, ""))
       expect(status.enabled).toBe(false)

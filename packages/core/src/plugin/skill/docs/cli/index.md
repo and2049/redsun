@@ -84,15 +84,8 @@ redsun uninstall --dry-run
 ```
 
 Run `redsun uninstall` to confirm removal. redsun stops registered background services and persistent terminals before
-removing global data, cache, configuration, and state. These directories are shared by redsun versions and channels.
+removing the global cache directory, which is shared by redsun versions and channels. Session data, configuration, and
+state are never removed.
 
-To retain configuration and session data:
-
-```bash
-redsun uninstall --keep-config --keep-data
-```
-
-- `--keep-config` (`-c`) retains configuration files.
-- `--keep-data` (`-d`) retains session data and snapshots. Cache and state are still removed.
 - `--force` (`-f`) skips confirmation; use it for noninteractive removal.
 - Curl and PowerShell installations print the final command to remove the executable manually.

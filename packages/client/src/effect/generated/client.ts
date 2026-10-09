@@ -12,8 +12,9 @@ import type {
   RemoteCompanionCancelOutput,
   RemoteCompanionApproveInput,
   RemoteCompanionApproveOutput,
-  RemoteTailscaleGetOutput,
-  RemoteTailscaleApplyOutput,
+  RemoteTunnelGetOutput,
+  RemoteTunnelConfigureInput,
+  RemoteTunnelConfigureOutput,
   RemoteStatusOutput,
   RemotePolicyInput,
   RemotePolicyOutput,
@@ -159,6 +160,8 @@ import type {
   IntegrationWellknownAddOutput,
   IntegrationConnectKeyInput,
   IntegrationConnectKeyOutput,
+  IntegrationConnectExternalInput,
+  IntegrationConnectExternalOutput,
   IntegrationOauthConnectInput,
   IntegrationOauthConnectOutput,
   IntegrationOauthStatusInput,
@@ -354,11 +357,15 @@ const EndpointRemoteCompanionApprove = (raw: RawClient["server.remote"]) => (inp
     }).pipe(Effect.mapError(mapClientError)),
   )
 
-const EndpointRemoteTailscaleGet = (raw: RawClient["server.remote"]) => () =>
-  preserveEffect<RemoteTailscaleGetOutput>()(raw["remote.tailscale"]({}).pipe(Effect.mapError(mapClientError)))
+const EndpointRemoteTunnelGet = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteTunnelGetOutput>()(raw["remote.tunnel"]({}).pipe(Effect.mapError(mapClientError)))
 
-const EndpointRemoteTailscaleApply = (raw: RawClient["server.remote"]) => () =>
-  preserveEffect<RemoteTailscaleApplyOutput>()(raw["remote.tailscale.apply"]({}).pipe(Effect.mapError(mapClientError)))
+const EndpointRemoteTunnelConfigure = (raw: RawClient["server.remote"]) => (input: RemoteTunnelConfigureInput) =>
+  preserveEffect<RemoteTunnelConfigureOutput>()(
+    raw["remote.tunnel.configure"]({ payload: { enabled: input["enabled"], rotate: input["rotate"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
 
 const EndpointRemoteStatus = (raw: RawClient["server.remote"]) => () =>
   preserveEffect<RemoteStatusOutput>()(raw["remote.status"]({}).pipe(Effect.mapError(mapClientError)))
@@ -391,7 +398,7 @@ const adaptGroupRemote = (raw: RawClient["server.remote"]) => ({
     cancel: EndpointRemoteCompanionCancel(raw),
     approve: EndpointRemoteCompanionApprove(raw),
   },
-  tailscale: { get: EndpointRemoteTailscaleGet(raw), apply: EndpointRemoteTailscaleApply(raw) },
+  tunnel: { get: EndpointRemoteTunnelGet(raw), configure: EndpointRemoteTunnelConfigure(raw) },
   status: EndpointRemoteStatus(raw),
   policy: EndpointRemotePolicy(raw),
   enroll: EndpointRemoteEnroll(raw),
@@ -1078,6 +1085,16 @@ const EndpointIntegrationConnectKey = (raw: RawClient["server.integration"]) => 
     }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointIntegrationConnectExternal =
+  (raw: RawClient["server.integration"]) => (input: IntegrationConnectExternalInput) =>
+    preserveEffect<IntegrationConnectExternalOutput>()(
+      raw["integration.connect.external"]({
+        params: { integrationID: input["integrationID"] },
+        query: { location: input["location"] },
+        payload: { methodID: input["methodID"], answer: input["answer"], label: input["label"] },
+      }).pipe(Effect.mapError(mapClientError)),
+    )
+
 const EndpointIntegrationOauthConnect =
   (raw: RawClient["server.integration"]) => (input: IntegrationOauthConnectInput) =>
     preserveEffect<IntegrationOauthConnectOutput>()(
@@ -1146,7 +1163,7 @@ const adaptGroupIntegration = (raw: RawClient["server.integration"]) => ({
   list: EndpointIntegrationList(raw),
   get: EndpointIntegrationGet(raw),
   wellknown: { add: EndpointIntegrationWellknownAdd(raw) },
-  connect: { key: EndpointIntegrationConnectKey(raw) },
+  connect: { key: EndpointIntegrationConnectKey(raw), external: EndpointIntegrationConnectExternal(raw) },
   oauth: {
     connect: EndpointIntegrationOauthConnect(raw),
     status: EndpointIntegrationOauthStatus(raw),

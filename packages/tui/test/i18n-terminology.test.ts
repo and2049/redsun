@@ -22,8 +22,8 @@ test("keyboard hints and recovery commands retain their executable identifiers",
         "Backend identity has not been persisted; fix service configuration access and run remote disable to initialize it.",
       ),
     ).toContain("redsun remote disable")
-    expect(translate(locale, "Tailscale Serve mapping conflicts; inspect tailscale serve status.")).toContain(
-      "tailscale serve status",
+    expect(translate(locale, "Run `redsun service set hostname 0.0.0.0` to access the service remotely.")).toContain(
+      "redsun service set hostname 0.0.0.0",
     )
   }
 })

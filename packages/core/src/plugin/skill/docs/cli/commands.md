@@ -535,12 +535,6 @@ Preview what would be removed.
 $ redsun uninstall --dry-run
 ```
 
-Keep configuration and session data.
-
-```bash
-$ redsun uninstall --keep-config --keep-data
-```
-
 View all subcommands and flags.
 
 ```bash

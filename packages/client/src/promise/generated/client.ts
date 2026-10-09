@@ -6,8 +6,9 @@ import type {
   RemoteCompanionCancelOutput,
   RemoteCompanionApproveInput,
   RemoteCompanionApproveOutput,
-  RemoteTailscaleGetOutput,
-  RemoteTailscaleApplyOutput,
+  RemoteTunnelGetOutput,
+  RemoteTunnelConfigureInput,
+  RemoteTunnelConfigureOutput,
   RemoteStatusOutput,
   RemotePolicyInput,
   RemotePolicyOutput,
@@ -153,6 +154,8 @@ import type {
   IntegrationWellknownAddOutput,
   IntegrationConnectKeyInput,
   IntegrationConnectKeyOutput,
+  IntegrationConnectExternalInput,
+  IntegrationConnectExternalOutput,
   IntegrationOauthConnectInput,
   IntegrationOauthConnectOutput,
   IntegrationOauthStatusInput,
@@ -519,23 +522,24 @@ export function make(options: ClientOptions) {
             requestOptions,
           ),
       },
-      tailscale: {
+      tunnel: {
         get: (requestOptions?: RequestOptions) =>
-          request<RemoteTailscaleGetOutput>(
+          request<RemoteTunnelGetOutput>(
             {
               method: "GET",
-              path: `/api/remote/tailscale`,
+              path: `/api/remote/tunnel`,
               successStatus: 200,
-              declaredStatuses: [400, 401, 503],
+              declaredStatuses: [400, 401],
               empty: false,
             },
             requestOptions,
           ),
-        apply: (requestOptions?: RequestOptions) =>
-          request<RemoteTailscaleApplyOutput>(
+        configure: (input: RemoteTunnelConfigureInput, requestOptions?: RequestOptions) =>
+          request<RemoteTunnelConfigureOutput>(
             {
-              method: "POST",
-              path: `/api/remote/tailscale`,
+              method: "PUT",
+              path: `/api/remote/tunnel`,
+              body: { enabled: input["enabled"], rotate: input["rotate"] },
               successStatus: 200,
               declaredStatuses: [400, 401, 503],
               empty: false,
@@ -1500,6 +1504,19 @@ export function make(options: ClientOptions) {
               path: `/api/integration/${encodeURIComponent(input.integrationID)}/connect/key`,
               query: { location: input["location"] },
               body: { key: input["key"], answer: input["answer"], label: input["label"] },
+              successStatus: 204,
+              declaredStatuses: [400, 401, 404],
+              empty: true,
+            },
+            requestOptions,
+          ),
+        external: (input: IntegrationConnectExternalInput, requestOptions?: RequestOptions) =>
+          request<IntegrationConnectExternalOutput>(
+            {
+              method: "POST",
+              path: `/api/integration/${encodeURIComponent(input.integrationID)}/connect/external`,
+              query: { location: input["location"] },
+              body: { methodID: input["methodID"], answer: input["answer"], label: input["label"] },
               successStatus: 204,
               declaredStatuses: [400, 401, 404],
               empty: true,
