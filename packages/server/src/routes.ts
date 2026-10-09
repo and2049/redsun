@@ -83,10 +83,14 @@ const applicationServiceNodes = [
 ] as const
 const applicationServices = LayerNode.group(applicationServiceNodes)
 
+/** Receives the public backend URL whenever the computers route attaches or drops, for `/api/info` `urls`. */
+export type ComputerURLs = (urls: ReadonlyArray<string>) => void
+
 export function createRoutes(
   options: ServerOptions = {},
   serviceURLs: () => ReadonlyArray<string> = () => [],
   overrides: LayerNode.Replacements = [],
+  onComputerURLs?: ComputerURLs,
 ) {
   return makeRoutes(
     options.password
@@ -95,6 +99,8 @@ export function createRoutes(
     options,
     serviceURLs,
     overrides,
+    undefined,
+    onComputerURLs,
   )
 }
 
@@ -123,7 +129,15 @@ function makeRoutes<AuthError, AuthServices>(
   // Runtime-profile replacements (e.g. workerd) applied after the standard set, so later entries win.
   overrides: LayerNode.Replacements,
   instances?: InstanceNode,
+  onComputerURLs?: ComputerURLs,
 ) {
+  // The computers route targets the backend's own loopback address: the first plain-HTTP URL the server reports.
+  const local = () => {
+    const url = serviceURLs().find((candidate) => candidate.startsWith("http://"))
+    if (url === undefined) return undefined
+    const parsed = new URL(url)
+    return `${parsed.hostname}:${parsed.port || 80}`
+  }
   const standard: LayerNode.Replacements = [
     Database.node.replace(Database.configured(options.database)),
     PersistentPty.node.replace(PersistentPty.configured(options.pty)),
@@ -194,9 +208,11 @@ function makeRoutes<AuthError, AuthServices>(
         Layer.provide(schemaErrorLayer),
         Layer.provide(auth),
         Layer.provide(
-          RemoteService.layer(options.remoteControl?.file, options.remoteControl?.processID).pipe(
-            Layer.provide(services),
-          ),
+          RemoteService.layer(options.remoteControl?.file, options.remoteControl?.processID, {
+            registration: options.remoteControl?.registration,
+            local,
+            onComputerURLs,
+          }).pipe(Layer.provide(services)),
         ),
         HttpRouter.provideRequest(requestServices),
         Layer.provideMerge(services),

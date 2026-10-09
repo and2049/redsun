@@ -2237,12 +2237,12 @@
       "legacy": ["Disable remote control"]
     },
     "remote.theEnrolledCompanionMayAttachPersistsInThe": {
-      "message": "The enrolled companion may attach. Persists in the service configuration.",
+      "message": "Lets the enrolled companion attach.",
       "context": "remote",
       "legacy": ["The enrolled companion may attach. Persists in the service configuration."]
     },
     "remote.companionAccessEndsImmediatelyEnrollmentAndRunningTasks": {
-      "message": "Companion access ends immediately; enrollment and running tasks are kept.",
+      "message": "Enrollment and running tasks are kept.",
       "context": "remote",
       "legacy": ["Companion access ends immediately; enrollment and running tasks are kept."]
     },
@@ -2257,7 +2257,7 @@
       "legacy": ["Enroll a companion"]
     },
     "remote.storesTheCredentialForTheCompanionOnThis": {
-      "message": "Stores the credential for the companion on this host. Does not enable remote control.",
+      "message": "Stores the credential on this host.",
       "context": "remote",
       "legacy": ["Stores the credential for the companion on this host. Does not enable remote control."]
     },
@@ -2272,7 +2272,7 @@
       "legacy": ["Revoke companion credentials"]
     },
     "remote.allCompanionCredentialsAreRemovedCompanionMustEnroll": {
-      "message": "All companion credentials are removed; companion must enroll again. Requires confirmation.",
+      "message": "The companion must enroll again.",
       "context": "remote",
       "legacy": ["All companion credentials are removed; companion must enroll again. Requires confirmation."]
     },
@@ -2302,7 +2302,7 @@
       "legacy": ["Approve phone {{fingerprint}}"]
     },
     "remote.theFingerprintMustMatchThePhoneScreenExactly": {
-      "message": "The fingerprint must match the phone screen exactly.",
+      "message": "Must match the phone screen exactly.",
       "context": "remote",
       "legacy": ["The fingerprint must match the phone screen exactly."]
     },
@@ -2312,7 +2312,7 @@
       "legacy": ["Enable phone access"]
     },
     "remote.createsAPublicHttpsAddressForTheCompanion": {
-      "message": "Creates a public HTTPS address for the companion through OpenTunnel; phones open it directly.",
+      "message": "Public HTTPS address through OpenTunnel.",
       "context": "remote",
       "legacy": ["Creates a public HTTPS address for the companion through OpenTunnel; phones open it directly."]
     },
@@ -2322,7 +2322,7 @@
       "legacy": ["Disable phone access"]
     },
     "remote.theAddressIsKeptSoEnrolledPhonesKeepWorking": {
-      "message": "The address is kept, so enrolled phones keep working when it is enabled again.",
+      "message": "The address is kept for enrolled phones.",
       "context": "remote",
       "legacy": ["The address is kept, so enrolled phones keep working when it is enabled again."]
     },

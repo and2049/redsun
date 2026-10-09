@@ -48,7 +48,6 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
   options: ServerOptions,
   lifecycle?: Lifecycle<E, R>,
   transform?: Transform,
-  remoteURLs?: () => ReadonlyArray<string>,
 ) {
   const password = options.password
   if (!password) return yield* Effect.fail(new Error("Missing server password"))
@@ -63,7 +62,9 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
     const host = address.family === "IPv6" ? `[${address.address}]` : address.address
     return ServerInfo.connectionURLs(`http://${host}:${address.port}`, hostname)
   }
-  const urls = () => [...localURLs(), ...(remoteURLs?.() ?? [])]
+  // The remote-control service publishes the public backend URL while its computers route is attached.
+  const computers = { urls: [] as ReadonlyArray<string> }
+  const urls = () => [...localURLs(), ...computers.urls]
   const application = yield* Ref.make(Option.none<App>())
   const app = dispatch(password, status, application, options.app?.version ?? "unknown", urls, Global.Path.tmp)
   // Request fibers may continue inbound trace context, but must not inherit the server startup parent.
@@ -101,6 +102,10 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
           password,
         },
         urls,
+        [],
+        (list) => {
+          computers.urls = list
+        },
       ).pipe(Layer.provideMerge(NodeHttpServer.layerHttpServices)),
       applicationScope,
     )

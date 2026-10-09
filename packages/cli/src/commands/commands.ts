@@ -69,7 +69,7 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       description: "Manage local remote-control policy, enrollment, the companion, and remote attachment",
       params: {
         action: Argument.choice("action", ["status", "enable", "disable", "enroll", "revoke", "attach"]).pipe(
-          Argument.withDescription("attach prints the address another computer's TUI uses with --server"),
+          Argument.withDescription("attach is the older name of `remote computers pair`"),
         ),
         handoff: Flag.string("handoff").pipe(
           Flag.withDescription("New private local handoff file for enrollment"),
@@ -89,7 +89,23 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
             ),
           },
         }),
+        Spec.make("computers", {
+          description: "Computer access: this redsun on its own tunnel address, for TUIs on other computers",
+          params: {
+            action: Argument.choice("action", ["status", "enable", "disable", "rotate", "pair"]).pipe(
+              Argument.withDescription(
+                "pair prints a one-time link for `redsun attach`; rotate issues a new address and every computer pairs again",
+              ),
+            ),
+          },
+        }),
       ],
+    }),
+    Spec.make("attach", {
+      description: "Attach to another computer's redsun with the one-time link from its /remote dialog",
+      params: {
+        link: Argument.string("link").pipe(Argument.withDescription("https://<address>/auth/connect/<code>")),
+      },
     }),
     Spec.make("upgrade", {
       description: "Upgrade redsun to the latest or a specific version",

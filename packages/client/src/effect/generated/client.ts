@@ -15,6 +15,11 @@ import type {
   RemoteTunnelGetOutput,
   RemoteTunnelConfigureInput,
   RemoteTunnelConfigureOutput,
+  RemoteComputersGetOutput,
+  RemoteComputersConfigureInput,
+  RemoteComputersConfigureOutput,
+  RemoteComputersPairingOutput,
+  RemoteEnableOutput,
   RemoteStatusOutput,
   RemotePolicyInput,
   RemotePolicyOutput,
@@ -27,6 +32,7 @@ import type {
   ServerPairOutput,
   ServerConnectInput,
   ServerConnectOutput,
+  ServerSessionOutput,
   LocationGetInput,
   LocationGetOutput,
   LocationReloadOutput,
@@ -367,6 +373,24 @@ const EndpointRemoteTunnelConfigure = (raw: RawClient["server.remote"]) => (inpu
     ),
   )
 
+const EndpointRemoteComputersGet = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteComputersGetOutput>()(raw["remote.computers"]({}).pipe(Effect.mapError(mapClientError)))
+
+const EndpointRemoteComputersConfigure = (raw: RawClient["server.remote"]) => (input: RemoteComputersConfigureInput) =>
+  preserveEffect<RemoteComputersConfigureOutput>()(
+    raw["remote.computers.configure"]({ payload: { enabled: input["enabled"], rotate: input["rotate"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointRemoteComputersPairing = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteComputersPairingOutput>()(
+    raw["remote.computers.pairing"]({}).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointRemoteEnable = (raw: RawClient["server.remote"]) => () =>
+  preserveEffect<RemoteEnableOutput>()(raw["remote.enable"]({}).pipe(Effect.mapError(mapClientError)))
+
 const EndpointRemoteStatus = (raw: RawClient["server.remote"]) => () =>
   preserveEffect<RemoteStatusOutput>()(raw["remote.status"]({}).pipe(Effect.mapError(mapClientError)))
 
@@ -399,6 +423,12 @@ const adaptGroupRemote = (raw: RawClient["server.remote"]) => ({
     approve: EndpointRemoteCompanionApprove(raw),
   },
   tunnel: { get: EndpointRemoteTunnelGet(raw), configure: EndpointRemoteTunnelConfigure(raw) },
+  computers: {
+    get: EndpointRemoteComputersGet(raw),
+    configure: EndpointRemoteComputersConfigure(raw),
+    pairing: EndpointRemoteComputersPairing(raw),
+  },
+  enable: EndpointRemoteEnable(raw),
   status: EndpointRemoteStatus(raw),
   policy: EndpointRemotePolicy(raw),
   enroll: EndpointRemoteEnroll(raw),
@@ -417,10 +447,14 @@ const EndpointServerConnect = (raw: RawClient["server.server"]) => (input: Serve
     raw["server.connect"]({ params: { code: input["code"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointServerSession = (raw: RawClient["server.server"]) => () =>
+  preserveEffect<ServerSessionOutput>()(raw["server.session"]({}).pipe(Effect.mapError(mapClientError)))
+
 const adaptGroupServer = (raw: RawClient["server.server"]) => ({
   info: EndpointServerInfo(raw),
   pair: EndpointServerPair(raw),
   connect: EndpointServerConnect(raw),
+  session: EndpointServerSession(raw),
 })
 
 const EndpointLocationGet = (raw: RawClient["server.location"]) => (input?: LocationGetInput) =>

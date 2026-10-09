@@ -66,6 +66,7 @@ test("managed companion starts, restarts, stops and round-trips settings without
     reset: Effect.sync(() => {
       calls.push("reset")
     }),
+    import: () => Effect.void,
     start: (options) =>
       Effect.sync(() => {
         calls.push(options)
@@ -181,6 +182,7 @@ test("companion startup errors do not disable policy and enrollment retries star
             {
               clear: Effect.void,
               reset: Effect.void,
+              import: () => Effect.void,
               start: () =>
                 Effect.suspend(() => {
                   attempts++
@@ -717,6 +719,7 @@ test("phone access creates a stable tunnel route, fronts the companion and survi
     reset: Effect.sync(() => {
       calls.push("reset")
     }),
+    import: () => Effect.void,
     start: (options) =>
       Effect.sync(() => {
         calls.push(options)
@@ -825,6 +828,7 @@ test("certificate issuance outlives the request that started it and is shared by
   const host: RemoteService.CompanionHost = {
     clear: Effect.void,
     reset: Effect.void,
+    import: () => Effect.void,
     start: () => Effect.die("never hosted"),
   }
   let issued = 0
@@ -867,4 +871,155 @@ test("certificate issuance outlives the request that started it and is shared by
   )
   expect(issued).toBe(1)
   expect(interrupted).toBe(0)
+})
+
+test("computer access attaches the backend route, publishes its URL, keeps the route across disable and migrates the legacy key", async () => {
+  await using dir = await tmpdir()
+  using _environment = companionEnvironment(dir.path)
+  const file = path.join(dir.path, "service.json")
+  // Upstream's `service set remote true` wrote the route at the top level; it is folded into `computers` on load.
+  await writeFile(file, JSON.stringify({ password: "kept", remote: { route: "0123456789abcdef" } }))
+  const host: RemoteService.CompanionHost = {
+    clear: Effect.void,
+    reset: Effect.void,
+    import: () => Effect.void,
+    start: () => Effect.die("never hosted"),
+  }
+  const routes: RemoteTunnel.Routes[] = []
+  const published: ReadonlyArray<string>[] = []
+  let report: RemoteTunnel.Input | undefined
+  let issued = 0
+  const tunnel: RemoteService.TunnelHost = {
+    ensure: () =>
+      Effect.sync(() => {
+        issued++
+        return "device.opentunnel.xyz"
+      }),
+    run: (input) =>
+      Effect.callback<void>(() => {
+        routes.push(input.routes)
+        report = input
+        return Effect.sync(() => {
+          report = undefined
+        })
+      }),
+  }
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const service = yield* RemoteService.make(file, undefined, undefined, undefined, host, tunnel, {
+          local: () => "127.0.0.1:4096",
+          onComputerURLs: (urls) => {
+            published.push(urls)
+          },
+        })
+        yield* Effect.sleep("1 millis")
+        expect(routes).toEqual([{ "0123456789abcdef": "127.0.0.1:4096" }])
+        expect(yield* service.computers.status).toMatchObject({ enabled: true, state: "attaching" })
+        expect((yield* service.computers.origin.pipe(Effect.flip)).message).toContain("not ready")
+        report!.onHostname("device.opentunnel.xyz")
+        const origin = "https://0123456789abcdef.device.opentunnel.xyz"
+        expect(yield* service.computers.status).toEqual({ enabled: true, origin, state: "ready" })
+        expect(yield* service.computers.origin).toBe(origin)
+        expect(published).toEqual([[origin]])
+        const stored = JSON.parse(yield* Effect.promise(() => readFile(file, "utf8")))
+        expect(stored.remote).toBeUndefined()
+        expect(stored.password).toBe("kept")
+        expect(stored.remote_control.computers).toEqual({ enabled: true, route: "0123456789abcdef" })
+
+        expect(yield* service.computers.configure({ enabled: false })).toEqual({ enabled: false, state: "off" })
+        expect(report).toBeUndefined()
+        expect(published.at(-1)).toEqual([])
+        expect((yield* service.computers.origin.pipe(Effect.flip)).message).toContain("off")
+        const again = yield* service.computers.configure({ enabled: true })
+        yield* Effect.sleep("1 millis")
+        expect(again.origin).toBe(origin)
+        expect(routes.at(-1)).toEqual({ "0123456789abcdef": "127.0.0.1:4096" })
+        expect(issued).toBe(1)
+        const rotated = yield* service.computers.configure({ enabled: true, rotate: true })
+        yield* Effect.sleep("1 millis")
+        expect(rotated.origin).not.toBe(origin)
+        expect(Object.keys(routes.at(-1)!)[0]).toMatch(/^[a-f0-9]{16}$/)
+        report!.onHostname("device.opentunnel.xyz")
+        expect(published.at(-1)).toEqual([rotated.origin!])
+        const final = JSON.parse(yield* Effect.promise(() => readFile(file, "utf8")))
+        expect(final.remote_control.computers).toEqual({
+          enabled: true,
+          route: new URL(rotated.origin!).hostname.split(".")[0],
+          origin: rotated.origin,
+        })
+        // Phone access is untouched by any of this.
+        expect(yield* service.tunnel.status).toEqual({ enabled: false, state: "off" })
+      }),
+    ),
+  )
+  expect(published.at(-1)).toEqual([])
+})
+
+test("enable turns phone access on in one call: enrolls a companion once, creates the address and enables the policy", async () => {
+  await using dir = await tmpdir()
+  using _environment = companionEnvironment(dir.path)
+  const file = path.join(dir.path, "service.json")
+  const imports: RemoteControl.Handoff[] = []
+  const starts: unknown[] = []
+  const host: RemoteService.CompanionHost = {
+    clear: Effect.void,
+    reset: Effect.void,
+    import: (handoff) =>
+      Effect.sync(() => {
+        imports.push(handoff)
+      }),
+    start: (options) =>
+      Effect.sync(() => {
+        starts.push(options)
+        return {
+          backend: () => ({ state: "connecting" }) as BackendSnapshot,
+          stop: Effect.void,
+          local: {
+            pending: Effect.succeed([]),
+            open: Effect.succeed({ lifetimeMs: 1 }),
+            cancel: Effect.void,
+            recover: Effect.void,
+            approve: () => Effect.void,
+          },
+        }
+      }),
+  }
+  const tunnel: RemoteService.TunnelHost = {
+    ensure: () => Effect.succeed("device.opentunnel.xyz"),
+    run: () => Effect.never,
+  }
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const without = yield* RemoteService.make(file, undefined, undefined, undefined, host, tunnel)
+        expect((yield* without.enable.pipe(Effect.flip)).message).toContain("registration is unknown")
+        const service = yield* RemoteService.make(file, undefined, undefined, undefined, host, tunnel, {
+          registration: path.join(dir.path, "service.json.remote"),
+        })
+        const access = yield* service.enable
+        expect(imports).toHaveLength(1)
+        expect(imports[0]).toMatchObject({
+          version: 1,
+          backendID: service.status().backendID,
+          registration: path.join(dir.path, "service.json.remote"),
+        })
+        expect(access.status).toMatchObject({ enabled: true, enrolled: true })
+        expect(access.tunnel.enabled).toBe(true)
+        expect(access.tunnel.origin).toMatch(/^https:\/\/[a-f0-9]{16}\.device\.opentunnel\.xyz$/)
+        expect(access.companion).toMatchObject({ running: true, origin: access.tunnel.origin })
+        expect(starts).toEqual([{ origin: access.tunnel.origin, port: 43123 }])
+        const stored = Schema.decodeUnknownSync(
+          Schema.fromJsonString(Schema.Struct({ remote_control: RemoteControl.Settings })),
+        )(yield* Effect.promise(() => readFile(file, "utf8")))
+        expect(stored.remote_control.credentials).toHaveLength(1)
+        expect(stored.remote_control.credentials![0]!.digest).toMatch(/^[a-f0-9]{64}$/)
+        // A second call changes nothing: no new credential, same address.
+        const repeat = yield* service.enable
+        expect(imports).toHaveLength(1)
+        expect(repeat.tunnel.origin).toBe(access.tunnel.origin)
+        expect(starts).toHaveLength(1)
+      }),
+    ),
+  )
 })

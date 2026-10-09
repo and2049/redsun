@@ -56,7 +56,7 @@ export default Runtime.handler(
         `  If port ${url.port} is busy locally, forward another port and use it in the link.`,
         "",
         "  To connect from other devices, run `redsun service set hostname 0.0.0.0`.",
-        "  To attach a redsun TUI from another computer, run `redsun remote attach`.",
+        "  To attach a redsun TUI from another computer, run `redsun remote computers pair`.",
         "",
       ].join(EOL) + EOL,
     )

@@ -9,6 +9,15 @@ export type RemoteControlTunnel = {
   error?: string
 }
 
+export type RemoteControlComputers = {
+  enabled: boolean
+  origin?: string
+  state: "off" | "issuing" | "waiting" | "attaching" | "ready" | "failed"
+  error?: string
+}
+
+export type RemoteControlPairing = { link: string; code: string; expires_in: number }
+
 export type RemoteControlStatus = {
   supported: boolean
   enabled: boolean
@@ -1843,6 +1852,12 @@ export type WorktreeList = Array<WorktreeDirectory>
 
 export type VcsInfo = { provider?: string; branch: VcsBranch }
 
+export type RemoteControlAccess = {
+  status: RemoteControlStatus
+  tunnel: RemoteControlTunnel
+  companion: RemoteControlCompanion
+}
+
 export type SessionInboxMove = {
   id: string
   sessionID: string
@@ -3008,6 +3023,19 @@ export type RemoteTunnelConfigureInput = {
 
 export type RemoteTunnelConfigureOutput = RemoteControlTunnel
 
+export type RemoteComputersGetOutput = RemoteControlComputers
+
+export type RemoteComputersConfigureInput = {
+  readonly enabled: { readonly enabled: boolean; readonly rotate?: boolean }["enabled"]
+  readonly rotate?: { readonly enabled: boolean; readonly rotate?: boolean }["rotate"]
+}
+
+export type RemoteComputersConfigureOutput = RemoteControlComputers
+
+export type RemoteComputersPairingOutput = RemoteControlPairing
+
+export type RemoteEnableOutput = RemoteControlAccess
+
 export type RemoteStatusOutput = RemoteControlStatus
 
 export type RemotePolicyInput = { readonly enabled: { readonly enabled: boolean }["enabled"] }
@@ -3043,6 +3071,8 @@ export type ServerPairOutput = PairingCode
 export type ServerConnectInput = { readonly code: { readonly code: string }["code"] }
 
 export type ServerConnectOutput = PairingSession
+
+export type ServerSessionOutput = PairingSession
 
 export type LocationGetInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]

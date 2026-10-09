@@ -3,6 +3,7 @@ import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client/pro
 import { OPENCODE_VERSION } from "../version"
 import { Effect, Redacted } from "effect"
 import { Env } from "../env"
+import { Attachments } from "./attachments"
 import { ServiceConfig } from "./service-config"
 import { Standalone } from "./standalone"
 
@@ -23,19 +24,38 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
     return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
   if (args.server !== undefined) {
     const password = yield* Env.password
+    // Without a password in the environment, a token from `redsun attach <link>` stands in for it.
+    const attachment = password ? undefined : yield* Attachments.lookup(args.server)
+    const secret = password ? Redacted.value(password) : attachment?.token
     const endpoint = {
       url: args.server,
-      auth: password ? { type: "basic" as const, username: "opencode", password: Redacted.value(password) } : undefined,
+      auth: secret ? { type: "basic" as const, username: "opencode", password: secret } : undefined,
     } satisfies Endpoint
     const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
     const health = yield* Effect.tryPromise({
       try: () => client.server.info({ signal: AbortSignal.timeout(5_000) }),
-      catch: (cause) => connectError(endpoint, cause),
+      catch: (cause) => connectError(endpoint, cause, attachment !== undefined),
     })
     if (health.version !== OPENCODE_VERSION)
       process.stderr.write(
         `Warning: Server at ${endpoint.url} has version ${health.version}; this client is ${OPENCODE_VERSION}. Continuing anyway.\n`,
       )
+    // A token that is about to lapse is swapped for a fresh one, so a regularly used attachment never expires.
+    if (attachment !== undefined && attachment.expires - Date.now() / 1000 < Attachments.RENEW_WITHIN_SECONDS) {
+      const renewed = yield* Effect.tryPromise(() =>
+        client.server.session({ signal: AbortSignal.timeout(5_000) }),
+      ).pipe(
+        Effect.flatMap((session) => Attachments.remember(endpoint.url, session.token)),
+        Effect.option,
+      )
+      if (renewed._tag === "Some")
+        return {
+          endpoint: {
+            ...endpoint,
+            auth: { type: "basic" as const, username: "opencode", password: renewed.value.token },
+          },
+        } satisfies Resolved
+    }
     return { endpoint } satisfies Resolved
   }
   if (args.standalone || (yield* ServiceConfig.read()).disabled === true) {
@@ -84,12 +104,14 @@ const resolveManaged = Effect.fnUntraced(function* (options: EnsureOptions, mism
   return yield* Service.ensure(options)
 })
 
-function connectError(endpoint: Endpoint, cause: unknown) {
+function connectError(endpoint: Endpoint, cause: unknown, attached = false) {
   if (isUnauthorizedError(cause)) {
     return new Error(
       endpoint.auth === undefined
-        ? `Server at ${endpoint.url} requires a password; set OPENCODE_PASSWORD`
-        : `Server at ${endpoint.url} rejected the password`,
+        ? `Server at ${endpoint.url} requires a password; set OPENCODE_PASSWORD or pair with \`redsun attach <link>\``
+        : attached
+          ? `Server at ${endpoint.url} no longer accepts this computer's pairing; ask for a new link and run \`redsun attach <link>\``
+          : `Server at ${endpoint.url} rejected the password`,
       { cause },
     )
   }

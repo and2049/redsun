@@ -16,7 +16,6 @@ import { RetainedImage } from "./services/retained-image"
 import { ServiceRegistration } from "./services/service-registration"
 import { Updater } from "./services/updater"
 import { EffectFlock } from "@opencode/util/effect-flock"
-import { RemoteTunnel } from "@opencode/server/remote-tunnel"
 import { WebUi } from "./services/web-ui"
 import { databasePath } from "./database-path"
 
@@ -93,7 +92,6 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
       if (!password) return yield* Effect.fail(new Error("Missing server password"))
       const instanceID = randomUUID()
       const transform = yield* WebUi.handler()
-      const remote = { urls: [] as ReadonlyArray<string> }
       const launch = start(
         {
           app: {
@@ -106,7 +104,13 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
           cors: options.cors ?? config.cors,
           password,
           remoteControl:
-            options.mode === "service" ? { file: yield* ServiceConfig.configPath, processID: instanceID } : undefined,
+            serviceOptions === undefined
+              ? undefined
+              : {
+                  file: yield* ServiceConfig.configPath,
+                  processID: instanceID,
+                  registration: `${serviceOptions.file}.remote`,
+                },
           pty: { handoff },
           simulation: truthy(process.env.OPENCODE_SIMULATE),
           database: {
@@ -152,7 +156,6 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
                 }),
             },
         transform,
-        () => remote.urls,
       )
       const server = yield* launch.pipe(
         Effect.catch((error) => {
@@ -179,20 +182,6 @@ const processEffect = Effect.fnUntraced(function* (options: Options) {
         }),
       )
       if (server === undefined) return
-      if (serviceOptions !== undefined && config.remote !== undefined && server.address._tag === "TcpAddress") {
-        const bound = server.address.hostname
-        // A wildcard bind also listens on loopback, which is all the tunnel needs to reach.
-        const host = bound === "0.0.0.0" || bound === "::" ? "127.0.0.1" : bound.includes(":") ? `[${bound}]` : bound
-        const route = config.remote.route
-        yield* Effect.forkScoped(
-          RemoteTunnel.run({
-            routes: { [route]: `${host}:${server.address.port}` },
-            onHostname: (hostname) => {
-              remote.urls = hostname === undefined ? [] : [`https://${route}.${hostname}`]
-            },
-          }),
-        )
-      }
       const url = HttpServer.formatAddress(server.address)
       console.log(options.mode === "stdio" ? JSON.stringify({ url }) : `server listening on ${url}`)
       if (foreground && !environmentPassword) console.log(`server password ${password}`)

@@ -143,16 +143,42 @@ Companion route (`remote_control.tunnel {enabled, route}` in the service configu
 - Tests never create a tunnel: `RemoteService.make` takes a `TunnelHost` (`ensure`, `run`)
   and the suites pass fakes; the real host is `packages/server/src/remote-tunnel.ts`.
 
-Backend route (TUI attach from another computer): `redsun service set remote true` keeps
-upstream OpenCode's mechanism (`remote.route` in the service configuration, created with
-the tunnel in the foreground, forgotten on disable). The service forks the same tunnel
-module with `<route> -> <bound host>:<port>` and lists the URL in `/api/info`.
-`redsun remote attach` waits for that URL and prints it with a QR code; the other
-computer runs `OPENCODE_PASSWORD=<service password> redsun --server <url>`. This exposes
-the **whole local API behind the service password** on a public hostname, so it is a
-separate opt-in from phone access and the password is never printed by `attach`.
-`pair` has no `--remote` flag: redsun ships no web UI, so a pairing link on the backend
-route would only reach a 404.
+Computer access (a redsun TUI on another computer; `remote_control.computers {enabled,
+route, origin?}` in the service configuration): the backend itself on a second route of the
+same tunnel, owned by the RC service like the companion route and attached while enabled,
+with the backend's loopback `host:port` as target (the first plain-HTTP URL the server
+reports). The RC service publishes the public URL into `/api/info` `urls` through a callback
+the server process supplies (`createRoutes(..., onComputerURLs)`); the CLI's server process
+no longer forks a tunnel. The route is **kept across disable** so attached computers keep
+their address; `rotate` issues a new one. Upstream's `remote: {route}` service-config key
+(from `opencode service set remote true`) is migrated into `computers` on the service's next
+load and dropped from the file. This exposes the **whole local API** on a public hostname, so
+it is a separate opt-in from phone access.
+
+- Local administration: `GET/PUT /api/remote/computers` (`RemoteControl.Computers`, the
+  `Tunnel` shape; `ComputersConfig {enabled, rotate?}`), `POST /api/remote/computers/pairing`
+  → `RemoteControl.Pairing {link, code, expires_in}` (503 while the route is not ready). CLI:
+  `redsun remote computers status|enable|disable|rotate|pair` (`remote attach` is the older
+  name of `pair`); `redsun service set|get|unset remote` are aliases that go through the API
+  while a service runs and edit the file otherwise (`unset` forgets the route only for a
+  stopped service).
+- Pairing instead of passwords: the link is `https://<route>.<hostname>/auth/connect/<code>`
+  (upstream's `ServerPairing`: 16 random bytes, single use, 5 minutes). `redsun attach <link>`
+  redeems it with `Accept: application/json` for a session token (accepted anywhere the
+  password is, signed with the password, 30 days), stores `{token, expires}` per origin in the
+  private `<state>/attachments.json` (never a password), and opens the TUI. `--server <url>`
+  without `OPENCODE_PASSWORD` uses the stored token and renews it through
+  `POST /api/auth/session` (authorized clients only) when under 7 days remain. Rotating the
+  service password revokes every token; rotating the computer address makes every computer
+  pair again (the old token stays valid, but only at the new address, which it does not know).
+- `pair` has no `--remote` flag: redsun ships no web UI, so a pairing link opened in a browser
+  on the backend route would only reach a 404.
+
+Atomic phone enable: `POST /api/remote/enable` → `RemoteControl.Access {status, tunnel,
+companion}` enrolls a companion when none is (the server generates the credential, stores the
+handoff in the companion's private store through `importHandoff`, pointing at the registration
+sidecar passed in `ServerOptions.remoteControl.registration`), enables phone access when it is
+off or has no origin, and enables the policy; a second call changes nothing.
 
 Trust: Anomaly operates the relay, the zone and certificate issuance (ZeroSSL); traffic
 is end-to-end TLS to this host. Self-hosting is a Cloudflare Worker deployment under
