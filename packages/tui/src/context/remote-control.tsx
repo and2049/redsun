@@ -24,7 +24,11 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
     const [error, setError] = createSignal<string>()
     const [companion, setCompanion] = createSignal<RemoteControl.Companion>()
     const [tunnelState, setTunnelState] = createSignal<RemoteControl.Tunnel>()
+    const [computersState, setComputersState] = createSignal<RemoteControl.Computers>()
     const [phoneRegistered, setPhoneRegistered] = createSignal(false)
+    // True once the companion, tunnel and computers states of the current subscription have all answered (or failed),
+    // so a dialog does not offer rows for a state it has not seen yet.
+    const [loaded, setLoaded] = createSignal(false)
     createEffect(() => {
       if (status()?.state === "connected") setPhoneRegistered(true)
     })
@@ -49,10 +53,22 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         if (active && request === tunnelGeneration) setTunnelState(undefined)
       }
     }
+    let computersGeneration = 0
+    const refreshComputers = async () => {
+      const request = ++computersGeneration
+      try {
+        const value = await client.api.remote.computers.get()
+        if (active && request === computersGeneration) setComputersState(value)
+      } catch {
+        if (active && request === computersGeneration) setComputersState(undefined)
+      }
+    }
     const subscribe = () => {
       subscribers++
-      void refreshCompanion()
-      void refreshTunnel()
+      setLoaded(false)
+      void Promise.all([refreshCompanion(), refreshTunnel(), refreshComputers()]).then(() => {
+        if (active) setLoaded(true)
+      })
       onCleanup(() => subscribers--)
     }
     let active = true
@@ -79,6 +95,7 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
       if (subscribers === 0) return
       void refreshCompanion()
       void refreshTunnel()
+      void refreshComputers()
     }, 2000)
     onCleanup(() => {
       active = false
@@ -140,6 +157,25 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         if (previous !== undefined && result.origin !== previous) setPhoneRegistered(false)
         return result
       })
+    const configureComputers = (config: RemoteControl.ComputersConfig) =>
+      action(async () => {
+        const result = await client.api.remote.computers.configure(config)
+        computersGeneration++
+        setComputersState(result)
+        return result
+      })
+    // One call turns phone access on: the backend enrolls a companion when none is, creates the address, enables.
+    const enableAccess = () =>
+      action(async () => {
+        const result = await client.api.remote.enable()
+        generation++
+        tunnelGeneration++
+        setStatus(result.status)
+        setTunnelState(result.tunnel)
+        setCompanion(result.companion)
+        return result
+      })
+    const pair = () => action(() => client.api.remote.computers.pairing())
     const enroll = async () => {
       setError(undefined)
       const backendID = status()?.backendID
@@ -202,6 +238,12 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
       tunnelState,
       refreshTunnel,
       configureTunnel,
+      computersState,
+      loaded,
+      refreshComputers,
+      configureComputers,
+      enableAccess,
+      pair,
       register: () =>
         action(async () => {
           await client.api.remote.companion.register()

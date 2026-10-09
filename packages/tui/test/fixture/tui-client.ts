@@ -188,6 +188,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/api/experimental/migration/v1") return json({ status: "completed" })
     if (url.pathname === "/api/remote/companion") return json({ running: false, port: 43123, pending: [] })
     if (url.pathname === "/api/remote/tunnel") return json({ enabled: false, state: "off" })
+    if (url.pathname === "/api/remote/computers") return json({ enabled: false, state: "off" })
     throw new Error(`unexpected request: ${url.pathname}`)
   }
   fetch.preconnect = () => {}

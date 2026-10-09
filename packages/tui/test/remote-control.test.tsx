@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { readFile } from "node:fs/promises"
-import { createHash } from "node:crypto"
 import { Schema } from "effect"
 import { createAppFixture } from "./fixture/app"
 import { tmpdir } from "./fixture/fixture"
@@ -16,48 +14,6 @@ test("remote labels distinguish disabled, unavailable, ready and connected", () 
     ),
   ).toEqual(["RC disabled", "RC enabled, unavailable", "RC ready", "RC connected"])
   expect(remoteLabel()).toBe("RC status unknown")
-})
-
-test("remote command works from Home without a model prompt and reports persistence failure", async () => {
-  await using temporary = await tmpdir()
-  const actions: string[] = []
-  let status: RemoteControl.Status = {
-    supported: true,
-    enabled: true,
-    state: "unavailable",
-    enrolled: true,
-    backendID: "fixture",
-    processID: "process",
-    version: 1,
-    leaseSeconds: 30,
-  }
-  await using setup = await createAppFixture({
-    state: temporary.path,
-    fetch: (url, request) => {
-      if (url.pathname === "/api/remote") return json(status)
-      if (url.pathname === "/api/remote/policy") {
-        actions.push(request.method)
-        status = { ...status, enabled: false, state: "disabled" }
-        return json({ status, persisted: false })
-      }
-      if (url.pathname.endsWith("/prompt")) actions.push("PROMPT")
-      return undefined
-    },
-  })
-  await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("/RC"))
-  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
-  await setup.mockInput.typeText("/remote")
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Disable remote control"))
-  expect(setup.captureCharFrame()).not.toContain("Enable remote control")
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Restart persistence was NOT updated"))
-  expect(actions).toEqual(["PUT"])
-  expect(setup.captureCharFrame()).toContain("disabled")
-  setup.mockInput.pressEscape()
-  await setup.waitForFrame((frame) => !frame.includes("/RC"))
-  expect(status.enrolled).toBe(true)
 })
 
 test.each([44, 100])("remote indicator survives Home/session navigation at width %s", async (width) => {
@@ -130,46 +86,52 @@ function companionEnvironment(directory: string) {
   }
 }
 
-test("enable turns on phone access to obtain the origin, then enables", async () => {
+// A local managed launch: the dialog manages access only when the TUI has a local service registration.
+function managed(root: string) {
+  return {
+    registration: path.join(root, "service.json.remote"),
+    reconnect: async () => {
+      throw new Error("Unexpected reconnect")
+    },
+    restart: async () => {
+      throw new Error("Unexpected restart")
+    },
+  }
+}
+
+const ready: RemoteControl.Status = {
+  supported: true,
+  enabled: true,
+  enrolled: true,
+  state: "ready",
+  backendID: "fixture",
+  processID: "process",
+  version: 1,
+  leaseSeconds: 30,
+}
+const origin = "https://abcd1234abcd1234.device.opentunnel.xyz"
+
+test("turning on phone access is one call: enrolls, creates the address, enables", async () => {
   await using temporary = await tmpdir()
   using _environment = companionEnvironment(temporary.path)
   const actions: string[] = []
+  let status: RemoteControl.Status = { ...ready, enabled: false, enrolled: false, state: "disabled" }
   let companion: RemoteControl.Companion = { running: false, port: 43123, pending: [] }
-  let status: RemoteControl.Status = {
-    supported: true,
-    enabled: false,
-    enrolled: true,
-    state: "disabled",
-    backendID: "fixture",
-    processID: "process",
-    version: 1,
-    leaseSeconds: 30,
-  }
+  let tunnel: RemoteControl.Tunnel = { enabled: false, state: "off" }
   await using setup = await createAppFixture({
     state: temporary.path,
     width: 140,
-    fetch: async (url, request) => {
+    service: managed(temporary.path),
+    fetch: (url, request) => {
       if (url.pathname === "/api/remote") return json(status)
-      if (url.pathname === "/api/remote/companion") {
-        if (request.method === "PUT") {
-          const config = Schema.decodeUnknownSync(RemoteControl.CompanionConfig)(await request.json())
-          actions.push(`configure:${config.origin}`)
-          companion = { ...companion, ...config }
-        }
-        return json(companion)
-      }
-      if (url.pathname === "/api/remote/tunnel") {
-        if (request.method === "PUT") {
-          actions.push("tunnel:enable")
-          companion = { ...companion, origin: "https://abcd1234abcd1234.device.opentunnel.xyz" }
-          return json({ enabled: true, origin: companion.origin, state: "waiting" })
-        }
-        return json({ enabled: false, state: "off" })
-      }
-      if (url.pathname === "/api/remote/policy") {
-        actions.push("enable")
-        status = { ...status, enabled: true, state: "unavailable" }
-        return json({ status, persisted: true })
+      if (url.pathname === "/api/remote/companion") return json(companion)
+      if (url.pathname === "/api/remote/tunnel") return json(tunnel)
+      if (url.pathname === "/api/remote/enable") {
+        actions.push(request.method)
+        status = { ...status, enabled: true, enrolled: true, state: "unavailable" }
+        tunnel = { enabled: true, origin, state: "ready" }
+        companion = { running: true, origin, port: 43123, pending: [] }
+        return json({ status, tunnel, companion })
       }
     },
   })
@@ -177,16 +139,61 @@ test("enable turns on phone access to obtain the origin, then enables", async ()
   await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Enable remote control") && frame.includes("Phone access: off"))
+  await setup.waitForFrame((frame) => frame.includes("Turn on phone access") && frame.includes("Phones: off"))
+  expect(setup.captureCharFrame()).not.toContain("Enroll a companion")
   setup.mockInput.pressEnter()
   await setup.waitForFrame(
-    (frame) => frame.includes("Disable remote control") && frame.includes("abcd1234abcd1234.device.opentunnel.xyz"),
+    (frame) =>
+      frame.includes("Add a phone") &&
+      frame.includes("Turn off phone access") &&
+      frame.includes(`Phones: ready — ${origin}`),
   )
-  expect(actions).toEqual(["tunnel:enable", "enable"])
+  expect(actions).toEqual(["POST"])
+  expect(setup.captureCharFrame()).toContain("Companion starting")
+})
+
+test("turning off phone access from Home keeps the address, sends no prompt and reports persistence failure", async () => {
+  await using temporary = await tmpdir()
+  using _environment = companionEnvironment(temporary.path)
+  const actions: string[] = []
+  let status: RemoteControl.Status = { ...ready, state: "unavailable" }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    service: managed(temporary.path),
+    fetch: (url, request) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion") return json({ running: true, origin, port: 43123, pending: [] })
+      if (url.pathname === "/api/remote/tunnel") return json({ enabled: true, origin, state: "ready" })
+      if (url.pathname === "/api/remote/policy") {
+        actions.push(request.method)
+        status = { ...status, enabled: false, state: "disabled" }
+        return json({ status, persisted: false })
+      }
+      if (url.pathname.endsWith("/prompt")) actions.push("PROMPT")
+      return undefined
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Turn off phone access"))
+  // Add a phone, Show phone link, Turn off phone access
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Restart persistence was NOT updated"))
+  expect(actions).toEqual(["PUT"])
+  expect(setup.captureCharFrame()).toContain("Turn on phone access")
+  expect(setup.captureCharFrame()).toContain("disabled")
+  setup.mockInput.pressEscape()
+  await setup.waitForFrame((frame) => !frame.includes("/RC"))
+  expect(status.enrolled).toBe(true)
 })
 
 test.each(["success", "registered"] as const)(
-  "phone registration %s reports the local approval flow",
+  "adding a phone %s opens the window and shows the link",
   async (outcome) => {
     await using temporary = await tmpdir()
     using _environment = companionEnvironment(temporary.path)
@@ -195,21 +202,11 @@ test.each(["success", "registered"] as const)(
       state: temporary.path,
       width: 180,
       height: 60,
+      service: managed(temporary.path),
       fetch: (url, request) => {
-        if (url.pathname === "/api/remote")
-          return json({
-            supported: true,
-            enabled: true,
-            enrolled: true,
-            state: "ready",
-            backendID: "fixture",
-            processID: "process",
-            version: 1,
-            leaseSeconds: 30,
-          })
-        if (url.pathname === "/api/remote/companion")
-          return json({ running: true, origin: "https://fixture.ts.net", port: 43123, pending: [] })
-        if (url.pathname === "/api/remote/tunnel") return json({ enabled: false, state: "off" })
+        if (url.pathname === "/api/remote") return json(ready)
+        if (url.pathname === "/api/remote/companion") return json({ running: true, origin, port: 43123, pending: [] })
+        if (url.pathname === "/api/remote/tunnel") return json({ enabled: true, origin, state: "ready" })
         if (url.pathname === "/api/remote/companion/registration") {
           actions.push(request.method)
           if (outcome === "registered")
@@ -226,24 +223,18 @@ test.each(["success", "registered"] as const)(
     await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
     await setup.mockInput.typeText("/remote")
     setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Register a phone"))
-    // disable, enroll, revoke, enable phone access, change origin, register
-    for (let i = 0; i < 5; i++) setup.mockInput.pressArrow("down")
+    await setup.waitForFrame((frame) => frame.includes("Add a phone") && frame.includes("No phone yet"))
     setup.mockInput.pressEnter()
     await setup.waitForFrame((frame) =>
       frame.includes(
-        outcome === "registered"
-          ? "An owner passkey is already registered"
-          : "within five minutes and choose Register this device",
+        outcome === "registered" ? "An owner passkey is already registered" : "Scan to open the companion on a phone",
       ),
     )
     expect(actions).toEqual(["POST"])
     if (outcome === "success") {
-      await setup.renderOnce()
-      setup.mockInput.pressArrow("down")
-      setup.mockInput.pressEnter()
-      await setup.waitForFrame((frame) => !frame.includes("Cancel phone registration"))
-      expect(actions).toEqual(["POST", "DELETE"])
+      expect(setup.captureCharFrame()).toContain(origin)
+      setup.mockInput.pressEscape()
+      await setup.waitForFrame((frame) => !frame.includes("Phone link"))
     }
   },
 )
@@ -254,28 +245,19 @@ test("phone approvals stay local and confirmed", async () => {
   let approved = 0
   let companion: RemoteControl.Companion = {
     running: true,
-    origin: "https://fixture.ts.net",
+    origin,
     port: 43123,
     pending: [{ requestID: "fixture-request", fingerprint: "ABCD-EFGH" }],
-  }
-  const status: RemoteControl.Status = {
-    supported: true,
-    enabled: true,
-    enrolled: true,
-    state: "ready",
-    backendID: "fixture",
-    processID: "process",
-    version: 1,
-    leaseSeconds: 30,
   }
   await using setup = await createAppFixture({
     state: temporary.path,
     width: 160,
     height: 60,
+    service: managed(temporary.path),
     fetch: async (url, request) => {
-      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote") return json(ready)
       if (url.pathname === "/api/remote/companion") return json(companion)
-      if (url.pathname === "/api/remote/tunnel") return json({ enabled: false, state: "off" })
+      if (url.pathname === "/api/remote/tunnel") return json({ enabled: true, origin, state: "ready" })
       if (url.pathname === "/api/remote/companion/approval") {
         expect(Schema.decodeUnknownSync(RemoteControl.Approval)(await request.json())).toEqual(companion.pending[0])
         approved++
@@ -289,9 +271,9 @@ test("phone approvals stay local and confirmed", async () => {
   await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Approve phone ABCD-EFGH") && frame.includes("Phone access: off"))
-  // disable, enroll, revoke, enable phone access, change origin, register, approve
-  for (let i = 0; i < 6; i++) setup.mockInput.pressArrow("down")
+  await setup.waitForFrame((frame) => frame.includes("Approve phone ABCD-EFGH"))
+  // Add a phone, Approve phone
+  setup.mockInput.pressArrow("down")
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("Confirm: approve ABCD-EFGH"))
   expect(approved).toBe(0)
@@ -301,38 +283,35 @@ test("phone approvals stay local and confirmed", async () => {
   await setup.waitForFrame((frame) => !frame.includes("Approve phone ABCD-EFGH"))
 })
 
-test("phone access is enabled, shown as a link and rotated through the tunnel endpoint", async () => {
+test("computer access is confirmed before turning on, pairs with a one-time link, and turns off", async () => {
   await using temporary = await tmpdir()
   using _environment = companionEnvironment(temporary.path)
-  const configured: RemoteControl.TunnelConfig[] = []
-  let tunnel: RemoteControl.Tunnel = { enabled: false, state: "off" }
-  let companion: RemoteControl.Companion = { running: false, port: 43123, pending: [] }
-  const status: RemoteControl.Status = {
-    supported: true,
-    enabled: true,
-    enrolled: true,
-    state: "unavailable",
-    backendID: "fixture",
-    processID: "process",
-    version: 1,
-    leaseSeconds: 30,
-  }
+  const configured: RemoteControl.ComputersConfig[] = []
+  let pairings = 0
+  let computers: RemoteControl.Computers = { enabled: false, state: "off" }
+  const address = "https://0123456789abcdef.device.opentunnel.xyz"
   await using setup = await createAppFixture({
     state: temporary.path,
     width: 160,
     height: 60,
+    service: managed(temporary.path),
     fetch: async (url, request) => {
-      if (url.pathname === "/api/remote") return json(status)
-      if (url.pathname === "/api/remote/companion") return json(companion)
-      if (url.pathname === "/api/remote/tunnel") {
+      if (url.pathname === "/api/remote") return json(ready)
+      if (url.pathname === "/api/remote/companion") return json({ running: true, origin, port: 43123, pending: [] })
+      if (url.pathname === "/api/remote/tunnel") return json({ enabled: true, origin, state: "ready" })
+      if (url.pathname === "/api/remote/computers") {
         if (request.method === "PUT") {
-          const config = Schema.decodeUnknownSync(RemoteControl.TunnelConfig)(await request.json())
+          const config = Schema.decodeUnknownSync(RemoteControl.ComputersConfig)(await request.json())
           configured.push(config)
-          const origin = `https://${config.rotate ? "feedbeefcafe0123" : "abcd1234abcd1234"}.device.opentunnel.xyz`
-          tunnel = config.enabled ? { enabled: true, origin, state: "ready" } : { enabled: false, state: "off" }
-          companion = { ...companion, origin: config.enabled ? origin : companion.origin }
+          computers = config.enabled
+            ? { enabled: true, origin: address, state: "ready" }
+            : { enabled: false, state: "off" }
         }
-        return json(tunnel)
+        return json(computers)
+      }
+      if (url.pathname === "/api/remote/computers/pairing") {
+        pairings++
+        return json({ link: `${address}/auth/connect/c0de`, code: "c0de", expires_in: 300 })
       }
     },
   })
@@ -341,155 +320,103 @@ test("phone access is enabled, shown as a link and rotated through the tunnel en
   await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Enable phone access") && frame.includes("Phone access: off"))
-  expect(setup.captureCharFrame()).not.toContain("Show phone link")
-  // disable, enroll, revoke, enable phone access
+  await setup.waitForFrame((frame) => frame.includes("Turn on computer access") && frame.includes("Computers: off"))
+  expect(setup.captureCharFrame()).not.toContain("Add a computer")
+  // Add a phone, Show phone link, Turn off phone access, Turn on computer access
   for (let i = 0; i < 3; i++) setup.mockInput.pressArrow("down")
   setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Confirm: any computer that pairs gets full access"))
+  expect(configured).toEqual([])
+  setup.mockInput.pressEnter()
   await setup.waitForFrame(
-    (frame) =>
-      frame.includes("Phone access: ready") &&
-      frame.includes("https://abcd1234abcd1234.device.opentunnel.xyz") &&
-      frame.includes("Rotate phone address"),
+    (frame) => frame.includes("Add a computer") && frame.includes(`Computers: ready — ${address}`),
   )
   expect(configured).toEqual([{ enabled: true }])
-  // disable, enroll, revoke, disable phone access, show phone link, rotate
-  for (let i = 0; i < 2; i++) setup.mockInput.pressArrow("down")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Confirm: new phone address; every phone must enroll again"))
-  expect(configured.length).toBe(1)
+  await setup.waitForFrame((frame) => frame.includes("Computer link") && frame.includes("the link works once"))
+  expect(pairings).toBe(1)
+  expect(setup.captureCharFrame().replace(/\s+/g, " ")).toContain(`redsun attach ${address}/auth/connect/c0de`)
+  setup.mockInput.pressEscape()
+  await setup.waitForFrame((frame) => !frame.includes("Computer link"))
+  await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("https://feedbeefcafe0123.device.opentunnel.xyz"))
-  expect(configured).toEqual([{ enabled: true }, { enabled: true, rotate: true }])
-  setup.mockInput.pressArrow("up")
+  await setup.waitForFrame((frame) => frame.includes("Turn off computer access"))
+  // Add a phone, Show phone link, Turn off phone access, Add a computer, Show computer address, Turn off computer access
+  for (let i = 0; i < 5; i++) setup.mockInput.pressArrow("down")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame(
-    (frame) => frame.includes("Phone link") && frame.includes("Scan to open the companion on a phone"),
-  )
-  expect(setup.captureCharFrame()).toContain("https://feedbeefcafe0123.device.opentunnel.xyz")
+  await setup.waitForFrame((frame) => frame.includes("Turn on computer access") && frame.includes("Computers: off"))
+  expect(configured).toEqual([{ enabled: true }, { enabled: false }])
 })
 
-test.each(["success", "conflict", "network"] as const)(
-  "enrollment %s is private and store-first",
-  async (outcome) => {
-    await using temporary = await tmpdir()
-    using _environment = companionEnvironment(temporary.path)
-    const file = path.join(temporary.path, "redsun-remote-control", "backend.json")
-    let issued = 0
-    let handoff: RemoteControl.Handoff | undefined
-    let status: RemoteControl.Status = {
-      supported: true,
-      enabled: false,
-      enrolled: false,
-      state: "disabled",
-      backendID: "fixture",
-      processID: "process",
-      version: 1,
-      leaseSeconds: 30,
-    }
-    await using setup = await createAppFixture({
-      width: 180,
-      height: 60,
-      state: temporary.path,
-      service: {
-        registration: path.join(temporary.path, "service.json.remote"),
-        reconnect: async () => {
-          throw new Error("Unexpected reconnect")
-        },
-        restart: async () => {
-          throw new Error("Unexpected restart")
-        },
-      },
-      fetch: async (url, request) => {
-        if (url.pathname === "/api/remote") return json(status)
-        if (url.pathname !== "/api/remote/enrollment") return undefined
-        issued++
-        handoff = Schema.decodeUnknownSync(Schema.fromJsonString(RemoteControl.Handoff))(await readFile(file, "utf8"))
-        const body = Schema.decodeUnknownSync(RemoteControl.Enrollment)(await request.json())
-        expect(body.backendID).toBe("fixture")
-        expect(body.credentialID).toBe(handoff.credentialID)
-        expect(body.digest === createHash("sha256").update(handoff.token).digest("hex")).toBe(true)
-        expect(handoff.registration).toBe(path.join(temporary.path, "service.json.remote"))
-        if (outcome === "conflict") return new Response(null, { status: 409 })
-        if (outcome === "network") return new Response(null, { status: 503 })
-        status = { ...status, enrolled: true }
-        return new Response(null, { status: 204 })
-      },
-    })
-    await setup.ready
-    await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
-    await setup.mockInput.typeText("/remote")
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Enroll a companion"))
-    expect(setup.captureCharFrame()).toContain("Enable remote control")
-    expect(setup.captureCharFrame()).not.toContain("Revoke companion credentials")
-    setup.mockInput.pressArrow("down")
-    await setup.renderOnce()
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Confirm: enroll a companion on this host"))
-    expect(issued).toBe(0)
-    expect(await Bun.file(file).exists()).toBe(false)
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame(
-      (frame) =>
-        frame.includes(outcome === "success" ? "Change companion origin" : "Enrollment not confirmed") &&
-        frame.includes("Stores the credential on this host") &&
-        !frame.includes("Confirm: enroll a companion on this host"),
-      { maxPasses: 500 },
-    )
-    expect(issued).toBe(1)
-    expect(handoff !== undefined).toBe(true)
-    if (handoff) {
-      const frame = setup.captureCharFrame()
-      expect(frame.includes(handoff.token)).toBe(false)
-      expect(frame.includes(createHash("sha256").update(handoff.token).digest("hex"))).toBe(false)
-      expect((await readFile(file, "utf8")).includes(handoff.token)).toBe(true)
-    }
-    if (outcome === "success") {
-      const frame = setup.captureCharFrame()
-      for (const line of [
-        "Enable remote control so the companion can attach.",
-        "Change companion origin",
-        "Companion-reported status; not a phone connectivity test.",
-      ])
-        expect(frame.replace(/\s/g, "")).toContain(line.replace(/\s/g, ""))
-      expect(status.enabled).toBe(false)
-      expect(status.enrolled).toBe(true)
-    } else {
-      expect(setup.captureCharFrame()).toContain("the companion store holds an unconfirmed credential")
-    }
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Confirm: enroll a companion on this host"))
-    expect(issued).toBe(1)
-    setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("A companion is already enrolled on this host"), {
-      maxPasses: 500,
-    })
-    expect(issued).toBe(1)
-    expect((await readFile(file, "utf8")).includes(handoff!.token)).toBe(true)
-    expect(setup.captureCharFrame().includes(handoff!.token)).toBe(false)
-  },
-  15_000,
-)
-
-test("dialog title uses ready and unavailable colors and state guidance", async () => {
+test("advanced: a new phone address needs confirmation and forgetting everything revokes", async () => {
   await using temporary = await tmpdir()
-  let status: RemoteControl.Status = {
-    supported: true,
-    enabled: true,
-    enrolled: true,
-    state: "ready",
-    backendID: "fixture",
-    processID: "process",
-    version: 1,
-    leaseSeconds: 30,
-  }
+  using _environment = companionEnvironment(temporary.path)
+  const configured: RemoteControl.TunnelConfig[] = []
+  const actions: string[] = []
+  let status: RemoteControl.Status = { ...ready, state: "connected" }
+  let tunnel: RemoteControl.Tunnel = { enabled: true, origin, state: "ready" }
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    width: 160,
+    height: 60,
+    service: managed(temporary.path),
+    fetch: async (url, request) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion")
+        return json({ running: true, origin: tunnel.origin, port: 43123, pending: [] })
+      if (url.pathname === "/api/remote/tunnel") {
+        if (request.method === "PUT") {
+          const config = Schema.decodeUnknownSync(RemoteControl.TunnelConfig)(await request.json())
+          configured.push(config)
+          tunnel = { enabled: true, origin: "https://feedbeefcafe0123.device.opentunnel.xyz", state: "ready" }
+        }
+        return json(tunnel)
+      }
+      if (url.pathname === "/api/remote/enrollment") {
+        actions.push(request.method)
+        status = { ...status, enrolled: false, state: "unavailable" }
+        return json({ status, persisted: true })
+      }
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("New phone address") && frame.includes("Phone connected"))
+  expect(setup.captureCharFrame()).not.toContain("Add a phone")
+  // Show phone link, Turn off phone access, Turn on computer access, New phone address
+  for (let i = 0; i < 3; i++) setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Confirm: new phone address; every phone must enroll again"))
+  expect(configured).toEqual([])
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("https://feedbeefcafe0123.device.opentunnel.xyz"))
+  expect(configured).toEqual([{ enabled: true, rotate: true }])
+  // ..., New phone address, Use a custom phone address, Forget all phones and credentials
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("Confirm: forget all phones and credentials"))
+  expect(actions).toEqual([])
+  setup.mockInput.pressEnter()
+  await setup.waitFor(() => actions.length === 1)
+  expect(actions).toEqual(["DELETE"])
+  // Nothing is enrolled any more, so the Advanced rows that need an enrollment are gone.
+  await setup.waitForFrame(
+    (frame) => !frame.includes("forget all phones and credentials") && !frame.includes("Forget all phones"),
+  )
+})
+
+test("a TUI attached from another computer sees status only", async () => {
+  await using temporary = await tmpdir()
   await using setup = await createAppFixture({
     state: temporary.path,
     fetch: (url) => {
-      if (url.pathname === "/api/remote") return json(status)
-      if (url.pathname === "/api/remote/companion")
-        return json({ running: true, origin: "https://fixture.ts.net", port: 43123, pending: [] })
+      if (url.pathname === "/api/remote") return json(ready)
+      if (url.pathname === "/api/remote/companion") return json({ running: true, origin, port: 43123, pending: [] })
+      if (url.pathname === "/api/remote/tunnel") return json({ enabled: true, origin, state: "ready" })
       return undefined
     },
   })
@@ -498,68 +425,45 @@ test("dialog title uses ready and unavailable colors and state guidance", async 
   await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
   await setup.mockInput.typeText("/remote")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Companion attached"))
+  await setup.waitForFrame(
+    (frame) => frame.includes("Manage remote access on the host computer") && frame.includes("Phones: ready"),
+  )
+  const frame = setup.captureCharFrame()
+  expect(frame).toContain(`Phones: ready — ${origin}`)
+  expect(frame).toContain("Computers: off")
+  expect(frame).not.toContain("Turn off phone access")
+  expect(frame).not.toContain("Turn on computer access")
+})
+
+test("dialog title uses ready and unavailable colors and state guidance", async () => {
+  await using temporary = await tmpdir()
+  let status: RemoteControl.Status = ready
+  await using setup = await createAppFixture({
+    state: temporary.path,
+    service: managed(temporary.path),
+    fetch: (url) => {
+      if (url.pathname === "/api/remote") return json(status)
+      if (url.pathname === "/api/remote/companion") return json({ running: true, origin, port: 43123, pending: [] })
+      return undefined
+    },
+  })
+  await setup.ready
+  await setup.waitForFrame((frame) => frame.includes("/RC"))
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor != null)
+  await setup.mockInput.typeText("/remote")
+  setup.mockInput.pressEnter()
+  await setup.waitForFrame((frame) => frame.includes("No phone yet"))
   const title = () =>
     setup
       .captureSpans()
       .lines.flatMap((line) => line.spans)
       .find((span) => span.text === status.state)?.fg
-  const ready = title()
-  expect(ready).toBeDefined()
+  const readyColor = title()
+  expect(readyColor).toBeDefined()
   status = { ...status, state: "unavailable" }
   setup.events.emit({ id: "evt_remote", created: 1, type: "remote.status", data: status })
   await setup.waitForFrame((frame) => frame.includes("Companion starting"))
-  expect(title()?.equals(ready)).toBe(false)
-})
-
-test("enable and confirmed revoke report persistence failures without losing navigation", async () => {
-  await using temporary = await tmpdir()
-  const actions: string[] = []
-  let status: RemoteControl.Status = {
-    supported: true,
-    enabled: false,
-    enrolled: true,
-    state: "disabled",
-    backendID: "fixture",
-    processID: "process",
-    version: 1,
-    leaseSeconds: 30,
-  }
-  await using setup = await createAppFixture({
-    state: temporary.path,
-    fetch: (url, request) => {
-      if (url.pathname === "/api/remote") return json(status)
-      if (url.pathname === "/api/remote/companion")
-        return json({ running: false, origin: "https://fixture.ts.net", port: 43123, pending: [] })
-      if (url.pathname === "/api/remote/policy") {
-        actions.push(request.method)
-        status = { ...status, enabled: true, state: "unavailable" }
-        return json({ status, persisted: false })
-      }
-      if (url.pathname === "/api/remote/enrollment") {
-        actions.push(request.method)
-        status = { ...status, enrolled: false }
-        return json({ status, persisted: false })
-      }
-    },
-  })
-  await setup.ready
-  await setup.waitForFrame((frame) => frame.includes("/ commands"), { maxPasses: 200 })
-  await setup.mockInput.typeText("/remote")
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Enable remote control"))
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Restart persistence was NOT updated"))
-  expect(setup.captureCharFrame()).toContain("Disable remote control")
-  setup.mockInput.pressArrow("down")
-  setup.mockInput.pressArrow("down")
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Confirm: revoke"))
-  expect(actions).toEqual(["PUT"])
-  setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Not enrolled"))
-  expect(actions).toEqual(["PUT", "DELETE"])
-  expect(setup.captureCharFrame()).toContain("Restart persistence was NOT updated")
+  expect(title()?.equals(readyColor)).toBe(false)
 })
 
 test.each(["unsupported", "identity", "unknown"] as const)(
@@ -577,6 +481,7 @@ test.each(["unsupported", "identity", "unknown"] as const)(
     }
     await using setup = await createAppFixture({
       state: temporary.path,
+      service: managed(temporary.path),
       fetch: (url) =>
         url.pathname === "/api/remote"
           ? state === "unknown"
@@ -597,7 +502,7 @@ test.each(["unsupported", "identity", "unknown"] as const)(
             : "Requires a managed service",
       ),
     )
-    expect(setup.captureCharFrame()).not.toContain("Enroll a companion Creates")
-    expect(setup.captureCharFrame()).not.toContain("Revoke companion credentials")
+    expect(setup.captureCharFrame()).not.toContain("Forget all phones")
+    if (state === "unsupported") expect(setup.captureCharFrame()).not.toContain("Turn on phone access")
   },
 )
