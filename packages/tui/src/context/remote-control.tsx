@@ -1,7 +1,4 @@
 import { createEffect, createSignal, onCleanup } from "solid-js"
-import { createHash, randomBytes } from "node:crypto"
-import { Effect } from "effect"
-import { importHandoff } from "redsun-remote-control"
 import type { RemoteControl } from "@opencode/schema/remote-control"
 import { useClient } from "./client"
 import { createSimpleContext } from "./helper"
@@ -103,13 +100,12 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
       clearInterval(companionTimer)
       unsubscribe()
     })
-    const change = async (operation: "enable" | "disable" | "revoke") => {
+    // Turning phone access on is `enableAccess`; this is the way off, and the way to start over.
+    const change = async (operation: "disable" | "revoke") => {
       setError(undefined)
       try {
         const result =
-          operation === "revoke"
-            ? await client.api.remote.revoke()
-            : await client.api.remote.policy({ enabled: operation === "enable" })
+          operation === "revoke" ? await client.api.remote.revoke() : await client.api.remote.policy({ enabled: false })
         generation++
         setStatus(result.status)
         if (operation === "revoke") setPhoneRegistered(false)
@@ -176,71 +172,18 @@ export const { use: useRemoteControl, provider: RemoteControlProvider } = create
         return result
       })
     const pair = () => action(() => client.api.remote.computers.pairing())
-    const enroll = async () => {
-      setError(undefined)
-      const backendID = status()?.backendID
-      if (!status()?.supported || !backendID || !client.registration) {
-        setError(
-          "Enrollment requires a local managed service with a persisted backend identity. Use redsun remote enroll --handoff <new-private-file> locally.",
-        )
-        await refreshCompanion()
-        return undefined
-      }
-      let credentialID: string
-      let token: string
-      try {
-        credentialID = randomBytes(16).toString("hex")
-        token = randomBytes(32).toString("base64url")
-        const handoff: RemoteControl.Handoff = {
-          version: 1,
-          backendID,
-          registration: client.registration,
-          credentialID,
-          token,
-        }
-        await Effect.runPromise(importHandoff(handoff))
-      } catch {
-        setError(
-          "A companion is already enrolled on this host or its private store is unavailable; revoke companion credentials and remove the companion store before enrolling again",
-        )
-        await refreshCompanion()
-        return undefined
-      }
-      try {
-        await client.api.remote.enroll({
-          backendID,
-          credentialID,
-          digest: createHash("sha256").update(token).digest("hex"),
-        })
-      } catch {
-        setError(
-          "Enrollment not confirmed; the companion store holds an unconfirmed credential. Revoke companion credentials, then remove the companion store before retrying",
-        )
-        await refresh()
-        await refreshCompanion()
-        return undefined
-      }
-      await refresh()
-      await refreshCompanion()
-      setPhoneRegistered(false)
-    }
     return {
       status,
       error,
       change,
-      refresh,
-      refreshCompanion,
-      enroll,
       companion,
       phoneRegistered,
       subscribe,
       configure,
       tunnelState,
-      refreshTunnel,
       configureTunnel,
       computersState,
       loaded,
-      refreshComputers,
       configureComputers,
       enableAccess,
       pair,

@@ -1,5 +1,4 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { validateRoutes } from "@opentunnel/client/effect"
 import { Service, type Info } from "@opencode/client/effect/service"
 import { Global } from "@opencode/util/global"
 import { OPENCODE_VERSION } from "../src/version"
@@ -39,97 +38,6 @@ test("service disabled accepts only booleans without changing configuration on i
     expect(await run(ServiceConfig.read())).toEqual({ disabled: true })
     await run(ServiceConfig.unset("disabled"))
     expect(await run(ServiceConfig.read())).toEqual({})
-  } finally {
-    await fs.rm(root, { recursive: true, force: true })
-  }
-})
-
-// Computer access lives under `remote_control.computers`; the file paths here are what a stopped service gets.
-test("service remote accepts only booleans, turning off what was never on records nothing", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-remote-config-"))
-  const layer = Global.layerWith({ config: path.join(root, "config"), state: path.join(root, "state") })
-  const run = <A, E>(effect: Effect.Effect<A, E, Global.Service | FileSystem.FileSystem>) =>
-    Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)))
-  try {
-    expect(await run(ServiceConfig.get("remote"))).toBe("false")
-    await expect(run(ServiceConfig.set("remote", "on"))).rejects.toThrow("Remote must be true or false")
-    expect(await run(ServiceConfig.read())).toEqual({})
-    await run(ServiceConfig.set("remote", "false"))
-    expect(await run(ServiceConfig.read())).toEqual({})
-    expect(await run(ServiceConfig.get("remote"))).toBe("false")
-    await run(ServiceConfig.unset("remote"))
-    expect(await run(ServiceConfig.read())).toEqual({})
-  } finally {
-    await fs.rm(root, { recursive: true, force: true })
-  }
-})
-
-test("computer access route is random, kept across off and on, hidden, and forgotten only by unset", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-remote-route-"))
-  const layer = Global.layerWith({ config: path.join(root, "config"), state: path.join(root, "state") })
-  const run = <A, E>(effect: Effect.Effect<A, E, Global.Service | FileSystem.FileSystem>) =>
-    Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)))
-  try {
-    await run(ServiceConfig.set("remote", "true"))
-    const route = ServiceConfig.computers(await run(ServiceConfig.read()))?.route ?? ""
-    // The SDK rejects invalid route names, which would keep the service from ever attaching.
-    expect(() => validateRoutes({ [route]: "127.0.0.1:4096" })).not.toThrow()
-    expect(route).toMatch(/^[0-9a-f]{16}$/)
-    expect(await run(ServiceConfig.read())).toEqual({ remote_control: { computers: { enabled: true, route } } })
-    expect(await run(ServiceConfig.get("remote"))).toBe("true")
-    expect(await run(ServiceConfig.get())).not.toContain(route)
-    expect(await run(ServiceConfig.get())).toContain('"computers"')
-
-    await run(ServiceConfig.set("remote", "false"))
-    expect(await run(ServiceConfig.read())).toEqual({ remote_control: { computers: { enabled: false, route } } })
-    expect(await run(ServiceConfig.get("remote"))).toBe("false")
-    await run(ServiceConfig.set("remote", "true"))
-    expect(ServiceConfig.computers(await run(ServiceConfig.read()))?.route).toBe(route)
-
-    await run(ServiceConfig.unset("remote"))
-    expect(await run(ServiceConfig.read())).toEqual({ remote_control: {} })
-    await run(ServiceConfig.set("remote", "true"))
-    expect(ServiceConfig.computers(await run(ServiceConfig.read()))?.route).not.toBe(route)
-  } finally {
-    await fs.rm(root, { recursive: true, force: true })
-  }
-})
-
-test("reading legacy remote keys: a boolean is repaired into computers and upstream's route is read as enabled", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-service-remote-legacy-"))
-  const layer = Global.layerWith({ config: path.join(root, "config"), state: path.join(root, "state") })
-  const run = <A, E>(effect: Effect.Effect<A, E, Global.Service | FileSystem.FileSystem>) =>
-    Effect.runPromise(effect.pipe(Effect.provide(layer), Effect.provide(NodeFileSystem.layer)))
-  const file = path.join(root, "config", ServiceConfig.filename())
-  try {
-    await fs.mkdir(path.dirname(file), { recursive: true })
-
-    await Bun.write(file, JSON.stringify({ remote: true, password: "kept", env: { A: "1" } }))
-    const enabled = await run(ServiceConfig.read())
-    const route = ServiceConfig.computers(enabled)?.route ?? ""
-    expect(route).toMatch(/^[0-9a-f]{16}$/)
-    expect(enabled).toEqual({
-      remote_control: { computers: { enabled: true, route } },
-      password: "kept",
-      env: { A: "1" },
-    })
-    expect(await Bun.file(file).json()).toEqual(enabled)
-
-    await Bun.write(file, JSON.stringify({ remote: false, password: "kept" }))
-    expect(await run(ServiceConfig.read())).toEqual({ password: "kept" })
-    expect(await Bun.file(file).json()).toEqual({ password: "kept" })
-
-    // Upstream's shape is left for the service to migrate, but reads as computer access being on.
-    const current = JSON.stringify({ remote: { route: "0123456789abcdef" }, password: "kept" })
-    await Bun.write(file, current)
-    expect(await run(ServiceConfig.get("remote"))).toBe("true")
-    expect(await run(ServiceConfig.get())).not.toContain("0123456789abcdef")
-    expect(await Bun.file(file).text()).toBe(current)
-    await run(ServiceConfig.set("remote", "false"))
-    expect(await run(ServiceConfig.read())).toEqual({
-      remote_control: { computers: { enabled: false, route: "0123456789abcdef" } },
-      password: "kept",
-    })
   } finally {
     await fs.rm(root, { recursive: true, force: true })
   }

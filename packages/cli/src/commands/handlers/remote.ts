@@ -6,7 +6,6 @@ import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { RemoteLocal } from "../../services/remote-local"
 import { createPrivateFile } from "@opencode/util/private-file"
-import { pair } from "./remote-computers"
 
 export default Runtime.handler(
   Commands.commands.remote,
@@ -16,8 +15,6 @@ export default Runtime.handler(
       console.log(JSON.stringify(status, null, 2))
       return
     }
-    // `remote attach` is the older name of `remote computers pair`.
-    if (input.action === "attach") return yield* pair(request)
     if (!status.supported) return yield* Effect.fail(new Error("Backend does not support managed remote control"))
     if (input.action === "enroll") {
       if (!status.backendID)
