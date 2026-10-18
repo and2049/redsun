@@ -30,6 +30,7 @@ import { SessionInbox } from "@opencode/core/session/inbox"
 import { SessionMessage } from "@opencode/core/session/message"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { SessionStore } from "@opencode/core/session/store"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
@@ -149,6 +150,7 @@ const subagentPluginSupervisor = makeLocationNode({
     Session.node,
     SessionStore.node,
     Job.node,
+    SubagentJob.node,
     Tool.node,
     PluginHooks.node,
     Rpc.node,

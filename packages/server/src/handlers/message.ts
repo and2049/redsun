@@ -2,7 +2,7 @@ import { SessionMessage } from "@opencode/core/session/message"
 import { Session } from "@opencode/core/session"
 import { SessionMessagePin } from "@opencode/core/session/message-pin"
 import { Effect, Schema } from "effect"
-import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
 import { Api } from "../api"
 import {
   InvalidCursorError,

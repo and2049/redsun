@@ -220,6 +220,11 @@ redsun adds them to the session's directory for the life of the `redsun acp` pro
 directory can use them. redsun passes HTTP headers through and doesn't use OAuth for these servers. It doesn't
 advertise MCP over SSE, and it doesn't support MCP over ACP.
 
+| Case                             | Behavior                                                           |
+| -------------------------------- | ------------------------------------------------------------------ |
+| Same name as a configured server | The client's server replaces the configured one in that directory. |
+| [Policies](../policies.md)       | `integration.use` rules still apply.                               |
+
 ```json
 { "type": "http", "name": "docs", "url": "https://mcp.example.com", "headers": [] }
 ```

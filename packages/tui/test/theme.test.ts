@@ -57,6 +57,11 @@ test("parseTheme rejects sources that are neither V1 palettes nor V2 documents",
   expect(() => parseTheme({ version: 2, light: {} })).toThrow("Invalid theme")
 })
 
+test("keeps the experimental opencode2 theme out of the global theme list", () => {
+  expect(allThemes().opencode2).toBeUndefined()
+  expect(hasTheme("opencode2")).toBe(false)
+})
+
 test("parses unversioned and explicit V1 themes lazily once", () => {
   const unversioned = v1Theme()
   const explicit = { ...v1Theme(), version: 1 }

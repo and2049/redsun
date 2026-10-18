@@ -14,7 +14,7 @@ Create a client with the server URL, then call methods grouped by API resource.
 ```ts
 import { AbsolutePath, Location, redsun } from "@opencode/client/effect"
 import { Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 
 const program = Effect.gen(function* () {
   const client = yield* OpenCode.make({ baseUrl: "http://localhost:4096" })
@@ -38,7 +38,7 @@ normal Effect interruption for cancellation. RPC methods additionally accept
 per-call location, header, and signal options.
 
 ```ts
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 
 const httpClient = yield * HttpClient.HttpClient
 const client =
@@ -121,7 +121,7 @@ import { NodeFileSystem } from "@effect/platform-node"
 import { redsun } from "@opencode/client/effect"
 import { Service } from "@opencode/client/effect/service"
 import { Effect } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 const program = Effect.gen(function* () {
   const endpoint = yield* Service.ensure()

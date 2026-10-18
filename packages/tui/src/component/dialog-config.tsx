@@ -1,6 +1,6 @@
 import { createMemo, createResource, createSignal, Show } from "solid-js"
 import type { Config } from "@opencode/schema/config"
-import { useConfig } from "../config"
+import { useConfig, useNewDesigns } from "../config"
 import { useTheme, useThemes } from "../context/theme"
 import { useClient } from "../context/client"
 import { useData } from "../context/data"
@@ -317,6 +317,15 @@ export const settings: Setting[] = [
     keywords: ["sound volume", "audio volume"],
   },
   {
+    title: "Release highlights",
+    category: "Alerts",
+    path: ["highlights"],
+    default: true,
+    values: [false, true],
+    labels: ["off", "on"],
+    keywords: ["what's new", "changelog", "release notes"],
+  },
+  {
     title: "Window title",
     category: "Terminal",
     path: ["terminal", "title"],
@@ -353,6 +362,7 @@ export function DialogConfig(props: { current?: string }) {
   const { t } = language
   const dialog = useDialog()
   const config = useConfig()
+  const newDesigns = useNewDesigns()
   const toast = useToast()
   const themes = useThemes()
   const theme = useTheme()
@@ -487,12 +497,14 @@ export function DialogConfig(props: { current?: string }) {
   return (
     <DialogSelect
       title={t("command.category.settings")}
+      searchInTitle
+      titlePlaceholder="Search settings"
       options={options()}
       current={current}
       filterThreshold={0.7}
       onMove={(option) => setSelected(option.value)}
       onSelect={(option) => void change(1, option.value)}
-      footerHints={[{ title: "←/→", label: t("settings.change") }]}
+      footerHints={newDesigns() ? [] : [{ title: "←/→", label: t("settings.change") }]}
       footer={
         <Show when={items()[selected()]?.backend}>
           <box paddingLeft={4} paddingRight={4} flexDirection="column">

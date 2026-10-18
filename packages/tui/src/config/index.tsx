@@ -114,6 +114,9 @@ export const Info = Schema.Struct({
       }),
       tree: Schema.optional(Schema.Boolean).annotate({ description: "Show the diff file tree" }),
       single: Schema.optional(Schema.Boolean).annotate({ description: "Show only the selected file patch" }),
+      fullscreen: Schema.optional(Schema.Boolean).annotate({
+        description: "Open the diff side panel full screen; remembers the last full screen toggle",
+      }),
       view: Schema.optional(Schema.Literals(["auto", "split", "unified"])).annotate({
         description: "Diff layout; 'auto' selects a layout from the available width",
       }),
@@ -189,6 +192,9 @@ export const Info = Schema.Struct({
     description: "Experimental features that may change or be removed at any time",
   }),
   animations: Schema.optional(Schema.Boolean).annotate({ description: "Enable interface animations" }),
+  highlights: Schema.optional(Schema.Boolean).annotate({
+    description: "Show the release highlights once after redsun updates",
+  }),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable terminal mouse capture" }),
   cursor: Schema.optional(Cursor),
 })
@@ -219,7 +225,10 @@ export type Resolved = Omit<Info, "attention" | "cursor" | "keybinds" | "leader"
   }
 }
 
-export function resolve(input: Info, options: { terminalSuspend: boolean }): Resolved {
+export function resolve(
+  input: Info,
+  options: { terminalSuspend: boolean; environment?: Readonly<Record<string, string | undefined>> },
+): Resolved {
   const keybinds: TuiKeybind.KeybindOverrides = { ...input.keybinds }
   if (!options.terminalSuspend) {
     keybinds["terminal.suspend"] = "none"
@@ -311,4 +320,10 @@ export function useConfig() {
   const value = useContext(ConfigContext)
   if (!value) throw new Error("ConfigProvider is missing")
   return value
+}
+
+/** Reactive accessor for the temporary "new-designs" experiment. */
+export function useNewDesigns() {
+  const config = useConfig()
+  return () => config.data.experimental?.["new-designs"] === true
 }

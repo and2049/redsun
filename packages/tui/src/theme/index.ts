@@ -16,6 +16,8 @@ export {
   type ThemeDocumentSource,
 } from "@opencode/theme/tui"
 
+import opencode2 from "./assets/v2/opencode2.json" with { type: "json" }
+
 const pluginThemes: Record<string, ThemeDocumentSource> = {}
 let customThemes: Record<string, ThemeDocumentSource> = {}
 const listeners = new Set<(themes: Record<string, ThemeDocumentSource>) => void>()
@@ -32,6 +34,12 @@ function syncThemes() {
 
 export function allThemes() {
   return listThemes()
+}
+
+// Temporary upstream theme for the "new-designs" experiment. It is not part of allThemes(), so only the
+// TUI theme context offers it, and only while the experiment is enabled.
+export function getOpenCode2Theme() {
+  return opencode2 as unknown as ThemeDocumentSource
 }
 
 export function parseTheme(source: ThemeDocumentSource, name = "theme") {

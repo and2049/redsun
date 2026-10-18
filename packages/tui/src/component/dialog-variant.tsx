@@ -3,6 +3,7 @@ import { useLocal } from "../context/local"
 import { DialogSelect } from "../ui/dialog-select"
 import { useDialog } from "../ui/dialog"
 import { useLanguage } from "../i18n"
+import { useNewDesigns } from "../config"
 
 export function DialogVariant(props: {
   title?: string
@@ -13,6 +14,7 @@ export function DialogVariant(props: {
   const local = useLocal()
   const dialog = useDialog()
   const { t } = useLanguage()
+  const newDesigns = useNewDesigns()
   dialog.setPlacement("bottom")
 
   const list = createMemo(() => props.variants ?? local.model.variant.list())
@@ -43,6 +45,7 @@ export function DialogVariant(props: {
     <DialogSelect<string>
       options={options()}
       title={props.title ?? t("ui.selectVariant")}
+      renderFilter={!newDesigns()}
       current={props.selected ?? local.model.variant.current() ?? "default"}
       flat={true}
     />

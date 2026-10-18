@@ -84,7 +84,7 @@ import { useWorkerModelForms } from "../../component/dialog-worker-model"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { DialogExportResult } from "../../ui/dialog-export-result"
 import { sessionEpilogue } from "../../util/presentation"
-import { useConfig } from "../../config"
+import { useConfig, useNewDesigns } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
@@ -543,6 +543,8 @@ export function Session() {
     dialog.replace(() => (
       <DialogSelect
         title="Queued prompts"
+        searchInTitle
+        titlePlaceholder="Search queued prompts"
         options={queuedPrompts().map((prompt, index) => ({
           title: prompt.text,
           value: prompt.id,
@@ -585,14 +587,9 @@ export function Session() {
             },
           },
         ]}
-        footerHints={[{ title: "steer", label: "enter" }]}
+        footerHints={[{ title: "steer", label: "enter", group: "primary" }]}
       />
     ))
-  const unavailable = (feature: string) => {
-    toast.show({ message: `${feature} is not implemented for V2 sessions yet`, variant: "error", duration: 5000 })
-    dialog.clear()
-  }
-
   const alignMessage = (messageID: string, top: number) => {
     scroll.stickyScroll = false
     setNavigationMessage(messageID)
@@ -885,14 +882,6 @@ export function Session() {
 
   const baseCommands = createMemo(() => [
     {
-      title: language.t("session.shareSession"),
-      id: "session.share",
-      suggested: route.type === "session",
-      group: "Session",
-      slash: { name: "share" },
-      run: () => unavailable("Sharing"),
-    },
-    {
       title: language.t("session.renameSession"),
       id: "session.rename",
       group: "Session",
@@ -1134,9 +1123,12 @@ export function Session() {
       title: language.t("session.copyLastAssistantMessage"),
       id: "messages.copy",
       group: "Session",
+      slash: {
+        name: "copy",
+      },
       run: () => {
         const lastAssistantMessage = messagesBeforeRevert().findLast(
-          (msg): msg is SessionMessageAssistant => msg.type === "assistant",
+          (msg) => msg.type === "assistant" || (msg.type === "compaction" && msg.status === "completed" && msg.summary.trim() !== ""),
         )
         if (!lastAssistantMessage) {
           toast.show({ message: "No assistant messages found", variant: "error" })
@@ -1144,17 +1136,16 @@ export function Session() {
           return
         }
 
-        const textParts = lastAssistantMessage.content.filter((part) => part.type === "text")
-        if (textParts.length === 0) {
-          toast.show({ message: "No text parts found in last assistant message", variant: "error" })
-          dialog.clear()
-          return
-        }
-
-        const text = textParts
-          .map((part) => part.text)
-          .join("\n")
-          .trim()
+        const text =
+          lastAssistantMessage.type === "assistant"
+            ? lastAssistantMessage.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n")
+                .trim()
+            : lastAssistantMessage.type === "compaction" && lastAssistantMessage.status === "completed"
+              ? lastAssistantMessage.summary.trim()
+              : ""
         if (!text) {
           toast.show({
             message: "No text content found in last assistant message",
@@ -1187,9 +1178,6 @@ export function Session() {
       title: language.t("session.copySessionTranscript"),
       id: "session.copy",
       group: "Session",
-      slash: {
-        name: "copy",
-      },
       run: async () => {
         try {
           const sessionData = session()
@@ -1894,11 +1882,27 @@ function SessionMessageView(props: { message: SessionMessageInfo }) {
       <Match when={props.message.type === "compaction"}>
         <CompactionMessage message={props.message as Extract<SessionMessageInfo, { type: "compaction" }>} />
       </Match>
+      <Match when={props.message.type === "idle" ? props.message.error : undefined}>
+        {(error) => <ExecutionError error={error()} />}
+      </Match>
     </Switch>
   )
 }
 
-function SessionPartView(props: { partRef: PartRef; message: (messageID: string) => SessionMessageInfo | undefined }) {
+function ExecutionError(props: { error: NonNullable<Extract<SessionMessageInfo, { type: "idle" }>["error"]> }) {
+  const theme = useTheme()
+  return (
+    <box paddingLeft={3}>
+      <text fg={theme.text.feedback.error.base}>Error: {errorMessage(props.error)}</text>
+    </box>
+  )
+}
+
+function SessionPartView(props: {
+  partRef: PartRef
+  message: (messageID: string) => SessionMessageInfo | undefined
+  images?: boolean
+}) {
   const message = createMemo(() => props.message(props.partRef.messageID))
   const part = createMemo(() => {
     const item = message()
@@ -2218,6 +2222,7 @@ function ShellMessage(props: { message: Extract<SessionMessageInfo, { type: "she
 function UserMessage(props: { message: SessionMessageUser }) {
   const ctx = use()
   const language = useLanguage()
+  const newDesigns = useNewDesigns()
   const data = useData()
   const local = useLocal()
   const files = createMemo(() => deduplicateVisibleImages(props.message.files ?? []))
@@ -2263,6 +2268,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
               dialog.replace(() => (
                 <DialogSelect
                   title={language.t("session.pendingSteer")}
+                  renderFilter={!newDesigns()}
                   options={[
                     { title: language.t("session.moveToQueue"), value: "queue" as const },
                     { title: language.t("session.delete2"), value: "cancel" as const },

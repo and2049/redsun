@@ -1,9 +1,9 @@
-import { TextAttributes } from "@opentui/core"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { Keymap } from "../context/keymap"
+import { useNewDesigns } from "../config"
 import { useTheme } from "../context/theme"
 import type { UpdateState } from "../context/update-notification"
-import { useDialog } from "../ui/dialog"
+import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
 import { errorMessage } from "../util/error"
 import { Spinner } from "./spinner"
 import { useLanguage } from "../i18n"
@@ -18,6 +18,7 @@ export function DialogUpdate(props: {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   const { t } = useLanguage()
+  const newDesigns = useNewDesigns()
   const [error, setError] = createSignal<string>()
   const [active, setActive] = createSignal(0)
   const controller = new AbortController()
@@ -73,9 +74,9 @@ export function DialogUpdate(props: {
         bind: "return",
         title: t("ui.confirmUpdateAction"),
         group: "Dialog",
-        run: () => void buttons()[active()]?.run(),
+        run: () => void buttons()[newDesigns() ? buttons().length - 1 : active()]?.run(),
       },
-      ...["left", "right", "tab", "shift+tab"].map((bind) => ({
+      ...(newDesigns() ? [] : ["left", "right", "tab", "shift+tab"]).map((bind) => ({
         bind,
         title: bind === "left" || bind === "shift+tab" ? t("ui.previousUpdateAction") : t("ui.nextUpdateAction"),
         group: "Dialog",
@@ -88,72 +89,81 @@ export function DialogUpdate(props: {
   }))
 
   return (
-    <box paddingLeft={2} paddingRight={2} gap={1}>
-      <box flexDirection="row" justifyContent="space-between">
-        <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
-          {state().type === "available" || state().type === "installing" || state().type === "failed"
-            ? t("toast.update.title")
-            : t("titlebar.update")}
-        </text>
-        <text fg={theme.text.muted} onMouseUp={() => dialog.clear()}>
-          esc
-        </text>
-      </box>
-      <box paddingBottom={1}>
-        <Show when={state()} keyed>
-          {(current) => (
-            <Switch>
-              <Match when={current.type === "checking"}>
-                <Spinner shimmer={theme.text.base}>{t("ui.checkingForUpdates")}</Spinner>
-              </Match>
-              <Match when={current.type === "available"}>
-                <text fg={theme.text.muted}>{t("ui.anUpdateIsAvailableAfterInstallingYouLl")}</text>
-              </Match>
-              <Match when={current.type === "installing"}>
-                <Spinner shimmer={theme.text.base}>
-                  {current.type === "installing" ? t("ui.installingRedsun", { version: current.version }) : ""}
-                </Spinner>
-              </Match>
-              <Match when={current.type === "installed"}>
-                <text fg={theme.text.muted} wrapMode="word">
-                  {t("ui.updateSuccessfulARestartIsRequiredAnyActive")}
-                </text>
-              </Match>
-              <Match when={current.type === "current"}>
-                <text fg={theme.text.muted}>{t("ui.redsunIsAlreadyUpToDate")}</text>
-              </Match>
-              <Match when={current.type === "unavailable"}>
-                <text fg={theme.text.muted} wrapMode="word">
-                  {current.type === "unavailable" ? current.message : ""}
-                </text>
-              </Match>
-              <Match when={current.type === "failed" || current.type === "check-failed"}>
-                <text fg={theme.text.feedback.error.base}>
-                  {current.type === "failed" || current.type === "check-failed" ? current.message : ""}
-                </text>
-              </Match>
-            </Switch>
-          )}
+    <DialogLayout
+      header={
+        <DialogHeader
+          title={
+            state().type === "available" || state().type === "installing" || state().type === "failed"
+              ? t("toast.update.title")
+              : t("titlebar.update")
+          }
+        />
+      }
+      footer={{
+        actions: {
+          primary: buttons().map((button, index) => ({
+            title: button.label.toLowerCase(),
+            key: index === buttons().length - 1 ? "enter" : undefined,
+            onTrigger: () => void button.run(),
+          })),
+        },
+      }}
+      legacyFooter={
+        <Show when={buttons().length > 0}>
+          <box flexDirection="row" justifyContent="flex-end">
+            <For each={buttons()}>
+              {(button, index) => (
+                <box
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={active() === index() ? theme.background.action.primary.focused : undefined}
+                  onMouseUp={() => void button.run()}
+                >
+                  <text fg={active() === index() ? theme.text.action.primary.focused : theme.text.muted}>
+                    {button.label}
+                  </text>
+                </box>
+              )}
+            </For>
+          </box>
         </Show>
-      </box>
-      <Show when={buttons().length > 0}>
-        <box flexDirection="row" justifyContent="flex-end" paddingBottom={1}>
-          <For each={buttons()}>
-            {(button, index) => (
-              <box
-                paddingLeft={1}
-                paddingRight={1}
-                backgroundColor={active() === index() ? theme.background.action.primary.focused : undefined}
-                onMouseUp={() => void button.run()}
-              >
-                <text fg={active() === index() ? theme.text.action.primary.focused : theme.text.muted}>
-                  {button.label}
-                </text>
-              </box>
-            )}
-          </For>
-        </box>
+      }
+    >
+      <Show when={state()} keyed>
+        {(current) => (
+          <Switch>
+            <Match when={current.type === "checking"}>
+              <Spinner shimmer={theme.text.base}>{t("ui.checkingForUpdates")}</Spinner>
+            </Match>
+            <Match when={current.type === "available"}>
+              <text fg={theme.text.muted}>{t("ui.anUpdateIsAvailableAfterInstallingYouLl")}</text>
+            </Match>
+            <Match when={current.type === "installing"}>
+              <Spinner shimmer={theme.text.base}>
+                {current.type === "installing" ? t("ui.installingRedsun", { version: current.version }) : ""}
+              </Spinner>
+            </Match>
+            <Match when={current.type === "installed"}>
+              <text fg={theme.text.muted} wrapMode="word">
+                {t("ui.updateSuccessfulARestartIsRequiredAnyActive")}
+              </text>
+            </Match>
+            <Match when={current.type === "current"}>
+              <text fg={theme.text.muted}>{t("ui.redsunIsAlreadyUpToDate")}</text>
+            </Match>
+            <Match when={current.type === "unavailable"}>
+              <text fg={theme.text.muted} wrapMode="word">
+                {current.type === "unavailable" ? current.message : ""}
+              </text>
+            </Match>
+            <Match when={current.type === "failed" || current.type === "check-failed"}>
+              <text fg={theme.text.feedback.error.base}>
+                {current.type === "failed" || current.type === "check-failed" ? current.message : ""}
+              </text>
+            </Match>
+          </Switch>
+        )}
       </Show>
-    </box>
+    </DialogLayout>
   )
 }

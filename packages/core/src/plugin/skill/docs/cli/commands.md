@@ -347,6 +347,20 @@ Use an external URL in the links.
 $ redsun pair --url https://dev.example.com
 ```
 
+Pair from anywhere through an OpenTunnel remote address. This exposes the
+server to the internet, so the first time it enables remote access it explains
+this and asks you to accept. See [Remote access](web.md#remote-access).
+
+```bash
+$ redsun pair --remote
+```
+
+Accept without a prompt, for example in a script without a terminal.
+
+```bash
+$ redsun pair --remote --yes
+```
+
 View all subcommands and flags.
 
 ```bash

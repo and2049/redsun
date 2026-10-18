@@ -72,7 +72,7 @@ export const Plugin = {
     const permission = yield* Permission.Service
     const models = yield* Model.Service
     const workerModel = yield* RedsunWorkerModelTool.make(ctx)
-    const subagents = yield* SubagentJob.make
+    const subagents = yield* SubagentJob.Service
 
     const resolveModel = Effect.fn("SubagentTool.resolveModel")(function* (input: string) {
       const ref = yield* Effect.try({

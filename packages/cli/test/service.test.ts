@@ -1,3 +1,4 @@
+import { NetAddress } from "effect/net"
 import { NodeFileSystem } from "@effect/platform-node"
 import { Service, type Info } from "@opencode/client/effect/service"
 import { Global } from "@opencode/util/global"
@@ -554,7 +555,7 @@ test("service registration replaces a stale owner with the bound address", async
   try {
     const cleanup = await Effect.runPromise(
       ServiceRegistration.register({
-        address: { _tag: "TcpAddress", hostname: "127.0.0.1", port: 4321 },
+        address: NetAddress.inetAddressUnsafe(NetAddress.ipv4Loopback, 4321),
         password: "secret",
         id: "owner",
         file: registration,
@@ -649,7 +650,7 @@ const registered = Effect.fnUntraced(function* () {
   const file = path.join(yield* fileSystem.makeTempDirectoryScoped(), "service-local.json")
   const stopped = yield* Deferred.make<void>()
   const cleanup = yield* ServiceRegistration.register({
-    address: { _tag: "TcpAddress", hostname: "127.0.0.1", port: 4321 },
+    address: NetAddress.inetAddressUnsafe(NetAddress.ipv4Loopback, 4321),
     password: "secret",
     id: "owner",
     file,

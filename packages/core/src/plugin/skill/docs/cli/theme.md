@@ -170,14 +170,14 @@ The `categorical` array in `base` sets the ordered hues used to distinguish agen
 
 Semantic tokens assign colors to UI roles. Components use these roles instead of selecting colors directly.
 
-| Group                 | Purpose                                                          |
-| --------------------- | ---------------------------------------------------------------- |
-| `text`                | Base, muted, action, form-field, status, and feedback text.      |
-| `background`          | Base, raised surfaces, actions, form fields, and feedback fills. |
-| `border`, `scrollbar` | Border and scrollbar colors.                                     |
-| `diff`                | Added, removed, context, highlight, and line-number colors.      |
-| `syntax`              | Source-code highlighting.                                        |
-| `markdown`            | Markdown elements.                                               |
+| Group                 | Purpose                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| `text`                | Base, muted, faint, action, form-field, status, and feedback text. `faint` defaults to `muted`. |
+| `background`          | Base, raised surfaces, actions, form fields, and feedback fills.                                |
+| `border`, `scrollbar` | Border and scrollbar colors.                                                                    |
+| `diff`                | Added, removed, context, highlight, and line-number colors.                                     |
+| `syntax`              | Source-code highlighting.                                                                       |
+| `markdown`            | Markdown elements.                                                                              |
 
 For example, `text.muted` controls secondary text while `background.raised` defines progressively elevated surfaces:
 

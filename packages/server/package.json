@@ -35,14 +35,16 @@
     "@opencode/util": "workspace:*",
     "effect": "catalog:",
     "jsonc-parser": "3.3.1",
-    "@opentunnel/client": "0.2.0",
+    "@opentunnel/client": "0.4.0",
     "redsun-remote-control": "0.4.0"
   },
   "devDependencies": {
+    "@opencode-ai/pty": "0.2.0",
     "@opencode/client": "workspace:*",
     "@opencode/plugin": "workspace:*",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@typescript/native-preview": "catalog:",
+    "fast-check": "catalog:"
   }
 }

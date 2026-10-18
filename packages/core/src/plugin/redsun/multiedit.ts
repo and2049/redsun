@@ -13,11 +13,10 @@ import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "../../tool/plugin/file-diff.js"
-import { findMatches } from "../../tool/plugin/edit.js"
+import { findOccurrences, matchView } from "../../tool/plugin/edit.js"
 
 export const NAME = "multiedit"
 
-const crlf = "\r\n"
 
 export const Edit = Schema.Struct({
   oldString: Schema.String.annotate({ description: "Exact text to find and replace" }),
@@ -105,7 +104,6 @@ export const Plugin = define({
                 ),
               )
               const source = original.text
-              const ending = source.includes(crlf) ? crlf : "\n"
 
               // All edits apply in memory first; any failure leaves the file untouched.
               let content = source
@@ -118,9 +116,12 @@ export const Plugin = define({
                   })
                 if (edit.oldString === "")
                   return yield* new ToolFailure({ message: `${label}: oldString must not be empty.` })
-                const oldString = edit.oldString.replaceAll(crlf, "\n").replaceAll("\n", ending)
-                const newString = edit.newString.replaceAll(crlf, "\n").replaceAll("\n", ending)
-                const matches = findMatches(content, oldString)
+                // Strings that differ only in \r ask to change line endings themselves, so they apply to the exact
+                // bytes. Every other edit matches the LF view Read shows the model and keeps the file's endings.
+                const endingsOnly = edit.oldString.replaceAll("\r", "") === edit.newString.replaceAll("\r", "")
+                const { matches, replace } = endingsOnly
+                  ? { matches: findOccurrences(content, edit.oldString), replace: () => edit.newString }
+                  : matchView(content, edit.oldString, edit.newString)
                 if (matches.length === 0)
                   return yield* new ToolFailure({
                     message: `${label}: could not find oldString in ${input.path}. It must match exactly, including whitespace and indentation. Later edits see earlier edits' results.`,
@@ -134,7 +135,7 @@ export const Plugin = define({
                 content = applied
                   .toReversed()
                   .reduce(
-                    (value, match) => `${value.slice(0, match.start)}${newString}${value.slice(match.end)}`,
+                    (value, match) => `${value.slice(0, match.start)}${replace(match)}${value.slice(match.end)}`,
                     content,
                   )
               }

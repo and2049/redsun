@@ -115,6 +115,8 @@ describe("OpenAIPlugin", () => {
 
   it.effect("filters the OpenAI catalog to codex-eligible models under a ChatGPT connection", () =>
     Effect.gen(function* () {
+      // REDSUN: windows come from the ChatGPT backend catalog, not a fixed table; this is what it lists for gpt-6.1-sol.
+      OpenAIModels.reader.read = async () => new Map([["gpt-6.1-sol", { default: 500_000, max: 872_000 }]])
       const catalog = yield* Provider.Service
       const models = yield* Model.Service
       const credentials = yield* Credential.Service
@@ -151,6 +153,13 @@ describe("OpenAIPlugin", () => {
         catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6-astra"), (model) => {
           model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
         })
+        catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6.1-sol"), (model) => {
+          model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+        })
+        catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-6.1-sol-fast"), (model) => {
+          model.modelID = Model.ID.make("gpt-6.1-sol")
+          model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
+        })
         catalog.models.update(Provider.ID.openai, Model.ID.make("gpt-5.10"), (model) => {
           model.limit = { context: 1_050_000, input: 922_000, output: 128_000 }
         })
@@ -178,6 +187,7 @@ describe("OpenAIPlugin", () => {
       const provider = required(yield* catalog.get(Provider.ID.openai))
       expect(provider.package).toBe("@opencode/ai/providers/openai")
       expect(provider.settings).toMatchObject({ baseURL: "https://chatgpt.com/backend-api/codex" })
+      expect(provider.settings?.encoding).toBe("zstd")
       expect(provider.headers).toMatchObject({
         originator: "opencode",
         "chatgpt-account-id": "acct_123",
@@ -210,6 +220,16 @@ describe("OpenAIPlugin", () => {
       expect(gpt56.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-4.1"))).enabled).toBe(false)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-6-astra"))).enabled).toBe(true)
+      expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-6.1-sol"))).limit).toEqual({
+        context: 628_000,
+        input: 500_000,
+        output: 128_000,
+      })
+      expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-6.1-sol-fast"))).limit).toEqual({
+        context: 628_000,
+        input: 500_000,
+        output: 128_000,
+      })
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5.10"))).enabled).toBe(true)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5"))).enabled).toBe(false)
       expect(required(yield* models.get(Provider.ID.openai, Model.ID.make("gpt-5.04-astra"))).enabled).toBe(false)
@@ -307,6 +327,7 @@ describe("OpenAIPlugin", () => {
       expect(model.enabled).toBe(true)
       expect(model.limit).toEqual({ context: 1_050_000, input: 922_000, output: 128_000 })
       expect(provider.settings?.transport).toBe("websocket")
+      expect(provider.settings?.encoding).toBeUndefined()
       expect(model.settings?.transport).toBeUndefined()
       expect(direct.headers).not.toHaveProperty("originator")
       expect(direct.baseURL).toBe("https://api.openai.com/v1")

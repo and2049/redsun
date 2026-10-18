@@ -25,6 +25,7 @@ describe("ClaudeCodeModels", () => {
       "claude-opus-4-6",
       "claude-sonnet-4-6",
       "claude-sonnet-4-5",
+      "claude-haiku-5-5",
       "claude-haiku-4-5",
     ])
     expect(ClaudeCodeModels.cliModel("opus[1m]")).toBe("opus[1m]")
@@ -71,6 +72,7 @@ describe("ClaudeCodeModels", () => {
     expect(window("claude-opus-4-6[1m]")).toBe(1_000_000)
     expect(window("claude-sonnet-4-6")).toBe(200_000)
     expect(window("claude-haiku-4-5-20251001")).toBe(200_000)
+    expect(window("claude-haiku-5-5")).toBe(1_000_000)
     expect(window("something-else")).toBe(200_000)
     expect(window("claude-fable-5-1", true)).toBe(200_000)
 
@@ -456,6 +458,7 @@ describe("ClaudeCodeModels", () => {
       "claude-opus-4-6: Claude Opus 4.6 @ 200000",
       "claude-sonnet-4-6: Claude Sonnet 4.6 @ 200000",
       "claude-sonnet-4-5: Claude Sonnet 4.5 @ 200000",
+      "claude-haiku-5-5: Claude Haiku 5.5 @ 1000000",
     ])
     // Duplicates of what an alias runs stay resolvable, named by version.
     expect(models.get("claude-fable-5-1")).toEqual({ name: "Claude Fable 5.1", enabled: false, context: 1_000_000 })

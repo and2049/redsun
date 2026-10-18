@@ -33,14 +33,21 @@ export async function createAppFixture(
   const ready = Promise.withResolvers<void>()
   const events = createEventStream()
   const calls = createFetch(input.fetch, events)
+  // Updates apply to a copy, as a config file would, so preference writes persist for the rest of the test.
+  let config: Config.Info = structuredClone(input.config ?? { animations: false })
   const server = Bun.serve({ port: 0, fetch: (request) => calls.fetch(request) })
   const task = Effect.runPromise(
     run({
       app: { name: "test", version: "test", channel: "test" },
       server: { endpoint: { url: server.url.toString() }, service: input.service },
       config: input.configService ?? {
-        get: async () => input.config ?? { animations: false },
-        update: async () => ({}),
+        get: async () => config,
+        update: async (mutate) => {
+          const next = structuredClone(config)
+          mutate(next)
+          config = next
+          return next
+        },
       },
       packages: { prepare: async () => ({ directory: "" }) },
       plugins: input.plugins,
@@ -67,6 +74,7 @@ export async function createAppFixture(
   return {
     ...setup,
     events,
+    config: () => config,
     ready: ready.promise,
     async [Symbol.asyncDispose]() {
       try {

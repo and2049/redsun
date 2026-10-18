@@ -27,8 +27,6 @@ if (!Script.preview) {
   output.push(`tag=${release.tagName}`)
 }
 
-output.push(`repo=${process.env.GH_REPO}`)
-
 if (process.env.GITHUB_OUTPUT) {
   await Bun.write(process.env.GITHUB_OUTPUT, output.join("\n"))
 }

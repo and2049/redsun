@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { RemoteControl } from "@opencode/schema/remote-control"
 import { Location } from "@opencode/schema/location"
 import { LocationQuery } from "./location.js"

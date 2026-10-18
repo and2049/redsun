@@ -70,6 +70,8 @@ export function CommandPaletteDialog() {
     <DialogSelect
       ref={(value) => (ref = value)}
       title={t("palette.group.commands")}
+      searchInTitle
+      titlePlaceholder="Search commands"
       options={list()}
       flat={true}
       filterThreshold={0.7}

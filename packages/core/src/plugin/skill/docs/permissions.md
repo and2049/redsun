@@ -97,21 +97,23 @@ operation is allowed.
 V2 action names are strings, so plugins may define more actions. Built-in tools
 currently use these actions and resources:
 
-| Action               | Resource                                                                     |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `read`               | Location-relative internal path or canonical absolute external path          |
-| `edit`               | Target path for `edit`, `write`, and `patch`                                 |
-| `glob`               | Requested glob pattern                                                       |
-| `grep`               | Requested regular expression, not the search path                            |
-| `shell`              | Scanner-produced command string; compound commands may produce several       |
-| `subagent`           | Target agent ID                                                              |
-| `skill`              | Skill ID                                                                     |
-| `question`           | `*`                                                                          |
-| `webfetch`           | Requested URL                                                                |
-| `websearch`          | Search query                                                                 |
-| `external_directory` | Canonical external directory boundary, normally ending in `/*`               |
-| `<server>_<tool>`    | `*` for an MCP tool; unsupported characters in both names become `_`         |
-| `execute`            | `*`; controls Code Mode availability, while nested tools enforce their rules |
+| Action                        | Resource                                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `read`                        | Location-relative internal path or canonical absolute external path                                         |
+| `edit`                        | Target path for `edit`, `write`, and `patch`                                                                |
+| `glob`                        | Requested glob pattern                                                                                      |
+| `grep`                        | Requested regular expression, not the search path                                                           |
+| `shell`                       | Scanner-produced command string; compound commands may produce several                                      |
+| `subagent`                    | Target agent ID                                                                                             |
+| `skill`                       | Skill ID                                                                                                    |
+| `question`                    | `*`                                                                                                         |
+| `webfetch`                    | Requested URL                                                                                               |
+| `websearch`                   | Search query                                                                                                |
+| `external_directory`          | Canonical external directory boundary, normally ending in `/*`                                              |
+| `<server>_<tool>`             | `*` for an MCP tool; unsupported characters in both names become `_`                                        |
+| `opencode_list_mcp_resources` | MCP server name                                                                                             |
+| `opencode_read_mcp_resource`  | `<server>:<uri>`                                                                                            |
+| `execute`                     | `*`; a deny removes Code Mode and the tools reached only through it, while nested tools enforce their rules |
 
 For example, allow one skill and deny all other skills:
 
@@ -128,8 +130,19 @@ For example, allow one skill and deny all other skills:
 
 ## Directories
 
-A path outside both the active Location and its non-root project worktree needs
-`external_directory` approval before its `read` or `edit` approval.
+A path outside both the active Location and its non-root project worktree is
+checked against `external_directory` before its `read` or `edit` rules. The
+default policy allows `external_directory`, so external paths are not prompted
+unless you add a rule. To be asked before any access outside the project:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permissions": [{ "action": "external_directory", "resource": "*", "effect": "ask" }],
+}
+```
+
+Narrower rules after it can allow or deny specific directories:
 
 ```jsonc
 {
@@ -190,7 +203,6 @@ Every agent, including custom agents, starts with this ordered base policy:
 ```jsonc
 [
   { "action": "*", "resource": "*", "effect": "allow" },
-  { "action": "external_directory", "resource": "*", "effect": "ask" },
   { "action": "read", "resource": "*.env", "effect": "ask" },
   { "action": "read", "resource": "*.env.*", "effect": "ask" },
   { "action": "read", "resource": "*.env.example", "effect": "allow" },
@@ -199,20 +211,21 @@ Every agent, including custom agents, starts with this ordered base policy:
 
 Shipped agents append these policies:
 
-| Agent        | Additional policy                                                                                                          |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `build`      | Allows questions                                                                                                           |
-| `plan`       | Allows questions; denies edits except files under `~/.redsun/plan`                                                         |
-| `general`    | Denies questions and launching subagents                                                                                   |
-| `explore`    | Denies everything except reads, globs, grep, web fetches, and web searches; asks for external directories and `.env` reads |
-| `title`      | Denies all actions                                                                                                         |
-| `summary`    | Denies all actions                                                                                                         |
-| `compaction` | Keeps the base policy                                                                                                      |
+| Agent        | Additional policy                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `build`      | Allows questions                                                                                                               |
+| `plan`       | Allows questions; denies edits except files under `~/.redsun/plan`                                                             |
+| `general`    | Denies questions and launching subagents                                                                                       |
+| `explore`    | Denies everything except shell, reads, globs, grep, web fetches, web searches, and external directories; asks for `.env` reads |
+| `title`      | Denies all actions                                                                                                             |
+| `summary`    | Denies all actions                                                                                                             |
+| `compaction` | Keeps the base policy                                                                                                          |
 
-redsun also allows external-directory access to its managed tool-output,
-shell-output, temporary, and global configuration directories. The underlying
-`read`, `edit`, or other action still uses its own rules. Later global and agent
-rules can override these defaults.
+Because no default rule asks for `external_directory`, reads and edits outside
+the Location and worktree proceed without a prompt. Add an
+`external_directory` `ask` or `deny` rule, as shown in
+[Directories](#directories), to restore a prompt or block outside access.
+Later global and agent rules override these defaults.
 
 ## Agents
 
@@ -272,9 +285,7 @@ approvals run. It turns `allow` or `ask` into `deny` and never grants access.
 
 ```jsonc
 {
-  "experimental": {
-    "policies": [{ "action": "permission", "resource": "shell:sudo *", "effect": "deny" }],
-  },
+  "policies": [{ "action": "tool.use", "resource": "shell:sudo *", "effect": "deny" }],
 }
 ```
 

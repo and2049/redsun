@@ -34,8 +34,8 @@ import { SdkPlugins } from "@opencode/core/plugin/sdk"
 import { WellKnown } from "@opencode/core/wellknown"
 import { Workspace } from "@opencode/core/workspace"
 import { Watcher } from "@opencode/core/filesystem/watcher"
-import { HttpRouter } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { Context, Effect, Layer, Option } from "effect"
 import { Api } from "./api"
 import { ServerAuth } from "./auth"
@@ -61,6 +61,7 @@ const applicationServiceNodes = [
   httpClient,
   Job.node,
   Project.node,
+  Project.sweepNode,
   Worktree.node,
   Session.node,
   SessionMessagePin.node,
@@ -150,6 +151,7 @@ function makeRoutes<AuthError, AuthServices>(
     Config.node.replace(
       Config.configured({
         project: options.config?.project,
+        claude: options.config?.claude,
         file: options.config?.file,
         content: options.config?.content,
       }),

@@ -9,6 +9,7 @@ import { DialogFork } from "./dialog-fork"
 import type { PromptInfo } from "../../prompt/history"
 import { projectedPromptInput } from "../../prompt/codec"
 import { useLanguage } from "../../i18n"
+import { useNewDesigns } from "../../config"
 
 export function DialogMessage(props: {
   messageID: string
@@ -20,6 +21,7 @@ export function DialogMessage(props: {
   const clipboard = useClipboard()
   const toast = useToast()
   const client = useClient()
+  const newDesigns = useNewDesigns()
   const message = createMemo(() => data.session.message.get(props.sessionID, props.messageID))
   const { t } = useLanguage()
   const [busy, setBusy] = createSignal(false)
@@ -33,6 +35,7 @@ export function DialogMessage(props: {
     <DialogSelect
       title={t("session.messageActions")}
       locked={busy()}
+      renderFilter={!newDesigns()}
       options={[
         {
           title: t("session.jumpTo"),
