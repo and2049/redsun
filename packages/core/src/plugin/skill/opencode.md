@@ -26,7 +26,7 @@ below name the page for their topic; the other pages are:
 - Top level: `agents`, `commands` (custom commands, prompt templates), `skills`,
   `instructions` (AGENTS.md), `references` (directories outside the project),
   `permissions`, `policies` (experimental deny statements), `providers`, `models`, `tools`, `websearch`, `formatters`,
-  `attachments`, `compaction`, `snapshots` (rollback), `sharing`, `warming`
+  `attachments`, `compaction`, `snapshots` (rollback), `warming`
   (session warming), `themes`, `network` (proxies, certificates)
 - `cli/`: `commands` (command-line options), `providers`, `plugins`, `theme`,
   `tui`, `web` (server access and pairing), `acp`
@@ -66,9 +66,11 @@ user following it will not find the file.
 ## Sources
 
 The local pages and <https://opencode.ai/v2/docs/> are the only sources of
-truth; do not use web search when they cover the question. Do not use <https://opencode.ai/docs/> (a different, older product) or
-the schema at <https://opencode.ai/config.json> to infer field names or shapes;
-if the pages are missing or contradictory, say so instead of guessing.
+truth; do not use web search when they cover the question. Do not use <https://opencode.ai/docs/> (a different, older product).
+The schema at <https://opencode.ai/config.json> accepts both V2 fields and
+deprecated V1 fields: never recommend a field it marks deprecated, and do not
+infer field names or shapes from it. If the pages are missing or contradictory,
+say so instead of guessing.
 
 ## CLI
 

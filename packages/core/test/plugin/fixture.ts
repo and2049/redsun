@@ -3,6 +3,8 @@ import { AISDK } from "@opencode/core/aisdk"
 import { Command } from "@opencode/core/command"
 import { Config } from "@opencode/core/config"
 import { Credential } from "@opencode/core/credential"
+import { Database } from "@opencode/core/database/database"
+import { FileAccess } from "@opencode/core/file-access"
 import { LayerNodePlatform } from "@opencode/util/effect/app-node-platform"
 import { AppProcess } from "@opencode/util/process"
 import { LayerNode } from "@opencode/util/effect/layer-node"
@@ -75,62 +77,64 @@ const permissionLayer = Layer.succeed(
   }),
 )
 
-const nodes = LayerNode.group([
-  AppProcess.node,
-  FileSystem.node,
-  FSUtil.node,
-  Location.node,
-  Npm.node,
-  Credential.node,
-  Config.node,
-  Bus.node,
-  DelegatedRuntime.node,
-  Form.node,
-  Generate.node,
-  LayerNodePlatform.httpClient,
-  Plugin.node,
-  Agent.node,
-  AISDK.node,
-  Provider.node,
-  Model.node,
-  Command.node,
-  Integration.node,
-  InstructionBuiltIns.node,
-  // REDSUN: the delegate domain's host context reads discovered instructions (`PluginHost.requirements`).
-  InstructionDiscovery.node,
-  KV.node,
-  ManagedPolicy.node,
-  Mcp.node,
-  Session.node,
-  SessionStore.node,
-  PersistentPty.node,
-  LocationServiceMap.node,
-  Permission.node,
-  PluginHooks.node,
-  Reference.node,
-  Rpc.node,
-  Skill.node,
-  SkillDiscovery.node,
-  Tool.node,
-  Vcs.node,
-  Watcher.node,
-  WebSearch.node,
-  Worktree.node,
-  WorktreeStrategies.node,
-])
+export const makePluginTestLayer = (permission?: typeof permissionLayer) =>
+  AppNodeBuilder.build(
+    LayerNode.group([
+      AppProcess.node,
+      FileSystem.node,
+      FSUtil.node,
+      Location.node,
+      Npm.node,
+      Credential.node,
+      Config.node,
+      Database.node,
+      FileAccess.node,
+      Bus.node,
+      DelegatedRuntime.node,
+      Form.node,
+      Generate.node,
+      LayerNodePlatform.httpClient,
+      Plugin.node,
+      Agent.node,
+      AISDK.node,
+      Provider.node,
+      Model.node,
+      Command.node,
+      Integration.node,
+      InstructionBuiltIns.node,
+      // REDSUN: the delegate domain's host context reads discovered instructions (`PluginHost.requirements`).
+      InstructionDiscovery.node,
+      KV.node,
+      ManagedPolicy.node,
+      Mcp.node,
+      Session.node,
+      SessionStore.node,
+      PersistentPty.node,
+      LocationServiceMap.node,
+      Permission.node,
+      PluginHooks.node,
+      Reference.node,
+      Rpc.node,
+      Skill.node,
+      SkillDiscovery.node,
+      Tool.node,
+      Vcs.node,
+      Watcher.node,
+      WebSearch.node,
+      Worktree.node,
+      WorktreeStrategies.node,
+    ]),
+    [
+      Location.node.replace(tempLocationLayer),
+      Npm.node.replace(npmLayer),
+      Config.node.replace(configLayer),
+      Mcp.node.replace(emptyMcpLayer),
+      Generate.node.replace(generateLayer),
+      ...(permission ? [Permission.node.replace(permission)] : []),
+    ],
+  ).pipe(Layer.provideMerge(configLayer))
 
-const replacements = [
-  Location.node.replace(tempLocationLayer),
-  Npm.node.replace(npmLayer),
-  Config.node.replace(configLayer),
-  Mcp.node.replace(emptyMcpLayer),
-  Generate.node.replace(generateLayer),
-]
-
-export const PluginTestLayer = AppNodeBuilder.build(nodes, [
-  ...replacements,
-  Permission.node.replace(permissionLayer),
-]).pipe(Layer.provideMerge(configLayer))
+export const PluginTestLayer = makePluginTestLayer(permissionLayer)
 
 /** The same graph with the real permission service, for tests that exercise host policy. */
-export const PluginPermissionTestLayer = AppNodeBuilder.build(nodes, replacements).pipe(Layer.provideMerge(configLayer))
+export const PluginPermissionTestLayer = makePluginTestLayer()

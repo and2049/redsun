@@ -329,6 +329,7 @@ export function DiffViewerContent(props: {
   const [expandedFileNodes, setExpandedFileNodes] = createSignal<ReadonlySet<number>>(new Set())
   const [selectedFileIndex, setSelectedFileIndex] = createSignal<number | undefined>()
   const [reviewedFileNames, setReviewedFileNames] = createSignal<ReadonlySet<string>>(new Set())
+  const [exhaustedFileIndex, setExhaustedFileIndex] = createSignal<number | undefined>()
   const [fileMenu, setFileMenu] = createSignal<FileMenuState>()
   const patchScrollAcceleration = createMemo(() => getScrollAcceleration(config.data))
   const patchFileIndexes = createMemo(() => orderedPatchFileIndexes(flattenFileTree(fileTree())))
@@ -346,6 +347,7 @@ export function DiffViewerContent(props: {
     setSelectedFileIndex(undefined)
     setSelectedHunk(undefined)
     setReviewedFileNames(new Set<string>())
+    setExhaustedFileIndex(undefined)
     setFileMenu(undefined)
   })
 
@@ -380,6 +382,7 @@ export function DiffViewerContent(props: {
 
   const selectPatchFile = (fileIndex: number) => {
     setPendingPatchScrollFileIndex(undefined)
+    setExhaustedFileIndex(undefined)
     revealFileTreeFile(fileIndex)
     setSelectedFileIndex(fileIndex)
   }
@@ -540,6 +543,7 @@ export function DiffViewerContent(props: {
     const nextFileIndex =
       singlePatch() && !reviewed ? (movePatchFileIndex(patchFileIndexes(), fileIndex, 1) ?? fileIndex) : fileIndex
     selectPatchFile(nextFileIndex)
+    if (singlePatch() && !reviewed && nextFileIndex === fileIndex) setExhaustedFileIndex(fileIndex)
     setSelectedHunk(undefined)
     scrollToPatchFileIndexAfterRender(nextFileIndex)
   }
@@ -667,7 +671,9 @@ export function DiffViewerContent(props: {
       title: "Toggle selected diff file reviewed",
       group: "VCS",
       run() {
-        toggleFileReviewed(selectedFileIndex() ?? currentPatchFileIndex())
+        const fileIndex = selectedFileIndex() ?? currentPatchFileIndex()
+        if (fileIndex !== undefined && fileIndex === exhaustedFileIndex()) return
+        toggleFileReviewed(fileIndex)
       },
     },
     {

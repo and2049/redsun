@@ -3,7 +3,7 @@ import { ContextSettings } from "@opencode/core/config/context-settings"
 import { ShellSelect } from "@opencode/core/shell/select"
 import { InvalidRequestError, UnknownError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
 
 const error = (cause: Error) =>

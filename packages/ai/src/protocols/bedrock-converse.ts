@@ -1,4 +1,5 @@
-import { Effect, Encoding, Schema } from "effect"
+import { Effect, Schema } from "effect"
+import { Base64 } from "effect/encoding"
 import { Route } from "../route/client.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Protocol } from "../route/protocol.js"
@@ -515,7 +516,7 @@ const fromRequest = Effect.fn("BedrockConverse.fromRequest")(function* (request:
   )
   // Bedrock-Claude shares Anthropic's 4-breakpoint cap. Spend the budget in
   // tools → system → messages order to favour the highest-impact prefixes.
-  const breakpoints = BedrockCache.breakpoints(request.model.id)
+  const breakpoints = BedrockCache.breakpoints(request.model)
   const toolConfig = (() => {
     if (flattened.tools.length === 0) return undefined
     return {
@@ -612,7 +613,7 @@ interface ParserState {
   readonly reasoningRedactedContent: Readonly<Record<number, Uint8Array[]>>
 }
 
-const encodeRedactedContent = (chunks: ReadonlyArray<Uint8Array>) => Encoding.encodeBase64(concatBytes(chunks))
+const encodeRedactedContent = (chunks: ReadonlyArray<Uint8Array>) => Base64.encode(concatBytes(chunks))
 
 const step = (state: ParserState, event: BedrockEvent) =>
   Effect.gen(function* () {
@@ -661,7 +662,7 @@ const step = (state: ParserState, event: BedrockEvent) =>
       const events: LLMEvent[] = []
       const redactedChunk = yield* (() => {
         if (reasoning.redactedContent === undefined) return Effect.succeed(undefined)
-        return Effect.fromResult(Encoding.decodeBase64(reasoning.redactedContent)).pipe(
+        return Effect.fromResult(Base64.decode(reasoning.redactedContent)).pipe(
           Effect.mapError((cause) =>
             ProviderShared.eventError(
               ADAPTER,

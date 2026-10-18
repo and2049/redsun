@@ -15,6 +15,7 @@ import { OauthCallbackPage } from "../../oauth/page.js"
 import { Provider } from "../../provider.js"
 import { SessionAffinity } from "../../session/affinity.js"
 import type { PluginInternal } from "../internal.js"
+import { configuredSettings } from "./configured.js"
 
 const clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const issuer = "https://auth.openai.com"
@@ -288,6 +289,8 @@ export const OpenAIPlugin = define({
       methods: [browserMethodID, headlessMethodID],
       read: readOpenAIUsage,
     })
+    // Config applies after provider plugins, so read it here: a custom baseURL may not decode zstd.
+    const configured = yield* configuredSettings(Provider.ID.openai)
     yield* ctx.provider.transform((providers) => {
       const item = providers.get(Provider.ID.openai)
       if (!item) return
@@ -296,6 +299,8 @@ export const OpenAIPlugin = define({
         provider.settings = Provider.mergeOverlay(provider.settings, {
           transport: provider.settings?.transport ?? "websocket",
           ...(chatgpt ? { baseURL: codexBaseURL } : {}),
+          // The ChatGPT backend rejects uncompressed bodies over ~1 MiB and decodes zstd.
+          ...(chatgpt && configured?.baseURL === undefined ? { encoding: provider.settings?.encoding ?? "zstd" } : {}),
         })
         if (!chatgpt) return
         provider.headers = Provider.mergeHeaders(provider.headers, {

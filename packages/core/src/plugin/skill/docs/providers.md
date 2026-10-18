@@ -53,16 +53,17 @@ runtime package, endpoint, and first model together.
 
 The `providers` object is keyed by the provider ID used in model references, such as `acme/qwen3-coder`.
 
-| Field       | Purpose                                                               |
-| ----------- | --------------------------------------------------------------------- |
-| `name`      | Display name.                                                         |
-| `env`       | Ordered environment variable names that can provide the credential.   |
-| `package`   | Runtime provider package.                                             |
-| `canonical` | Built-in provider ID whose catalog defaults this provider inherits.   |
-| `settings`  | Typed redsun controls and JSON options passed to the runtime package. |
-| `headers`   | String-valued HTTP headers added to requests.                         |
-| `body`      | JSON fields merged into request bodies.                               |
-| `models`    | Models to add or override, keyed by the redsun model ID.              |
+| Field           | Purpose                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`          | Display name.                                                                                                                                                                                                |
+| `env`           | Ordered environment variable names that can provide the credential.                                                                                                                                          |
+| `package`       | Runtime provider package.                                                                                                                                                                                    |
+| `canonical`     | Built-in provider ID whose catalog defaults this provider inherits.                                                                                                                                          |
+| `compatibility` | Request and response compatibility overrides for every model of this provider. Model `compatibility` overrides individual fields. `supportsThinkingBlockBinding` and `supportsEffortUpdates` are model-only. |
+| `settings`      | Typed redsun controls and JSON options passed to the runtime package.                                                                                                                                        |
+| `headers`       | String-valued HTTP headers added to requests.                                                                                                                                                                |
+| `body`          | JSON fields merged into request bodies.                                                                                                                                                                      |
+| `models`        | Models to add or override, keyed by the redsun model ID.                                                                                                                                                     |
 
 ## Endpoint
 
@@ -154,6 +155,24 @@ WebSocket transport, `chunkTimeout` bounds the gap between frames instead and de
 A request that exceeds either limit fails with a transport error. redsun retries a timed-out request up to three
 times before giving up.
 
+## Request encoding
+
+`settings.encoding` compresses HTTP request bodies with `"zstd"` or `"gzip"`, or sends plain JSON with `"none"`. Set it
+on a provider, model, or variant; the most specific value wins. Only enable an encoding the endpoint decodes: most
+providers and gateways reject compressed bodies. OpenAI defaults to `"zstd"` when signed in with ChatGPT and no custom
+`baseURL` is configured; API keys send plain JSON. WebSocket messages are unaffected.
+
+```jsonc title="redsun.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "openai": {
+      "settings": { "encoding": "none" },
+    },
+  },
+}
+```
+
 ## Packages
 
 The `package` field selects the runtime that communicates with a provider. Use the compatible runtime for APIs that
@@ -197,6 +216,7 @@ Native package options include:
 - `@opencode/ai/providers/amazon-bedrock`
 - `@opencode/ai/providers/amazon-bedrock/mantle`
 - `@opencode/ai/providers/amazon-bedrock/mantle/chat`
+- `@opencode/ai/providers/amazon-bedrock/mantle/messages`
 - `@opencode/ai/providers/amazon-bedrock/mantle/responses`
 - `@opencode/ai/providers/openrouter`
 - `@opencode/ai/providers/xai`
@@ -237,21 +257,22 @@ ID sent to the provider.
 }
 ```
 
-| Field           | Purpose                                                          |
-| --------------- | ---------------------------------------------------------------- |
-| `modelID`       | Model or deployment ID sent to the provider.                     |
-| `name`          | Display name.                                                    |
-| `family`        | Model family used for grouping related models.                   |
-| `package`       | Runtime override for this model.                                 |
-| `settings`      | Model-level redsun controls and package-specific JSON settings.  |
-| `headers`       | Additional string-valued request headers.                        |
-| `body`          | Additional JSON request body fields.                             |
-| `capabilities`  | Tool support plus accepted input and output media types.         |
-| `compatibility` | Request and response compatibility overrides.                    |
-| `variants`      | Named variants with their own `settings`, `headers`, and `body`. |
-| `cost`          | Input, output, and optional cache pricing per million tokens.    |
-| `limit`         | Context, input, and output token limits.                         |
-| `disabled`      | Removes the model from selection when `true`.                    |
+| Field           | Purpose                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `modelID`       | Model or deployment ID sent to the provider.                                                      |
+| `name`          | Display name.                                                                                     |
+| `family`        | Model family used for grouping related models.                                                    |
+| `releaseDate`   | Release date as `YYYY-MM-DD` or `YYYY-MM`.                                                        |
+| `package`       | Runtime override for this model.                                                                  |
+| `settings`      | Model-level redsun controls and package-specific JSON settings.                                   |
+| `headers`       | Additional string-valued request headers.                                                         |
+| `body`          | Additional JSON request body fields.                                                              |
+| `capabilities`  | Tool support, accepted input and output media types, temperature support, and reasoning controls. |
+| `compatibility` | Request and response compatibility overrides.                                                     |
+| `variants`      | Named variants with their own `settings`, `headers`, and `body`.                                  |
+| `cost`          | Input, output, and optional cache pricing per million tokens.                                     |
+| `limit`         | Context, input, and output token limits.                                                          |
+| `disabled`      | Removes the model from selection when `true`.                                                     |
 
 See [Models](models.md) for selection, defaults, capabilities, limits, costs, and variants.
 

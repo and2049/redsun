@@ -11,6 +11,7 @@ import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
 import { groupByProvider, providerRowTitle } from "../util/provider-menu"
 import { useLanguage } from "../i18n"
+import { useNewDesigns } from "../config"
 
 export function DialogModel(props: {
   providerID?: string
@@ -20,6 +21,7 @@ export function DialogModel(props: {
   onSelect?: (model: { providerID: string; modelID: string }) => void
 }) {
   const local = useLocal()
+  const newDesigns = useNewDesigns()
   const data = useData()
   const dialog = useDialog()
   const location = useLocation()
@@ -186,11 +188,19 @@ export function DialogModel(props: {
 
   return (
     <DialogSelect<ReturnType<typeof options>[number]["value"]>
+      searchInTitle
+      titlePlaceholder="Search models"
       options={options()}
       actions={[
         {
           command: "model.dialog.provider",
-          title: connected() ? t("ui.connectAnIntegration") : t("ui.viewAllIntegrations"),
+          title: newDesigns()
+            ? connected()
+              ? "connect integration"
+              : "view all integrations"
+            : connected()
+              ? t("ui.connectAnIntegration")
+              : t("ui.viewAllIntegrations"),
           selection: "none",
           onTrigger() {
             dialog.replace(() => (
@@ -202,7 +212,7 @@ export function DialogModel(props: {
         },
         {
           command: "model.dialog.favorite",
-          title: t("ui.favorite"),
+          title: newDesigns() ? "favorite" : t("ui.favorite"),
           hidden: !connected(),
           disabled: (option) => !option || !(option.value as { modelID?: string }).modelID,
           onTrigger: (option) => {

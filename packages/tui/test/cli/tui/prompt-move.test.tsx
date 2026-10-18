@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import { InputRenderable } from "@opentui/core"
+import { InputRenderable, TextareaRenderable } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { usePromptMove } from "../../../src/component/prompt/move"
 import { ConfigProvider } from "../../../src/config"
@@ -155,11 +155,12 @@ test.each([false, true])("Ctrl+M moves only an existing session (home=%s)", asyn
     await fixture.move.open()
     const frame = await fixture.app.waitForFrame((frame) => frame.includes("Worktrees") && frame.includes(linked))
     const lines = frame.split("\n")
+    // Footer actions render inline as "title key" pairs on one row.
     const shortcuts = lines.findIndex((line) => line.includes("ctrl+a"))
     expect(shortcuts).toBeGreaterThan(0)
-    expect(lines[shortcuts - 1]).toContain("new")
+    expect(lines[shortcuts]).toContain("new")
     expect(lines[shortcuts].includes("ctrl+m")).toBe(!home)
-    expect(/\bmove\b/.test(lines[shortcuts - 1])).toBe(!home)
+    expect(/\bmove\b/.test(lines[shortcuts])).toBe(!home)
     await fixture.app.waitFor(() => fixture.app.renderer.currentFocusedEditor instanceof InputRenderable)
     await fixture.app.mockInput.typeText("linked")
     await fixture.app.waitForFrame((frame) => frame.includes(linked) && !frame.includes(clone))
@@ -208,7 +209,7 @@ test("creating a worktree recovers the session without reading its removed locat
     await fixture.app.waitForFrame((frame) => frame.includes("Worktrees") && frame.includes(linked))
     fixture.app.mockInput.pressKey("a", { ctrl: true })
     await fixture.app.waitForFrame((frame) => frame.includes("Name worktree"))
-    await fixture.app.waitFor(() => fixture.app.renderer.currentFocusedEditor instanceof InputRenderable)
+    await fixture.app.waitFor(() => fixture.app.renderer.currentFocusedEditor instanceof TextareaRenderable)
     await fixture.app.mockInput.typeText("fresh")
     fixture.app.mockInput.pressEnter()
     await fixture.app.waitFor(() => fixture.moves.length === 1)
@@ -435,7 +436,7 @@ async function renderMove(input: {
       )
       app.mockInput.pressKey("a", { ctrl: true })
       await app.waitForFrame((frame) => frame.includes("Name worktree"))
-      await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
+      await app.waitFor(() => app.renderer.currentFocusedEditor instanceof TextareaRenderable)
       await app.mockInput.typeText("fresh")
       app.mockInput.pressEnter()
       if (input.home) {

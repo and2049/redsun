@@ -33,16 +33,15 @@ import p29 from "./plugins.md" with { type: "text" }
 import p30 from "./policies.md" with { type: "text" }
 import p31 from "./providers.md" with { type: "text" }
 import p32 from "./references.md" with { type: "text" }
-import p33 from "./sharing.md" with { type: "text" }
-import p34 from "./skills.md" with { type: "text" }
-import p35 from "./snapshots.md" with { type: "text" }
-import p36 from "./themes.md" with { type: "text" }
-import p37 from "./tools.md" with { type: "text" }
-import p38 from "./troubleshooting.md" with { type: "text" }
-import p39 from "./warming.md" with { type: "text" }
-import p40 from "./websearch.md" with { type: "text" }
+import p33 from "./skills.md" with { type: "text" }
+import p34 from "./snapshots.md" with { type: "text" }
+import p35 from "./themes.md" with { type: "text" }
+import p36 from "./tools.md" with { type: "text" }
+import p37 from "./troubleshooting.md" with { type: "text" }
+import p38 from "./warming.md" with { type: "text" }
+import p39 from "./websearch.md" with { type: "text" }
 
-export const source = "5e73d5cb1f788637b1b3d5cf1298ea694cbad0c5"
+export const source = "d4a6223d017e17f1beaa91d3e6ecc6511c5132ad"
 
 export const pages: ReadonlyArray<{ readonly path: string; readonly content: string }> = [
   { path: "agents.md", content: p0 },
@@ -78,12 +77,11 @@ export const pages: ReadonlyArray<{ readonly path: string; readonly content: str
   { path: "policies.md", content: p30 },
   { path: "providers.md", content: p31 },
   { path: "references.md", content: p32 },
-  { path: "sharing.md", content: p33 },
-  { path: "skills.md", content: p34 },
-  { path: "snapshots.md", content: p35 },
-  { path: "themes.md", content: p36 },
-  { path: "tools.md", content: p37 },
-  { path: "troubleshooting.md", content: p38 },
-  { path: "warming.md", content: p39 },
-  { path: "websearch.md", content: p40 },
+  { path: "skills.md", content: p33 },
+  { path: "snapshots.md", content: p34 },
+  { path: "themes.md", content: p35 },
+  { path: "tools.md", content: p36 },
+  { path: "troubleshooting.md", content: p37 },
+  { path: "warming.md", content: p38 },
+  { path: "websearch.md", content: p39 },
 ]

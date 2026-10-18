@@ -118,7 +118,7 @@ Create the Effect client, then create the RPC subclient:
 ```ts
 import { redsun } from "@opencode/client/effect"
 import { Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { Acme } from "opencode-acme-plugin/rpc"
 
 const program = Effect.gen(function* () {

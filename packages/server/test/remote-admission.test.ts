@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import { Context, Deferred, Effect, Layer } from "effect"
-import { HttpEffect, HttpRouter, HttpServer } from "effect/unstable/http"
+import { HttpEffect, HttpRouter, HttpServer } from "effect/http"
 import { SessionRunner } from "@opencode/core/session/runner/index"
 import { SessionRunnerLLM } from "@opencode/core/session/runner/llm"
 import { Session } from "@opencode/core/session"

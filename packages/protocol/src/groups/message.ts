@@ -3,7 +3,7 @@ import { SessionMessage } from "@opencode/schema/session-message"
 import { SessionMessagePin } from "@opencode/schema/session-message-pin"
 import { Location } from "@opencode/schema/location"
 import { Schema, Struct } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import {
   InvalidCursorError,
   InvalidRequestError,

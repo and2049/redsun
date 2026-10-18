@@ -1,5 +1,5 @@
-import { Effect, Schema, FileSystem } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
+import { ByteSize, Effect, Schema } from "effect"
+import { HttpServerRequest } from "effect/http"
 import { RemoteControl } from "@opencode/schema/remote-control"
 
 const id = "ses_[A-Za-z0-9_-]+"
@@ -81,7 +81,7 @@ export const check = Effect.fnUntraced(function* (request: HttpServerRequest.Htt
   if ([...url.searchParams.keys()].some((key) => !query.includes(key))) return false
   if (request.method === "GET") return true
   const text = yield* request.text.pipe(
-    Effect.provideService(HttpServerRequest.MaxBodySize, FileSystem.Size(6 * 1024 * 1024)),
+    Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(6 * 1024 * 1024)),
     Effect.orElseSucceed(() => "invalid"),
   )
   if (Buffer.byteLength(text) > 6 * 1024 * 1024) return false

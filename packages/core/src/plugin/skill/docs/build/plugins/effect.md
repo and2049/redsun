@@ -548,7 +548,7 @@ Connect with a key or drive an OAuth attempt through the connected API.
 effect: (ctx) =>
   Effect.gen(function* () {
     const integration = ctx.integration
-    const token = yield* Config.redacted("GITHUB_TOKEN").pipe(Effect.orDie)
+    const token = yield* Config.Redacted("GITHUB_TOKEN").pipe(Effect.orDie)
     yield* integration.connect
       .key({ integrationID: Integration.ID.make("github"), key: Redacted.value(token) })
       .pipe(Effect.orDie)
@@ -1515,7 +1515,7 @@ entrypoint and declare `effect` as a `peerDependency`.
     "@opencode/plugin": "latest"
   },
   "peerDependencies": {
-    "effect": ">=4.0.0-rc.112"
+    "effect": "^4.0.0"
   }
 }
 ```

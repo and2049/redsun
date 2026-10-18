@@ -94,7 +94,8 @@
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@types/which": "3.0.4",
-    "drizzle-kit": "catalog:"
+    "drizzle-kit": "catalog:",
+    "fast-check": "catalog:"
   },
   "dependencies": {
     "@ai-sdk/cohere": "3.0.27",
@@ -118,7 +119,7 @@
     "@parcel/watcher": "2.5.1",
     "@silvia-odwyer/photon-node": "0.3.4",
     "@standard-schema/spec": "catalog:",
-    "bun-pty": "0.4.9",
+    "bun-pty": "0.4.11",
     "diff": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

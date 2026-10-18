@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { RemoteControl } from "@opencode/schema/remote-control"
 import { ConflictError, InvalidRequestError, ServiceUnavailableError } from "../errors.js"
 

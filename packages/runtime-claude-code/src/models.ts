@@ -37,6 +37,7 @@ const NATIVE_1M: Record<string, readonly [major: number, minor: number]> = {
   fable: [0, 0],
   opus: [4, 7],
   sonnet: [5, 0],
+  haiku: [5, 5],
 }
 
 /**
@@ -92,6 +93,7 @@ export const MODELS = [
   pin("claude-opus-4-6", "Claude Opus 4.6", "claude-opus"),
   pin("claude-sonnet-4-6", "Claude Sonnet 4.6", "claude-sonnet"),
   pin("claude-sonnet-4-5", "Claude Sonnet 4.5", "claude-sonnet"),
+  pin("claude-haiku-5-5", "Claude Haiku 5.5", "claude-haiku"),
   pin("claude-haiku-4-5", "Claude Haiku 4.5", "claude-haiku"),
 ] as const
 

@@ -3,6 +3,7 @@ import { useRenderer } from "@opentui/solid"
 import { generateSyntax, resolveThemeDocument, type ResolvedTheme, type SurfaceName } from "@opencode/theme/tui"
 import {
   allThemes,
+  getOpenCode2Theme,
   hasTheme,
   parseTheme,
   removeTheme,
@@ -18,7 +19,7 @@ import { createComponentTheme, type ComponentTheme } from "../theme/component"
 import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor, type ParentProps } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { useConfig } from "../config"
+import { useConfig, useNewDesigns } from "../config"
 import { DevTools } from "../devtools"
 import { configDirectories } from "../util/config-directories"
 import { createTerminalBackground, keepBackgroundAsForeground } from "../util/terminal-background"
@@ -137,6 +138,7 @@ const themeContext = createSimpleContext({
   init: (props: { source: ThemeSource }): ThemeContextValue => {
     const renderer = useRenderer()
     const configState = useConfig()
+    const newDesigns = useNewDesigns()
     const config = configState.data
     const themes = props.source
 
@@ -184,9 +186,15 @@ const themeContext = createSimpleContext({
       clearTimeout(themeRefreshTimeout)
     })
 
+    const available = createMemo(
+      (): Record<string, ThemeDocumentSource> =>
+        newDesigns() ? { opencode2: getOpenCode2Theme(), ...themeSources() } : themeSources(),
+    )
+    const has = (name: string) => Boolean(name) && available()[name] !== undefined
+
     const initStarted = performance.now()
     const selected = createMemo(() => {
-      const sources = themeSources()
+      const sources = available()
       const name = sources[store.active] ? store.active : FALLBACK_THEME
       try {
         return { name, ...loadTheme(sources[name], name) }
@@ -263,8 +271,8 @@ const themeContext = createSimpleContext({
       get selected() {
         return store.active
       },
-      all: allThemes,
-      has: hasTheme,
+      all: available,
+      has,
       mode,
       terminalBackground,
       open: (color) => (terminalBackground() ? tokens().background.base : color),
@@ -277,7 +285,7 @@ const themeContext = createSimpleContext({
           .catch(() => {})
       },
       set(theme: string) {
-        if (store.locked || !hasTheme(theme)) return false
+        if (store.locked || !has(theme)) return false
         setStore("active", theme)
         void configState
           .update((draft) => {
@@ -287,7 +295,7 @@ const themeContext = createSimpleContext({
         return true
       },
       select(theme: string) {
-        if (!hasTheme(theme)) return false
+        if (!has(theme)) return false
         setStore("active", theme)
         return true
       },
