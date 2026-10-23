@@ -346,9 +346,8 @@ function getSyntaxRules(theme: SyntaxTheme) {
     },
     {
       scope: ["spell", "nospell"],
-      style: {
-        foreground: theme.text,
-      },
+      // Nonvisual captures must not overwrite overlapping comment/string colors.
+      style: {},
     },
     // Additional common highlight groups
     {

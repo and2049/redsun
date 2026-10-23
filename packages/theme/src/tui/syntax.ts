@@ -67,7 +67,8 @@ export function generateSyntax(theme: ResolvedThemeTokens, owner: NativeResource
     }),
     rule(["markup.link.label"], markdown.linkText, { underline: true }),
     rule(["label"], markdown.linkText),
-    rule(["spell", "nospell"], theme.text.base),
+    // Spell-check captures overlap comments and strings; they must not override their colors.
+    { scope: ["spell", "nospell"], style: {} },
     rule(["markup.underline"], theme.text.base, { underline: true }),
     rule(["comment.error"], feedback.error.base, { italic: true, bold: true }),
     rule(["comment.warning"], feedback.warning.base, { italic: true, bold: true }),
