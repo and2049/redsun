@@ -11,8 +11,8 @@ import type { Instructions } from "../instructions/index.js"
 import { SessionContext } from "./context.js"
 import type { AgentNotFoundError } from "./error.js"
 import { SessionHistory } from "./history.js"
-import { SessionProviderContext } from "./provider-context.js"
 import { SessionModelRequest } from "./model-request.js"
+import { ModelRetry } from "../model-retry.js"
 import type { SessionRunnerModel } from "./runner/model.js"
 import type { SessionSchema } from "./schema.js"
 
@@ -42,12 +42,7 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
     const model = yield* context.resolveModel(
       input.model ? { ...selection.session, model: input.model } : selection.session,
     )
-    const history = yield* SessionHistory.preview(
-      database.db,
-      selection.session.id,
-      selection.instructions,
-      SessionProviderContext.provenance(model) ?? "local",
-    )
+    const history = yield* SessionHistory.preview(database.db, selection.session.id, selection.instructions, model.ref)
     const transcript = SessionModelRequest.baseTranscript({
       agent: selection.agent.info,
       model,
@@ -77,7 +72,7 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
       input.temperature !== undefined
         ? { ...prepared.request, generation: { ...prepared.request.generation, temperature: input.temperature } }
         : prepared.request
-    const response = yield* llm.generate(request, prepared.options)
+    const response = yield* llm.generate(request, prepared.options).pipe(ModelRetry.retry)
     yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })
     return response.text
   }).pipe(instances.provide(input.session))

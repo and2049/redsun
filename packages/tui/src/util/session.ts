@@ -45,10 +45,10 @@ export function sessionFamily<T extends SessionNode>(sessions: readonly T[], ses
 
 /**
  * Context use a delegated runtime states only as a percentage of its model's window (Kiro), kept
- * as the message's `providerState.contextPercent`. No token count exists for it.
+ * as the message's `native.contextPercent`. No token count exists for it.
  */
 export function reportedContextPercent(message: SessionMessageAssistant) {
-  const value = message.providerState?.contextPercent
+  const value = message.native?.contextPercent
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 

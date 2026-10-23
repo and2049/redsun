@@ -156,7 +156,7 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
   policies: [[/^Use `provider\.use` instead of the V1 [\s\S]*?\)\.\n\n/m, ""]],
   "cli/web": [
     [
-      "redsun ships with a web ui that is served from the same server that powers the\nTUI. It's available by default and password protected.",
+      "redsun ships with a web UI that is served from the same server that powers the\nTUI. It's available by default and password protected.",
       "redsun does not ship a web UI. The server that powers the TUI is password\nprotected, and browser or remote clients connect to it over HTTP.",
     ],
   ],

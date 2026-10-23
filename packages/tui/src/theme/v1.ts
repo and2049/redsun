@@ -1,4 +1,4 @@
-import { SyntaxStyle } from "@opentui/core"
+import { SyntaxStyle, type NativeResourceOwner } from "@opentui/core"
 import { selectedForeground } from "@opencode/theme/tui/v1"
 import type { SyntaxTheme } from "@opencode/theme/tui/v1"
 
@@ -15,8 +15,8 @@ export type {
 
 export { selectedForeground } from "@opencode/theme/tui/v1"
 
-export function generateSyntax(theme: SyntaxTheme) {
-  return SyntaxStyle.fromTheme(getSyntaxRules(theme))
+export function generateSyntax(theme: SyntaxTheme, owner: NativeResourceOwner) {
+  return SyntaxStyle.fromTheme(getSyntaxRules(theme), owner)
 }
 
 function getSyntaxRules(theme: SyntaxTheme) {
@@ -346,9 +346,8 @@ function getSyntaxRules(theme: SyntaxTheme) {
     },
     {
       scope: ["spell", "nospell"],
-      style: {
-        foreground: theme.text,
-      },
+      // Nonvisual captures must not overwrite overlapping comment/string colors.
+      style: {},
     },
     // Additional common highlight groups
     {

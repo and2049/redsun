@@ -364,12 +364,12 @@ it.live("applies organization integration changes to running external plugins", 
       const plugins = yield* Plugin.Service
       const commands = yield* Command.Service
       const managed = yield* ManagedPolicy.Service
-      const bus = yield* Bus.Service
+      const watcher = yield* Watcher.Test
       yield* plugins.awaitActivation
       expect(yield* commands.get("policy-greet")).toBeUndefined()
       expect(yield* Effect.promise(() => Bun.file(entered).exists())).toBe(false)
       yield* Effect.promise(() => Bun.write(configuration, JSON.stringify({ plugins: [root] })))
-      yield* bus.publish(Event.Updated, {})
+      yield* watcher.emit({ path: configuration, type: "update" })
       yield* commands.get("policy-greet").pipe(
         Effect.flatMap((command) => (command ? Effect.void : Effect.fail("pending"))),
         Effect.retry({ times: 200, schedule: Schedule.spaced("10 millis") }),

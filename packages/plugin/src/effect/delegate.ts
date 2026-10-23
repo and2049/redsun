@@ -274,7 +274,7 @@ export interface DelegateDomain {
       readonly messageID: string
       readonly usage: LanguageModelV3Usage
       /** The same entries the `finish` part's provider metadata would carry. */
-      readonly providerState?: Record<string, unknown>
+      readonly native?: Record<string, unknown>
     }) => Effect.Effect<void>
     /**
      * A visible notice row that does not steer the running turn (unlike `session.synthetic`,

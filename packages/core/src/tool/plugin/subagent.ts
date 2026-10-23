@@ -200,7 +200,7 @@ export const Plugin = {
                     parentID: context.sessionID,
                     // REDSUN: same title format as the Claude Code subagent mirror.
                     title: `${input.description} (@${input.agent} subagent)`,
-                    agent: Agent.ID.make(input.agent),
+                    agent: agent.id,
                     model,
                   })
                   .pipe(

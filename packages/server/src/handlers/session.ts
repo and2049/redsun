@@ -7,7 +7,6 @@ import { Form } from "@opencode/core/form"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
 import { Api } from "../api"
-import { SessionsCursor } from "@opencode/protocol/groups/session"
 import {
   ConflictError,
   CommandExecutionError,
@@ -26,8 +25,6 @@ import { AbsolutePath } from "@opencode/core/schema"
 import { locationErrors } from "../location"
 import { failedMessageDecode, failedSnapshot, missingMessage, missingSession } from "./session-error"
 import { RemoteProjection } from "../remote-projection"
-
-const DefaultSessionsLimit = 50
 
 function missingForm(id: Form.ID) {
   return new FormNotFoundError({ id, message: `Form not found: ${id}` })
@@ -63,44 +60,16 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.list",
         Effect.fn(function* (ctx) {
-          const query =
-            ctx.query.cursor !== undefined
-              ? yield* SessionsCursor.parse(ctx.query.cursor).pipe(
-                  Effect.mapError(() => new InvalidCursorError({ message: "Invalid cursor" })),
-                )
-              : ctx.query
-          const page = yield* session.list({
-            ...query,
-            limit: ctx.query.limit ?? DefaultSessionsLimit,
-          })
-          const sessions = page.data
-          const first = sessions[0]
-          const last = sessions.at(-1)
-          return {
-            data: (yield* RemoteProjection.isRemote) ? sessions.map(RemoteProjection.session) : sessions,
-            cursor: {
-              previous: first
-                ? SessionsCursor.make({
-                    ...query,
-                    anchor: {
-                      id: first.id,
-                      time: DateTime.toEpochMillis(first.time.updated),
-                      direction: "previous",
-                    },
-                  })
-                : undefined,
-              next: last
-                ? SessionsCursor.make({
-                    ...query,
-                    anchor: {
-                      id: last.id,
-                      time: DateTime.toEpochMillis(last.time.updated),
-                      direction: "next",
-                    },
-                  })
-                : undefined,
-            },
-          }
+          const page = yield* session
+            .list(ctx.query)
+            .pipe(
+              Effect.catchTag(
+                "Session.InvalidListCursorError",
+                (error) => new InvalidCursorError({ message: error.message }),
+              ),
+            )
+          if (yield* RemoteProjection.isRemote) return { ...page, data: page.data.map(RemoteProjection.session) }
+          return page
         }),
       )
       .handle(
@@ -291,6 +260,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             yield* session
               .setPermissions({ sessionID: ctx.params.sessionID, permissions: ctx.payload.permissions })
               .pipe(Effect.catchTag("Session.NotFoundError", missingSession))
+          if (ctx.payload.archived !== undefined)
+            yield* (ctx.payload.archived ? session.archive : session.unarchive)(ctx.params.sessionID).pipe(
+              Effect.catchTag("Session.NotFoundError", missingSession),
+            )
           return HttpApiSchema.NoContent.make()
         }),
       )

@@ -769,6 +769,14 @@ export function createData(config: CreateDataInput) {
         if (store.session.info[event.data.sessionID])
           setStore("session", "info", event.data.sessionID, "permissions", event.data.permissions)
         return
+      case "session.archived":
+        if (store.session.info[event.data.sessionID])
+          setStore("session", "info", event.data.sessionID, "time", "archived", event.created)
+        return
+      case "session.unarchived":
+        if (store.session.info[event.data.sessionID])
+          setStore("session", "info", event.data.sessionID, "time", "archived", undefined)
+        return
       case "session.moved": {
         const current = store.session.info[event.data.sessionID]
         if (current) {
@@ -914,7 +922,7 @@ export function createData(config: CreateDataInput) {
             existing.error = undefined
             existing.finish = undefined
             existing.rawFinish = undefined
-            existing.providerState = undefined
+            existing.native = undefined
             existing.time.created = event.data.started
             existing.time.streamed = undefined
             existing.time.completed = undefined
@@ -948,8 +956,7 @@ export function createData(config: CreateDataInput) {
           // A late live value must not overwrite the step's recorded usage.
           if (assistant.time.completed !== undefined) return
           assistant.tokens = event.data.tokens
-          if (event.data.providerState !== undefined)
-            assistant.providerState = { ...assistant.providerState, ...event.data.providerState }
+          if (event.data.native !== undefined) assistant.native = { ...assistant.native, ...event.data.native }
         })
         return
       case "session.step.ended": {
@@ -957,7 +964,7 @@ export function createData(config: CreateDataInput) {
           assistant.time.completed = event.created
           assistant.finish = event.data.finish
           assistant.rawFinish = event.data.rawFinish
-          assistant.providerState = event.data.providerState
+          assistant.native = event.data.native
           assistant.cost = event.data.cost
           assistant.tokens = event.data.tokens
           if (event.data.snapshot) assistant.snapshot = { ...assistant.snapshot, end: event.data.snapshot }
@@ -971,7 +978,7 @@ export function createData(config: CreateDataInput) {
           assistant.time.completed = event.created
           assistant.finish = event.data.finish ?? "error"
           assistant.rawFinish = event.data.rawFinish
-          assistant.providerState = event.data.providerState
+          assistant.native = event.data.native
           assistant.error = event.data.error
           assistant.retry = undefined
           if (event.data.cost !== undefined && event.data.tokens !== undefined) {
@@ -1020,7 +1027,7 @@ export function createData(config: CreateDataInput) {
         message.editTool(event.data.sessionID, event.data.assistantMessageID, event.data.id, (tool) => {
           tool.time.ran = event.created
           tool.executed = event.data.executed
-          tool.providerState = event.data.state
+          tool.native = event.data.native
           tool.state = { status: "running", input: event.data.input, metadata: {} }
         })
         return
@@ -1039,7 +1046,7 @@ export function createData(config: CreateDataInput) {
             content: [...event.data.content],
           }
           tool.executed = event.data.executed || tool.executed === true
-          tool.providerResultState = event.data.resultState
+          if (event.data.native) tool.native = { ...tool.native, ...event.data.native }
           tool.time.completed = event.created
         })
         return
@@ -1054,7 +1061,7 @@ export function createData(config: CreateDataInput) {
             content: event.data.content,
           }
           tool.executed = event.data.executed || tool.executed === true
-          tool.providerResultState = event.data.resultState
+          if (event.data.native) tool.native = { ...tool.native, ...event.data.native }
           tool.time.completed = event.created
         })
         return
@@ -1063,7 +1070,7 @@ export function createData(config: CreateDataInput) {
           assistant.content.push({
             type: "reasoning",
             text: "",
-            state: event.data.state,
+            native: event.data.native,
             time: { created: event.created },
           })
         })
@@ -1077,7 +1084,7 @@ export function createData(config: CreateDataInput) {
         message.editReasoning(event.data.sessionID, event.data.assistantMessageID, (reasoning) => {
           reasoning.text = event.data.text
           reasoning.time = { created: reasoning.time?.created ?? event.created, completed: event.created }
-          if (event.data.state !== undefined) reasoning.state = event.data.state
+          if (event.data.native !== undefined) reasoning.native = event.data.native
         })
         return
       case "session.retry.scheduled":
@@ -1096,7 +1103,6 @@ export function createData(config: CreateDataInput) {
           status: "running",
           reason: event.data.reason,
           summary: "",
-          recent: event.data.recent ?? "",
           time: { created: event.created },
         })
         if (event.data.inputID) compacting.get(event.data.sessionID)?.observed.add(event.data.inputID)
@@ -1187,10 +1193,8 @@ export function createData(config: CreateDataInput) {
               status: "completed",
               reason: event.data.reason,
               model: event.data.model,
-              providerState: event.data.providerState,
-              providerContext: event.data.providerContext,
+              native: event.data.native,
               summary: event.data.text,
-              recent: event.data.recent,
               cost: event.data.cost,
               tokens: event.data.tokens,
             })
@@ -1202,10 +1206,8 @@ export function createData(config: CreateDataInput) {
             status: "completed",
             reason: event.data.reason,
             model: event.data.model,
-            providerState: event.data.providerState,
-            providerContext: event.data.providerContext,
+            native: event.data.native,
             summary: event.data.text,
-            recent: event.data.recent,
             cost: event.data.cost,
             tokens: event.data.tokens,
             time: { created: event.created },

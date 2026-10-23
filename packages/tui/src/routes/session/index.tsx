@@ -217,6 +217,7 @@ export function Session() {
   const disabled = createMemo(() => promptedPermissions().length > 0 || forms().length > 0)
   const promptVisible = createMemo(() => !session()?.parentID && !disabled())
 
+  const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const thinkingMode = createMemo<ThinkingMode>(() => config.session?.thinking ?? "hide")
   const showScrollbar = createMemo(() => config.session?.scrollbar ?? false)
@@ -347,8 +348,8 @@ export function Session() {
 
   /** Runs after layout has settled (two frames), unless the transcript was torn down. */
   const afterLayout = (continuation: () => void) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    renderer.requestAnimationFrame(() => {
+      renderer.requestAnimationFrame(() => {
         if (!scroll || scroll.isDestroyed) return
         continuation()
       })
@@ -518,7 +519,6 @@ export function Session() {
   })
   const dialog = useDialog()
   useDockInterrupt(() => promptedPermissions()[0] ?? dockForms()[0])
-  const renderer = useRenderer()
   const runPendingAction = createSingleFlight<string>()
   const mutatePending = async (action: PendingAction, inboxID: string, failureLabel?: string) => {
     const result = await runPendingAction(inboxID, async () => {
@@ -580,7 +580,13 @@ export function Session() {
               void mutatePending("cancel", queued.id, "undo").then((undone) => {
                 if (!undone) return
                 target.setMode("normal")
-                target.set(appendPrompt(target.current, { ...projectedPromptInput(queued.payload), pasted: [] }))
+                target.set(
+                  appendPrompt(
+                    target.current,
+                    { ...projectedPromptInput(queued.payload), pasted: [] },
+                    renderer.widthMethod,
+                  ),
+                )
                 dialog.clear()
                 target.focus()
               })
@@ -2070,7 +2076,7 @@ function CompactionMessage(props: { message: Extract<SessionMessageInfo, { type:
   const content = createMemo(() => text().trim())
   const label = () => {
     const name = t(
-      props.message.status === "completed" && props.message.providerContext ? "ai.providerCompaction" : "ai.compaction",
+      props.message.status === "completed" && props.message.native?.messages ? "ai.providerCompaction" : "ai.compaction",
     )
     if (props.message.status === "running" || !props.message.tokens) return name
     const tokens = props.message.tokens
@@ -2390,6 +2396,33 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
   )
 }
 
+export function freeLimitReset(delay: number | undefined, base: number) {
+  if (delay === undefined || !Number.isFinite(delay) || delay < 0 || delay > 7 * 86_400_000 || !Number.isFinite(base))
+    return
+  const at = base + delay
+  if (Number.isNaN(new Date(at).getTime())) return
+  const now = Date.now()
+  return new Date(at).toDateString() === new Date(now).toDateString() && at - now < 86_400_000
+    ? Locale.time(at)
+    : Locale.datetime(at)
+}
+
+/** The free allowance of the `opencode` provider ran out for today; the OpenCode Go upsell is not adopted. */
+export function FreeLimitNotice(props: { message: Pick<SessionMessageAssistant, "error" | "time"> }) {
+  const theme = useTheme()
+  const reset = createMemo(() =>
+    freeLimitReset(props.message.error?.retryAfterMs, props.message.time.completed ?? props.message.time.created),
+  )
+  return (
+    <box paddingLeft={TRANSCRIPT_GUTTER} flexDirection="column">
+      <text fg={theme.text.muted}>You've used today's free messages.{reset() ? ` They reset at ${reset()}.` : ""}</text>
+      <text fg={theme.text.muted}>
+        Switch model → <span style={{ fg: theme.text.base }}>/models</span>
+      </text>
+    </box>
+  )
+}
+
 export function AssistantRetry(props: { retry: SessionMessageAssistant["retry"] }) {
   const { t } = useLanguage()
   const theme = useTheme()
@@ -2479,6 +2512,9 @@ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }
       <Match when={display() === "patch"}>
         <ApplyPatch {...toolprops} />
       </Match>
+      <Match when={display() === "todowrite"}>
+        <TodoWrite {...toolprops} />
+      </Match>
       <Match when={display() === "question"}>
         <Question {...toolprops} />
       </Match>
@@ -2487,9 +2523,6 @@ function ToolPart(props: { part: SessionMessageAssistantTool; images?: boolean }
       </Match>
       <Match when={display() === "skill"}>
         <Skill {...toolprops} />
-      </Match>
-      <Match when={display() === "todowrite"}>
-        <TodoWrite {...toolprops} />
       </Match>
       <Match when={true}>
         <GenericTool {...toolprops} />

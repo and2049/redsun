@@ -441,7 +441,7 @@ describe("ClaudeCodeTranslate", () => {
     )
     expect(parts[0]).toMatchObject({ toolName: "subagent" })
     // The link rides the result, not the call: `providerMetadata` lands in the
-    // part's `providerState`, and the renderers read `state.metadata`.
+    // part's `native`, and the renderers read `state.metadata`.
     expect(parts[0]).not.toHaveProperty("providerMetadata")
     expect(parts[1]).toMatchObject({
       toolName: "subagent",

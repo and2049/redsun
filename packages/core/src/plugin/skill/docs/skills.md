@@ -57,7 +57,10 @@ skills/
 ```
 
 - Markdown files must be at the source root, such as `skills/review.md`.
-- Files named exactly `SKILL.md` can be at any depth, such as `skills/git-release/SKILL.md`.
+- Files named exactly `SKILL.md` can be nested in grouping directories, such as `skills/git-release/SKILL.md` or `skills/teams/release/SKILL.md`.
+- A directory containing `SKILL.md` is one skill. redsun does not search inside it for more skills.
+- Hidden files and directories and `node_modules` are skipped.
+- Search stops six directories below the source root.
 
 ## Sources
 
@@ -108,7 +111,7 @@ For that entry, redsun downloads each file from `<base-url>/git-release/<file>`.
 | Entry file | Include `SKILL.md` or `<name>.md`, such as `git-release.md`         |
 | Updates    | Increment `version` when files change so redsun refreshes its cache |
 
-Prefer the named Markdown form in an HTTP catalog. Each downloaded skill directory becomes a source root, so `git-release.md` has the ID `git-release`. A root-level `SKILL.md` currently has the literal ID `SKILL` in V2.
+Each downloaded skill directory becomes a source root named after the entry, so both `git-release.md` and `SKILL.md` have the ID `git-release`.
 
 ## Frontmatter
 

@@ -14,7 +14,7 @@ export interface State {
   usage?: { readonly used: number; readonly size: number }
   /**
    * Context use the agent states only as a percentage of its window. It finishes as provider
-   * metadata under `provider`, which the host keeps as the message's `providerState.contextPercent`.
+   * metadata under `provider`, which the host keeps as the message's `native.contextPercent`.
    */
   contextPercent?: number
   /** The live usage last taken by `takeUsage`, serialized, so an unchanged value is not resent. */
@@ -185,7 +185,7 @@ const usage = (state: State): LanguageModelV3Usage => ({
   outputTokens: { total: undefined, text: undefined, reasoning: undefined },
 })
 
-const providerState = (state: State) =>
+const native = (state: State) =>
   state.provider && state.contextPercent !== undefined ? { contextPercent: state.contextPercent } : undefined
 
 /**
@@ -194,7 +194,7 @@ const providerState = (state: State) =>
  */
 export const takeUsage = (state: State) => {
   if (state.usage === undefined && state.contextPercent === undefined) return undefined
-  const live = { usage: usage(state), providerState: providerState(state) }
+  const live = { usage: usage(state), native: native(state) }
   const serialized = JSON.stringify(live)
   if (serialized === state.reportedUsage) return undefined
   state.reportedUsage = serialized
@@ -224,7 +224,7 @@ export const finish = (state: State, stopReason: StopReason): LanguageModelV3Str
         isError: true,
       } as LanguageModelV3StreamPart)
     }
-  const metadata = providerState(state)
+  const metadata = native(state)
   parts.push({
     type: "finish",
     finishReason: { unified: REASON[stopReason], raw: stopReason },

@@ -537,7 +537,8 @@ $ redsun upgrade --help
 
 ## uninstall
 
-Removes redsun and all related files.
+Stops background services, removes the global cache, and uninstalls redsun. Session data, configuration, and
+state are not removed.
 
 ```bash
 $ redsun uninstall

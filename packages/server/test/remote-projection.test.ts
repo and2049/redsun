@@ -17,13 +17,13 @@ test("companion history excludes opaque provider state, metadata, file URIs and 
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     error: { type: "provider", message: "private-provider-error" },
     content: [
-      { type: "text", text: "Visible answer", state: { secret: "private-provider-state" } },
+      { type: "text", text: "Visible answer", native: { secret: "private-provider-state" } },
       {
         type: "tool",
         id: "call",
         name: "read",
         time: { created: 1 },
-        providerState: { secret: "private-tool-state" },
+        native: { secret: "private-tool-state" },
         state: {
           status: "completed",
           input: {},

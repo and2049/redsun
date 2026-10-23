@@ -89,13 +89,13 @@ export function createTerminalBackground(
   return background
 }
 
-export function suspendTerminal(renderer: Pick<CliRenderer, "suspend">) {
+export async function suspendTerminal(renderer: Pick<CliRenderer, "suspend">) {
   backgrounds.get(renderer)?.suspend()
-  renderer.suspend()
+  await renderer.suspend()
 }
 
-export function resumeTerminal(renderer: Pick<CliRenderer, "resume">) {
-  renderer.resume()
+export async function resumeTerminal(renderer: Pick<CliRenderer, "resume">) {
+  await renderer.resume()
   backgrounds.get(renderer)?.resume()
 }
 

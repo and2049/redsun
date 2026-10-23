@@ -259,7 +259,7 @@ describe("ACP runtime against a scripted agent", () => {
               inputTokens: { total: undefined, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
               outputTokens: { total: undefined, text: undefined, reasoning: undefined },
             },
-            providerState: { contextPercent: 2.5 },
+            native: { contextPercent: 2.5 },
           },
         ],
       ])
@@ -466,7 +466,7 @@ describe("ACP runtime against a scripted agent", () => {
       expect(usage).toHaveLength(1)
       expect(usage[0]!.slice(0, 2)).toEqual(["ses_1", "msg_1"])
       expect(usage[0]![2]).toMatchObject({ usage: { inputTokens: { total: 1234, noCache: 1234 } } })
-      expect(usage[0]![2].providerState).toBeUndefined()
+      expect(usage[0]![2].native).toBeUndefined()
       usage.length = 0
       await collect((await runtime.turn({ ...TURN, kind: "title" }, call([user("hello")]))).stream)
       expect(usage).toEqual([])

@@ -110,7 +110,7 @@ export default define({
               sessionID,
               messageID,
               usage: live.usage,
-              ...(live.providerState ? { providerState: live.providerState } : {}),
+              ...(live.native ? { native: live.native } : {}),
             })
             .pipe(Effect.catch(() => Effect.void)),
         ),

@@ -17,8 +17,7 @@ export async function openEditor(input: { value: string; renderer: CliRenderer; 
   if (!editor) throw new Error("Set $VISUAL or $EDITOR to open an external editor")
   const file = path.join(os.tmpdir(), `${Date.now()}.md`)
   await writeFile(file, input.value)
-  suspendTerminal(input.renderer)
-  input.renderer.currentRenderBuffer.clear()
+  await suspendTerminal(input.renderer)
   try {
     await new Promise<void>((resolve, reject) => {
       const parts = editor.split(" ")
@@ -36,9 +35,7 @@ export async function openEditor(input: { value: string; renderer: CliRenderer; 
     return (await readFile(file, "utf8")) || undefined
   } finally {
     await rm(file, { force: true }).catch(() => {})
-    input.renderer.currentRenderBuffer.clear()
-    resumeTerminal(input.renderer)
-    input.renderer.requestRender()
+    await resumeTerminal(input.renderer)
   }
 }
 
