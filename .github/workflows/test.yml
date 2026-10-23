@@ -6,6 +6,9 @@ name: test
 
 on:
   push:
+    branches:
+      - dev
+      - latest
   pull_request:
   workflow_dispatch:
 
