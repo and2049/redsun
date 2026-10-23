@@ -154,8 +154,11 @@ import type {
   ModelDefaultOutput,
   GenerateTextInput,
   GenerateTextOutput,
+  VoiceModelsOutput,
   VoiceSessionInput,
   VoiceSessionOutput,
+  VoiceInstructionsInput,
+  VoiceInstructionsOutput,
   ProviderListInput,
   ProviderListOutput,
   ProviderGetInput,
@@ -220,6 +223,8 @@ import type {
   PermissionModeOptionsOutput,
   PermissionSavedListInput,
   PermissionSavedListOutput,
+  PermissionSavedUpdateInput,
+  PermissionSavedUpdateOutput,
   PermissionSavedRemoveInput,
   PermissionSavedRemoveOutput,
   PermissionCreateInput,
@@ -552,6 +557,7 @@ const EndpointSessionList = (raw: RawClient["server.session"]) => (input?: Sessi
         order: input?.["order"],
         search: input?.["search"],
         parentID: input?.["parentID"],
+        archived: input?.["archived"],
         directory: input?.["directory"],
         project: input?.["project"],
         subpath: input?.["subpath"],
@@ -660,7 +666,12 @@ const EndpointSessionUpdate = (raw: RawClient["server.session"]) => (input: Sess
   preserveEffect<SessionUpdateOutput>()(
     raw["session.update"]({
       params: { sessionID: input["sessionID"] },
-      payload: { title: input["title"], metadata: input["metadata"], permissions: input["permissions"] },
+      payload: {
+        title: input["title"],
+        metadata: input["metadata"],
+        permissions: input["permissions"],
+        archived: input["archived"],
+      },
     }).pipe(Effect.mapError(mapClientError)),
   )
 
@@ -1085,6 +1096,14 @@ const EndpointGenerateText = (raw: RawClient["server.generate"]) => (input: Gene
 
 const adaptGroupGenerate = (raw: RawClient["server.generate"]) => ({ text: EndpointGenerateText(raw) })
 
+const EndpointVoiceModels = (raw: RawClient["server.voice"]) => () =>
+  preserveEffect<VoiceModelsOutput>()(
+    raw["voice.models"]({}).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
 const EndpointVoiceSession = (raw: RawClient["server.voice"]) => (input: VoiceSessionInput) =>
   preserveEffect<VoiceSessionOutput>()(
     raw["voice.session"]({
@@ -1095,7 +1114,19 @@ const EndpointVoiceSession = (raw: RawClient["server.voice"]) => (input: VoiceSe
     ),
   )
 
-const adaptGroupVoice = (raw: RawClient["server.voice"]) => ({ session: EndpointVoiceSession(raw) })
+const EndpointVoiceInstructions = (raw: RawClient["server.voice"]) => (input: VoiceInstructionsInput) =>
+  preserveEffect<VoiceInstructionsOutput>()(
+    raw["voice.instructions"]({
+      params: { sessionID: input["sessionID"] },
+      payload: { instructions: input["instructions"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupVoice = (raw: RawClient["server.voice"]) => ({
+  models: EndpointVoiceModels(raw),
+  session: EndpointVoiceSession(raw),
+  instructions: EndpointVoiceInstructions(raw),
+})
 
 const EndpointProviderList = (raw: RawClient["server.provider"]) => (input?: ProviderListInput) =>
   preserveEffect<ProviderListOutput>()(
@@ -1398,6 +1429,17 @@ const EndpointPermissionSavedList = (raw: RawClient["server.permission"]) => (in
     ),
   )
 
+const EndpointPermissionSavedUpdate = (raw: RawClient["server.permission"]) => (input: PermissionSavedUpdateInput) =>
+  preserveEffect<PermissionSavedUpdateOutput>()(
+    raw["permission.saved.update"]({
+      params: { id: input["id"] },
+      payload: { action: input["action"], resource: input["resource"] },
+    }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
 const EndpointPermissionSavedRemove = (raw: RawClient["server.permission"]) => (input: PermissionSavedRemoveInput) =>
   preserveEffect<PermissionSavedRemoveOutput>()(
     raw["permission.saved.remove"]({ params: { id: input["id"] } }).pipe(Effect.mapError(mapClientError)),
@@ -1453,7 +1495,11 @@ const adaptGroupPermission = (raw: RawClient["server.permission"]) => ({
     set: EndpointPermissionModeSet(raw),
     options: EndpointPermissionModeOptions(raw),
   },
-  saved: { list: EndpointPermissionSavedList(raw), remove: EndpointPermissionSavedRemove(raw) },
+  saved: {
+    list: EndpointPermissionSavedList(raw),
+    update: EndpointPermissionSavedUpdate(raw),
+    remove: EndpointPermissionSavedRemove(raw),
+  },
   create: EndpointPermissionCreate(raw),
   list: EndpointPermissionList(raw),
   get: EndpointPermissionGet(raw),

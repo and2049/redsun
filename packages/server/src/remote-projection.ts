@@ -178,7 +178,6 @@ export function message(value: SessionMessage.Info): SessionMessage.Info {
             status: value.status,
             reason: value.reason,
             summary: value.summary,
-            recent: value.recent,
           }
   }
   throw new Error("Unsupported remote message type")

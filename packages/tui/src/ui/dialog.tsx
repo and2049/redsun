@@ -14,15 +14,7 @@ import {
 } from "solid-js"
 import { Keymap } from "../context/keymap"
 import { ThemeContextProvider, useTheme, useThemes } from "../context/theme"
-import {
-  applyGain,
-  InputRenderable,
-  MouseButton,
-  Renderable,
-  RGBA,
-  TextAttributes,
-  type OptimizedBuffer,
-} from "@opentui/core"
+import { InputRenderable, MouseButton, Renderable, RGBA, TextAttributes, type OptimizedBuffer } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { useClipboard } from "../context/clipboard"
@@ -33,17 +25,37 @@ import { DEFAULT_INTENT, setTerminalBackgroundGain } from "../util/terminal-back
 
 const BACKDROP_GAIN = 1 - 150 / 255
 
-// applyGain rewrites the terminal's default background as the dimmed theme colour, which
-// would paint over a transparent or image background. Put those cells back so only text
-// and raised surfaces dim.
-function applyGainKeepingTerminalBackground(buffer: OptimizedBuffer, gain: number) {
-  const bg = buffer.buffers.bg
-  const kept: number[] = []
-  for (let i = 0; i < bg.length; i += 4) {
-    if (bg[i + 1]! >>> 8 === DEFAULT_INTENT) kept.push(i, bg[i]!, bg[i + 1]!, bg[i + 2]!, bg[i + 3]!)
+type Rect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+
+/**
+ * REDSUN: dims the finished frame behind a dialog. OpenTUI 0.6 records paint hooks and lets none of them read the
+ * frame, so this runs as a renderer post-process over the composed frame and skips the dialog's own rectangle.
+ * Under the terminal's own background, cells still showing it keep their background (which would otherwise be
+ * painted over a transparent or image background) and only their text dims.
+ */
+function dimBehind(buffer: OptimizedBuffer, dialog: Rect | undefined, gain: number, keepTerminalBackground: boolean) {
+  const width = buffer.width
+  const cells = width * buffer.height
+  // Raw planes are readable and writable inside the post-process scope. A cell colour is four u16
+  // channels with the colour in the low byte and its metadata (the terminal-default intent) above.
+  const { fg, bg } = buffer.buffers
+  for (let cell = 0; cell < cells; cell++) {
+    const x = cell % width
+    const y = (cell - x) / width
+    if (dialog && x >= dialog.x && x < dialog.x + dialog.width && y >= dialog.y && y < dialog.y + dialog.height)
+      continue
+    const i = cell * 4
+    scaleColor(fg, i, gain)
+    if (keepTerminalBackground && bg[i + 1]! >>> 8 === DEFAULT_INTENT) continue
+    scaleColor(bg, i, gain)
   }
-  applyGain(buffer, gain)
-  for (let k = 0; k < kept.length; k += 5) bg.set(kept.slice(k + 1, k + 5), kept[k]!)
+}
+
+function scaleColor(plane: Uint16Array, offset: number, gain: number) {
+  for (let channel = offset; channel < offset + 3; channel++) {
+    const value = plane[channel]!
+    plane[channel] = (value & 0xff00) | Math.round((value & 0xff) * gain)
+  }
 }
 
 export type DialogSize = "medium" | "large" | "xlarge"
@@ -73,11 +85,22 @@ export function Dialog(
   const themes = useThemes()
   const renderer = useRenderer()
   const bottom = () => props.placement === "bottom"
+  let inner: Renderable | undefined
 
   createEffect(() => {
     setTerminalBackgroundGain(renderer, bottom() ? 1 : BACKDROP_GAIN)
   })
   onCleanup(() => setTerminalBackgroundGain(renderer, 1))
+  createEffect(() => {
+    if (bottom()) return
+    const keepTerminalBackground = themes.terminalBackground()
+    const dim = (buffer: OptimizedBuffer) => {
+      const box = inner && !inner.isDestroyed ? inner : undefined
+      dimBehind(buffer, box && { x: box.x, y: box.y, width: box.width, height: box.height }, BACKDROP_GAIN, keepTerminalBackground)
+    }
+    renderer.addPostProcessFn(dim)
+    onCleanup(() => renderer.removePostProcessFn(dim))
+  })
 
   let dismiss = false
   return (
@@ -102,13 +125,9 @@ export function Dialog(
         paddingTop={bottom() || props.centered ? 0 : dimensions().height / 4}
         left={0}
         top={0}
-        renderBefore={(buffer) => {
-          if (bottom()) return
-          if (themes.terminalBackground()) applyGainKeepingTerminalBackground(buffer, BACKDROP_GAIN)
-          else applyGain(buffer, BACKDROP_GAIN)
-        }}
       >
         <box
+          ref={(box) => (inner = box)}
           onMouseUp={(e: { stopPropagation(): void }) => {
             // A selection release must bubble up to the copy-on-select handler in
             // DialogProvider; the backdrop's dismiss flag keeps it from closing the dialog.
@@ -190,6 +209,8 @@ export function DialogLayout(
     legacyFooter?: JSX.Element
     /** Side padding in cells. Defaults to DIALOG_INSET. */
     inset?: number
+    /** Blank rows between the body and the footer under the "new-designs" experiment. Defaults to 1. */
+    footerGap?: number
   }>,
 ) {
   const inset = () => props.inset ?? DIALOG_INSET
@@ -197,7 +218,7 @@ export function DialogLayout(
   return (
     <box id={props.id} paddingLeft={inset()} paddingRight={inset()} paddingBottom={1} gap={1}>
       {props.header}
-      <box>{props.children}</box>
+      <box paddingBottom={newDesigns() && props.footer ? (props.footerGap ?? 1) - 1 : 0}>{props.children}</box>
       <Show when={newDesigns() || props.legacyFooter === undefined} fallback={props.legacyFooter}>
         <Show when={props.footer}>
           {(footer) => (
@@ -228,7 +249,7 @@ export type DialogFooterAction = {
   command?: string
   onTrigger?: () => void
   disabled?: boolean
-  /** Overrides the title color, e.g. for a "✓ copied" confirmation. */
+  /** Overrides the title and key color, e.g. for a "copied ✓" confirmation. */
   color?: RGBA
 }
 
@@ -319,7 +340,7 @@ function DialogFooterItem(props: { action: DialogFooterAction; variant: "primary
         {props.action.title}
       </span>
       <Show when={props.action.key}>
-        <span style={{ fg: props.action.disabled ? theme.text.action.primary.disabled : key }}>
+        <span style={{ fg: props.action.disabled ? theme.text.action.primary.disabled : (props.action.color ?? key) }}>
           {" " + props.action.key}
         </span>
       </Show>

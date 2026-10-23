@@ -11,7 +11,8 @@ test.each([60, 100])(
   "reads, renames, jumps to, and unpins an unloaded message at width %s",
   async (width) => {
     await using state = await tmpdir()
-    const setup = await createTestRenderer({ width, height: 35, useThread: false, kittyKeyboard: true })
+    const setup = await createTestRenderer({ width, height: 35, kittyKeyboard: true })
+    await setup.renderer.setupTerminal()
     setup.renderer.start()
     const sessionID = "ses_pin_ui"
     const old: SessionMessageInfo = {

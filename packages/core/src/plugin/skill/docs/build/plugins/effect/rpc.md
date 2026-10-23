@@ -150,6 +150,8 @@ effect: (ctx) =>
 RPC events are Streams. Subscribe by event name and run the Stream in a scoped
 fiber:
 
+{/_ prettier-ignore _/}
+
 ```ts
 import { Effect, Stream } from "effect"
 

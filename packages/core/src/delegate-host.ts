@@ -362,7 +362,7 @@ export const make = Effect.gen(function* () {
             sessionID: SessionSchema.ID.make(input.sessionID),
             assistantMessageID: SessionMessage.ID.make(input.messageID),
             tokens: liveTokens(input.usage),
-            ...(input.providerState === undefined ? {} : { providerState: input.providerState }),
+            ...(input.native === undefined ? {} : { native: input.native }),
           })
           .pipe(Effect.asVoid),
       notice: (input) =>

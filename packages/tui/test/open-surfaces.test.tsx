@@ -13,7 +13,8 @@ const dusk = loadTheme(DEFAULT_THEMES.dusk, "dusk").theme
 // the terminal's own background.
 async function surfaces(terminalBackground: boolean) {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 100, height: 30, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   const sessionID = "ses_open"
   const messages = [
@@ -72,15 +73,15 @@ async function surfaces(terminalBackground: boolean) {
     const y = lines.findIndex((line) => line.includes(needle))
     expect(y, needle).toBeGreaterThanOrEqual(0)
     const x = lines[y]!.indexOf(needle)
-    const { bg, fg } = setup.renderer.currentRenderBuffer.buffers
     const index = (y * setup.renderer.width + x) * 4
-    return {
+    // OpenTUI 0.6 exposes the planes only inside a synchronous buffer scope.
+    return setup.renderer.currentRenderBuffer.withBuffers(({ bg, fg }) => ({
       x,
       y,
       painted: bg[index + 1]! >>> 8 === 0,
       // A block's gutter, one column left of its padding.
       gutter: [...fg.subarray(index - 8, index - 5)].map((channel) => channel & 255),
-    }
+    }))
   }
   try {
     await setup.waitFor(() => setup.renderer.currentFocusedEditor instanceof TextareaRenderable)

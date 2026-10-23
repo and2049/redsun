@@ -346,6 +346,8 @@ effect: (ctx) =>
 For account-specific discovery, pass the connection used to load the inventory as `sourceConnection`. redsun excludes
 that provider while another connection is selected, until your plugin publishes its refreshed inventory.
 
+{/_ prettier-ignore _/}
+
 ```ts
 const connection = yield * ctx.integration.connection.active("acme")
 if (!connection) return
@@ -822,6 +824,19 @@ effect: (ctx) =>
   }),
 ```
 
+List sessions a page at a time. To get the next page, pass `cursor.next` back as `cursor`. The cursor remembers your
+filters, so you don't need to repeat them.
+
+```ts
+effect: (ctx) =>
+  Effect.gen(function* () {
+    const page = yield* ctx.session.list({ directory: ctx.location.directory, limit: 20 }).pipe(Effect.orDie)
+    const next = page.cursor.next
+      ? yield* ctx.session.list({ cursor: page.cursor.next, limit: 20 }).pipe(Effect.orDie)
+      : undefined
+  }),
+```
+
 Remove a temporary session with `remove`. Removal stops active execution and recursively deletes child sessions.
 
 ```ts
@@ -850,6 +865,7 @@ Schemas: [`Session.Info`](https://opencode.ai/v2/docs/api#schema-Session.Info), 
 ```ts
 type SessionDomain = Pick<
   SessionApi<unknown>,
+  | "list"
   | "create"
   | "get"
   | "remove"
@@ -1003,6 +1019,8 @@ Tools have an `id` containing their effective name, and `get()` returns `undefin
 namespaces and unsupported characters in tool names become `_`. Missing names are ignored; creating a tool requires
 `add` with a complete definition. Updates preserve the name and namespace. Assign new schemas or options to replace
 them rather than mutating nested values. Invalid updates are logged and leave the previous definition intact.
+
+{/_ prettier-ignore _/}
 
 ```ts
 yield *

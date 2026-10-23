@@ -263,7 +263,7 @@ const themeContext = createSimpleContext({
       onCleanup(() => renderer.off(CliRenderEvents.THEME_MODE, refreshSystemTheme))
     }
 
-    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens()))
+    const currentSyntax = createSyntaxStyleMemo(() => generateSyntax(tokens(), renderer.nativeScene))
     const service: Themes = {
       current,
       currentTokens: tokens,

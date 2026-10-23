@@ -21,7 +21,7 @@
   "scripts": {
     "build": "bun run script/build.ts",
     "test": "bun test --only-failures",
-    "typecheck": "tsgo -b",
+    "typecheck": "tsc -b",
     "probe:workerd": "bun run script/workerd-probe.ts"
   },
   "dependencies": {
@@ -39,12 +39,12 @@
     "redsun-remote-control": "0.4.0"
   },
   "devDependencies": {
-    "@opencode-ai/pty": "0.2.0",
+    "@opencode-ai/pty": "0.3.1",
     "@opencode/client": "workspace:*",
     "@opencode/plugin": "workspace:*",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
-    "@typescript/native-preview": "catalog:",
+    "@typescript/native": "catalog:",
     "fast-check": "catalog:"
   }
 }

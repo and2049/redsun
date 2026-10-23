@@ -485,6 +485,15 @@ function normalizeExperimental(
         )
         if (value !== undefined) result.portable_shell_scanner = value
       }
+      if (own(experimental, "todo")) {
+        const value = decodeEncoded(
+          ConfigExperimental.Info.fields.todo,
+          experimental.todo,
+          ["experimental", "todo"],
+          diagnostics,
+        )
+        if (value !== undefined) result.todo = value
+      }
       if (own(experimental, "subagent_depth")) {
         const value = decodeEncoded(
           ConfigExperimental.Info.fields.subagent_depth,
@@ -493,6 +502,15 @@ function normalizeExperimental(
           diagnostics,
         )
         if (value !== undefined) result.subagent_depth = value
+      }
+      if (own(experimental, "location_idle_timeout")) {
+        const value = decodeEncoded(
+          ConfigExperimental.Info.fields.location_idle_timeout,
+          experimental.location_idle_timeout,
+          ["experimental", "location_idle_timeout"],
+          diagnostics,
+        )
+        if (value !== undefined) result.location_idle_timeout = value
       }
     }
   }

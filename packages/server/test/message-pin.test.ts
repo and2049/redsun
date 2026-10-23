@@ -27,7 +27,6 @@ const messages: SessionMessageInfo[] = [
     status: "completed",
     reason: "manual",
     summary: "Summary",
-    recent: "",
     time: { created: 4 },
   },
   ...Array.from(

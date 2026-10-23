@@ -48,7 +48,7 @@ describe("util.session", () => {
   test("shows a runtime-reported context percentage without inventing tokens", () => {
     const reported: SessionMessageInfo = {
       ...(assistant("msg_kiro", 0) as SessionMessageAssistant),
-      providerState: { contextPercent: 2.95 },
+      native: { contextPercent: 2.95 },
     }
     const usage = contextUsage([assistant("msg_before", 30), reported], [])
     expect(usage).toEqual({ percent: 3 })
@@ -75,7 +75,6 @@ describe("util.session", () => {
       status: "completed",
       reason: "manual",
       summary: "Current state",
-      recent: "",
       time: { created: 0 },
     }
     const messages = [assistant("msg_before", 30), compaction]

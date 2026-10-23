@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
 import { RGBA, TextAttributes, type MouseEvent } from "@opentui/core"
-import type { JSX } from "@opentui/solid"
+import { useRenderer, type JSX } from "@opentui/solid"
 import type {
   SessionMessageAssistant,
   SessionMessageAssistantReasoning,
@@ -14,7 +14,6 @@ import { NAVIGATION_TINT, TRANSCRIPT_GUTTER, use } from "./render-context"
 import { tint } from "../../theme/color"
 
 import { useLanguage } from "../../i18n"
-import { useRenderer } from "@opentui/solid"
 import { stringWidth } from "../../util/string-width"
 
 export const INLINE_TOOL_ICON_WIDTH = 2

@@ -102,7 +102,8 @@ export function themeSwatches(source: ThemeDocumentSource, name: string) {
   )
 }
 
-export function DialogThemeList() {
+/** `onClose` returns to the caller, e.g. Settings, instead of closing every dialog. */
+export function DialogThemeList(props: { onClose?: () => void }) {
   const themes = useThemes()
   const theme = useTheme().surface("dialog")
   const dialog = useDialog()
@@ -213,6 +214,7 @@ export function DialogThemeList() {
       onSelect={(opt) => {
         preview(opt.value)
         confirmed = true
+        if (props.onClose) return props.onClose()
         dialog.clear()
       }}
       ref={(r) => {

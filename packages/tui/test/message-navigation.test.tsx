@@ -9,7 +9,8 @@ import { tmpdir } from "./fixture/fixture"
 
 test("normal-mode j/k tints the navigated message, f pins it, escape clears it, and right-click opens message actions", async () => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 100, height: 30, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   const sessionID = "ses_nav"
   const messages = Array.from({ length: 30 }, (_, index) => ({

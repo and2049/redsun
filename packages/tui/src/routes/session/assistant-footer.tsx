@@ -6,7 +6,7 @@ import { useLocal } from "../../context/local"
 import { useTheme } from "../../context/theme"
 import { useLanguage } from "../../i18n"
 import { errorMessage } from "../../util/error"
-import { AssistantRetry } from "./index"
+import { AssistantRetry, FreeLimitNotice } from "./index"
 import { TRANSCRIPT_GUTTER, use } from "./render-context"
 import { completionStamp, turnDuration, turnInput, turnTokensPerSecond } from "./rows"
 
@@ -83,11 +83,18 @@ export function AssistantFooter(props: { message: SessionMessageAssistant }) {
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
-        <box paddingLeft={TRANSCRIPT_GUTTER}>
-          <text fg={theme.text.feedback.error.base}>
-            {t("session.error")}: {errorMessage(props.message.error)}
-          </text>
-        </box>
+        <Show
+          when={props.message.error?.type === "provider.free-limit"}
+          fallback={
+            <box paddingLeft={TRANSCRIPT_GUTTER}>
+              <text fg={theme.text.feedback.error.base}>
+                {t("session.error")}: {errorMessage(props.message.error)}
+              </text>
+            </box>
+          }
+        >
+          <FreeLimitNotice message={props.message} />
+        </Show>
       </Show>
       <AssistantRetry retry={props.message.retry} />
       <Show when={interrupted()}>

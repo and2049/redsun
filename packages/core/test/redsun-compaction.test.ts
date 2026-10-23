@@ -17,7 +17,7 @@ import { SessionModelRequest } from "@opencode/core/session/model-request"
 import { SessionProjector } from "@opencode/core/session/projector"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import type { SessionSchema } from "@opencode/core/session/schema"
-import { SessionTable } from "@opencode/core/session/sql"
+import { SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { SessionStore } from "@opencode/core/session/store"
 import { Session } from "@opencode/core/session"
 import { Project } from "@opencode/core/project"
@@ -117,6 +117,28 @@ const loaded = (
   tools: { definitions: [], execute: () => Effect.die("Compaction must not execute tools") },
 })
 
+/**
+ * Stores messages in order, as a session would have, so history can rebuild a checkpoint's kept tail. Their
+ * sequence numbers sit below any the bus hands the compaction that follows, which the projector stores next.
+ */
+const storeMessages = (sessionID: SessionSchema.ID, messages: readonly SessionMessage.Info[]) =>
+  Effect.gen(function* () {
+    const db = (yield* Database.Service).db
+    for (const [index, item] of messages.entries())
+      yield* db
+        .insert(SessionMessageTable)
+        .values({
+          id: item.id,
+          session_id: sessionID,
+          type: item.type,
+          seq: index - messages.length,
+          time_created: 0,
+          data: Schema.encodeUnknownSync(SessionMessage.Info)(item),
+        })
+        .run()
+        .pipe(Effect.orDie)
+  })
+
 /** Opens the compaction's message as the runner does when it delivers `/compact`, then compacts. */
 const compactManually = (session: SessionSchema.Info, messages: readonly SessionMessage.Info[], inputID: string) =>
   Effect.gen(function* () {
@@ -126,7 +148,6 @@ const compactManually = (session: SessionSchema.Info, messages: readonly Session
     yield* bus.publish(SessionEvent.Compaction.Started, {
       sessionID: session.id,
       reason: "manual",
-      recent: "",
       inputID: id,
     })
     return yield* compaction.compact({ reason: "manual", context: loaded(session, messages), inputID: id })
@@ -326,7 +347,6 @@ algorithmic.effect("algorithmic compaction carries the previous summary forward"
       status: "completed",
       reason: "manual",
       summary: "## Task\n\nEarlier anchored summary.",
-      recent: "",
     })
     expect(yield* compactManually(session, [previous, ...conversation()], "msg_compact_carry")).toEqual({
       status: "completed",
@@ -387,10 +407,14 @@ for (const strategy of ["llm", "hybrid", "algorithmic"] as const) {
           }),
           message({ id: "msg_user_stale_two", type: "user", text: "Also keep the fragment intact." }),
         ]
+        yield* storeMessages(session.id, messages)
         expect(yield* compactManually(session, messages, "msg_compact_stale")).toEqual({ status: "completed" })
         const context = yield* store.context(session.id)
         const recent = context.at(-1)
-        const tail = recent?.type === "compaction" && recent.status === "completed" ? recent.recent : ""
+        const tail =
+          recent?.type === "compaction" && recent.status === "completed" && typeof recent.metadata?.recent === "string"
+            ? recent.metadata.recent
+            : ""
         expect(tail).toContain("[Tool result]: NEW_READ_CONTENT")
         if (strategy === "llm") {
           expect(tail).toContain("[Tool result]: OLD_READ_CONTENT")
@@ -426,9 +450,9 @@ hybrid.effect("a configured threshold lowers the automatic trigger but never rai
         .pipe(Effect.map((outcome) => outcome.status !== "skipped"))
     }
     const chatgpt = { context: 400_000, input: 272_000, output: 128_000 }
-    // Default: 10% of the input window kept free.
-    expect(yield* due(244_799, chatgpt)).toBe(false)
-    expect(yield* due(244_800, chatgpt)).toBe(true)
+    // Default: 15% of the input window kept free (upstream's reserve since v2.1).
+    expect(yield* due(231_199, chatgpt)).toBe(false)
+    expect(yield* due(231_200, chatgpt)).toBe(true)
 
     yield* configured({ threshold: 60 })
     // 60% of the input window, the window the meter reads.
@@ -440,7 +464,7 @@ hybrid.effect("a configured threshold lowers the automatic trigger but never rai
 
     yield* configured({ threshold: 95 })
     // 95% (258,400) is above the ceiling, which still wins.
-    expect(yield* due(244_799, chatgpt)).toBe(false)
-    expect(yield* due(244_800, chatgpt)).toBe(true)
+    expect(yield* due(231_199, chatgpt)).toBe(false)
+    expect(yield* due(231_200, chatgpt)).toBe(true)
   }),
 )

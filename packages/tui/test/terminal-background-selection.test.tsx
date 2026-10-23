@@ -53,15 +53,15 @@ async function selectedCells(theme: { name: string; terminal_background?: boolea
     await app.waitForFrame((frame) => frame.includes("Plain paragraph"))
     await app.mockMouse.drag(0, 0, 8, 0)
     await app.renderOnce()
-    const { fg, bg } = app.renderer.currentRenderBuffer.buffers
     const cell = (colors: Uint16Array, column: number) => ({
       rgb: [...colors.subarray(column * 4, column * 4 + 3)].map((channel) => channel & 255),
       default: colors[column * 4 + 1]! >>> 8 !== 0,
     })
-    return {
+    // OpenTUI 0.6 exposes the planes only inside a synchronous buffer scope.
+    return app.renderer.currentRenderBuffer.withBuffers(({ fg, bg }) => ({
       selected: { fg: cell(fg, SELECTED), bg: cell(bg, SELECTED) },
       unselected: { fg: cell(fg, UNSELECTED), bg: cell(bg, UNSELECTED) },
-    }
+    }))
   } finally {
     app.renderer.destroy()
   }

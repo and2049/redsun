@@ -177,7 +177,8 @@ so authorize only trusted directory boundaries.
 
 ## Scanner
 
-Enable the experimental portable shell scanner with:
+Enable the experimental portable shell scanner with the following setting. Like all
+[experimental settings](config.md#experimental), it may change or be removed in a future release.
 
 ```jsonc
 {

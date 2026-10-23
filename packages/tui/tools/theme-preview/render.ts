@@ -72,7 +72,7 @@ async function render(input: {
   rows: number
 }): Promise<Frame> {
   upsertTheme(input.theme, input.source)
-  const setup = await createTestRenderer({ width: input.cols, height: input.rows, useThread: false })
+  const setup = await createTestRenderer({ width: input.cols, height: input.rows })
   const events = createEventStream()
   const calls = createFetch(input.screen === "session" ? sessionFixture() : homeFixture(), events)
   const server = Bun.serve({ port: 0, fetch: (request) => calls.fetch(request) })

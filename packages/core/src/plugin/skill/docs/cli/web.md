@@ -16,7 +16,7 @@ $ redsun pair
 ```
 
 Opening a link in a browser signs it in with a session cookie and loads the web
-ui. Scanning the QR code from the redsun app, or pasting the link into its
+UI. Scanning the QR code from the redsun app, or pasting the link into its
 server address field, connects the app the same way. Sessions last 30 days;
 changing the server password signs every session out.
 
@@ -35,9 +35,10 @@ platform:
 | Platform              | Default port |
 | --------------------- | ------------ |
 | macOS, Linux, and WSL | 49374        |
-| Windows               | 45278        |
+| Windows               | 28894        |
 
-Windows reserves ports from 49152 up. Print the current address with
+Windows reserves ports from 49152 up, and WSL mirrored networking reserves
+another block below that. Print the current address with
 `redsun service status`:
 
 ```bash
@@ -92,7 +93,7 @@ $ redsun service set cors https://app.example.com,https://other.example.com
 $ redsun service set env OPENCODE_LOG_LEVEL DEBUG
 ```
 
-Changing a setting stops the background server. To apply the new config
+Changing a setting stops the background server. Start it again to apply the new config:
 
 ```bash
 $ redsun service start

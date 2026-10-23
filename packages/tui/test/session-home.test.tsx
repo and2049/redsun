@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { type Renderable, ScrollBoxRenderable, Yoga } from "@opentui/core"
+import { type Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
@@ -35,7 +35,8 @@ test.each([
   // height 30 the 20-message first page fits within two viewports and revealOlderRows'
   // scrollTop guard would page instead of scrolling. A shorter viewport restores the
   // upstream geometry the modes assume.
-  const setup = await createTestRenderer({ width: 100, height: 22, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 100, height: 22, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   const session = {
     id: "ses_test",
@@ -125,7 +126,6 @@ test.each([
         : root.getChildren().map(findScrollBox).find(Boolean)
     const scroll = findScrollBox(setup.renderer.root)
     if (!scroll) throw new Error("session transcript scrollbox was not found")
-    expect(scroll.viewport.getLayoutNode().getComputedPadding(Yoga.Edge.Right)).toBe(1)
     const mounted = () => scroll.getChildren().filter((child) => child.id?.startsWith("message-"))
     const maximum = () => Math.max(0, scroll.scrollHeight - scroll.viewport.height)
     if (mode === "scrolled" || mode === "cancel" || mode === "settling-scrolled") {

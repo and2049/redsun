@@ -37,6 +37,8 @@ Configure default headers on the supplied `HttpClient`. Native operations use
 normal Effect interruption for cancellation. RPC methods additionally accept
 per-call location, header, and signal options.
 
+{/_ prettier-ignore _/}
+
 ```ts
 import { HttpClient, HttpClientRequest } from "effect/http"
 
@@ -59,6 +61,8 @@ const sessions = yield * client.session.list()
 
 Streaming operations such as `event.subscribe()` and `session.log()` return Effect Streams.
 
+{/_ prettier-ignore _/}
+
 ```ts
 import { Effect, Stream } from "effect"
 
@@ -75,6 +79,8 @@ receive the current connection marker before live events.
 ## Plugin RPC
 
 Use the same shared contract as Promise clients and server plugins:
+
+{/_ prettier-ignore _/}
 
 ```ts
 import { Acme } from "opencode-acme-plugin/rpc"
@@ -141,6 +147,8 @@ const health = await Effect.runPromise(
 ```
 
 Discover without starting, or stop the exact registered service.
+
+{/_ prettier-ignore _/}
 
 ```ts
 const endpoint = yield * Service.discover()

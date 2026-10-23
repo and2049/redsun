@@ -13,8 +13,12 @@ function setup() {
   const palette = new Promise<Awaited<ReturnType<CliRenderer["getPalette"]>>>((done) => (resolve = done))
   const renderer = {
     getPalette: () => palette,
-    suspend: () => output.push("suspend"),
-    resume: () => output.push("resume"),
+    suspend: async () => {
+      output.push("suspend")
+    },
+    resume: async () => {
+      output.push("resume")
+    },
   }
   const background = createTerminalBackground(renderer, (sequence) => output.push(sequence))
   return {
@@ -51,9 +55,9 @@ describe("terminal background", () => {
     setTerminalBackgroundGain(renderer, 1 - 150 / 255)
     await reply()
     expect(output).toEqual([osc("#696969")])
-    suspendTerminal(renderer)
+    await suspendTerminal(renderer)
     expect(output.slice(-2)).toEqual([osc("#123456"), "suspend"])
-    resumeTerminal(renderer)
+    await resumeTerminal(renderer)
     expect(output.slice(-2)).toEqual(["resume", osc("#696969")])
     background.dispose()
   })
@@ -76,10 +80,10 @@ describe("terminal background", () => {
     const { background, output, renderer, reply } = setup()
     background.update("#282828")
     await reply()
-    suspendTerminal(renderer)
+    await suspendTerminal(renderer)
     background.update("#eeeeee")
     expect(output.slice(-2)).toEqual([osc("#123456"), "suspend"])
-    resumeTerminal(renderer)
+    await resumeTerminal(renderer)
     expect(output.slice(-2)).toEqual(["resume", osc("#eeeeee")])
     background.dispose()
   })
@@ -98,10 +102,10 @@ describe("terminal background", () => {
   test("a palette reply during suspension waits until resume", async () => {
     const { background, output, renderer, reply } = setup()
     background.update("#282828")
-    suspendTerminal(renderer)
+    await suspendTerminal(renderer)
     await reply()
     expect(output).toEqual(["suspend"])
-    resumeTerminal(renderer)
+    await resumeTerminal(renderer)
     expect(output).toEqual(["suspend", "resume", osc("#282828")])
     background.dispose()
   })
