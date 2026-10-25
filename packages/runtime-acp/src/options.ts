@@ -119,6 +119,13 @@ export const defaultHome = (id: string) =>
  * Auto-approve never restarts it and host `deny` rules always hold (no `--trust-all-tools`).
  * The host owns base instructions and discovered resources. V3 receives a wire profile and an
  * empty workspace; tracked host prefixes supply the actual project context (see kiro.ts).
+ *
+ * `env` pins KAS's `tool_load_enabled` feature off. Kiro's cloud experiment service turns it on
+ * (observed 2026-10-09 onwards with KAS 0.66.8); with it on, every MCP tool is "deferred" and
+ * only reachable through the builtin `tool_load` tool, which the profile denies with the rest of
+ * the builtins, so the model saw no tools at all and wrote tool calls as plain text. KAS resolves
+ * `KIRO_FEATURE_*` variables ahead of the experiment, so the host's served tools stay in the
+ * model's request. A configured `env` entry can still override it.
  */
 export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
   kiro: {
@@ -131,6 +138,7 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
       signIn: "Run `kiro-cli login` in a terminal, then connect again.",
     },
     args: ["acp", "--agent-engine", "v3", "--auth-method", "cli"],
+    env: { KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" },
     hostTools: "all",
     prompt: "prefix",
     compactCommand: "/compact",
