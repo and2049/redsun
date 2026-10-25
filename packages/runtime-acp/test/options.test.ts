@@ -38,13 +38,28 @@ describe("ACP agent options", () => {
     expect(kiro!.home!.files).toEqual({})
   })
 
+  test("the kiro preset keeps KAS from deferring the host's MCP tools behind its tool_load builtin", () => {
+    // Kiro's cloud experiment `tool_load_enabled` hides every MCP tool until the model calls the
+    // builtin `tool_load`, which the profile denies; the env variable outranks the experiment.
+    const { agents } = AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } })
+    expect(agents[0]!.env).toEqual({ KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" })
+    const overridden = AcpOptions.parse({
+      agents: { kiro: { preset: "kiro", env: { KIRO_FEATURE_TOOL_LOAD_ENABLED: "true", A: "1" } } },
+    })
+    expect(overridden.agents[0]!.env).toEqual({ KIRO_FEATURE_TOOL_LOAD_ENABLED: "true", A: "1" })
+  })
+
   test("an entry's own keys override its preset; env and home merge", () => {
     const { agents } = AcpOptions.parse({
       agents: {
         kiro: { preset: "kiro", name: "Kiro", env: { XDG_DATA_HOME: "/data" }, home: { path: "~/kiro-home" } },
       },
     })
-    expect(agents[0]).toMatchObject({ name: "Kiro", command: "kiro-cli", env: { XDG_DATA_HOME: "/data" } })
+    expect(agents[0]).toMatchObject({
+      name: "Kiro",
+      command: "kiro-cli",
+      env: { XDG_DATA_HOME: "/data", KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" },
+    })
     expect(agents[0]!.home?.env).toBe("HOME")
     expect(agents[0]!.home?.path).toEndWith("/kiro-home")
     expect(agents[0]!.home?.path.startsWith("~")).toBe(false)
