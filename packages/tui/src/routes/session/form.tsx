@@ -19,7 +19,7 @@ import { useToast } from "../../ui/toast"
 import { Keymap } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
 import { useVimInputCapture } from "../../context/vim"
-import { useConfig } from "../../config"
+import { useCursorStyle } from "../../config"
 import { errorMessage } from "../../util/error"
 import {
   formCustom,
@@ -72,7 +72,7 @@ export function FormPrompt(props: {
   const enabled = useInteractivity()
   const active = () => enabled() && keymap.mode.current() === FORM_MODE
   useVimInputCapture(enabled)
-  const config = useConfig().data
+  const cursorStyle = useCursorStyle()
   const clipboard = useClipboard()
   const toast = useToast()
   const language = useLanguage()
@@ -939,7 +939,7 @@ export function FormPrompt(props: {
             <Show when={textual() ? answerField()!.key : undefined} keyed>
               <box paddingLeft={1}>
                 <textarea
-                  cursorStyle={config.cursor}
+                  cursorStyle={cursorStyle()}
                   ref={(val: TextareaRenderable) => {
                     textarea = val
                     val.traits = { status: "ANSWER" }
@@ -1079,7 +1079,7 @@ export function FormPrompt(props: {
                         >
                           <textarea
                             flexGrow={1}
-                            cursorStyle={config.cursor}
+                            cursorStyle={cursorStyle()}
                             ref={(val: TextareaRenderable) => {
                               textarea = val
                               val.traits = { status: "ANSWER" }

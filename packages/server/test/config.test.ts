@@ -63,7 +63,7 @@ it.live("updates the global shell without replacing unrelated JSONC", () =>
   Effect.gen(function* () {
     const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-config-shells-")))
     const global = path.join(tmp.path, "global")
-    const config = path.join(global, "opencode.jsonc")
+    const config = path.join(global, "redsun.jsonc")
     yield* Effect.promise(() => fs.mkdir(global, { recursive: true }))
     yield* Effect.promise(() =>
       fs.writeFile(

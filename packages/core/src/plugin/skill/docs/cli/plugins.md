@@ -56,4 +56,4 @@ the same layout as a published package, with server and TUI entrypoints kept tog
 ```
 
 Discovered plugins can import `@opencode/plugin/tui` directly; redsun resolves the package at runtime. See
-[Building CLI plugins](../build/plugins/cli.md) for examples.
+[Building TUI plugins](../build/plugins/cli.md) for examples.

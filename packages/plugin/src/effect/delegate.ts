@@ -1,6 +1,5 @@
 import type { LanguageModelV3, LanguageModelV3CallOptions, LanguageModelV3Usage } from "@ai-sdk/provider"
 import type { ToolDefinition } from "@opencode/ai"
-import type { Form } from "@opencode/schema/form"
 import type { Permission } from "@opencode/schema/permission"
 import type { Tool } from "@opencode/schema/tool"
 import type { Effect, Schema, Scope } from "effect"
@@ -27,9 +26,9 @@ export interface DelegatedTurn {
 export type DelegatedStreamResult = Awaited<ReturnType<LanguageModelV3["doStream"]>>
 
 /**
- * REDSUN: an external coding agent that runs its own agent loop behind a provider (Claude Code
- * through the Agent SDK, an ACP agent). The runtime owns model calls, its native transcript, native
- * tools and compaction; the host keeps sessions, UI, agent selection and permission policy.
+ * REDSUN: an external coding agent that runs its own agent loop behind a provider (an ACP agent
+ * such as Kiro). The runtime owns model calls, its native transcript, native tools and compaction;
+ * the host keeps sessions, UI, agent selection and permission policy.
  *
  * The provider's models need an `aisdk:`-prefixed `package` so the resolver routes them through
  * the AI SDK path; core never loads that package for a registered runtime.
@@ -47,19 +46,12 @@ export interface DelegatedRuntime {
   /**
    * How a manual compaction request is handled. The runtime compacts its own context, so the host
    * never runs its compaction; `command` is admitted as a steering prompt the runtime understands
-   * (Claude Code: `/compact`). Omitted, the request fails with `notice` or a generic message.
+   * (e.g. `/compact`). Omitted, the request fails with `notice` or a generic message.
    */
   readonly compaction?: {
     readonly notice: string
     readonly command?: string
   }
-  /**
-   * Whether the agent itself has a native auto-approval mode for this model (Claude Code's
-   * classifier-backed `auto`). When true, the host offers `native_auto` beside Manual and
-   * Auto-approve, and the runtime maps it onto that native mode. Omit it, or return false, when the
-   * agent has no such mode: the host never simulates one.
-   */
-  readonly nativeApproval?: (model: { readonly providerID: string; readonly id: string }) => boolean
 }
 
 export interface DelegatedPermissionCheck {
@@ -72,8 +64,6 @@ export interface DelegatedPermissionCheck {
 
 /** The host's answer to an interactive approval; a decline may carry the user's correction. */
 export type DelegatedApproval = { readonly ok: true } | { readonly ok: false; readonly feedback?: string }
-
-export type DelegatedFormState = Exclude<Form.State, { readonly status: "pending" }>
 
 /** Key-value storage under the stable prefix `redsun.<runtime id>`; keys are appended verbatim. */
 export interface DelegatedStorage {
@@ -141,47 +131,6 @@ export interface DelegatedSystemPrompt {
   readonly dynamic: readonly string[]
 }
 
-/**
- * A row the host writes into a mirrored child transcript. A runtime whose native agent spawns its
- * own subagents records their progress in child sessions through these.
- */
-export type DelegatedTranscriptEvent =
-  | { readonly kind: "execution-started"; readonly sessionID: string }
-  | { readonly kind: "execution-succeeded"; readonly sessionID: string }
-  | { readonly kind: "synthetic"; readonly sessionID: string; readonly text: string }
-  | { readonly kind: "step-started"; readonly sessionID: string; readonly messageID: string; readonly agent: string }
-  | { readonly kind: "step-ended"; readonly sessionID: string; readonly messageID: string }
-  | {
-      readonly kind: "text"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly ordinal: number
-      readonly text: string
-    }
-  | {
-      readonly kind: "reasoning"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly ordinal: number
-      readonly text: string
-    }
-  | {
-      readonly kind: "tool-called"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly id: string
-      readonly name: string
-      readonly input: Record<string, unknown>
-    }
-  | {
-      readonly kind: "tool-result"
-      readonly sessionID: string
-      readonly messageID: string
-      readonly id: string
-      readonly text: string
-      readonly failed: boolean
-    }
-
 export interface DelegateDomain {
   readonly register: (runtime: DelegatedRuntime) => Effect.Effect<Registration, never, Scope.Scope>
   /** Whether a registered runtime owns this model's agent loop. */
@@ -193,10 +142,6 @@ export interface DelegateDomain {
   readonly config: (key: string | readonly string[]) => Effect.Effect<unknown>
   readonly storage: (runtimeID: string) => DelegatedStorage
   readonly permission: {
-    /** The effective decision without prompting; for mandatory policy checks. */
-    readonly inspect: (
-      input: DelegatedPermissionCheck,
-    ) => Effect.Effect<{ readonly effect: Permission.Effect; readonly message?: string }>
     /** Prompts when policy asks; `save` persists an "always" answer for these resources. */
     readonly assert: (
       input: DelegatedPermissionCheck & { readonly save?: readonly string[] },
@@ -213,15 +158,6 @@ export interface DelegateDomain {
     }) => Effect.Effect<DelegatedToolBinding, Error>
   }
   readonly context: {
-    /** Structured host paths for runtimes that supply their own base prompt and environment. */
-    readonly environment: () => Effect.Effect<
-      {
-        readonly directory: string
-        readonly workspaceRoot: string
-        readonly temporaryDirectory: string
-      },
-      Error
-    >
     /**
      * The location's discovered instruction files (AGENTS.md chain, project memory), each bounded
      * to `instruction_max_chars`; project memory carries its maintenance policy. Undefined while
@@ -250,20 +186,6 @@ export interface DelegateDomain {
     }) => Effect.Effect<DelegatedSystemPrompt, Error>
   }
   readonly transcript: {
-    /** A fresh message id for a mirrored step. */
-    readonly messageID: () => string
-    /** Creates a child session under `parentID`; fails if the parent is gone. */
-    readonly createChild: (input: {
-      readonly parentID: string
-      readonly title: string
-      readonly agent: string
-      readonly model: { readonly providerID: string; readonly id: string }
-    }) => Effect.Effect<string, Error>
-    /** Writes mirrored rows, attributing steps to `model`. */
-    readonly record: (
-      model: { readonly providerID: string; readonly id: string },
-      events: readonly DelegatedTranscriptEvent[],
-    ) => Effect.Effect<void>
     /**
      * Live context usage for the turn's host assistant message while the runtime's own loop runs,
      * shaped like the stream's `finish` usage. Not persisted: the `finish` part stays the recorded
@@ -286,14 +208,5 @@ export interface DelegateDomain {
       readonly description?: string
       readonly metadata?: Record<string, unknown>
     }) => Effect.Effect<void>
-  }
-  readonly form: {
-    /** Shows a form in the session and waits for it to settle. */
-    readonly ask: (input: {
-      readonly sessionID: string
-      readonly title: string
-      readonly metadata?: Record<string, unknown>
-      readonly fields: readonly Form.Field[]
-    }) => Effect.Effect<DelegatedFormState>
   }
 }

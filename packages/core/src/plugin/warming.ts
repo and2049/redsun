@@ -3,7 +3,7 @@ export * as WarmingPlugin from "./warming.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import type { Session } from "@opencode/schema/session"
-import { Clock, Duration, Effect, Scope } from "effect"
+import { Clock, Duration, Effect, Scope, Stream } from "effect"
 import { Config } from "../config.js"
 
 const defaults = {
@@ -28,30 +28,61 @@ export const Plugin = define({
 
     const scope = yield* Scope.Scope
     const sessions = new Map<Session.ID, { last: number; expires: number; settings: typeof defaults }>()
-    const loop: (sessionID: Session.ID) => Effect.Effect<void> = Effect.fn("WarmingPlugin.loop")(function* (sessionID) {
-      const current = sessions.get(sessionID)
-      if (!current) return
+    // A ping during a model request would compete with the request it keeps warm, which stalls single-slot local models.
+    // A request counts from its context hook, because `session.step.started` waits for the first response chunk.
+    const requesting = new Set<Session.ID>()
+    // A turn always ends with an execution event, so a step that ends without its own event can't stay in flight.
+    yield* ctx.event
+      .subscribe({
+        types: [
+          "session.step.streamed",
+          "session.step.failed",
+          "session.execution.succeeded",
+          "session.execution.failed",
+          "session.execution.interrupted",
+        ],
+      })
+      .pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            requesting.delete(event.data.sessionID)
+            // Count the next interval from the end of the response, not from when a long request started.
+            const current = sessions.get(event.data.sessionID)
+            if (current) current.last = yield* Clock.currentTimeMillis
+          }),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
+      )
+    const loop: (sessionID: Session.ID) => Effect.Effect<void> = Effect.fn("WarmingPlugin.loop")(
+      function* (sessionID) {
+        const current = sessions.get(sessionID)
+        if (!current) return
 
-      const now = yield* Clock.currentTimeMillis
-      const next = Math.min(current.last + Duration.toMillis(current.settings.interval), current.expires)
-      if (now < next) {
-        yield* Effect.sleep(Duration.millis(next - now))
+        const now = yield* Clock.currentTimeMillis
+        const next = Math.min(current.last + Duration.toMillis(current.settings.interval), current.expires)
+        if (now < next) {
+          yield* Effect.sleep(Duration.millis(next - now))
+          return yield* loop(sessionID)
+        }
+        if (now >= current.expires) {
+          sessions.delete(sessionID)
+          return
+        }
+        if (requesting.has(sessionID)) {
+          yield* Effect.sleep(current.settings.interval)
+          return yield* loop(sessionID)
+        }
+
+        const last = current.last
+        yield* Effect.logInfo("warming session", { sessionID, last })
+        yield* ctx.session
+          .generate({ sessionID, prompt: current.settings.prompt })
+          .pipe(Effect.catchCause((cause) => Effect.logWarning("failed to warm session", { sessionID, cause })))
+        const latest = sessions.get(sessionID)
+        if (latest === current && latest.last === last) latest.last = yield* Clock.currentTimeMillis
         return yield* loop(sessionID)
-      }
-      if (now >= current.expires) {
-        sessions.delete(sessionID)
-        return
-      }
-
-      const last = current.last
-      yield* Effect.logInfo("warming session", { sessionID, last })
-      yield* ctx.session
-        .generate({ sessionID, prompt: current.settings.prompt })
-        .pipe(Effect.catchCause((cause) => Effect.logWarning("failed to warm session", { sessionID, cause })))
-      const latest = sessions.get(sessionID)
-      if (latest === current && latest.last === last) latest.last = yield* Clock.currentTimeMillis
-      return yield* loop(sessionID)
-    })
+      },
+    )
 
     const hook = (event: SessionHooks["context"]) =>
       Effect.gen(function* () {
@@ -98,7 +129,9 @@ export const Plugin = define({
           Effect.forkIn(scope),
         )
       })
-    yield* ctx.session.hook("context", hook)
+    yield* ctx.session.hook("context", (event) =>
+      Effect.sync(() => requesting.add(event.sessionID)).pipe(Effect.andThen(hook(event))),
+    )
     yield* ctx.session.hook("compaction", hook)
     yield* ctx.session.hook("generate", hook)
   }),

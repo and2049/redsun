@@ -3,7 +3,14 @@ import path from "path"
 export const ROOT = "services/www/src/docs/content"
 export const DOCS_URL = "https://opencode.ai/v2/docs"
 // REDSUN: V1 migration guides and the embedding SDK (redsun ships no `@opencode/sdk`) are not vendored.
-export const EXCLUDED = [/^console(\/|$)/, /^index$/, /(^|\/)migrate-v1$/, /^build\/sdk(\/|$)/]
+export const EXCLUDED = [
+  /^console(\/|$)/,
+  /^index$/,
+  /(^|\/)migrate-v1$/,
+  /^build\/sdk(\/|$)/,
+  // Desktop GUI plugins; redsun ships no desktop app.
+  /^build\/plugins\/gui(\/|$)/,
+]
 
 export const excluded = (id: string) => EXCLUDED.some((pattern) => pattern.test(id))
 
@@ -106,7 +113,9 @@ export function brand(text: string) {
 // branded text, and a rule that no longer matches fails the sync instead of letting the
 // upstream text through.
 export const SECTIONS: Readonly<Record<string, ReadonlyArray<string>>> = {
-  "build/plugins/index": ["Support V1"],
+  troubleshooting: ["In the desktop app"],
+  plugins: ["Desktop"],
+  "build/plugins/server": ["Support V1"],
   "cli/commands": ["mini"],
   "cli/config": ["Mini"],
   "cli/index": ["Mini"],
@@ -116,7 +125,11 @@ export const SECTIONS: Readonly<Record<string, ReadonlyArray<string>>> = {
 }
 
 export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | string, string]>>> = {
-  agents: [[" in new V2 agent configuration.", " in agent configuration."]],
+  "build/plugins/rpc": [[/^A \[GUI plugin\]\(.*?\n\nRead `ctx\.client` where you call it[^\n]*\nrejects\.\n\n/ms, ""]],
+  agents: [
+    [" in new V2 agent configuration.", " in agent configuration."],
+    [/^V1 frontmatter fields are deprecated\..*\n\n/m, ""],
+  ],
   attachments: [
     [
       " In the desktop\nor web client, choose **Attach file**, paste a file, or drag it into the prompt.",
@@ -134,7 +147,18 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
     ["used by the TUI and desktop app,", "used by the TUI,"],
     [/^- \[Embed it\].*\n?/m, ""],
   ],
-  "build/plugins/index": [[/^Migrating an existing OpenCode V1 plugin\?.*\n\n/m, ""]],
+  "build/plugins/index": [
+    [/^Migrating an existing OpenCode (V)?1 plugin\?.*\n\n/m, ""],
+    [/^    "\.\/gui-experimental": "\.\/dist\/gui-experimental\.cjs",\n/m, ""],
+    [/^- \*\*GUI\*\* \(`\.\/gui-experimental`\).*\n.*\n/m, ""],
+    [
+      /^- One entry loads every part\. The TUI loads the TUI parts of the plugins its server loads, and redsun Desktop loads\n  the GUI parts of the plugins in your global `redsun\.json\(c\)`\./m,
+      "- One entry loads every part. The TUI loads the TUI parts of the plugins its server loads.",
+    ],
+    [/, and `gui-experimental\.cjs` \(or `\.js`\)/, ""],
+    [/^- Build the GUI bundle before you publish.*\n.*\n/m, ""],
+    [/^- \[GUI\]\(.*redsun Desktop\.\n/m, ""],
+  ],
   "cli/commands": [
     [
       "      - run: npm install --global @opencode/cli\n",
@@ -156,7 +180,7 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
   policies: [[/^Use `provider\.use` instead of the V1 [\s\S]*?\)\.\n\n/m, ""]],
   "cli/web": [
     [
-      "redsun ships with a web UI that is served from the same server that powers the\nTUI. It's available by default and password protected.",
+      "redsun ships with a web UI that is served from the same server that powers the\nTUI. It's available by default and password-protected.",
       "redsun does not ship a web UI. The server that powers the TUI is password\nprotected, and browser or remote clients connect to it over HTTP.",
     ],
   ],

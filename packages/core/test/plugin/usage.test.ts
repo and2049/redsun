@@ -12,6 +12,38 @@ import { PluginTestLayer } from "./fixture"
 
 const it = testEffect(PluginTestLayer)
 
+it.effect("external Claude login enables usage without an OAuth token and rejects other methods", () =>
+  Effect.gen(function* () {
+    const ctx = yield* PluginHost.make(yield* Plugin.Service)
+    const credentials = yield* Credential.Service
+    const rpc = (yield* Rpc.Service).client(Usage.rpc("claude-agent"))
+    let reads = 0
+    yield* registerUsage(ctx, {
+      providerID: "claude-agent",
+      type: "external",
+      methods: ["claude-login"],
+      read: async () => {
+        reads++
+        return { windows: [{ id: "weekly", label: "Weekly", usedPercent: 42 }] }
+      },
+    })
+    expect((yield* rpc.read()).connected).toBe(false)
+    yield* credentials.create({
+      integrationID: Integration.ID.make("claude-agent"),
+      value: Credential.External.make({ type: "external", methodID: Integration.MethodID.make("claude-login") }),
+    })
+    expect((yield* rpc.read()).windows[0]?.usedPercent).toBe(42)
+    expect((yield* rpc.read()).connected).toBe(true)
+    expect(reads).toBe(1)
+    yield* credentials.create({
+      integrationID: Integration.ID.make("claude-agent"),
+      value: Credential.External.make({ type: "external", methodID: Integration.MethodID.make("other") }),
+    })
+    expect((yield* rpc.read()).connected).toBe(false)
+    expect(reads).toBe(1)
+  }),
+)
+
 it.effect("usage RPC gates credentials, deduplicates reads and invalidates cache on account switches", () =>
   Effect.gen(function* () {
     const plugin = yield* Plugin.Service

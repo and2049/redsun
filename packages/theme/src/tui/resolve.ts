@@ -66,17 +66,22 @@ function resolveExpandedTheme(definition: ThemeDefinition): ResolvedTheme {
   const hue = resolveHue(definition.hue)
   const categorical = resolveCategorical(definition.categorical, hue)
   const hueSteps = compileHueSteps(hue)
-  const base = tokens(definition)
+  const base = tokens(definition, definition.hue)
   const views = {} as Record<SurfaceName, ResolvedTheme>
   const view = (tokens: ThemeTokensDefinition): ResolvedTheme => ({
     ...resolveView(tokens, hue, categorical, hueSteps),
     surface: (name) => views[name],
   })
-  views.dialog = definition["@dialog"] ? view(contextualize(base, definition["@dialog"])) : view(base)
+  const dialog = definition["@dialog"]
+  const dialogTokens = dialog ? contextualize(base, tokens(dialog)) : base
+  views.dialog = view(dialogTokens)
+  // The footer override layers on the dialog surface, so footers keep every dialog token they don't override.
+  const footer = dialog?.["@footer"]
+  views["dialog.footer"] = footer ? view(contextualize(dialogTokens, footer)) : views.dialog
   return view(base)
 }
 
-function tokens(definition: ThemeDefinition): ThemeTokensDefinition {
+function tokens(definition: ThemeTokensDefinition, hue?: ThemeDefinition["hue"]): ThemeTokensDefinition {
   return {
     agents: definition.agents ?? {},
     text: definition.text,
@@ -84,7 +89,7 @@ function tokens(definition: ThemeDefinition): ThemeTokensDefinition {
     border: definition.border,
     scrollbar: definition.scrollbar,
     logo: {
-      gradient: { ...defaultLogoGradient(definition.hue), ...definition.logo?.gradient },
+      gradient: { ...(hue ? defaultLogoGradient(hue) : {}), ...definition.logo?.gradient },
     },
     diff: definition.diff,
     syntax: definition.syntax,

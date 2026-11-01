@@ -1,10 +1,9 @@
 export * as Permission from "./permission.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Context, Deferred, Effect, Layer, Option, Schema } from "effect"
+import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { Permission } from "@opencode/schema/permission"
 import { Bus } from "./bus.js"
-import { DelegatedRuntime } from "./delegate.js"
 import { Location } from "./location.js"
 import { Agent } from "./agent.js"
 import { SessionErrors } from "./session/error.js"
@@ -49,6 +48,14 @@ export interface AskResult {
 }
 
 export { Event } from "@opencode/schema/permission"
+
+/**
+ * Rules that settle a request which would otherwise ask, for work nobody is present to answer, such as a schedule's
+ * check. A request they do not allow is denied. Configured denies still win, as they are evaluated first.
+ */
+export const Unattended = Context.Reference<Permission.Ruleset | undefined>("@opencode/Permission/Unattended", {
+  defaultValue: () => undefined,
+})
 
 export class DeclinedError extends Schema.TaggedError<DeclinedError>()("Permission.DeclinedError", {}) {}
 
@@ -108,6 +115,10 @@ export interface Interface {
   ) => Effect.Effect<{ effect: Permission.Effect; message?: string }, SessionErrors.NotFoundError>
   readonly ask: (input: AssertInput) => Effect.Effect<AskResult, SessionErrors.NotFoundError>
   readonly assert: (input: AssertInput) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
+  /** Fails only when the rules deny the request; never asks the user. */
+  readonly assertNotDenied: (input: AssertInput) => Effect.Effect<void, BlockedError | SessionErrors.NotFoundError>
+  /** True only when the rules already allow the request; never asks the user. */
+  readonly allows: (input: AssertInput) => Effect.Effect<boolean, SessionErrors.NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, NotFoundError>
   readonly get: (id: ID) => Effect.Effect<Request | undefined>
   readonly forSession: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<Request>>
@@ -134,21 +145,12 @@ const layer = Layer.effect(
     const saved = yield* PermissionSaved.Service
     const modes = yield* PermissionMode.Service
     const hooks = yield* PluginHooks.Service
-    // REDSUN: optional so the service stays constructible in harnesses without the registry.
-    const delegates = Option.getOrUndefined(yield* Effect.serviceOption(DelegatedRuntime.Service))
     const pending = new Map<ID, Pending>()
 
-    // REDSUN: `auto` approves every host ask. `native_auto` defers to the runtime's own
-    // judgement-based approval (Claude Code's classifier): in a session whose model's runtime
-    // declares one the host adds no prompts of its own, elsewhere it is Manual. The selection is
-    // server-wide (`PermissionMode`); this instance only holds the prompts of its own location.
-    const approvesAll = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
-      const currentMode = yield* modes.current()
-      if (currentMode === "auto") return true
-      if (currentMode !== "native_auto" || !delegates) return false
-      const model = (yield* sessions.get(sessionID))?.model
-      if (!model) return false
-      return yield* delegates.nativeApproval({ providerID: model.providerID, id: model.id })
+    // REDSUN: `auto` approves every host ask. The selection is server-wide (`PermissionMode`);
+    // this instance only holds the prompts of its own location.
+    const approvesAll = Effect.fnUntraced(function* () {
+      return (yield* modes.current()) === "auto"
     })
 
     let closed = false
@@ -208,9 +210,19 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      if (event.effect === "ask" && (yield* approvesAll(input.sessionID)))
+      if (event.effect === "ask" && (yield* approvesAll()))
         return { effect: "allow" as const, message: event.message, rules: all }
-      return { effect: event.effect, message: event.message, rules: all }
+      const unattended = yield* Unattended
+      if (event.effect !== "ask" || unattended === undefined)
+        return { effect: event.effect, message: event.message, rules: all }
+      const settled = [...all, ...unattended]
+      const allowed = input.resources.every((resource) => evaluate(input.action, resource, settled).effect === "allow")
+      if (allowed) return { effect: "allow" as const, rules: all }
+      return {
+        effect: "deny" as const,
+        message: `Permission ${input.action} needs approval, and nobody is present to give it`,
+        rules: all,
+      }
     })
 
     const inspect = Effect.fn("Permission.inspect")(function* (input: AssertInput) {
@@ -309,6 +321,22 @@ const layer = Layer.effect(
       }),
     )
 
+    const assertNotDenied = Effect.fn("Permission.assertNotDenied")(function* (input: AssertInput) {
+      const result = yield* evaluateInput(input)
+      if (result.effect !== "deny") return
+      return yield* new BlockedError({
+        rules: relevant(input, result.rules),
+        permission: input.action,
+        resources: input.resources,
+        reason: result.message,
+      })
+    })
+
+    const allows = Effect.fn("Permission.allows")(function* (input: AssertInput) {
+      if (closed) return false
+      return (yield* evaluateInput(input)).effect === "allow"
+    })
+
     const reply = Effect.fn("Permission.reply")((input: ReplyInput) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
@@ -396,7 +424,7 @@ const layer = Layer.effect(
           Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
         )
         if (!rules || denied({ ...item.request }, rules)) continue
-        if (!(yield* approvesAll(item.request.sessionID))) continue
+        if (!(yield* approvesAll())) continue
         yield* bus.publish(Permission.Event.Replied, {
           sessionID: item.request.sessionID,
           requestID: item.request.id,
@@ -413,7 +441,7 @@ const layer = Layer.effect(
       yield* modes.set(next)
     })
 
-    return Service.of({ inspect, ask, assert, reply, get, forSession, list, mode, setMode, close })
+    return Service.of({ inspect, ask, assert, assertNotDenied, allows, reply, get, forSession, list, mode, setMode, close })
   }),
 )
 
@@ -428,6 +456,5 @@ export const node = makeLocationNode({
     SessionStore.node,
     PermissionSaved.node,
     PluginHooks.node,
-    DelegatedRuntime.node,
   ],
 })

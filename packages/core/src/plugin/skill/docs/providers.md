@@ -25,6 +25,35 @@ Run `/connect`, choose a provider, and enter its credentials. Then run `/models`
 
 See the [Go guide](https://opencode.ai/v2/docs/console/go) for usage limits, endpoints, and privacy details.
 
+## ChatGPT
+
+Use a ChatGPT Plus or Pro plan instead of an OpenAI API key. Connect **OpenAI**, then choose **Sign in with ChatGPT**
+or one of the legacy **Codex** sign-in methods. Usage counts against your plan, so these models show no cost.
+
+```text
+/connect
+/models
+```
+
+### Context limits
+
+By default, redsun caps the context window for these sign-ins below each model's real limit. The caps match the
+defaults in Codex, so your plan usage is consumed at a similar rate as it would be in other OpenAI products.
+
+| Model                 | Input limit |
+| --------------------- | ----------- |
+| GPT-6.1 Sol and newer | 500,000     |
+| Older models          | 272,000     |
+
+To opt out, disable the cap plugin in your config. The `-` prefix turns off a built-in plugin; all other plugins stay
+enabled.
+
+```jsonc title="redsun.jsonc"
+{
+  "plugins": ["-opencode.provider.openai-context-caps"],
+}
+```
+
 ## Custom
 
 Add a provider when its API is not already in the catalog. This OpenAI-compatible example defines the credential,
@@ -53,17 +82,17 @@ runtime package, endpoint, and first model together.
 
 The `providers` object is keyed by the provider ID used in model references, such as `acme/qwen3-coder`.
 
-| Field           | Purpose                                                                                                                                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`          | Display name.                                                                                                                                                                                                |
-| `env`           | Ordered environment variable names that can provide the credential.                                                                                                                                          |
-| `package`       | Runtime provider package.                                                                                                                                                                                    |
-| `canonical`     | Built-in provider ID whose catalog defaults this provider inherits.                                                                                                                                          |
-| `compatibility` | Request and response compatibility overrides for every model of this provider. Model `compatibility` overrides individual fields. `supportsThinkingBlockBinding` and `supportsEffortUpdates` are model-only. |
-| `settings`      | Typed redsun controls and JSON options passed to the runtime package.                                                                                                                                        |
-| `headers`       | String-valued HTTP headers added to requests.                                                                                                                                                                |
-| `body`          | JSON fields merged into request bodies.                                                                                                                                                                      |
-| `models`        | Models to add or override, keyed by the redsun model ID.                                                                                                                                                     |
+| Field           | Purpose                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `name`          | Display name.                                                                                    |
+| `env`           | Ordered environment variable names that can provide the credential.                              |
+| `package`       | Runtime provider package.                                                                        |
+| `canonical`     | Built-in provider ID whose catalog defaults this provider inherits.                              |
+| `compatibility` | API quirks shared by every model of this provider. See [Compatibility](models.md#compatibility). |
+| `settings`      | Typed redsun controls and JSON options passed to the runtime package.                            |
+| `headers`       | String-valued HTTP headers added to requests.                                                    |
+| `body`          | JSON fields merged into request bodies.                                                          |
+| `models`        | Models to add or override, keyed by the redsun model ID.                                         |
 
 ## Endpoint
 
@@ -115,7 +144,7 @@ Both fields can also be set on a model or variant when only part of a provider's
   "providers": {
     "openai": {
       "models": {
-        "gpt-5.2": {
+        "gpt-6.1-sol": {
           "headers": { "X-Model-Tier": "coding" },
           "variants": [
             {
@@ -132,7 +161,7 @@ Both fields can also be set on a model or variant when only part of a provider's
 
 ## Timeouts
 
-HTTP requests wait up to five minutes for response headers and up to five minutes between streamed response chunks.
+HTTP requests wait up to five minutes for response headers and up to fifteen minutes between streamed response chunks.
 Set the provider's `settings.headerTimeout` or `settings.chunkTimeout` to a number of milliseconds to change a limit,
 or to `false` to disable it. `settings.timeout` additionally bounds the whole request from send until the response
 completes; it has no default. These configuration settings apply provider-wide, not per model or variant. On a
@@ -248,8 +277,8 @@ ID sent to the provider.
     "openai": {
       "models": {
         "coding": {
-          "modelID": "gpt-5.2",
-          "name": "GPT-5.2 Coding",
+          "modelID": "gpt-6.1-sol",
+          "name": "GPT-6.1 Sol Coding",
         },
       },
     },
@@ -257,22 +286,23 @@ ID sent to the provider.
 }
 ```
 
-| Field           | Purpose                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| `modelID`       | Model or deployment ID sent to the provider.                                                      |
-| `name`          | Display name.                                                                                     |
-| `family`        | Model family used for grouping related models.                                                    |
-| `releaseDate`   | Release date as `YYYY-MM-DD` or `YYYY-MM`.                                                        |
-| `package`       | Runtime override for this model.                                                                  |
-| `settings`      | Model-level redsun controls and package-specific JSON settings.                                   |
-| `headers`       | Additional string-valued request headers.                                                         |
-| `body`          | Additional JSON request body fields.                                                              |
-| `capabilities`  | Tool support, accepted input and output media types, temperature support, and reasoning controls. |
-| `compatibility` | Request and response compatibility overrides.                                                     |
-| `variants`      | Named variants with their own `settings`, `headers`, and `body`.                                  |
-| `cost`          | Input, output, and optional cache pricing per million tokens.                                     |
-| `limit`         | Context, input, and output token limits.                                                          |
-| `disabled`      | Removes the model from selection when `true`.                                                     |
+| Field           | Purpose                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `modelID`       | Model or deployment ID sent to the provider.                                                                                   |
+| `name`          | Display name.                                                                                                                  |
+| `family`        | Model family used for grouping related models.                                                                                 |
+| `type`          | What the model produces, such as `chat`, `image` or `decision`. Defaults to `chat`; only chat models are offered for sessions. |
+| `releaseDate`   | Release date as `YYYY-MM-DD` or `YYYY-MM`.                                                                                     |
+| `package`       | Runtime override for this model.                                                                                               |
+| `settings`      | Model-level redsun controls and package-specific JSON settings.                                                                |
+| `headers`       | Additional string-valued request headers.                                                                                      |
+| `body`          | Additional JSON request body fields.                                                                                           |
+| `capabilities`  | Tool support, accepted input and output media types, temperature support, and reasoning controls.                              |
+| `compatibility` | API quirks for this model, overriding the provider's. See [Compatibility](models.md#compatibility).                            |
+| `variants`      | Named variants with their own `settings`, `headers`, and `body`.                                                               |
+| `cost`          | Input, output, and optional cache pricing per million tokens.                                                                  |
+| `limit`         | Context, input, and output token limits.                                                                                       |
+| `disabled`      | Removes the model from selection when `true`.                                                                                  |
 
 See [Models](models.md) for selection, defaults, capabilities, limits, costs, and variants.
 
@@ -338,12 +368,12 @@ switching accounts. To pick up a deployment added later, restart redsun or conne
 - Deployments inherit limits, costs, and capabilities from their catalog models.
 
 Deployment names are their model IDs, in lowercase because Azure ignores case in names, for example
-`azure/gpt-production`. A deployment named after its model, such as `gpt-5-mini`, keeps the catalog ID. These IDs stay
+`azure/gpt-production`. A deployment named after its model, such as `gpt-6-luna`, keeps the catalog ID. These IDs stay
 stable when other deployments are added or removed.
 
 redsun matches a deployment to the catalog by the model it deploys, or by its name when Azure spells the model
-differently, as with `gpt-4` for GPT-4 Turbo. A deployment named after another model, such as `gpt-5` deploying
-`gpt-5-mini`, shows that model's name, limits, and costs.
+differently, as with `gpt-4` for GPT-4 Turbo. A deployment named after another model, such as `gpt-6.1-sol` deploying
+`gpt-6-luna`, shows that model's name, limits, and costs.
 
 With the Azure CLI, redsun lists deployments through the Azure management API, which needs read access to the
 resource. If that fails, and always with an API key, it uses the resource's legacy deployment inventory. Discovery reads
@@ -359,7 +389,7 @@ kept.
   "providers": {
     "azure": {
       "models": {
-        "gpt-5-mini": {
+        "gpt-6-luna": {
           "modelID": "gpt-production",
         },
       },
@@ -554,7 +584,7 @@ OpenRouter account, then refer to models with the full OpenRouter model ID after
 ```jsonc title="redsun.jsonc"
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "openrouter/anthropic/claude-sonnet-4",
+  "model": "openrouter/anthropic/claude-sonnet-5.5",
 }
 ```
 

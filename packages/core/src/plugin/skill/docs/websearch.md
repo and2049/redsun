@@ -1,4 +1,4 @@
-# Websearch
+# Web search
 
 Ask redsun for current information and it can search the web, read the results, and include source links in its response.
 

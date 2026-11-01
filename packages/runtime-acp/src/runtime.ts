@@ -34,7 +34,7 @@ import { AcpPermissions } from "./permissions.js"
 import { AcpTranslate } from "./translate.js"
 import { AcpKiro } from "./kiro.js"
 
-export type Selection = "normal" | "auto" | "native_auto"
+export type Selection = "normal" | "auto"
 
 /** What the runtime needs from the host, as plain async calls (the plugin binds them to `ctx`). */
 export interface Host {
@@ -731,11 +731,8 @@ export class Runtime {
     oneShot: boolean,
     release: () => void,
   ): Promise<DelegatedStreamResult> {
-    // One-shots (titles, generation) run under Manual in a throwaway process. `native_auto` on an
-    // agent without a judgement-based mode of its own is Manual here, as the host treats it.
-    const selected = oneShot ? "normal" : await this.host.mode()
-    const selection: Selection =
-      selected === "native_auto" && !AcpOptions.hasNativeApproval(this.agent) ? "normal" : selected
+    // One-shots (titles, generation) run under Manual in a throwaway process.
+    const selection: Selection = oneShot ? "normal" : await this.host.mode()
     // Bound at the turn boundary: calls during the turn carry its attribution.
     const binding = oneShot ? undefined : await this.host.tools?.(turn)
     const available =

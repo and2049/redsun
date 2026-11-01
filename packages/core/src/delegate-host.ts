@@ -23,8 +23,6 @@ import { CodeModeInstructions } from "./codemode/instructions.js"
 import { Config } from "./config.js"
 import { Bus } from "./bus.js"
 import { DelegatedRuntime } from "./delegate.js"
-import { DelegateTranscript } from "./delegate-transcript.js"
-import { Form } from "./form.js"
 import { InstructionBuiltIns } from "./instructions/builtins.js"
 import { InstructionDiscovery } from "./instruction-discovery.js"
 import { Instructions } from "./instructions/index.js"
@@ -41,8 +39,6 @@ import { SessionMessage } from "./session/message.js"
 import { SessionSystemPrompt } from "./session/system-prompt.js"
 import { SessionUsage } from "./session/usage.js"
 import PROMPT_ANTHROPIC from "./plugin/system-prompt/anthropic.txt"
-import { Model } from "./model.js"
-import { Provider } from "./provider.js"
 import { SessionSchema } from "./session/schema.js"
 import { Skill } from "./skill.js"
 import { Tool } from "./tool.js"
@@ -193,7 +189,6 @@ export const configValue = (entries: readonly ConfigEntry[], key: string | reado
 export const requirements = LayerNode.group([
   Global.node,
   Config.node,
-  Form.node,
   InstructionDiscovery.node,
   InstructionBuiltIns.node,
 ])
@@ -210,22 +205,18 @@ export const make = Effect.gen(function* () {
   // Optional so every PluginHost stays constructible without them (standalone harnesses); the
   // instance graph always provides both.
   const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
-  const forms = Option.getOrUndefined(yield* Effect.serviceOption(Form.Service))
   const discovery = Option.getOrUndefined(yield* Effect.serviceOption(InstructionDiscovery.Service))
   const builtins = Option.getOrUndefined(yield* Effect.serviceOption(InstructionBuiltIns.Service))
-  const global = Option.getOrUndefined(yield* Effect.serviceOption(Global.Service))
   const location = yield* Location.Service
   const skills = yield* Skill.Service
   const bus = yield* Bus.Service
-  // A runtime calls back from its own process boundary (an SDK callback, an MCP request), on a
-  // fiber that carries no ambient Location. A form raised there must still be enveloped with this
-  // location, as it is when a native tool asks inside the turn: the client keeps it only then.
+  // A runtime calls back from its own process boundary (an MCP request), on a fiber that carries
+  // no ambient Location. A form a host tool raises there must still be enveloped with this location,
+  // as it is when a native tool asks inside the turn: the client keeps it only then.
   const located = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.provideService(effect, Location.Service, location)
-  const modelRef = (model: { readonly providerID: string; readonly id: string }) =>
-    Model.Ref.make({ providerID: Provider.ID.make(model.providerID), id: Model.ID.make(model.id) })
   const missing = (name: string) => Effect.die(new Error(`${name} is not available to this plugin host.`))
 
-  const check = (input: Parameters<DelegateDomain["permission"]["inspect"]>[0]) => ({
+  const check = (input: Parameters<DelegateDomain["permission"]["assert"]>[0]) => ({
     action: input.action,
     resources: [...input.resources],
     sessionID: SessionSchema.ID.make(input.sessionID),
@@ -254,7 +245,6 @@ export const make = Effect.gen(function* () {
       }
     },
     permission: {
-      inspect: (input) => permission.inspect(check(input)).pipe(Effect.orDie),
       assert: (input) =>
         Effect.gen(function* () {
           const exit = yield* Effect.exit(
@@ -290,14 +280,6 @@ export const make = Effect.gen(function* () {
         }),
     },
     context: {
-      environment: () =>
-        global
-          ? Effect.succeed({
-              directory: location.directory,
-              workspaceRoot: location.project.directory,
-              temporaryDirectory: global.tmp,
-            })
-          : Effect.fail(new Error("Host environment is not available to this plugin host.")),
       instructions: () =>
         Effect.gen(function* () {
           if (!discovery) return yield* missing("InstructionDiscovery")
@@ -342,20 +324,6 @@ export const make = Effect.gen(function* () {
         }),
     },
     transcript: {
-      messageID: () => SessionMessage.ID.create(),
-      createChild: (input) =>
-        sessions
-          .create({
-            parentID: SessionSchema.ID.make(input.parentID),
-            title: input.title,
-            agent: Agent.ID.make(input.agent),
-            model: modelRef(input.model),
-          })
-          .pipe(
-            Effect.map((session) => session.id as string),
-            Effect.mapError((cause) => new Error(`Could not create a child session: ${String(cause)}`)),
-          ),
-      record: (model, events) => DelegateTranscript.publish(bus, modelRef(model), events),
       usage: (input) =>
         bus
           .publish(SessionEvent.Step.Usage, {
@@ -374,19 +342,6 @@ export const make = Effect.gen(function* () {
             ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
           })
           .pipe(Effect.asVoid),
-    },
-    form: {
-      ask: (input) =>
-        !forms
-          ? missing("Form")
-          : located(
-              forms.ask({
-                sessionID: input.sessionID as never,
-                title: input.title,
-                ...(input.metadata ? { metadata: input.metadata } : {}),
-                fields: input.fields as never,
-              }),
-            ).pipe(Effect.orDie),
     },
   }
   return domain

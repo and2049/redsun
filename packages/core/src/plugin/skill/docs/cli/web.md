@@ -124,3 +124,20 @@ Connect a client to it with `--server`:
 ```bash
 $ redsun --server http://127.0.0.1:4096
 ```
+
+### Authentication
+
+Set `OPENCODE_PASSWORD` to use a fixed password instead of a generated one. The
+same variable gives the password to `redsun --server`.
+
+```bash
+$ OPENCODE_PASSWORD="a-long-secret" redsun serve --port 4096
+$ OPENCODE_PASSWORD="a-long-secret" redsun --server http://127.0.0.1:4096
+```
+
+Other HTTP clients use Basic auth. The username is always `opencode`, and only
+the password can be changed.
+
+```bash
+$ curl -u opencode:a-long-secret http://127.0.0.1:4096/api/info
+```

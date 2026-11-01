@@ -111,6 +111,8 @@ export const launch = (input: Runtime.Input<typeof Commands>) =>
       },
       server: {
         endpoint: server.endpoint,
+        // Managed and standalone servers run here; an explicit --server may be on another machine.
+        local: requestedServer === undefined,
         service: service
           ? {
               registration: service.registration,

@@ -1,5 +1,6 @@
 import type { SessionMessageAssistant } from "@opencode/client"
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, onCleanup, Show, Switch } from "solid-js"
+import { UsageLimitNotice, useLimitNotice } from "../../component/usage"
 import { useConfig } from "../../config"
 import { useData } from "../../context/data"
 import { useLocal } from "../../context/local"
@@ -80,11 +81,11 @@ export function AssistantFooter(props: { message: SessionMessageAssistant }) {
     const past = completionVerb(seed)
     return t(generating() ? past.replace(/ed$/, "ing") : past)
   })
+  const limitNotice = useLimitNotice(() => props.message)
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
-        <Show
-          when={props.message.error?.type === "provider.free-limit"}
+        <Switch
           fallback={
             <box paddingLeft={TRANSCRIPT_GUTTER}>
               <text fg={theme.text.feedback.error.base}>
@@ -93,8 +94,11 @@ export function AssistantFooter(props: { message: SessionMessageAssistant }) {
             </box>
           }
         >
-          <FreeLimitNotice message={props.message} />
-        </Show>
+          <Match when={props.message.error?.type === "provider.free-limit"}>
+            <FreeLimitNotice message={props.message} />
+          </Match>
+          <Match when={limitNotice()}>{(notice) => <UsageLimitNotice notice={notice()} />}</Match>
+        </Switch>
       </Show>
       <AssistantRetry retry={props.message.retry} />
       <Show when={interrupted()}>

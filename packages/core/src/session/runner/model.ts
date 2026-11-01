@@ -1,10 +1,11 @@
 export * as SessionRunnerModel from "./model.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { LanguageModel } from "@opencode/ai"
+import { LanguageModel } from "@opencode/ai/effect"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
 import { Context, Effect, Layer, Schema } from "effect"
+import { Agent } from "../../agent.js"
 import { ModelResolver } from "../../model-resolver.js"
 import { SessionSchema } from "../schema.js"
 
@@ -71,16 +72,28 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const resolver = yield* ModelResolver.Service
+    const agents = yield* Agent.Service
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session, available) {
         // Location plugins populate and filter the catalog asynchronously during layer startup.
         if (!session.model) {
-          const resolved = yield* resolver.resolve()
+          const agent = (yield* agents.select(session.agent)).info?.model
+          const preferred =
+            agent &&
+            (yield* available()).find(
+              (model) =>
+                model.providerID === ModelResolver.canonicalProvider(agent.providerID) && model.id === agent.id,
+            )
+          const resolved = preferred
+            ? yield* resolver.resolveModel(preferred, agent.variant)
+            : yield* resolver.resolve()
           if (resolved) return resolved
           return yield* new ModelNotSelectedError({ sessionID: session.id })
         }
+        // REDSUN: resolve retired provider identities before checking session-model availability.
+        const providerID = ModelResolver.canonicalProvider(session.model.providerID)
         const selected = (yield* available()).find(
-          (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
+          (model) => model.providerID === providerID && model.id === session.model?.id,
         )
         if (!selected)
           return yield* new ModelUnavailableError({
@@ -93,4 +106,4 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [ModelResolver.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [ModelResolver.node, Agent.node] })

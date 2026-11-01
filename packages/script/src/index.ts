@@ -21,14 +21,11 @@ const env = {
   REDSUN_CHANNEL: process.env["REDSUN_CHANNEL"],
   REDSUN_VERSION: process.env["REDSUN_VERSION"],
   OPENCODE_CHANNEL: process.env["OPENCODE_CHANNEL"],
-  OPENCODE_BUMP: process.env["OPENCODE_BUMP"],
   OPENCODE_VERSION: process.env["OPENCODE_VERSION"],
-  OPENCODE_RELEASE: process.env["OPENCODE_RELEASE"],
 }
 const CHANNEL = await (async () => {
   if (env.REDSUN_CHANNEL) return env.REDSUN_CHANNEL
   if (env.OPENCODE_CHANNEL) return env.OPENCODE_CHANNEL
-  if (env.OPENCODE_BUMP) return "latest"
   if (env.OPENCODE_VERSION && !env.OPENCODE_VERSION.startsWith("0.0.0-")) return "latest"
   const branch = await $`git branch --show-current`.text().then((x) => x.trim())
   if (!branch) return "detached"
@@ -75,9 +72,6 @@ export const Script = {
   },
   get preview() {
     return IS_PREVIEW
-  },
-  get release(): boolean {
-    return !!env.OPENCODE_RELEASE
   },
   get team() {
     return team

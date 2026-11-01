@@ -129,14 +129,13 @@ describe("ACP runtime plugin through the real host", () => {
         ...host,
         options: {
           agents: {
-            fake: { name: "Fake-acp", command: process.execPath, args: [fixture], nativeApprovalMode: "trust" },
+            fake: { name: "Fake-acp", command: process.execPath, args: [fixture] },
           },
         },
       })
 
       const delegates = yield* DelegatedRuntime.Service
       expect(yield* delegates.owns({ providerID: "fake" })).toBe(true)
-      expect(yield* delegates.nativeApproval({ providerID: "fake", id: "default" })).toBe(true)
 
       // The agent is an integration to connect, like Claude Code; its models follow the connection.
       const integration = yield* (yield* Integration.Service).get(Integration.ID.make("fake"))

@@ -11,7 +11,7 @@ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers)
   Effect.gen(function* () {
     const feed = yield* EventFeed.Service
     const remote = yield* RemoteService.Service
-    return handlers.handleRaw("event.subscribe", () =>
+    return handlers.handleRaw("event.subscribe", (ctx) =>
       Effect.gen(function* () {
         const connected = {
           id: Event.ID.create(),
@@ -20,7 +20,9 @@ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers)
         } as const
         const principal = yield* Effect.serviceOption(RemoteService.Principal)
         const source = Stream.unwrap(
-          feed.subscribe.pipe(Effect.map((live) => Stream.make(EventFeed.frame(connected)).pipe(Stream.concat(live)))),
+          feed
+            .subscribe(ctx.query.types)
+            .pipe(Effect.map((live) => Stream.make(EventFeed.frame(connected)).pipe(Stream.concat(live)))),
         )
         const output =
           principal._tag === "None"

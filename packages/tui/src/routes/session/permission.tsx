@@ -9,7 +9,7 @@ import { useData } from "../../context/data"
 import { filetype } from "../../util/filetype"
 import { permissionAlwaysLines, permissionOptionLabel, permissionPresentation } from "../../util/permission"
 import { getScrollAcceleration } from "../../util/scroll"
-import { useConfig } from "../../config"
+import { useConfig, useCursorStyle } from "../../config"
 import { Keymap } from "../../context/keymap"
 import { useInteractivity } from "../../context/interactivity"
 import { useVimInputCapture } from "../../context/vim"
@@ -288,7 +288,7 @@ function RejectPrompt(props: {
   const enabled = useInteractivity()
   useVimInputCapture(enabled)
   const theme = useTheme()
-  const config = useConfig().data
+  const cursorStyle = useCursorStyle()
   const dimensions = useTerminalDimensions()
   const language = useLanguage()
   const narrow = createMemo(() => dimensions().width < 80)
@@ -368,7 +368,7 @@ function RejectPrompt(props: {
           textColor={theme.text.base}
           focusedTextColor={theme.text.base}
           cursorColor={theme.text.base}
-          cursorStyle={config.cursor}
+          cursorStyle={cursorStyle()}
         />
         <box
           id="session.permission.reject.actions"

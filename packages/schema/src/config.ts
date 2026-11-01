@@ -11,7 +11,6 @@ import { ConfigAdvisor } from "./config/advisor.js"
 import { ConfigProjectMemory } from "./config/project-memory.js"
 import { ConfigCompaction } from "./config/compaction.js"
 import { ConfigCommand } from "./config/command.js"
-import { ConfigClaudeCode } from "./config/claude-code.js"
 import { ConfigAcp } from "./config/acp.js"
 import { ConfigExperimental } from "./config/experimental.js"
 import { ConfigFormatter } from "./config/formatter.js"
@@ -56,6 +55,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     }),
   username: Schema.String.pipe(optional).annotate({
     description: "Username displayed in conversations and used for telemetry identity",
+  }),
+  timezone: Schema.String.pipe(optional).annotate({
+    description: "IANA time zone for schedules, e.g. America/Los_Angeles. Defaults to the server's local zone",
   }),
   permissions: Permission.Ruleset.pipe(optional).annotate({
     description: "Ordered tool permission rules applied to agent tool use",
@@ -137,24 +139,24 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(optional),
   experimental: ConfigExperimental.Info.pipe(optional),
-  claude_code: ConfigClaudeCode.Info.pipe(optional).annotate({
-    description: "Delegated Claude Code provider settings",
-  }),
   acp: ConfigAcp.Info.pipe(optional).annotate({
     description: "Delegated agents spoken to over ACP (Kiro is built in when kiro-cli is installed)",
   }),
 }) {}
 
-export class ContextSettings extends Schema.Class<ContextSettings>("Config.ContextSettings")({
+// A struct, not a class: the generated client sends it as a PATCH payload and reads it back as the success body.
+export const ContextSettings = Schema.Struct({
   stale_read_deduplication: Info.fields.stale_read_deduplication,
   compaction: Schema.Struct({
     strategy: ConfigCompaction.Info.fields.strategy,
     /** `null` is "Auto": no configured threshold. */
     threshold: Schema.NullOr(ConfigCompaction.Threshold).pipe(optional),
   }).pipe(optional),
-  attribution: Info.fields.attribution,
+  // Plain structs, not the config classes: the service builds this from several documents.
+  attribution: Schema.Struct(ConfigAttribution.Info.fields).pipe(optional),
   chatgpt_context_window: Info.fields.chatgpt_context_window,
-}) {}
+}).annotate({ identifier: "Config.ContextSettings" })
+export interface ContextSettings extends Schema.Schema.Type<typeof ContextSettings> {}
 
 export const Patch = Schema.Struct({
   shell: Schema.NullOr(Schema.String),

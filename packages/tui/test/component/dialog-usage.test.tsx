@@ -40,7 +40,7 @@ test("usage picker is bottom anchored, hides disconnected providers and persists
               methods: [],
               connections: [{ type: "credential", id: accountID, label: "Pro" }],
             },
-            { id: "claude-code", name: "Claude Code", methods: [], connections: [] },
+            { id: "claude-agent", name: "Claude Agent", methods: [], connections: [] },
             {
               id: "kiro",
               name: "Kiro",
@@ -171,7 +171,7 @@ test("usage picker is bottom anchored, hides disconnected providers and persists
     pending = undefined
     await app.waitForFrame((frame) => frame.includes("35% used") && !frame.includes("refreshing…"))
     expect(stored.usage?.collapsed).toEqual([])
-    expect(requests.every((url) => !url.includes("claude-code"))).toBe(true)
+    expect(requests.every((url) => !url.includes("claude-agent"))).toBe(true)
     unavailable = true
     app.mockInput.pressKey("r")
     await app.waitForFrame((frame) => frame.includes("Showing last available usage") && frame.includes("35% used"))

@@ -55,11 +55,15 @@ Current V2 sessions make these attachment types visible to the model:
 | UTF-8 text file         | Filename and decoded text                                | `README.md`        |
 | Directory               | Non-recursive listing of immediate files and directories | `file:///home/me/` |
 | PNG, JPEG, GIF, or WebP | Image media                                              | `diagram.png`      |
+| PDF                     | Document media                                           | `report.pdf`       |
 
-SVG is treated as text. PDF, AVIF, BMP, audio, video, and other binary prompt
+PDFs need a model with PDF input. If the model does not support an attachment's
+type, redsun sends a short note in its place.
+
+SVG is treated as text. AVIF, BMP, audio, video, and other binary prompt
 attachments are not included in the model request. Convert an unsupported
-binary to text or a supported image first; for example, export a PDF page as
-`page-1.png` before attaching it.
+binary to text or a supported image first; for example, convert a BMP image to
+PNG before attaching it.
 
 redsun reads each attachment before admitting the prompt. It rejects invalid
 URLs, unreadable paths, paths other than files or directories, and decoded

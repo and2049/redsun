@@ -1,10 +1,30 @@
 import { expect, test } from "bun:test"
-import { sessionEpilogue } from "../../src/util/presentation"
+import { epilogue } from "../../src/util/presentation"
+
+const rows = (text: string | undefined) =>
+  Bun.stripANSI(text ?? "")
+    .split("\n")
+    .filter((line) => line.trim() && line !== "redsun")
+
+test("prints nothing without a session or update", () => {
+  expect(epilogue({})).toBeUndefined()
+})
 
 test("formats session continuation summary", () => {
-  const epilogue = sessionEpilogue({ title: "A session", sessionID: "ses_123" })
-  // The wordmark is new-session chrome; scrollback gets the name alone.
-  expect(epilogue.split("\n")[0]).toBe("redsun")
-  expect(epilogue).toContain("A session")
-  expect(epilogue).toContain("redsun -s ses_123")
+  expect(rows(epilogue({ session: { title: "A session", sessionID: "ses_123" } }))).toEqual([
+    "  Session   A session",
+    "  Continue  redsun -s ses_123",
+  ])
+})
+
+test("tells the user to start redsun again after an update", () => {
+  expect(rows(epilogue({ updatedVersion: "2.0.0" }))).toEqual(["  Run redsun to use 2.0.0"])
+})
+
+test("keeps the session continuation after an update", () => {
+  expect(rows(epilogue({ session: { title: "A session", sessionID: "ses_123" }, updatedVersion: "2.0.0" }))).toEqual([
+    "  Run redsun to use 2.0.0",
+    "  Session   A session",
+    "  Continue  redsun -s ses_123",
+  ])
 })

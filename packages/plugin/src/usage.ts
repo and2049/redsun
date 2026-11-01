@@ -32,6 +32,6 @@ export const rpc = (providerID: string) =>
 
 export const providers = [
   { id: "openai", label: "ChatGPT" },
-  { id: "claude-code", label: "Claude" },
+  { id: "claude-agent", label: "Claude" },
   { id: "kiro", label: "Kiro" },
 ] as const

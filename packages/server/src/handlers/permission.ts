@@ -1,8 +1,7 @@
-import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Instance } from "@opencode/core/instance/service"
-import { Plugin } from "@opencode/core/plugin"
 import { Location } from "@opencode/core/location"
 import { Permission } from "@opencode/core/permission"
+import { PermissionMode } from "@opencode/core/permission/mode"
 import { PermissionSaved } from "@opencode/core/permission/saved"
 import { Session } from "@opencode/core/session"
 import { Effect } from "effect"
@@ -21,6 +20,8 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
   Effect.gen(function* () {
     const instances = yield* Instance.Service
     const sessions = yield* Session.Service
+    // REDSUN: the approval mode is server-wide, so its routes carry no location and read the global node.
+    const modes = yield* PermissionMode.Service
     const requireOwnedRequest = Effect.fnUntraced(function* (
       sessionID: Permission.Request["sessionID"],
       requestID: Permission.ID,
@@ -42,28 +43,13 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
       .handle(
         "permission.mode.get",
         Effect.fn(function* () {
-          const permission = yield* Permission.Service
-          return { data: { mode: yield* permission.mode() } }
-        }),
-      )
-      .handle(
-        "permission.mode.options",
-        Effect.fn(function* (ctx) {
-          // Runtimes register during plugin activation; answering earlier would hide native_auto.
-          yield* Plugin.awaitActivation
-          const delegates = yield* DelegatedRuntime.Service
-          return {
-            data: {
-              native: yield* delegates.nativeApproval({ providerID: ctx.query.providerID, id: ctx.query.modelID }),
-            },
-          }
+          return { data: { mode: yield* modes.current() } }
         }),
       )
       .handle(
         "permission.mode.set",
         Effect.fn(function* (ctx) {
-          const permission = yield* Permission.Service
-          yield* permission.setMode(ctx.payload.mode)
+          yield* modes.set(ctx.payload.mode)
           return HttpApiSchema.NoContent.make()
         }),
       )

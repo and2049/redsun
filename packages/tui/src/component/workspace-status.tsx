@@ -27,21 +27,9 @@ export function WorkspaceStatus() {
         <Show
           when={permission.mode === "auto"}
           fallback={
-            <Show
-              when={permission.mode === "native_auto"}
-              fallback={
-                <span style={{ fg: theme.text.muted }}>
-                  {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
-                </span>
-              }
-            >
-              <span style={{ fg: theme.text.feedback.info.base }}>
-                {`⏵⏵ ${compact() ? language.t("permission.claudeAuto.compact") : language.t("permission.claudeAuto.enabled")}`}
-              </span>
-              <Show when={!compact()}>
-                <span style={{ fg: theme.text.muted }}>(Shift+Tab)</span>
-              </Show>
-            </Show>
+            <span style={{ fg: theme.text.muted }}>
+              {compact() ? language.t("permission.autoApprove.off") : language.t("permission.autoApprove.disabled")}
+            </span>
           }
         >
           <span style={{ fg: theme.text.feedback.success.base }}>

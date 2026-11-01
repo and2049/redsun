@@ -5,19 +5,19 @@ import { HueStep } from "./schema.js"
 import { resolveV1, selectedForeground } from "./v1.js"
 import type { Theme, ThemeV1Json } from "./v1.js"
 
-type ThemeColor = Exclude<
+export type ThemeColor = Exclude<
   keyof Theme,
   "thinkingOpacity" | "_hasSelectedListItemText" | "agentBuild" | "agentPlan" | "agentCompose"
 >
 type ChromaticHue = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple"
 type V1HueToken = "secondary" | "accent" | "success" | "warning" | "primary" | "error" | "info"
 
-const chromaticHues: readonly ChromaticHue[] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+export const chromaticHues: readonly ChromaticHue[] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple"]
 // The order V1 handed colours to agents, and the order the categorical scale
 // keeps. Entries are emitted as the literal colours rather than the nearest
 // hue name: `secondary` and `warning` collapse onto the same hue in most
 // themes, and rounding them together loses two distinct agent colours.
-const categoricalTokens: readonly V1HueToken[] = [
+export const categoricalTokens: readonly V1HueToken[] = [
   "secondary",
   "accent",
   "success",
@@ -79,12 +79,12 @@ export function migrateV1(theme: ThemeV1Json): ThemeDocument {
   }
 }
 
-function base(definition: ThemeDefinition): BaseThemeDefinition {
+export function base(definition: ThemeDefinition): BaseThemeDefinition {
   const { hue: _, ...base } = definition
   return base
 }
 
-function detectMode(theme: Theme): Mode {
+export function detectMode(theme: Theme): Mode {
   return luminance(theme.text) > luminance(theme.background) ? "dark" : "light"
 }
 
@@ -241,7 +241,7 @@ function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
     },
     "@dialog": {
       background: {
-        base: "$background.raised.base",
+        base: dialogBackground(theme),
         action: { primary: { $hovered: "$background.raised.high" } },
       },
     },
@@ -253,7 +253,19 @@ function migrateMode(theme: Theme, mode: Mode): ThemeDefinition {
   })
 }
 
-function referenceHues(theme: ThemeDefinition): ThemeDefinition {
+// Dialogs float over the session, so a see-through panel would let the content underneath show through them.
+// Fall back to the first visible surface color, made opaque.
+export function dialogBackground(theme: Theme) {
+  if (theme.backgroundPanel.a === 1) return "$background.raised.base"
+  const visible = [theme.backgroundPanel, theme.backgroundMenu, theme.backgroundElement, theme.background].find(
+    (color) => color.a > 0,
+  )
+  if (!visible) return luminance(theme.text) > 0.5 ? "#000000" : "#ffffff"
+  const [red, green, blue] = visible.toInts()
+  return hexInts(red, green, blue, 255)
+}
+
+export function referenceHues(theme: ThemeDefinition): ThemeDefinition {
   const definitions = theme.hue as Record<string, string | Partial<Record<HueStep, string>>> | undefined
   if (!definitions) return theme
   const scales = new Map<string, Partial<Record<HueStep, string>>>()
@@ -311,7 +323,7 @@ function referenceHues(theme: ThemeDefinition): ThemeDefinition {
   ) as ThemeDefinition
 }
 
-function inferHues(theme: Theme) {
+export function inferHues(theme: Theme) {
   const colors: readonly [V1HueToken, RGBA][] = [
     ["accent", theme.accent],
     ["success", theme.success],
@@ -404,12 +416,12 @@ function neutralAnchors(theme: Theme) {
   return light.toReversed().map((source) => ({ ...source, step: (1000 - source.step) as HueStep }))
 }
 
-function toOklch(color: RGBA) {
+export function toOklch(color: RGBA) {
   const [red, green, blue] = color.toInts()
   return rgbToOklch(red / 255, green / 255, blue / 255)
 }
 
-function hex(color: RGBA) {
+export function hex(color: RGBA) {
   return hexInts(...color.toInts())
 }
 
@@ -417,6 +429,8 @@ function hexInts(r: number, g: number, b: number, a: number) {
   return `#${byte(r)}${byte(g)}${byte(b)}${a === 255 ? "" : byte(a)}`
 }
 
-function byte(value: number) {
+export function byte(value: number) {
   return value.toString(16).padStart(2, "0")
 }
+
+export { resolveV1, selectedForeground } from "./v1.js"

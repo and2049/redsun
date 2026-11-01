@@ -4,7 +4,7 @@ import { useTheme } from "../context/theme"
 import { DialogFooter, DialogHeader, DialogLayout, useDialog, type DialogSize } from "./dialog"
 import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"
 import { Spinner } from "../component/spinner"
-import { useConfig, useNewDesigns } from "../config"
+import { useCursorStyle, useNewDesigns } from "../config"
 import { useRenderer } from "@opentui/solid"
 import { useLanguage } from "../i18n"
 
@@ -20,7 +20,7 @@ export type DialogPromptAction = {
 export type DialogPromptProps = {
   title: string
   size?: DialogSize
-  /** Faint line below the title, under the "new-designs" experiment. */
+  /** Muted line below the title, under the "new-designs" experiment. */
   subtitle?: string
   description?: () => JSX.Element
   placeholder?: string
@@ -36,7 +36,7 @@ export function DialogPrompt(props: DialogPromptProps) {
   const dialog = useDialog()
   const renderer = useRenderer()
   const theme = useTheme().surface("dialog")
-  const config = useConfig().data
+  const cursorStyle = useCursorStyle()
   const { t } = useLanguage()
   const newDesigns = useNewDesigns()
   const [textareaTarget, setTextareaTarget] = createSignal<TextareaRenderable>()
@@ -175,7 +175,7 @@ export function DialogPrompt(props: DialogPromptProps) {
           textColor={props.busy ? theme.text.formfield.disabled : theme.text.formfield.base}
           focusedTextColor={props.busy ? theme.text.formfield.disabled : theme.text.formfield.base}
           cursorColor={props.busy ? theme.background.formfield.disabled : theme.text.base}
-          cursorStyle={config.cursor}
+          cursorStyle={cursorStyle()}
         />
         <Show when={props.busy}>
           <Spinner color={theme.text.muted}>{props.busyText ?? t("ui.working")}</Spinner>

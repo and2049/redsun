@@ -25,7 +25,7 @@ import { SessionModelRequest } from "@opencode/core/session/model-request"
 import { SessionModelTransport } from "@opencode/core/session/model-transport"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { QuestionTool } from "@opencode/core/tool/plugin/question"
-import { Context, DateTime, Deferred, Effect, Fiber, Scope } from "effect"
+import { DateTime, Deferred, Effect, Scope } from "effect"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
 import { registerToolPlugin } from "./lib/tool"
@@ -209,18 +209,6 @@ describe("delegated runtime registration", () => {
     }),
   )
 
-  it.effect("offers native approval only where the runtime declares it", () =>
-    Effect.gen(function* () {
-      const delegates = yield* DelegatedRuntime.Service
-      yield* register({ ...runtime([]), nativeApproval: (model) => model.id !== "no-classifier" })
-      yield* register({ ...runtime([]), id: "plain", providerID: "plain-agent" })
-      expect(yield* delegates.nativeApproval({ providerID: OWNED, id: "model-1" })).toBe(true)
-      expect(yield* delegates.nativeApproval({ providerID: OWNED, id: "no-classifier" })).toBe(false)
-      expect(yield* delegates.nativeApproval({ providerID: "plain-agent", id: "model-1" })).toBe(false)
-      expect(yield* delegates.nativeApproval({ providerID: "not-delegated", id: "model-1" })).toBe(false)
-    }),
-  )
-
   it.effect("stops owning the provider when the registration scope closes", () =>
     Effect.gen(function* () {
       const delegates = yield* DelegatedRuntime.Service
@@ -290,76 +278,6 @@ describe("delegated runtime host capabilities", () => {
     yield* Effect.addFinalizer(() => unsubscribe)
     return created
   })
-
-  it.effect("envelopes a form a runtime asks from a bare fiber with the host location", () =>
-    Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
-      const forms = yield* Form.Service
-      const location = yield* Location.Service
-      const created = yield* formCreated
-      const fiber = yield* host.delegate.form
-        .ask({
-          sessionID: "ses_1",
-          title: "Questions",
-          fields: [
-            { key: "q0", title: "Continue?", type: "string", options: [{ value: "yes", label: "Yes" }] },
-          ] as never,
-        })
-        .pipe(
-          Effect.updateContext((context: Context.Context<never>) => Context.omit(Location.Service)(context)),
-          Effect.forkScoped,
-        )
-      const event = yield* Deferred.await(created)
-      expect(event.form.sessionID).toBe("ses_1")
-      expect(event.location).toEqual({ directory: location.directory, workspaceID: location.workspaceID })
-      yield* forms.reply({ id: event.form.id, answer: { q0: "yes" } })
-      expect(yield* Fiber.join(fiber)).toEqual({ status: "answered", answer: { q0: "yes" } })
-    }),
-  )
-
-  it.effect("envelopes a form a bound host tool asks from a bare fiber with the host location", () =>
-    Effect.gen(function* () {
-      yield* registerToolPlugin(QuestionTool.Plugin)
-      const host = yield* PluginHost.make(yield* Plugin.Service)
-      const forms = yield* Form.Service
-      const location = yield* Location.Service
-      const agents = yield* AgentService.Service
-      yield* agents.transform((editor) =>
-        editor.update("delegate-test" as never, (agent) => {
-          agent.mode = "primary"
-        }),
-      )
-      const session = yield* host.session.create({ title: "bind" })
-      const binding = yield* host.delegate.tools.bind({
-        sessionID: session.id,
-        agent: "delegate-test",
-        messageID: "msg_1",
-      })
-      expect(binding.definitions.map((item) => item.name)).toContain("question")
-      const created = yield* formCreated
-      // The binding runs the tool as a runtime does: on the default runtime, outside this fiber.
-      const fiber = yield* Effect.promise(() =>
-        binding.execute({
-          name: "question",
-          args: {
-            questions: [
-              { question: "Continue?", header: "Continue", options: [{ label: "Yes", description: "Go on" }] },
-            ],
-          },
-          callID: "call_1",
-          signal: new AbortController().signal,
-        }),
-      ).pipe(Effect.forkScoped)
-      const event = yield* Deferred.await(created)
-      expect(event.form.sessionID).toBe(session.id)
-      expect(event.location).toEqual({ directory: location.directory, workspaceID: location.workspaceID })
-      // The entry settles on the default runtime's next tick; the reply reads it from this one.
-      yield* Effect.promise(() => Bun.sleep(1))
-      yield* forms.reply({ id: event.form.id, answer: { q0: "Yes" } })
-      const result = yield* Fiber.join(fiber)
-      expect(result.content.some((part) => part.type === "text" && part.text.includes("Yes"))).toBe(true)
-    }),
-  )
 
   // Dismissal and interruption through the real binding, as both runtimes reach the host question.
   for (const settle of ["dismiss", "interrupt"] as const)
@@ -509,41 +427,4 @@ describe("delegated runtime host capabilities", () => {
     }),
   )
 
-  it.effect("creates mirrored child sessions under their parent", () =>
-    Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
-      const parent = yield* host.session.create({ title: "parent" })
-      const childID = yield* host.delegate.transcript.createChild({
-        parentID: parent.id,
-        title: "explore the repo (@explore subagent)",
-        agent: "explore",
-        model: { providerID: OWNED, id: "model-1" },
-      })
-      const child = yield* host.session.get({ sessionID: childID as never })
-      expect(child.parentID).toBe(parent.id)
-      expect(child.title).toBe("explore the repo (@explore subagent)")
-      expect(host.delegate.transcript.messageID()).not.toBe(host.delegate.transcript.messageID())
-    }),
-  )
-
-  it.effect("inspects without prompting and forwards the typed check", () =>
-    Effect.gen(function* () {
-      const seen: unknown[] = []
-      const host = yield* hostWith({
-        inspect: (input) =>
-          Effect.sync(() => {
-            seen.push(input)
-            return { effect: "deny" as const, message: "blocked" }
-          }),
-      })
-      const result = yield* host.delegate.permission.inspect({
-        sessionID: "ses_1",
-        agent: "plan",
-        action: "shell",
-        resources: ["rm -rf /"],
-      })
-      expect(result).toEqual({ effect: "deny", message: "blocked" })
-      expect(seen).toEqual([{ sessionID: "ses_1", agent: "plan", action: "shell", resources: ["rm -rf /"] }])
-    }),
-  )
 })
