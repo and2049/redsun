@@ -6,32 +6,26 @@ import path from "node:path"
 // entries, and a new reference outside the plugin fails until it is justified here.
 
 const packages = path.resolve(import.meta.dir, "../..")
-const RUNTIMES = ["runtime-acp", "runtime-claude-code"]
+const RUNTIMES = ["runtime-acp"]
 
 const scan = async (pattern: RegExp) => {
   const hits: string[] = []
   const glob = new Bun.Glob("{core,tui,schema,protocol,server,cli}/src/**/*.{ts,tsx}")
   for await (const file of glob.scan({ cwd: packages })) {
     if (file.includes("/generated/")) continue
+    // The Claude Agent provider drives Claude Code through its SDK and names it by its own identifiers.
+    if (file.startsWith("core/src/plugin/provider/claude-agent/")) continue
     if (pattern.test(await Bun.file(path.join(packages, file)).text())) hits.push(file)
   }
   return hits.sort()
 }
 
-// Permanent: bundled registration, the `claude_code` config key (kept by decision D3), and the
-// IDE integration's upstream `x-claude-code-ide-authorization` header, which is unrelated.
-const PERMANENT = [
-  "core/src/config/normalize.ts",
-  "core/src/plugin/internal.ts",
-  "schema/src/config.ts",
-  "schema/src/config/claude-code.ts",
-  "tui/src/context/editor.ts",
-]
+// Permanent: the resolver alias that keeps sessions saved on the retired `claude-code` provider
+// running on `claude-agent`, and the IDE integration's upstream `x-claude-code-ide-authorization`
+// header, which is unrelated.
+const PERMANENT = ["core/src/model-resolver.ts", "tui/src/context/editor.ts"]
 
 const PENDING: string[] = []
-
-// `claude_auto` is now `native_auto`; core still reads a stored `claude_auto` selection.
-const PERMISSION_MODE_COMPAT = ["core/src/permission/mode.ts"]
 
 describe("delegated runtime boundaries", () => {
   test.each(RUNTIMES)("%s imports nothing from core and stays inside its package", async (runtime) => {
@@ -53,7 +47,7 @@ describe("delegated runtime boundaries", () => {
     expect(await scan(/ClaudeCode|claude-code|claude_code/)).toEqual([...PERMANENT, ...PENDING].sort())
   })
 
-  test("the Claude-specific permission mode is not spreading", async () => {
-    expect(await scan(/claude_auto/)).toEqual(PERMISSION_MODE_COMPAT)
+  test("the retired Claude-specific permission modes are gone", async () => {
+    expect(await scan(/claude_auto|native_auto/)).toEqual([])
   })
 })

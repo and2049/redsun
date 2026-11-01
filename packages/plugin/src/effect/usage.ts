@@ -9,8 +9,10 @@ export const registerUsage = Effect.fn(function* (
   input: {
     providerID: string
     methods: readonly string[]
-    read: (credential: Credential.OAuth, signal: AbortSignal) => Promise<Usage.Data>
-  },
+  } & (
+    | { type?: "oauth"; read: (credential: Credential.OAuth, signal: AbortSignal) => Promise<Usage.Data> }
+    | { type: "external"; read: (credential: Credential.External, signal: AbortSignal) => Promise<Usage.Data> }
+  ),
 ) {
   const lock = Semaphore.makeUnsafe(1)
   let cache: { key: string; value: Usage.Snapshot } | undefined
@@ -24,14 +26,20 @@ export const registerUsage = Effect.fn(function* (
             return { connected: false, windows: [], updatedAt: Date.now() }
           }
           const credential = yield* ctx.integration.connection.resolve(connection)
-          if (credential?.type !== "oauth" || !input.methods.includes(credential.methodID)) {
+          const read =
+            credential?.type === "oauth" && input.type !== "external"
+              ? (signal: AbortSignal) => input.read(credential, signal)
+              : credential?.type === "external" && input.type === "external"
+                ? (signal: AbortSignal) => input.read(credential, signal)
+                : undefined
+          if (!read || !credential || credential.type === "key" || !input.methods.includes(credential.methodID)) {
             cache = undefined
             return { connected: false, windows: [], updatedAt: Date.now() }
           }
           // Credential identity and metadata bind cached quotas to the selected account.
-          const key = JSON.stringify([connection, credential.metadata])
+          const key = JSON.stringify([connection, credential.type === "oauth" ? credential.metadata : credential])
           if (cache?.key === key && Date.now() - cache.value.updatedAt < 60_000) return cache.value
-          const data = yield* Effect.tryPromise((signal) => input.read(credential, signal)).pipe(
+          const data = yield* Effect.tryPromise(read).pipe(
             Effect.timeout("20 seconds"),
             Effect.orElseSucceed(
               (): Usage.Data => ({

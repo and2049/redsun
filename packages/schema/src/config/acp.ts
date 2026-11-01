@@ -34,14 +34,6 @@ export class Agent extends Schema.Class<Agent>("ConfigAcp.Agent")({
   inherited_instructions: Strings.pipe(optional).annotate({
     description: "Instruction files the agent loads itself, relative to the working directory.",
   }),
-  native_approval_mode: Schema.String.pipe(optional).annotate({
-    description:
-      'The agent\'s own judgement-based approval mode, offered as the "Approve for me" permission mode. Not offered with host_tools "all".',
-  }),
-  native_approval_args: Strings.pipe(optional).annotate({
-    description:
-      'Launch flags for the agent\'s judgement-based approval, offered as the "Approve for me" permission mode.',
-  }),
   auto_approval_mode: Schema.String.pipe(optional).annotate({
     description:
       "The agent's own approve-everything session mode, selected under the host's Auto-approve mode. Optional: without it the agent keeps asking and the host approves at once; with it the host's deny rules do not reach the agent's own tools.",

@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: curl -fsSL https://github.com/and2049/redsun/releases/latest/download/install | bash -s -- --no-modify-path
       - run: echo "$HOME/.redsun/bin" >> "$GITHUB_PATH"
-      - run: redsun run --standalone --model anthropic/claude-sonnet-4-5 "Review this repository for correctness and summarize any issues."
+      - run: redsun run --standalone --model anthropic/claude-sonnet-5-5 "Review this repository for correctness and summarize any issues."
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -33,7 +33,7 @@ jobs:
 Choose a model.
 
 ```bash
-$ redsun run --model anthropic/claude-sonnet-4-5 "Refactor parseToken"
+$ redsun run --model anthropic/claude-sonnet-5-5 "Refactor parseToken"
 ```
 
 Continue the last session.
@@ -58,6 +58,18 @@ Run with a specific agent.
 
 ```bash
 $ redsun run --agent build "Fix the failing test"
+```
+
+Continue a specific session.
+
+```bash
+$ redsun run --session ses_4f2a1c "Check edge cases"
+```
+
+Auto-approve permissions that are not explicitly denied.
+
+```bash
+$ redsun run --auto "Fix the failing test"
 ```
 
 View all subcommands and flags.
@@ -152,6 +164,13 @@ Switch the active account for an integration.
 
 ```bash
 $ redsun auth switch anthropic work
+```
+
+Export saved credentials and import them on another machine. The file contains secrets.
+
+```bash
+$ redsun auth export anthropic > credentials.json
+$ redsun auth import credentials.json
 ```
 
 View all subcommands and flags.
@@ -298,6 +317,12 @@ Print JSON instead of a report.
 
 ```bash
 $ redsun stats --json
+```
+
+Show only the current project.
+
+```bash
+$ redsun stats --project .
 ```
 
 View all subcommands and flags.
@@ -495,6 +520,18 @@ List configuration sources.
 
 ```bash
 $ redsun debug config
+```
+
+Write a heap snapshot of the running background server and print its path.
+
+```bash
+$ redsun debug heap-dump
+```
+
+Write the snapshot into a directory of your choice.
+
+```bash
+$ redsun debug heap-dump --directory ./snapshots
 ```
 
 Show global paths.

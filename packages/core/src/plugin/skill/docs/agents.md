@@ -6,7 +6,7 @@ Create a Markdown file to add a reusable agent. This example adds a read-only re
 ---
 description: Reviews changes for correctness and regressions
 mode: subagent
-model: anthropic/claude-sonnet-4-5#high
+model: anthropic/claude-sonnet-5-5#high
 permissions:
   - action: edit
     resource: "*"
@@ -124,7 +124,7 @@ Subagents run with fresh context in foreground or background child sessions. The
 }
 ```
 
-## Builtins
+## Built-ins
 
 redsun includes these visible agents:
 
@@ -189,7 +189,7 @@ mode: all
 `model` uses `provider/model` with an optional `#variant`:
 
 ```yaml
-model: anthropic/claude-sonnet-4-5#high
+model: anthropic/claude-sonnet-5-5#high
 ```
 
 JSON configuration also accepts the expanded form:
@@ -200,7 +200,7 @@ JSON configuration also accepts the expanded form:
     "reviewer": {
       "model": {
         "providerID": "anthropic",
-        "model": "claude-sonnet-4-5",
+        "model": "claude-sonnet-5-5",
         "variant": "high",
       },
     },

@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
-import { LLMClient, LLMEvent, LanguageModel, type LLMRequest } from "@opencode/ai"
+import { LLMClient, LLMEvent, LanguageModel, type LLMRequest } from "@opencode/ai/effect"
 import { OpenAIChat } from "@opencode/ai/protocols"
 import { Agent } from "@opencode/core/agent"
+import { Instructions } from "@opencode/core/instructions/index"
 import { Config } from "@opencode/core/config"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -113,7 +114,7 @@ const loaded = (
   messages,
   model: resolved,
   agent: { id: Agent.defaultID, info: Agent.Info.default(Agent.defaultID) },
-  initial: "Session instructions",
+  initial: [{ key: Instructions.Key.make("test/session"), text: "Session instructions" }],
   tools: { definitions: [], execute: () => Effect.die("Compaction must not execute tools") },
 })
 

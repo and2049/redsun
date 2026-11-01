@@ -103,6 +103,34 @@ grep 'role=server' ~/.local/share/redsun/log/opencode.log
 grep 'run=8fc3b1d5' ~/.local/share/redsun/log/opencode.log
 ```
 
+## Capture a heap snapshot
+
+Write a memory (heap) snapshot of the running background server on any platform:
+
+```bash
+redsun debug heap-dump
+```
+
+The command waits until the snapshot is complete, then prints its path:
+
+```text
+/home/me/.local/share/redsun/log/heap-48213-2026-10-23T013012345Z.heapsnapshot
+```
+
+Write it somewhere else with `--directory`. The server creates the directory when it is missing:
+
+```bash
+redsun debug heap-dump --directory ./snapshots
+```
+
+- It only uses a server that is already running. It never starts, replaces, or restarts one.
+- Use `--server <url>` to capture a server you started with `redsun serve`. Set `OPENCODE_PASSWORD` if it has one.
+  `--directory` is then a path on the server's machine.
+- Open the file in the Memory panel of Chrome DevTools.
+
+> **Warning:** The server pauses while it writes the snapshot, and its memory use can increase for a short time. The snapshot can
+> contain prompts, file contents, and credentials. Do not share it publicly.
+
 ## Capture CPU and memory profiles
 
 On macOS and Linux, you can signal a running redsun process to capture diagnostic data. Get the background server PID
@@ -133,8 +161,8 @@ Use the `pid` from the response with one of these signals:
 Wait for `CPU profile written` or `heap snapshot written` in `opencode.log` before opening the file. The corresponding
 log entry includes its complete path. You can inspect both file types in Chrome DevTools.
 
-> **Note:** Signal-triggered profiles are not available on Windows. Writing a heap snapshot can pause the process and temporarily
-> increase its memory usage.
+> **Note:** Signal-triggered profiles are not available on Windows. Use `redsun debug heap-dump` for heap snapshots instead.
+> Writing a heap snapshot can pause the process and temporarily increase its memory usage.
 
 ## Service files
 

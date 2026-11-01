@@ -55,7 +55,7 @@ const Replied = ephemeral({
 export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "Permission.Effect" })
 export type Effect = typeof Effect.Type
 
-export const Mode = Schema.Literals(["normal", "auto", "native_auto"]).annotate({ identifier: "Permission.Mode" })
+export const Mode = Schema.Literals(["normal", "auto"]).annotate({ identifier: "Permission.Mode" })
 export type Mode = typeof Mode.Type
 
 // Current server-wide selection, broadcast to every location/client.

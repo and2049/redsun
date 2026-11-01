@@ -522,7 +522,7 @@ export function DialogConfig(props: { current?: string }) {
                 ? { compaction: { threshold: typeof next === "number" ? next : null } }
                 : { compaction: { strategy: next === "hybrid" || next === "algorithmic" ? next : "llm" } }
       await client.api.config.context
-        .update({ location: ref(), payload: update })
+        .update({ location: ref(), ...update })
         .then(mutate)
         .catch((error) => toast.show({ variant: "error", message: errorMessage(error) }))
         .finally(() => setSaving(false))

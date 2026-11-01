@@ -56,7 +56,7 @@ const layer = Layer.effect(
       ).pipe(Effect.map((files) => files.filter((file) => file !== undefined)))
     })
     const resolve = (files: Effect.Success<ReturnType<typeof read>>): Config.ContextSettings =>
-      new Config.ContextSettings({
+      ({
         stale_read_deduplication:
           files.findLast((file) => file.info.stale_read_deduplication !== undefined)?.info.stale_read_deduplication ??
           false,

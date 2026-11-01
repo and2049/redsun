@@ -21,7 +21,9 @@
   },
   "scripts": {
     "build": "bun run script/build.ts",
-    "typecheck": "tsc --noEmit",
+    "pack": "bun run script/pack.ts",
+    "typecheck": "bun check --no-script",
+    "typecheck:tsc": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {

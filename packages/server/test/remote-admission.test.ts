@@ -112,6 +112,29 @@ it.live(
       yield* Effect.promise(() => local.remote.policy({ enabled: true }))
       const inbox = yield* Effect.promise(() => remote.session.inbox.list({ sessionID: session.id }))
       expect(inbox.some((item) => item.id === admitted.id)).toBe(true)
+      const queued = yield* Effect.promise(() =>
+        local.session.prompt({
+          sessionID: session.id,
+          text: "Attachment stays local",
+          files: [{ uri: "data:text/plain;base64,cHJpdmF0ZQ==", name: "private-attachment.txt" }],
+          resume: false,
+        }),
+      )
+      const projected = yield* Effect.promise(async () => {
+        const response = await handler(
+          new Request(`http://localhost/api/session/${session.id}/inbox`, {
+            headers: {
+              authorization: `Bearer rc1.${credentialID}.${token}`,
+              "x-opencode-capabilities": "experimental-media-uri",
+            },
+          }),
+        )
+        expect(response.status).toBe(200)
+        return await response.text()
+      })
+      expect(projected).toContain(queued.id)
+      expect(projected).not.toContain("private-attachment")
+      expect(projected).not.toContain('"files"')
       const reconciled = yield* Effect.promise(() =>
         remote.session.prompt({ sessionID: session.id, id: admitted.id, text: "Different payload is not an edit" }),
       )

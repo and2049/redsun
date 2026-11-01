@@ -30,6 +30,7 @@ export const makePermissionGroup = <
         query: LocationQuery,
         success: Location.response(Schema.Array(Permission.Request)),
       })
+        .middleware(locationMiddleware)
         .annotateMerge(locationQueryOpenApi)
         .annotateMerge(
           OpenApi.annotations({
@@ -46,7 +47,7 @@ export const makePermissionGroup = <
         OpenApi.annotations({
           identifier: "v2.permission.mode.get",
           summary: "Get permission mode",
-          description: "Retrieve manual, approve-all, or the delegated runtime's native approval mode.",
+          description: "Retrieve the server-wide approval mode: manual or approve-all.",
         }),
       ),
     )
@@ -58,38 +59,23 @@ export const makePermissionGroup = <
         OpenApi.annotations({
           identifier: "v2.permission.mode.set",
           summary: "Set permission mode",
-          description:
-            "auto approves every host ask; native_auto defers to a delegated runtime's own judgement-based approval (Claude Code's classifier) for sessions whose model's runtime declares one, approving host asks there and staying manual elsewhere. Explicit denies always deny.",
+          description: "auto approves every host ask that would otherwise prompt. Explicit denies always deny.",
         }),
       ),
-    )
-    .add(
-      // REDSUN: which approval modes the model offers; native_auto only where its runtime has one.
-      HttpApiEndpoint.get("permission.mode.options", "/api/permission/mode/options", {
-        query: Schema.Struct({ ...LocationQuery.fields, providerID: Schema.String, modelID: Schema.String }),
-        success: Schema.Struct({ data: Schema.Struct({ native: Schema.Boolean }) }),
-      })
-        .annotateMerge(locationQueryOpenApi)
-        .annotateMerge(
-          OpenApi.annotations({
-            identifier: "v2.permission.mode.options",
-            summary: "Get permission mode options",
-            description:
-              "Whether the model's delegated runtime has a native auto-approval mode, which enables native_auto.",
-          }),
-        ),
     )
     .add(
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
         query: Schema.Struct({ projectID: Project.ID.pipe(Schema.optional) }),
         success: Schema.Struct({ data: Schema.Array(PermissionSaved.Info) }),
-      }).annotateMerge(
-        OpenApi.annotations({
-          identifier: "permission.saved.list",
-          summary: "List saved permissions",
-          description: "Retrieve saved permissions, optionally filtered by project.",
-        }),
-      ),
+      })
+        .middleware(locationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "permission.saved.list",
+            summary: "List saved permissions",
+            description: "Retrieve saved permissions, optionally filtered by project.",
+          }),
+        ),
     )
     .add(
       HttpApiEndpoint.patch("permission.saved.update", "/api/permission/saved/:id", {
@@ -121,8 +107,6 @@ export const makePermissionGroup = <
         }),
       ),
     )
-    // Effect applies group middleware only to endpoints already added; session endpoints use session placement below.
-    .middleware(locationMiddleware)
     .add(
       HttpApiEndpoint.post("session.permission.create", "/api/session/:sessionID/permission", {
         params: { sessionID: Session.ID },

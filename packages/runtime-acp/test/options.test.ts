@@ -26,12 +26,10 @@ describe("ACP agent options", () => {
       compactCommand: "/compact",
       inheritedInstructions: [],
     })
-    expect(AcpOptions.hasNativeApproval(kiro!)).toBe(false)
     // No approval mode or flag of its own: it always launches standard and the host answers its asks.
     expect(kiro!.autoApprovalArgs).toBeUndefined()
     expect(kiro!.autoApprovalMode).toBeUndefined()
     expect(AcpOptions.launchArgs(kiro!, "auto")).toEqual([])
-    expect(AcpOptions.launchArgs(kiro!, "native_auto")).toEqual([])
     expect(AcpOptions.launchArgs(kiro!, "normal")).toEqual([])
     expect(kiro!.home?.env).toBe("HOME")
     expect(kiro!.home?.path).toBe(AcpOptions.defaultHome("kiro-v3"))
@@ -84,16 +82,10 @@ describe("ACP agent options", () => {
     ).toEqual([])
   })
 
-  test("offers native_auto only for a judgement-based mode on an agent with tools of its own", () => {
+  test("maps the host's Auto-approve onto the agent's approve-everything mode and flags", () => {
     const parse = (entry: Record<string, unknown>) =>
       AcpOptions.parse({ agents: { a: { command: "agent", ...entry } } }).agents[0]!
-    expect(AcpOptions.hasNativeApproval(parse({}))).toBe(false)
-    expect(AcpOptions.hasNativeApproval(parse({ native_approval_mode: "smart" }))).toBe(true)
-    expect(AcpOptions.hasNativeApproval(parse({ native_approval_args: ["--smart"] }))).toBe(true)
-    expect(AcpOptions.hasNativeApproval(parse({ native_approval_mode: "smart", host_tools: "all" }))).toBe(false)
-    expect(AcpOptions.hasNativeApproval(parse({ auto_approval_mode: "yolo" }))).toBe(false)
-    const both = parse({ native_approval_mode: "smart", auto_approval_mode: "yolo", auto_approval_args: ["-y"] })
-    expect(AcpOptions.sessionMode(both, "native_auto")).toBe("smart")
+    const both = parse({ auto_approval_mode: "yolo", auto_approval_args: ["-y"] })
     expect(AcpOptions.sessionMode(both, "auto")).toBe("yolo")
     expect(AcpOptions.sessionMode(both, "normal")).toBeUndefined()
     expect(AcpOptions.launchArgs(both, "auto")).toEqual(["-y"])

@@ -31,19 +31,6 @@ export interface Agent {
    */
   readonly models: ReadonlyArray<{ readonly id: string; readonly name: string }>
   /**
-   * The agent's own judgement-based approval mode (Claude Code's classifier is the model). Only
-   * when set does the host offer `native_auto` ("Approve for me"), mapped onto this mode. Name the
-   * agent's real mode id; nothing is guessed from mode names. Not offered to an agent confined to
-   * host tools (`hostTools: "all"`): with no native tools, the mode would approve nothing.
-   */
-  readonly nativeApprovalMode?: string
-  /**
-   * Launch flags for the same, for an agent whose judgement-based approval is a process flag
-   * rather than a session mode. Switching into or out of `native_auto` restarts the agent at the
-   * start of the next turn and reloads the conversation (`session/load`) where the agent supports it.
-   */
-  readonly nativeApprovalArgs?: readonly string[]
-  /**
    * The agent's own mode that approves everything, selected under the host's Auto-approve mode so
    * the agent stops asking. Optional, and off in every preset: without it the agent keeps asking
    * and the host answers yes at once, with no restart on a switch and host `deny` rules still
@@ -181,24 +168,13 @@ const camel = (entry: Record<string, unknown>) =>
     ]),
   )
 
-/**
- * Whether the agent has a judgement-based approval of its own to offer as `native_auto`. An agent
- * confined to host tools has nothing for it to judge: the host's Auto-approve already covers it.
- */
-export const hasNativeApproval = (agent: Agent) =>
-  agent.hostTools !== "all" && Boolean(agent.nativeApprovalMode || agent.nativeApprovalArgs?.length)
-
 /** The launch flags a selection needs; an agent without them is switched by session mode instead. */
-export const launchArgs = (agent: Agent, selection: "normal" | "auto" | "native_auto"): readonly string[] =>
-  selection === "native_auto"
-    ? (agent.nativeApprovalArgs ?? [])
-    : selection === "auto"
-      ? (agent.autoApprovalArgs ?? [])
-      : []
+export const launchArgs = (agent: Agent, selection: "normal" | "auto"): readonly string[] =>
+  selection === "auto" ? (agent.autoApprovalArgs ?? []) : []
 
 /** The session mode a selection wants, when the agent has one for it. */
-export const sessionMode = (agent: Agent, selection: "normal" | "auto" | "native_auto") =>
-  selection === "native_auto" ? agent.nativeApprovalMode : selection === "auto" ? agent.autoApprovalMode : undefined
+export const sessionMode = (agent: Agent, selection: "normal" | "auto") =>
+  selection === "auto" ? agent.autoApprovalMode : undefined
 
 const integration = (name: string, value: Record<string, unknown> | undefined): Agent["integration"] => {
   const whoami = Array.isArray(value?.whoami)
@@ -268,7 +244,6 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
     )
     const flags = (value: unknown) =>
       Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : []
-    const nativeApprovalArgs = flags(entry.nativeApprovalArgs)
     const autoApprovalArgs = flags(entry.autoApprovalArgs)
     const models = (Array.isArray(entry.models) ? entry.models : [])
       .map((item) => (typeof item === "string" ? { id: item } : record(item)))
@@ -287,8 +262,6 @@ export const parse = (options: unknown): { readonly agents: Agent[]; readonly er
       inheritedInstructions: Array.isArray(entry.inheritedInstructions)
         ? entry.inheritedInstructions.filter((item): item is string => typeof item === "string" && item.length > 0)
         : [],
-      ...(string(entry.nativeApprovalMode) ? { nativeApprovalMode: string(entry.nativeApprovalMode) } : {}),
-      ...(nativeApprovalArgs.length ? { nativeApprovalArgs } : {}),
       ...(string(entry.autoApprovalMode) ? { autoApprovalMode: string(entry.autoApprovalMode) } : {}),
       ...(autoApprovalArgs.length ? { autoApprovalArgs } : {}),
       ...(string(entry.defaultMode) ? { defaultMode: string(entry.defaultMode) } : {}),

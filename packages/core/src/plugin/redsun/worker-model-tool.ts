@@ -1,6 +1,6 @@
 export * as RedsunWorkerModelTool from "./worker-model-tool.js"
 
-import { ToolFailure } from "@opencode/ai"
+import { ToolFailure } from "@opencode/ai/effect"
 import { define, type Context } from "@opencode/plugin/effect/plugin"
 import type { RpcRegistration } from "@opencode/plugin/effect/rpc"
 import { WorkerModel } from "@opencode/plugin/worker-model"

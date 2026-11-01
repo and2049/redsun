@@ -1,6 +1,7 @@
 export * as SessionRecentText from "./recent-text.js"
 
 import type { SessionMessage } from "./message.js"
+import type { SessionStored } from "./stored.js"
 
 const TOOL_OUTPUT_MAX_CHARS = 1_250
 
@@ -17,7 +18,10 @@ const NO_STALE: ReadonlySet<string> = new Set()
  * One message as the recent, verbatim part of a summary shows it. Empty for messages that part leaves out.
  * REDSUN: tool parts in `stale` are reads a later read of the same file superseded; their output is elided.
  */
-export const messageToText = (message: SessionMessage.Info, stale: ReadonlySet<string> = NO_STALE): string => {
+export const messageToText = (
+  message: SessionMessage.Info | SessionStored.User,
+  stale: ReadonlySet<string> = NO_STALE,
+): string => {
   switch (message.type) {
     // Earlier summaries and instruction updates are handled outside the recent part.
     case "compaction":
@@ -44,7 +48,9 @@ export const messageToText = (message: SessionMessage.Info, stale: ReadonlySet<s
       return message.content
         .flatMap((part) => {
           if (part.type === "text") return [`[Assistant]: ${part.text}`]
-          if (part.type === "reasoning") return part.text ? [`[Assistant reasoning]: ${part.text}`] : []
+          // Providers return summaries of the real reasoning, and written out as text it can read like an attempt to
+          // extract the model's thinking.
+          if (part.type === "reasoning") return []
 
           const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
           const call = `[Assistant tool call]: ${part.name}(${input})`

@@ -1,7 +1,7 @@
 import { Effect, Schedule, Schema } from "effect"
 import { RemoteControl } from "@opencode/schema/remote-control"
 import { EOL } from "node:os"
-import { renderUnicodeCompact } from "uqr"
+import { renderUnicodeCompact } from "@opencode/util/qr"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { RemoteLocal } from "../../services/remote-local"

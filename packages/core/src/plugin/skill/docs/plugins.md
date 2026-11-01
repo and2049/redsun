@@ -12,8 +12,8 @@ Add published packages, versioned packages, scoped packages, or local plugin dir
     "opencode-acme-plugin@1.2.0",
     "@acme/opencode-plugin",
     "./plugins/local",
-    "../shared/plugin.ts",
-    "/absolute/path/plugin.ts",
+    "../shared/plugin",
+    "/absolute/path/plugin",
     "file:///home/me/plugins/local",
     {
       "package": "@acme/opencode-plugin",
@@ -26,8 +26,13 @@ Add published packages, versioned packages, scoped packages, or local plugin dir
 }
 ```
 
-Relative paths resolve from the config file containing the entry. Plugin arrays from applicable config files are applied
-from lowest to highest precedence instead of replacing one another.
+Relative paths resolve from the config file containing the entry.
+
+Configured local paths must be directories. A path to a single file is skipped. See [Load](build/plugins/index.md#load) for
+how redsun finds each part in a directory.
+
+Plugin arrays from applicable config files are applied from lowest to highest precedence instead of replacing one
+another.
 
 ```text
 ~/.config/redsun/redsun.jsonc
@@ -54,8 +59,8 @@ Global plugins use the same discovery layout under the redsun config directory.
 ~/.config/redsun/plugins/
 ```
 
-A `plugins/` directory beside a project-root `redsun.json(c)` is not discovered automatically; configure its files
-explicitly or move it under `.redsun/`.
+A `plugins/` directory beside a project-root `redsun.json(c)` is not discovered automatically; configure its plugin
+directories explicitly or move it under `.redsun/`.
 
 ```jsonc title="redsun.jsonc"
 {
@@ -93,8 +98,9 @@ redsun plugin update opencode-acme-plugin
 redsun plugin remove opencode-acme-plugin@1.2.0
 ```
 
-`plugin check` checks server and TUI-only package plugins for updates. `plugin update` updates every outdated package;
-pass a configured package target to check or update only that package. Local plugins and exact package revisions are skipped.
+`plugin check` checks server, GUI-only, and TUI-only package plugins for updates. `plugin update` updates every outdated package;
+pass a configured package target to check or update only that package. Local plugins and exact package revisions are
+skipped.
 
 Package installation accepts npm names with versions, tags, or ranges, plus npm-compatible Git package specifications.
 Git repositories can use hosted shortcuts, HTTPS, or SSH, including private repositories available through your existing
@@ -114,8 +120,8 @@ local paths directly; tarball and npm alias targets are not accepted by `plugin 
 
 Changes under watched config directories reload automatically. Server startup loads cached package plugins immediately,
 installs missing packages in the background, and checks unpinned npm and Git plugins for updates without changing the
-installed package. Exact npm versions and full Git commit hashes stay pinned. Changes to unwatched local dependencies may
-still require restarting redsun.
+installed package. Exact npm versions and full Git commit hashes stay pinned. Changes to unwatched local dependencies
+may still require restarting redsun.
 
 ```sh
 touch .redsun/plugins/concise/index.ts
@@ -124,7 +130,7 @@ redsun service restart
 
 ## Terminal
 
-CLI-only plugins are configured separately and remain active when connected to a remote server.
+TUI-only plugins are configured separately and remain active when connected to a remote server.
 
 ```json title="cli.json"
 {

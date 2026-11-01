@@ -8,7 +8,7 @@ plugins and their `node_modules` dependencies. Install them as peer/dev dependen
 rather than bundling them into your plugin.
 
 ```sh
-bun add --peer @opencode/plugin effect
+bun add --peer @opencode/plugin effect@4.0.1
 ```
 
 Export an Effect plugin from `.redsun/plugins/` to load it automatically.
@@ -120,11 +120,13 @@ interface Context {
   readonly event: EventDomain
   readonly experimental: {
     readonly terminal: Pick<ExperimentalApi<unknown>["persistentPty"], "read">
+    readonly generate: GenerateApi<unknown>
   }
   readonly integration: IntegrationDomain
   readonly mcp: MCPDomain
   readonly model: ModelDomain
-  readonly generate: GenerateApi<unknown>
+  /** @deprecated Use `experimental.generate.text`. */
+  readonly generate: Pick<ExperimentalGenerateApi<unknown>, "text">
   readonly permission: PermissionDomain
   readonly plugin: Pick<PluginApi<unknown>, "list">
   readonly provider: ProviderDomain
@@ -323,7 +325,7 @@ effect: (ctx) =>
       editor.update("anthropic", (provider) => {
         provider.headers = { ...provider.headers, "x-company": "engineering" }
       })
-      editor.models.update("anthropic", "claude-sonnet-4-5", (model) => (model.name = "Team Sonnet"))
+      editor.models.update("anthropic", "claude-sonnet-5-5", (model) => (model.name = "Team Sonnet"))
       editor.models.remove("anthropic", "legacy-model")
       editor.remove("legacy-provider")
     })
@@ -412,7 +414,7 @@ effect: (ctx) =>
           draft.enabled = draft.capabilities.tools
         })
       })
-      editor.default.set("anthropic", "claude-sonnet-4-5")
+      editor.default.set("anthropic", "claude-sonnet-5-5")
       editor.remove("anthropic", "legacy-model")
     })
   }),
@@ -427,7 +429,7 @@ effect: (ctx) =>
   Effect.gen(function* () {
     const model = ctx.model
     yield* model.transform((editor) => {
-      const source = editor.provider.get("anthropic")?.models.get("claude-sonnet-4-5")
+      const source = editor.provider.get("anthropic")?.models.get("claude-sonnet-5-5")
       if (!source) return
       editor.update("anthropic", source.id, (draft) => {
         draft.limit.context = Math.min(draft.limit.context, source.limit.context)
@@ -721,7 +723,7 @@ effect: (ctx) =>
     const plugin = ctx.plugin
     const active = yield* plugin.list().pipe(
       Effect.orDie,
-      Effect.map((result) => result.data.filter((item) => item.status === "active")),
+      Effect.map((result) => result.data.filter((item) => item.state.status === "active")),
     )
     yield* Effect.logInfo("active plugin count", { count: active.length })
   }),
@@ -800,7 +802,7 @@ effect: (ctx) =>
     yield* session
       .switchModel({
         sessionID: current.id,
-        model: { providerID: Provider.ID.make("anthropic"), id: Model.ID.make("claude-sonnet-4-5") },
+        model: { providerID: Provider.ID.make("anthropic"), id: Model.ID.make("claude-sonnet-5-5") },
       })
       .pipe(Effect.orDie)
   }),
@@ -817,7 +819,7 @@ effect: (ctx) =>
     const summary = yield* session
       .generate({ sessionID: created.id, prompt: "Summarize this project" })
       .pipe(Effect.orDie)
-    yield* session.command({ sessionID: created.id, command: "review", arguments: "--staged" }).pipe(Effect.orDie)
+    yield* session.command({ sessionID: created.id, name: "review", text: "--staged" }).pipe(Effect.orDie)
     yield* session
       .synthetic({ sessionID: created.id, text: `Summary generated: ${summary.text}`, resume: false })
       .pipe(Effect.orDie)
@@ -858,9 +860,24 @@ effect: (ctx) =>
   }),
 ```
 
+Attach, list, or remove keyed session instruction entries with `instructions.entry`. Entries render as `<context key="...">` blocks in the session's instructions, and updates or removals are announced at the next step boundary without queuing a message turn.
+
+```ts
+effect: (ctx) =>
+  Effect.gen(function* () {
+    const created = yield* ctx.session.create({ title: "Review" }).pipe(Effect.orDie)
+    yield* ctx.session.instructions.entry
+      .put({ sessionID: created.id, key: "deploy-target", value: "production" })
+      .pipe(Effect.orDie)
+    const entries = yield* ctx.session.instructions.entry.list({ sessionID: created.id }).pipe(Effect.orDie)
+    yield* ctx.session.instructions.entry.remove({ sessionID: created.id, key: "deploy-target" }).pipe(Effect.orDie)
+  }),
+```
+
 Schemas: [`Session.Info`](https://opencode.ai/v2/docs/api#schema-Session.Info), [`Model.Ref`](https://opencode.ai/v2/docs/api#schema-Model.Ref),
 [`Session.Inbox.User`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.User),
-[`Session.Inbox.Synthetic`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.Synthetic).
+[`Session.Inbox.Synthetic`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.Synthetic),
+[`InstructionEntry.Info`](https://opencode.ai/v2/docs/api#schema-InstructionEntry.Info).
 
 ```ts
 type SessionDomain = Pick<
@@ -881,6 +898,7 @@ type SessionDomain = Pick<
   | "move"
   | "wait"
   | "context"
+  | "instructions"
 >
 ```
 
@@ -892,7 +910,7 @@ Read skills at the current location.
 effect: (ctx) =>
   Effect.gen(function* () {
     const skill = ctx.skill
-    const skills = yield* skill.list()
+    const skills = yield* skill.list().pipe(Effect.orDie)
     yield* Effect.logInfo("skills", { ids: skills.data.map((item) => item.id) })
   }),
 ```
@@ -909,7 +927,7 @@ effect: (ctx) =>
         id: Skill.ID.make("review"),
         name: Skill.Name.make("Review"),
         description: "Review the current changes",
-        path: "/workspace/.redsun/skills/review/SKILL.md",
+        path: Skill.Info.fields.path.make("/workspace/.redsun/skills/review/SKILL.md"),
         content: "Review the current changes for correctness and missing tests.",
       }))
       const review = editor.get("review")
@@ -1073,7 +1091,7 @@ effect: (ctx) =>
   Effect.gen(function* () {
     const vcs = ctx.vcs
     const info = yield* vcs.get().pipe(Effect.orDie)
-    const branches = yield* vcs.branches({ search: "feature", limit: 10 }).pipe(Effect.orDie)
+    const branches = yield* vcs.branch.list({ search: "feature", limit: 10 }).pipe(Effect.orDie)
     const changes = yield* vcs.status().pipe(Effect.orDie)
     const diff = yield* vcs.diff({ mode: "working", context: 3 }).pipe(Effect.orDie)
     yield* Effect.logInfo("vcs", { branch: info.data.branch.current, files: changes.data.length })
@@ -1208,14 +1226,13 @@ effect: (ctx) =>
   }),
 ```
 
-Use Stream operators to select and process event types.
+Pass `types` to receive only the event types you need. The stream is typed to match, so no type guard is needed.
 
 ```ts
 effect: (ctx) =>
   Effect.gen(function* () {
     const event = ctx.event
-    yield* event.subscribe().pipe(
-      Stream.filter((item) => item.type === "config.updated"),
+    yield* event.subscribe({ types: ["config.updated"] }).pipe(
       Stream.runForEach(() => Effect.logInfo("configuration changed")),
       Effect.forkScoped,
     )
@@ -1225,14 +1242,13 @@ effect: (ctx) =>
 Schema: [`V2EventEncoded`](https://opencode.ai/v2/docs/api#schema-V2EventEncoded).
 
 ```ts
-type EventSubscribeOutput = OpenCodeEvent
-type EventSubscribeOperation<E = never> = () => Stream.Stream<EventSubscribeOutput, E>
+type EventType = Exclude<OpenCodeEvent["type"], "server.connected">
 
-interface EventApi<E = never> {
-  readonly subscribe: EventSubscribeOperation<E>
+interface EventDomain {
+  readonly subscribe: <Type extends EventType = EventType>(input?: {
+    readonly types?: ReadonlyArray<Type>
+  }) => Stream.Stream<Extract<OpenCodeEvent, { type: Type }>, unknown>
 }
-
-interface EventDomain extends Pick<EventApi<unknown>, "subscribe"> {}
 ```
 
 ## Hooks
@@ -1271,6 +1287,10 @@ effect: (ctx) =>
     )
   }),
 ```
+
+The `system` part that holds redsun's instructions also lists each source in `metadata.experimental.instructions` as
+`{ key, text }`, such as `core/date` or `core/environment`, so a hook can tell the sources apart. The list is a copy:
+editing the part's `text` does not update it. This is experimental and may change.
 
 Modify model request settings and optionally scope the hook to one provider. The event carries the same `kind` as
 the HTTP hooks below.
@@ -1519,7 +1539,8 @@ type Transform<Input> = (callback: (input: Input) => void) => Effect.Effect<Regi
 ## Publish
 
 A package plugin uses the same default export as a local Effect plugin. Export the Effect implementation from the main
-entrypoint and declare `effect` as a `peerDependency`.
+entrypoint and declare `effect` as a `peerDependency`. Under `devDependencies`, pin the version `@opencode/plugin` uses
+so development installs only one copy.
 
 ```json title="package.json"
 {
@@ -1533,7 +1554,10 @@ entrypoint and declare `effect` as a `peerDependency`.
     "@opencode/plugin": "latest"
   },
   "peerDependencies": {
-    "effect": "^4.0.0"
+    "effect": "^4.0.1"
+  },
+  "devDependencies": {
+    "effect": "4.0.1"
   }
 }
 ```

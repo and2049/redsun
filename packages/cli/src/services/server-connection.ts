@@ -1,11 +1,13 @@
 import { Service, type Endpoint, type EnsureOptions } from "@opencode/client/effect/service"
 import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client/promise"
 import { OPENCODE_VERSION } from "../version"
-import { Effect, Redacted } from "effect"
+import { Effect, Option, Redacted } from "effect"
+import { Server as ServerFlag, Standalone as StandaloneFlag } from "../commands/commands"
 import { Env } from "../env"
 import { Attachments } from "./attachments"
 import { ServiceConfig } from "./service-config"
 import { Standalone } from "./standalone"
+import { errorMessage } from "../util/error"
 
 export type Args = {
   readonly server?: string
@@ -20,15 +22,19 @@ export type Resolved = {
 }
 
 export const resolve = Effect.fn("cli.server-connection.resolve")(function* (args: Args = {}) {
-  if (args.server !== undefined && args.standalone)
+  const serverFlag = yield* Effect.serviceOption(ServerFlag).pipe(Effect.map(Option.flatten))
+  const standaloneFlag = yield* Effect.serviceOption(StandaloneFlag)
+  const server = args.server ?? Option.getOrUndefined(serverFlag)
+  const standalone = args.standalone ?? Option.getOrElse(standaloneFlag, () => false)
+  if (server !== undefined && standalone)
     return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
-  if (args.server !== undefined) {
+  if (server !== undefined) {
     const password = yield* Env.password
     // Without a password in the environment, a token from `redsun attach <link>` stands in for it.
-    const attachment = password ? undefined : yield* Attachments.lookup(args.server)
+    const attachment = password ? undefined : yield* Attachments.lookup(server)
     const secret = password ? Redacted.value(password) : attachment?.token
     const endpoint = {
-      url: args.server,
+      url: server,
       auth: secret ? { type: "basic" as const, username: "opencode", password: secret } : undefined,
     } satisfies Endpoint
     const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
@@ -58,7 +64,7 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
     }
     return { endpoint } satisfies Resolved
   }
-  if (args.standalone || (yield* ServiceConfig.read()).disabled === true) {
+  if (standalone || (yield* ServiceConfig.read()).disabled === true) {
     return { endpoint: yield* Standalone.start() } satisfies Resolved
   }
 
@@ -116,8 +122,11 @@ function connectError(endpoint: Endpoint, cause: unknown, attached = false) {
     )
   }
   if (cause instanceof ClientError && cause.reason === "Transport")
-    return new Error(`Could not reach server at ${endpoint.url}`, { cause })
-  return new Error(`Server at ${endpoint.url} did not provide a compatible V2 health response`, { cause })
+    return new Error(`Could not reach server at ${endpoint.url}: ${errorMessage(cause.cause ?? cause)}`, { cause })
+  return new Error(
+    `Server at ${endpoint.url} did not provide a compatible V2 health response: ${errorMessage(cause)}`,
+    { cause },
+  )
 }
 
 export * as ServerConnection from "./server-connection"

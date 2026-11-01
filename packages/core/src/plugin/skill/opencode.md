@@ -25,12 +25,13 @@ below name the page for their topic; the other pages are:
 
 - Top level: `agents`, `commands` (custom commands, prompt templates), `skills`,
   `instructions` (AGENTS.md), `references` (directories outside the project),
-  `permissions`, `policies` (experimental deny statements), `providers`, `models`, `tools`, `websearch`, `formatters`,
+  `permissions`, `policies` (experimental deny statements), `providers`, `models`, `claude-agent` (Claude plan
+  through the local Claude Code sign-in), `tools`, `websearch`, `formatters`,
   `attachments`, `compaction`, `snapshots` (rollback), `warming`
   (session warming), `themes`, `network` (proxies, certificates)
 - `cli/`: `commands` (command-line options), `providers`, `plugins`, `theme`,
   `tui`, `web` (server access and pairing), `acp`
-- `build/`: `index`, `plugins/effect`, `plugins/effect/rpc`, `client/effect`
+- `build/`: `index`, `plugins/server`, `plugins/effect`, `plugins/effect/rpc`, `client/effect`
 
 Not vendored: the HTTP API reference, which is generated from the running
 server's `/openapi.json`, and the OpenCode Console pages, which describe an
@@ -134,6 +135,11 @@ Common configuration fields include `model`, `default_agent`, `permissions`,
 This configuration is distinct from `cli.json`. Use `cli/config.md` for
 terminal preferences, especially themes and keybindings.
 
+Config changes apply without a restart. redsun watches config files and
+reloads agents, commands, skills, MCP servers, and plugins after a save. The TUI
+does the same for `cli.json`. To force a full reload, use `/reload`. Don't tell
+the user to restart redsun after editing config.
+
 Do not guess field names or shapes. Read `config.md` and the topic page it
 links to as the source of truth, and preserve unrelated settings when editing
 an existing file. Keep the published `$schema` URL in configuration examples,
@@ -170,8 +176,9 @@ secret into configuration.
 ## Plugins
 
 For questions about creating, configuring, loading, or publishing plugins,
-read `build/plugins/index.md` in full before answering. It covers
-hooks, transforms, tools, plugin context capabilities, and package entrypoints.
+read `build/plugins/index.md` in full before answering. It covers package
+layout, loading, and publishing; `build/plugins/server.md` covers the server
+part: hooks, transforms, tools, integrations, commands, and agents.
 Installing and enabling plugins in `redsun.json(c)` is covered by `plugins.md`.
 Plugins can also extend the TUI; for those, read `build/plugins/cli.md`, which
 documents the commands, keymap layers, routes, tabs, dialogs, toasts, markdown
@@ -190,7 +197,8 @@ to a background redsun service, which owns sessions, configuration, plugins,
 permissions, and tool execution.
 
 redsun normally discovers or starts the shared background service
-automatically. If the service is stuck or unhealthy, restart it:
+automatically. Restart it only if it is stuck or unhealthy, not to apply
+configuration changes:
 
 ```sh
 redsun service restart

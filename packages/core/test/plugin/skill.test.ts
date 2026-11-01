@@ -80,7 +80,7 @@ describe("SkillPlugin.Plugin", () => {
       expect(String(redsun.path)).toBe(path.join(directory, "SKILL.md"))
       expect(redsun.content).toContain(directory)
       expect(redsun.content).not.toContain(SkillPlugin.DOCS_PLACEHOLDER)
-      expect(yield* Effect.promise(() => fs.readFile(page, "utf8"))).toContain("# CLI")
+      expect(yield* Effect.promise(() => fs.readFile(page, "utf8"))).toContain("# TUI")
       expect(yield* Effect.promise(() => fs.readFile(path.join(directory, "SKILL.md"), "utf8"))).toBe(redsun.content)
 
       yield* Effect.promise(() => fs.rm(page))

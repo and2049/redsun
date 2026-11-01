@@ -261,8 +261,6 @@ export default define({
               command: agent.compactCommand,
             }
           : { notice: `${agent.name} manages its own context.` },
-        // Only an agent with a real auto-approval mode gets the third permission mode.
-        ...(AcpOptions.hasNativeApproval(agent) ? { nativeApproval: () => true } : {}),
       })
     }
   }),

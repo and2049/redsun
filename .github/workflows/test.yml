@@ -24,7 +24,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Typecheck
-        run: bun turbo typecheck --concurrency=3
+        run: bun turbo typecheck:tsc --concurrency=3
         timeout-minutes: 15
 
       - name: Lint

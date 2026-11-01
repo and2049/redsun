@@ -70,47 +70,26 @@ rename, **D** to unpin, **Enter** to jump into the transcript, and **Escape** to
 Reading a pin fetches it directly; jumping to an old message may load intervening history
 pages. **Ctrl+End** cancels a history jump and returns to the latest message.
 
-## Claude Code behavior
+## Claude Agent
 
-The delegated `claude-code` provider uses your installed `claude` executable through the official
-Agent SDK. Claude Code owns its native agent loop, conversation history and compaction; redsun
-provides the surrounding session interface and host integrations.
+The `claude-agent` provider uses your Claude plan (or any other Claude Code sign-in) through the
+official Claude Agent SDK and your installed `claude` executable. Sign in with `claude auth login`,
+then connect **Claude Agent** with `/connect` and pick a model; the list and context windows come
+from Claude Code, and effort levels are variants such as `claude-agent/opus#high`.
 
-`claude_code.behavior` defaults to `"redsun"`. This adds a short Claude Code-specific workflow
-extension to its native system prompt and delivers redsun agent instructions and discovered project
-context. Claude Code retains its native identity. Claude models used through ordinary API providers
-continue using the normal redsun harness prompt.
+Claude Code only calls the model. redsun owns the agent loop, the conversation history, compaction,
+subagents, permissions and plan mode, exactly as for any API provider: Claude gets redsun's tools over
+an MCP bridge, every tool call runs through redsun's permission policy, and you can switch between
+Claude Agent and other models inside one session. Claude Code's own settings, `CLAUDE.md` files,
+hooks, MCP servers, skills and auto memory are not loaded; redsun's instructions, skills and MCP
+servers apply instead.
 
-To select the native behavior profile explicitly:
+Set `REDSUN_CLAUDE_PATH` (or `OPENCODE_CLAUDE_PATH`) on the server to use a specific `claude`
+binary. `/usage` shows the plan's session and weekly windows beside the ChatGPT and Kiro quotas.
+Sessions created on the retired delegated `claude-code` provider continue on `claude-agent`.
 
-```json
-{
-  "claude_code": { "behavior": "native" }
-}
-```
-
-Use a fresh session after changing profiles for a clean comparison: a resumed Claude transcript can
-retain previously delivered instructions. The native profile still uses redsun's existing question,
-permission and worker integration. Authentication remains owned by the installed CLI; behavior
-selection does not select or guarantee a billing category.
-
-Explicit host permission denials are checked before native tool execution, including under Claude
-Code's auto-approval modes. Native tools otherwise retain Claude Code's approval flow: a host `ask`
-rule does not force an extra prompt for a call the native runtime already approves. Host tools exposed
-through MCP retain their own redsun permission checks.
-
-In the redsun profile, connected MCP tools are available through the host bridge: direct tools stay
-direct, and Code Mode tools use redsun's `execute` tool and catalog discovery. These calls reuse
-redsun's connections and authentication. MCP resources, prompts and server instructions are not
-forwarded by this bridge.
-
-The permission toggle adds **Approve for me** when the selected main model is `claude-code`:
-manual approvals → Approve for me → Auto-approve all. Approve for me selects Claude Code's native
-automatic permission classifier; fallback approvals and host MCP permission requests can still
-appear. Auto-approve all deterministically approves host `ask` decisions while retaining explicit
-denials. Other main providers keep the two-state toggle and treat a stored Approve for me selection
-as manual approval. The selection is location-wide; plan mode and worker-specific native permission
-settings retain their separate behavior.
+The permission toggle has two states: manual approvals and **Auto-approve all**, which approves host
+`ask` decisions while retaining explicit denials. The selection is server-wide.
 
 ## Acknowledgements
 

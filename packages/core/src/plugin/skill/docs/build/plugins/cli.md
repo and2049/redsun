@@ -1,19 +1,21 @@
-# CLI
+# TUI
 
-CLI plugins extend the terminal with commands, routes, slots, Markdown renderers, notifications, and local state.
+TUI plugins extend the terminal UI with commands, routes, slots, Markdown renderers, notifications, and local state. A
+TUI plugin is the `./tui` part of a [plugin package](index.md), usually beside a [server
+part](server.md).
 
-```ts title="src/tui.ts"
+```ts title="src/tui.tsx"
 import { Plugin } from "@opencode/plugin/tui"
 
 export default Plugin.define({
   id: "acme.cli",
   setup(context) {
-    context.ui.toast.show({ message: "CLI plugin loaded", variant: "success" })
+    context.ui.toast.show({ message: "TUI plugin loaded", variant: "success" })
   },
 })
 ```
 
-Import `@opencode/plugin/tui` directly. redsun resolves this import at runtime, so local CLI plugins do not need an
+Import `@opencode/plugin/tui` directly. redsun resolves this import at runtime, so local TUI plugins do not need an
 absolute path to a redsun checkout.
 
 ## Context
@@ -108,9 +110,9 @@ context.data.session.permission.invalidate(sessionID)
 Forms can be listed, refreshed, replied to, or cancelled at a location.
 
 ```ts
-import type { FormCancelInput, FormReplyInput } from "@opencode/client"
+import type { SessionFormCancelInput, SessionFormReplyInput } from "@opencode/client"
 
-async function handleForm(reply: FormReplyInput, cancel: FormCancelInput) {
+async function handleForm(reply: SessionFormReplyInput, cancel: SessionFormCancelInput) {
   const location = context.location
   await context.data.session.form.sync(sessionID, location)
   const forms = context.data.session.form.list(sessionID, location) ?? []
@@ -627,7 +629,7 @@ const displayPath = context.ui.format.path(context.location?.directory ?? "/home
 
 ## Publish and load
 
-Expose the CLI plugin through `./tui`; add OpenTUI peers when the plugin renders JSX.
+Expose the TUI plugin through `./tui`; add OpenTUI peers when the plugin renders JSX.
 
 ```json title="package.json"
 {
@@ -648,7 +650,7 @@ Expose the CLI plugin through `./tui`; add OpenTUI peers when the plugin renders
 }
 ```
 
-Export `./tui` beside the [main plugin](index.md) for automatic loading.
+Export `./tui` beside a [server part](server.md) or [GUI part](https://opencode.ai/v2/docs/build/plugins/gui) for automatic loading.
 
 ```ts title="src/index.ts"
 import { Plugin } from "@opencode/plugin"
@@ -659,7 +661,7 @@ export default Plugin.define({
 })
 ```
 
-Configure a CLI-only package in [`cli.json`](../../cli/plugins.md) so it remains active against remote servers.
+Configure a TUI-only package in [`cli.json`](../../cli/plugins.md) so it remains active against remote servers.
 
 ```json title="cli.json"
 {

@@ -11,9 +11,8 @@ export type Mode = typeof Mode.Type
 
 const KEY = "permission.mode"
 
-/** REDSUN: `claude_auto` is the pre-rename spelling of `native_auto`; a stored selection survives. */
-export const stored = (value: unknown): Mode =>
-  value === "auto" ? "auto" : value === "native_auto" || value === "claude_auto" ? "native_auto" : "normal"
+/** A stored selection from a build with the retired runtime-judged mode falls back to Manual. */
+export const stored = (value: unknown): Mode => (value === "auto" ? "auto" : "normal")
 
 export type Listener = (mode: Mode) => Effect.Effect<void>
 

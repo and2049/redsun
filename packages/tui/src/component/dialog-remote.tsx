@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { TextAttributes } from "@opentui/core"
-import { renderUnicodeCompact } from "uqr"
+import { renderUnicodeCompact } from "@opencode/util/qr"
 import type { RemoteControl } from "@opencode/schema/remote-control"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"

@@ -15,11 +15,11 @@ describe("RedsunWorkerModelTool", () => {
     expect(
       RedsunWorkerModelTool.options([
         model("anthropic", "claude-sonnet-4", "Claude Sonnet 4"),
-        model("claude-code", "sonnet", "Claude Sonnet"),
+        model("claude-agent", "sonnet", "Claude Sonnet"),
       ]),
     ).toEqual([
       { value: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4", description: "anthropic" },
-      { value: "claude-code/sonnet", label: "Claude Sonnet", description: "claude-code" },
+      { value: "claude-agent/sonnet", label: "Claude Sonnet", description: "claude-agent" },
       {
         value: RedsunWorkerModelTool.CLEAR,
         label: "Use the configured default",

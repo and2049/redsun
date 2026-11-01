@@ -20,14 +20,14 @@ import {
 } from "./dialog"
 import { Locale } from "../util/locale"
 import { getScrollAcceleration } from "../util/scroll"
-import { useConfig, useNewDesigns } from "../config"
+import { useConfig, useCursorStyle, useNewDesigns } from "../config"
 import { moveSelection, reconcileSelection } from "./select-controller"
 import { useLanguage } from "../i18n"
 
 export interface DialogSelectProps<T> {
   title: string
   titleView?: JSX.Element
-  /** Faint line below the title, under the "new-designs" experiment. Not shown with `searchInTitle`. */
+  /** Muted line below the title, under the "new-designs" experiment. Not shown with `searchInTitle`. */
   description?: string
   /** Blank rows above the footer under the "new-designs" experiment. Defaults to 1. */
   footerGap?: number
@@ -152,6 +152,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const theme = useTheme().surface("dialog")
   const config = useConfig().data
   const { t } = useLanguage()
+  const cursorStyle = useCursorStyle()
   const newDesigns = useNewDesigns()
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
   const renderer = useRenderer()
@@ -668,6 +669,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   const searchInTitle = () => newDesigns() && props.searchInTitle === true && props.renderFilter !== false
 
+  // Terminals paint the glyph under a block cursor in their own color, so a near-white cursor hides the
+  // placeholder's first letter. Until the user types, match the highlighted row so that letter shows through.
+  const searchCursorColor = () => {
+    if (!newDesigns()) return theme.text.formfield.focused
+    return store.filter.length > 0 ? theme.text.base : theme.background.action.primary.focused
+  }
+
   const searchInput = () => (
     <input
       flexGrow={1}
@@ -679,8 +687,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         })
       }}
       focusedBackgroundColor={theme.background.formfield.focused}
-      cursorColor={newDesigns() ? theme.text.base : theme.text.formfield.focused}
-      cursorStyle={config.cursor}
+      cursorColor={searchCursorColor()}
+      cursorStyle={cursorStyle()}
       focusedTextColor={newDesigns() ? theme.text.formfield.base : theme.text.formfield.focused}
       ref={(r) => {
         input = r
@@ -849,7 +857,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           </scrollbox>
           <Show when={ellipsis()}>
             <box paddingLeft={DIALOG_LIST_INSET} flexShrink={0}>
-              <text fg={theme.text.faint}>…</text>
+              <text fg={theme.text.muted}>…</text>
             </box>
           </Show>
           {/* Reserved whenever any option has a detail, so the dialog does not resize as the selection moves. */}
@@ -859,7 +867,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                 when={detailView()}
                 keyed
                 fallback={
-                  <text fg={theme.text.muted} wrapMode="word">
+                  <text fg={theme.surface("dialog.footer").text.muted} wrapMode="word">
                     {detailText() || " "}
                   </text>
                 }
@@ -885,7 +893,7 @@ export function DialogSelectChoice(props: { value: string; active: boolean; open
     if (!props.active) return `  ${props.value}  `
     return props.open ? `  ${props.value} ↵` : `‹ ${props.value} ›`
   }
-  return <span style={{ fg: props.active ? theme.text.action.primary.focused : theme.text.faint }}>{text()}</span>
+  return <span style={{ fg: props.active ? theme.text.action.primary.focused : theme.text.muted }}>{text()}</span>
 }
 
 function DialogSelectCategory(props: { title: string; first: boolean; view?: JSX.Element }) {
@@ -933,7 +941,7 @@ function DialogSelectRow(props: {
   // Secondary text (description and footer).
   const secondary = () => {
     if (!newDesigns()) return props.active ? text() : theme.text.muted
-    return props.active ? theme.text.action.secondary.focused : theme.text.faint
+    return props.active ? theme.text.action.secondary.focused : theme.text.muted
   }
 
   const row = () => (
