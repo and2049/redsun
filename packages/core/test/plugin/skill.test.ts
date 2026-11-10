@@ -54,6 +54,7 @@ describe("SkillPlugin.Plugin", () => {
         expect.objectContaining({
           id: "report",
           name: "Report",
+          path: "skill://report/SKILL.md",
           description: expect.stringContaining("redsun issue"),
         }),
       )

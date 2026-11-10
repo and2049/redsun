@@ -114,7 +114,7 @@ import { createTuiClipboard } from "./clipboard"
 import { useLanguage } from "./i18n"
 import { DialogLanguage } from "./component/dialog-language"
 
-const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
+const appGlobalBindingCommands = ["session.list", "session.new", "open.menu", "terminal.suspend"] as const
 
 const pinnedSessionBindingCommands = [
   "session.quick_switch.1",
@@ -160,7 +160,6 @@ const appBindingCommands = [
   "diff.open",
   "app.debug",
   "app.console",
-  "terminal.suspend",
   "terminal.title.toggle",
   "app.toggle.animations",
   "app.toggle.file_context",
@@ -653,6 +652,7 @@ function App() {
         limit: 1,
         order: "desc",
         parentID: null,
+        archived: false,
         directory: location.directory,
       })
       .then((response) => {
@@ -1072,7 +1072,7 @@ function App() {
         name: "docs.open",
         title: "Open docs",
         run: () => {
-          openUrl("https://opencode.ai/v2/docs").catch(() => {})
+          openUrl("https://opencode.ai/docs").catch(() => {})
           dialog.clear()
         },
         category: "System",

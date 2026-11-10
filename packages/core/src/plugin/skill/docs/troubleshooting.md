@@ -75,7 +75,7 @@ mode uses the persisted list. CORS does not change the listening address or bypa
 The `api` command uses the local service discovery and authentication flow. It accepts either an HTTP method and path or an
 OpenAPI operation ID.
 
-See the [API reference](https://opencode.ai/v2/docs/api) for all endpoints and operation IDs.
+See the [API reference](https://opencode.ai/docs/api) for all endpoints and operation IDs.
 
 Pass a JSON request body with `--data` or `-d`, and add headers with `--header` or `-H`.
 

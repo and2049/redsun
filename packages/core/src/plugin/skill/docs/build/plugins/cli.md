@@ -650,7 +650,7 @@ Expose the TUI plugin through `./tui`; add OpenTUI peers when the plugin renders
 }
 ```
 
-Export `./tui` beside a [server part](server.md) or [GUI part](https://opencode.ai/v2/docs/build/plugins/gui) for automatic loading.
+Export `./tui` beside a [server part](server.md) or [GUI part](https://opencode.ai/docs/build/plugins/gui) for automatic loading.
 
 ```ts title="src/index.ts"
 import { Plugin } from "@opencode/plugin"

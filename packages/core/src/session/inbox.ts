@@ -484,14 +484,7 @@ export const nextPromotable = Effect.fn("SessionInbox.nextPromotable")(function*
   const steer = (yield* pendingSteers(db, sessionID))[0]
   if (steer) return promotion(steer)
   if (promotable !== "input") return undefined
-  const queued = yield* db
-    .select()
-    .from(SessionInboxTable)
-    .where(and(eq(SessionInboxTable.session_id, sessionID), eq(SessionInboxTable.delivery, "queue")))
-    .orderBy(asc(SessionInboxTable.enqueued_seq))
-    .limit(1)
-    .get()
-    .pipe(Effect.orDie)
+  const queued = yield* firstQueued(db, sessionID)
   return queued ? promotion(queued) : undefined
 })
 
@@ -597,33 +590,37 @@ export const promote = Effect.fn("SessionInbox.promote")(function* (
     Effect.gen(function* () {
       const steers = yield* pendingSteers(db, sessionID)
       if (steers.length > 0 || scope === "steer") {
-        const control = steers.findIndex(controlRow)
-        if (control === 0)
+        if (steers.length > 0 && controlRow(steers[0]))
           return runtimeCommand(steers[0]) ? yield* publish(db, bus, sessionID, steers.slice(0, 1)) : undefined
-        return yield* publish(db, bus, sessionID, control === -1 ? steers : steers.slice(0, control))
+        return yield* publish(db, bus, sessionID, beforeControl(steers))
       }
 
-      const queued = yield* db
-        .select()
-        .from(SessionInboxTable)
-        .where(and(eq(SessionInboxTable.session_id, sessionID), eq(SessionInboxTable.delivery, "queue")))
-        .orderBy(asc(SessionInboxTable.enqueued_seq))
-        .limit(1)
-        .get()
-        .pipe(Effect.orDie)
+      const queued = yield* firstQueued(db, sessionID)
       if (!queued) return 0
-      if (queued.type === "compaction" || queued.type === "move") return undefined
+      if (isControl(queued)) return undefined
       const promoted = yield* publish(db, bus, sessionID, [queued])
       if (runtimeCommand(queued)) return promoted
-      const arrivedSteers = yield* pendingSteers(db, sessionID)
-      const control = arrivedSteers.findIndex(controlRow)
-      return (
-        promoted +
-        (yield* publish(db, bus, sessionID, control === -1 ? arrivedSteers : arrivedSteers.slice(0, control)))
-      )
+      return promoted + (yield* publish(db, bus, sessionID, beforeControl(yield* pendingSteers(db, sessionID))))
     }),
   )
 })
+
+const isControl = (row: typeof SessionInboxTable.$inferSelect) => row.type === "compaction" || row.type === "move"
+
+const beforeControl = (rows: Array<typeof SessionInboxTable.$inferSelect>) => {
+  const control = rows.findIndex(isControl)
+  return control === -1 ? rows : rows.slice(0, control)
+}
+
+const firstQueued = (db: DatabaseService, sessionID: SessionSchema.ID) =>
+  db
+    .select()
+    .from(SessionInboxTable)
+    .where(and(eq(SessionInboxTable.session_id, sessionID), eq(SessionInboxTable.delivery, "queue")))
+    .orderBy(asc(SessionInboxTable.enqueued_seq))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
 
 const pendingSteers = (db: DatabaseService, sessionID: SessionSchema.ID) =>
   db
@@ -639,6 +636,7 @@ const pendingSteers = (db: DatabaseService, sessionID: SessionSchema.ID) =>
         // Within that boundary, compact before promoting even earlier steers so
         // their text stays verbatim after the checkpoint, not inside its summary.
         const control = rows.findIndex(controlRow)
+        // REDSUN: a runtime command is pulled forward like a compaction.
         if (control > 0 && rows[control].type !== "move") rows.unshift(...rows.splice(control, 1))
         return rows
       }),

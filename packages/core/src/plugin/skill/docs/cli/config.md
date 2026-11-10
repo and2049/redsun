@@ -5,7 +5,7 @@ CLI settings control the terminal clients only. They are separate from the serve
 
 Press `Ctrl+P`, then select **Open settings** to change common settings from the TUI.
 
-<img src={`${import.meta.env.BASE_URL}assets/docs/cli/settings.png`} alt="redsun TUI settings dialog" />
+<img src={`${import.meta.env.BASE_URL}assets/cli/settings.png`} alt="redsun TUI settings dialog" />
 
 ## Configuration file
 
@@ -117,6 +117,7 @@ Configure how full-screen TUI sessions are presented and where new sessions star
   "session": {
     "sidebar": "auto",
     "scrollbar": false,
+    "submit_scroll": "bottom",
     "thinking": "hide",
     "grouping": "auto",
     "image_preview": false,
@@ -134,6 +135,7 @@ Configure how full-screen TUI sessions are presented and where new sessions star
 | ----------------------- | ------------------------ | --------------------------------------------------------------------------- |
 | `session.sidebar`       | `auto` or `hide`         | Shows the sidebar when space permits or always hides it.                    |
 | `session.scrollbar`     | boolean                  | Shows the transcript scrollbar.                                             |
+| `session.submit_scroll` | `bottom` or `keep`       | Jumps to the latest message when you send a prompt, or keeps your position. |
 | `session.thinking`      | `show` or `hide`         | Shows or hides model reasoning by default.                                  |
 | `session.grouping`      | `auto` or `none`         | Groups related transcript items or renders each item separately.            |
 | `session.image_preview` | boolean                  | Shows user attachment and tool-result images in the transcript.             |

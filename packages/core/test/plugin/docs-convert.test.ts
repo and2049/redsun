@@ -54,8 +54,8 @@ describe("docs convert", () => {
     expect(links("[x](/config)", "cli/keybinds", pages)).toBe("[x](../config.md)")
     expect(links("[x](/build/plugins#hooks)", "config", pages)).toBe("[x](build/plugins/index.md#hooks)")
     expect(links("[x](/build/plugins/cli)", "build/plugins/index", pages)).toBe("[x](cli.md)")
-    expect(links("[x](/api)", "config", pages)).toBe("[x](https://opencode.ai/v2/docs/api)")
-    expect(links("[x](/console/go)", "config", pages)).toBe("[x](https://opencode.ai/v2/docs/console/go)")
+    expect(links("[x](/api)", "config", pages)).toBe("[x](https://opencode.ai/docs/api)")
+    expect(links("[x](/console/go)", "config", pages)).toBe("[x](https://opencode.ai/docs/console/go)")
   })
 
   test("brand renames the product, binary, config files, and directories", () => {

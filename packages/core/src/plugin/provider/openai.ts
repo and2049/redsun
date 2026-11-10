@@ -9,13 +9,14 @@ import type { Server } from "node:http"
 import { App } from "../../app.js"
 import { Config } from "../../config.js"
 import { Credential } from "../../credential.js"
-import { Bus } from "../../bus.js"
 import { Integration } from "../../integration.js"
 import { OauthCallbackPage } from "../../oauth/page.js"
 import { Provider } from "../../provider.js"
 import { SessionAffinity } from "../../session/affinity.js"
 import type { PluginInternal } from "../internal.js"
 import { configuredSettings } from "./configured.js"
+import { activeCredential } from "./credential-settings.js"
+import { ProviderRefresh } from "./refresh.js"
 
 const clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const issuer = "https://auth.openai.com"
@@ -238,7 +239,6 @@ const headless = (app: App.Info) =>
 export const OpenAIPlugin = define({
   id: "opencode.provider.openai",
   effect: Effect.fn(function* (ctx) {
-    const bus = yield* Bus.Service
     const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
     const loading = Semaphore.makeUnsafe(1)
     let chatgpt: Credential.OAuth | undefined
@@ -269,15 +269,17 @@ export const OpenAIPlugin = define({
     })
 
     const load = Effect.fn("OpenAIPlugin.load")(function* () {
-      const connection = yield* ctx.integration.connection.active("openai")
-      const credential = connection
-        ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.orElseSucceed(() => undefined))
-        : undefined
+      const { credential } = yield* activeCredential(ctx, "openai")
+      const previous = chatgpt
       chatgpt =
         credential?.type === "oauth" &&
         (credential.methodID === browserMethodID || credential.methodID === headlessMethodID)
           ? credential
           : undefined
+      return (
+        (previous === undefined) !== (chatgpt === undefined) ||
+        previous?.metadata?.accountID !== chatgpt?.metadata?.accountID
+      )
     })
 
     yield* ctx.integration.transform((editor) => {
@@ -363,11 +365,11 @@ export const OpenAIPlugin = define({
       })
     for (const name of ["context", "compaction"] as const)
       yield* ctx.session.hook(name, omitOutputLimit, { providerID: Provider.ID.openai })
-    const refresh = () => loading.withPermit(load().pipe(Effect.andThen(ctx.provider.reload())))
-    yield* bus.subscribe(Credential.Event.Switched).pipe(
-      Stream.filter((event) => event.data.integrationID === Integration.ID.make("openai")),
-      Stream.runForEach(() => refresh().pipe(Effect.andThen(loadWindows()))),
-      Effect.forkScoped({ startImmediately: true }),
+    yield* ProviderRefresh.onSwitch(
+      "openai",
+      loading
+        .withPermit(ProviderRefresh.reloadIfChanged(load(), ctx.provider.reload()))
+        .pipe(Effect.andThen(loadWindows())),
     )
     yield* loadWindows().pipe(Effect.forkScoped({ startImmediately: true }))
     yield* ctx.event.subscribe().pipe(

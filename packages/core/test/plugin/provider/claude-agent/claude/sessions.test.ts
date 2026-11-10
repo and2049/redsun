@@ -6,6 +6,7 @@ import { ClaudeAgentLanguageModel } from "@opencode/core/plugin/provider/claude-
 import { RequestKind } from "@opencode/core/plugin/provider/claude-agent/language-model/request-kind"
 import { ClaudeSystemPrompt } from "@opencode/core/plugin/provider/claude-agent/language-model/system-prompt"
 import { SessionRecord } from "@opencode/core/plugin/provider/claude-agent/sync/record"
+import { RedsunAttribution } from "@opencode/core/plugin/redsun/attribution"
 import { it } from "../../../../lib/effect"
 import { FakeClaude } from "../lib/fake-claude"
 import { TestSessions } from "../lib/sessions"
@@ -357,6 +358,52 @@ describe("Claude sessions", () => {
       expect(init.systemPrompt).toEqual(["You are a concise test assistant."])
       expect(title.args).toContain("--no-session-persistence")
       expect(test.storage.data.size).toBe(1)
+      yield* test.registry.close()
+      claude.check()
+    }),
+  )
+
+  // REDSUN: attribution starts the process and follows the setting on the live one, like effort.
+  it.effect("starts Claude Code without its default commit trailer and applies attribution changes live", () =>
+    Effect.gen(function* () {
+      const control = FakeClaude.replay("controls").find(
+        (step) => step.type === "exchange" && step.input.request?.subtype === "apply_flag_settings",
+      )!
+      const recorded = (index: number) => FakeClaude.expectTurn({ recording: "controls", index })
+      const claude = FakeClaude.make([
+        FakeClaude.expectStartup(),
+        recorded(0),
+        control,
+        recorded(1),
+        FakeClaude.expectInterrupt(),
+      ])
+      const test = yield* TestSessions.start(claude)
+      const prompt = TestSessions.prompt("Remember CONTROL-OTTER. Reply only CONTROL-OTTER.")
+      const on = RedsunAttribution.claudeSettings(true)
+      for (const attribution of [undefined, on]) {
+        const model = new ClaudeAgentLanguageModel.Model("haiku", test.model.dependencies)
+        const result = yield* Effect.promise(() =>
+          model.doStream({
+            prompt,
+            providerOptions: {
+              "claude-agent": attribution ? { [ClaudeSystemPrompt.ATTRIBUTION_OPTION]: attribution } : {},
+            },
+            headers: { [RequestKind.HEADER]: "primary", [RequestKind.SESSION_HEADER]: "session-a" },
+          }),
+        )
+        expect(TestSessions.text(yield* Effect.promise(() => TestSessions.collect(result.stream)))).toBe(
+          "CONTROL-OTTER",
+        )
+        prompt.push(
+          { role: "assistant", content: [{ type: "text", text: "CONTROL-OTTER" }] },
+          { role: "user", content: [{ type: "text", text: "What was the marker? Reply only with it." }] },
+        )
+      }
+      const run = claude.runs[0]!
+      const settings = JSON.parse(run.args[run.args.indexOf("--settings") + 1]!)
+      expect(settings.attribution).toEqual(RedsunAttribution.CLAUDE_EMPTY)
+      const requests = run.received.map((message) => message.request)
+      expect(requests).toContainEqual({ subtype: "apply_flag_settings", settings: { attribution: on } })
       yield* test.registry.close()
       claude.check()
     }),

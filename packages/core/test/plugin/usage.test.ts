@@ -14,7 +14,7 @@ const it = testEffect(PluginTestLayer)
 
 it.effect("external Claude login enables usage without an OAuth token and rejects other methods", () =>
   Effect.gen(function* () {
-    const ctx = yield* PluginHost.make(yield* Plugin.Service)
+    const ctx = yield* PluginHost.make(yield* Plugin.Service, "test")
     const credentials = yield* Credential.Service
     const rpc = (yield* Rpc.Service).client(Usage.rpc("claude-agent"))
     let reads = 0
@@ -47,7 +47,7 @@ it.effect("external Claude login enables usage without an OAuth token and reject
 it.effect("usage RPC gates credentials, deduplicates reads and invalidates cache on account switches", () =>
   Effect.gen(function* () {
     const plugin = yield* Plugin.Service
-    const ctx = yield* PluginHost.make(plugin)
+    const ctx = yield* PluginHost.make(plugin, "test")
     const credentials = yield* Credential.Service
     const rpc = (yield* Rpc.Service).client(Usage.rpc("openai"))
     let reads = 0

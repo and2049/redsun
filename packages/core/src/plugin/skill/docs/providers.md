@@ -14,7 +14,7 @@ Run `/connect`, choose a provider, and enter its credentials. Then run `/models`
 
 ## Go
 
-[OpenCode Go](https://opencode.ai/v2/docs/console/go) is an optional subscription for coding models tested by the OpenCode team. Subscribe in the
+[OpenCode Go](https://opencode.ai/docs/console/go) is an optional subscription for coding models tested by the OpenCode team. Subscribe in the
 [console](https://opencode.ai/console), copy your API key, then connect it as **OpenCode Go**.
 
 ```text
@@ -23,7 +23,7 @@ Run `/connect`, choose a provider, and enter its credentials. Then run `/models`
 /models
 ```
 
-See the [Go guide](https://opencode.ai/v2/docs/console/go) for usage limits, endpoints, and privacy details.
+See the [Go guide](https://opencode.ai/docs/console/go) for usage limits, endpoints, and privacy details.
 
 ## ChatGPT
 

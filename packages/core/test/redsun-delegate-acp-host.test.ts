@@ -106,7 +106,7 @@ const setup = (v3: boolean) =>
     yield* registerToolPlugin(RedsunWorkerModelTool.Plugin, {
       rpc: Object.assign(rpc.client, { register: rpc.register }),
     })
-    const host = yield* PluginHost.make(yield* Plugin.Service)
+    const host = yield* PluginHost.make(yield* Plugin.Service, "test")
     yield* AcpPlugin.effect({
       ...host,
       options: {

@@ -6,6 +6,7 @@ import { ToolHooks } from "../tools/hooks.js"
 import type { PendingTools } from "../tools/pending.js"
 import { ToolServer } from "../tools/server.js"
 import type { ClaudeIO } from "./io.js"
+import { RedsunAttribution } from "../../../redsun/attribution.js"
 
 // Claude Code features that duplicate opencode's. opencode's version wins (specs/v2/claude-agent-provider.md, "Turned Off").
 const ISOLATION_ENV = {
@@ -15,6 +16,8 @@ const ISOLATION_ENV = {
   CLAUDE_CODE_ENABLE_AWAY_SUMMARY: "0",
   ENABLE_TOOL_SEARCH: "false",
   CLAUDE_CODE_DISABLE_ADVISOR_TOOL: "1",
+  CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: "1",
+  CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK: "1",
   // Raised so opencode's own truncation applies instead
   MAX_MCP_OUTPUT_TOKENS: "200000",
   // Skips OAuth, so the subscription would not be used
@@ -58,7 +61,8 @@ export function base(input: {
     spawnClaudeCodeProcess: input.io.spawn,
     env: { ...input.io.env(), ...input.connection, ...ISOLATION_ENV },
     settingSources: [],
-    settings: { disableAllHooks: true },
+    // REDSUN: no settings files are read, so Claude Code's default commit trailer is disabled explicitly.
+    settings: { disableAllHooks: true, attribution: RedsunAttribution.CLAUDE_EMPTY },
     // Without summaries, OpenCode has no reasoning text to display
     thinking: { type: "adaptive", display: "summarized" },
     strictMcpConfig: true,
@@ -77,6 +81,7 @@ export async function session(input: {
   readonly directory: string
   readonly model: string
   readonly effort?: Options["effort"]
+  readonly attribution?: RedsunAttribution.ClaudeSettings
   readonly maxOutputTokens?: number
   readonly system: NonNullable<Options["systemPrompt"]>
   readonly tools: readonly LanguageModelV3FunctionTool[]
@@ -90,6 +95,7 @@ export async function session(input: {
     cwd: input.directory,
     model: input.model,
     effort: input.effort,
+    settings: { disableAllHooks: true, attribution: input.attribution ?? RedsunAttribution.CLAUDE_EMPTY },
     systemPrompt: input.system,
     includePartialMessages: true,
     persistSession: input.persist,

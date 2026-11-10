@@ -11,6 +11,7 @@ import { Effect, Fiber, Semaphore } from "effect"
 import { ClaudeIO } from "./io.js"
 import type { ClaudeStatus } from "./status.js"
 import { ClaudeQueryOptions } from "./query-options.js"
+import { RedsunAttribution } from "../../../redsun/attribution.js"
 import { ClaudeSession } from "./session.js"
 import { SessionRecord } from "../sync/record.js"
 import { Checkpoints } from "../sync/checkpoints.js"
@@ -32,6 +33,8 @@ export interface Request {
   readonly compaction?: boolean
   readonly model: string
   readonly effort?: Options["effort"]
+  // REDSUN: Claude Code's commit/PR attribution; absent means the empty default (never Claude Code's own trailer).
+  readonly attribution?: RedsunAttribution.ClaudeSettings
   readonly maxOutputTokens?: number
   readonly connection?: Readonly<Record<string, string>>
   readonly system: NonNullable<Options["systemPrompt"]>
@@ -45,6 +48,8 @@ interface LiveProcess {
   readonly pending: PendingTools.Interface
   model: string
   effort?: Options["effort"]
+  // The attribution the process currently has, as JSON; it changes on the running process like effort.
+  attribution: string
   // Settings that need a new process to change. Model and effort change on the running one.
   readonly launch: string
   waiting?: string[]
@@ -71,6 +76,8 @@ export interface Interface {
 
 const launch = (request: Request) =>
   JSON.stringify([request.maxOutputTokens, request.connection, request.system, request.tools])
+
+const attributionKey = (request: Request) => JSON.stringify(request.attribution ?? RedsunAttribution.CLAUDE_EMPTY)
 
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
 const attempt = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: toError })
@@ -173,6 +180,7 @@ export function registry() {
                   directory: input.directory,
                   model: request.model,
                   effort: request.effort,
+                  attribution: request.attribution,
                   maxOutputTokens: request.maxOutputTokens,
                   system: request.system,
                   tools: request.tools,
@@ -182,7 +190,14 @@ export function registry() {
                 }),
               ),
             )
-            entry.process = { session, pending, model: request.model, effort: request.effort, launch: launch(request) }
+            entry.process = {
+              session,
+              pending,
+              model: request.model,
+              effort: request.effort,
+              attribution: attributionKey(request),
+              launch: launch(request),
+            }
           }
           const process = entry.process
           const probe = yield* restore(
@@ -207,6 +222,11 @@ export function registry() {
       if (process.effort !== request.effort) {
         yield* attempt(() => process.session.setEffort(request.effort))
         process.effort = request.effort
+      }
+      // REDSUN: a changed `attribution.commit` reaches the live process before this request's input.
+      if (process.attribution !== attributionKey(request)) {
+        yield* attempt(() => process.session.setAttribution(request.attribution ?? RedsunAttribution.CLAUDE_EMPTY))
+        process.attribution = attributionKey(request)
       }
       return process
     })

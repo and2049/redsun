@@ -72,6 +72,12 @@ Auto-approve permissions that are not explicitly denied.
 $ redsun run --auto "Fix the failing test"
 ```
 
+Create the session archived so scripted or CI runs stay out of session lists and the inbox. The session still exists: `redsun session list` includes it, and you can open it by ID.
+
+```bash
+$ redsun run --archived "Review this diff"
+```
+
 View all subcommands and flags.
 
 ```bash

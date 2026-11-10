@@ -123,4 +123,6 @@ Configured instructions load after `AGENTS.md` files, in the order they are list
 - Missing files are skipped. A URL that cannot be fetched is skipped, or keeps its last fetched content.
 - With `OPENCODE_DISABLE_PROJECT_CONFIG=1`, or when the workspace is outside the project, relative entries resolve against the global config directory.
 
+A connected [OpenCode Console](https://opencode.ai/docs/console) workspace can also share instructions.
+
 See [Config](config.md) for configuration locations and precedence.

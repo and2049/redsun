@@ -47,7 +47,7 @@ describe("delegate host in the production plugin graph", () => {
     Effect.gen(function* () {
       for (const service of [Config.Service, InstructionDiscovery.Service])
         expect(Option.isSome(yield* Effect.serviceOption(service as never))).toBe(true)
-      const host = yield* PluginHost.make({ list: () => Effect.succeed([]) } as never)
+      const host = yield* PluginHost.make({ list: () => Effect.succeed([]) } as never, "test")
       expect(yield* host.delegate.config("instruction_max_chars")).toBeUndefined()
       const files = yield* host.delegate.context.instructions()
       expect(files === undefined || Array.isArray(files)).toBe(true)

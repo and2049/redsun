@@ -4,7 +4,6 @@ import { ClaudeIO } from "./claude/io.js"
 import { ClaudeSessions } from "./claude/sessions.js"
 import { ClaudeStatus } from "./claude/status.js"
 import { ClaudeAISDK } from "./aisdk.js"
-import { ClaudeInstructions } from "./instructions.js"
 import { ClaudeIntegration } from "./integration.js"
 import { ClaudeProvider } from "./provider.js"
 import { ClaudeSessionHooks } from "./session.js"
@@ -42,7 +41,7 @@ export const make = (io: ClaudeIO.Interface, registry = ClaudeSessions.registry(
       yield* ClaudeIntegration.register(ctx, status)
       yield* ClaudeAISDK.register(ctx, sessions)
       yield* ClaudeSessionHooks.register(ctx)
-      yield* ClaudeInstructions.register(ctx)
+      // REDSUN: `ClaudeInstructions.Plugin` registers last in `internal.ts` so later plugins' system parts reach Claude.
       yield* ClaudeUsageReport.register(ctx, io)
     }),
   } satisfies PluginInternal.InternalPlugin)

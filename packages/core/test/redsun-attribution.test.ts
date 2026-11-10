@@ -8,6 +8,29 @@ import { host } from "./plugin/host"
 
 const it = testEffect(Layer.empty)
 
+it.effect("maps the setting onto Claude Code's own attribution, never its default trailer", () =>
+  Effect.sync(() => {
+    expect(RedsunAttribution.claudeSettings(true)).toEqual({
+      commit: RedsunAttribution.DEFAULT_TRAILER,
+      pr: "",
+      sessionUrl: false,
+    })
+    expect(RedsunAttribution.claudeSettings("Co-authored-by: Someone <s@example.com>")).toEqual({
+      commit: "Co-authored-by: Someone <s@example.com>",
+      pr: "",
+      sessionUrl: false,
+    })
+    for (const off of [false, undefined, "", "   "]) {
+      expect(RedsunAttribution.claudeSettings(off)).toEqual(RedsunAttribution.CLAUDE_EMPTY)
+    }
+    expect(RedsunAttribution.parseClaudeSettings(RedsunAttribution.claudeSettings(true))).toEqual(
+      RedsunAttribution.claudeSettings(true),
+    )
+    expect(RedsunAttribution.parseClaudeSettings({ commit: "x" })).toBeUndefined()
+    expect(RedsunAttribution.parseClaudeSettings(undefined)).toBeUndefined()
+  }),
+)
+
 const commitCall = (message: string) =>
   Message.assistant([
     { type: "tool-call", id: "call_1", name: "shell", input: { command: `git commit -m "${message}"` } },

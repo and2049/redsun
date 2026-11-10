@@ -70,7 +70,7 @@ export const generate = Effect.fn("SessionGenerate.generate")(function* (input: 
     })
     const request =
       input.temperature !== undefined
-        ? { ...prepared.request, generation: { ...prepared.request.generation, temperature: input.temperature } }
+        ? { ...prepared.request, temperature: input.temperature }
         : prepared.request
     const response = yield* llm.generate(request, prepared.options).pipe(ModelRetry.retry)
     yield* Effect.logInfo("session generation usage diagnostic", { usage: response.usage })

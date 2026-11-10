@@ -676,6 +676,7 @@ function OAuthAuto(props: {
   const clipboard = useClipboard()
   const { t } = useLanguage()
   const newDesigns = useNewDesigns()
+  const theme = useTheme().surface("dialog")
   let timer: ReturnType<typeof setTimeout> | undefined
   let settled = false
 
@@ -696,8 +697,24 @@ function OAuthAuto(props: {
       .catch(toast.error)
   }
 
+  const [error, setError] = createSignal<string>()
+  const paste = (value: string) => {
+    if (!value.trim()) return open()
+    setError(undefined)
+    void client.api.integration.oauth
+      .complete({
+        integrationID: props.integration.id,
+        attemptID: props.attempt.attemptID,
+        location: locationQuery(props.location),
+        code: value,
+      })
+      .catch((cause) => setError(errorMessage(cause)))
+  }
+
   Keymap.createLayer(() => ({
     mode: "modal",
+    // The paste prompt owns typing and Enter.
+    enabled: !props.attempt.paste,
     commands: [
       { bind: newDesigns() ? "return" : "o", title: t("ui.openAuthorizationUrl"), group: "Dialog", run: open },
       { bind: "c", title: t("ui.copyAuthorizationDetails"), group: "Dialog", run: copy },
@@ -747,14 +764,47 @@ function OAuthAuto(props: {
   })
 
   return (
-    <OAuthView
-      title={props.title}
-      url={props.attempt.url}
-      instructions={props.attempt.instructions}
-      message={t("ui.waitingForAuthorization")}
-      onCopy={copy}
-      onOpen={open}
-    />
+    <Show
+      when={props.attempt.paste}
+      fallback={
+        <OAuthView
+          title={props.title}
+          url={props.attempt.url}
+          instructions={props.attempt.instructions}
+          message={t("ui.waitingForAuthorization")}
+          onCopy={copy}
+          onOpen={open}
+        />
+      }
+    >
+      <DialogPrompt
+        title={props.title}
+        subtitle={props.attempt.instructions}
+        placeholder="Redirect URL"
+        onConfirm={paste}
+        actions={[
+          {
+            title: "copy link",
+            command: "dialog.integration.copy",
+            commandTitle: "Copy authorization link",
+            onTrigger: copy,
+          },
+        ]}
+        description={() => (
+          <box gap={1}>
+            <Show when={!newDesigns()}>
+              <text fg={theme.text.muted}>{props.attempt.instructions}</text>
+            </Show>
+            <Link href={props.attempt.url} fg={theme.markdown.link} />
+            <text fg={theme.text.muted}>
+              Waiting for authorization… Press enter to open the link. If the browser can't reach this machine, paste
+              the URL it was redirected to.
+            </text>
+            <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.base}>{value()}</text>}</Show>
+          </box>
+        )}
+      />
+    </Show>
   )
 }
 

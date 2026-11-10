@@ -40,7 +40,29 @@ export function parse(text: string): Usage.Data {
   }
 }
 
-/** An isolated one-shot `/usage` query: no tools, no MCP, no hooks, nothing persisted. */
+/**
+ * Options for the isolated one-shot `/usage` query: no tools, no MCP, no hooks, nothing persisted.
+ * The shared base sends prompts verbatim so chat text is never parsed as a slash command; here the
+ * prompt *is* the command, and verbatim delivery would hand `/usage` to the model as a billed turn
+ * that answers without any quota data.
+ */
+export function options(input: {
+  executable: string
+  io: ClaudeIO.Interface
+  connection: Readonly<Record<string, string>>
+  abortController: AbortController
+}) {
+  return {
+    ...ClaudeQueryOptions.base(input),
+    abortController: input.abortController,
+    verbatimPrompts: false,
+    mcpServers: {},
+    persistSession: false,
+    maxTurns: 1,
+  }
+}
+
+/** An isolated one-shot `/usage` query, handled locally by the CLI without a model request. */
 export async function read(
   io: ClaudeIO.Interface,
   connection: Readonly<Record<string, string>>,
@@ -51,16 +73,7 @@ export async function read(
   if (!executable) throw new Error("Claude Code is not installed")
   const { query } = await ClaudeSDK.load()
   const abortController = new AbortController()
-  const session = query({
-    prompt: "/usage",
-    options: {
-      ...ClaudeQueryOptions.base({ executable, io, connection }),
-      abortController,
-      mcpServers: {},
-      persistSession: false,
-      maxTurns: 1,
-    },
-  })
+  const session = query({ prompt: "/usage", options: options({ executable, io, connection, abortController }) })
   const abort = () => {
     abortController.abort()
     session.close()

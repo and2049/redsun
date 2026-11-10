@@ -11,6 +11,24 @@ The first policy consumer is provider availability:
 ```text
 action:   provider.use
 resource: provider ID, such as openai or company-ai
+
+action:   tool.use
+resource: <permission action>:<resource>, such as shell:sudo * or edit:*.env
+
+action:   integration.connect
+resource: integration ID, such as opencode, anthropic, or https://ai.acme.com
+
+action:   integration.use
+resource: <integration ID>#<account>, or the bare integration ID without an account
+
+action:   mcp.use | skill.use | plugin.use
+resource: MCP server name, skill ID, or unversioned package / absolute local path
+
+action:   websearch.use
+resource: web search provider ID, such as opencode, exa, or tinyfish
+
+Legacy integration.use statements with an mcp:, skill:, or plugin: prefix are
+converted to the matching *.use action when ConfigPolicy.Info decodes them.
 ```
 
 Provider configuration and provider policy remain separate:
@@ -55,7 +73,15 @@ A provider can be correctly configured and have valid credentials while policy s
 ```ts
 interface PolicyInfo {
   effect: "allow" | "deny"
-  action: string
+  action:
+    | "provider.use"
+    | "tool.use"
+    | "integration.connect"
+    | "integration.use"
+    | "mcp.use"
+    | "skill.use"
+    | "plugin.use"
+    | "websearch.use"
   resource: string
 }
 ```

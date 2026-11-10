@@ -12,6 +12,7 @@ import { Provider } from "@opencode/schema/provider"
 import { ConvertClaudeStream } from "./convert-claude-stream.js"
 import { RequestKind } from "./request-kind.js"
 import { ClaudeSystemPrompt } from "./system-prompt.js"
+import { RedsunAttribution } from "../../../redsun/attribution.js"
 
 export interface Dependencies {
   readonly run: (request: ClaudeSessions.Request, signal: AbortSignal) => Promise<void>
@@ -48,6 +49,7 @@ export class Model implements LanguageModelV3 {
     const loaded = settings?.[ClaudeSystemPrompt.INSTRUCTIONS_OPTION]
     const instructions = typeof loaded === "string" ? loaded : undefined
     const effort = parseEffort(settings?.effort)
+    const attribution = RedsunAttribution.parseClaudeSettings(settings?.[ClaudeSystemPrompt.ATTRIBUTION_OPTION])
     const primary = kind === "primary"
     const branch = kind === "generate" || kind === "compaction"
     const sessionID = primary ? session : undefined
@@ -72,6 +74,7 @@ export class Model implements LanguageModelV3 {
               compaction: kind === "compaction",
               model: this.modelId,
               effort,
+              attribution,
               maxOutputTokens: options.maxOutputTokens,
               connection: this.connection,
               system,

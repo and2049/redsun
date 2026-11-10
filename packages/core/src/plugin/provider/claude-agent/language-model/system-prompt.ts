@@ -5,6 +5,8 @@ import type { LanguageModelV3Prompt } from "@ai-sdk/provider"
 
 export const AGENT_OPTION = "claudeCodeAgent"
 export const INSTRUCTIONS_OPTION = "claudeCodeInstructions"
+// REDSUN: Claude Code's commit/PR attribution setting for the session, from `attribution.commit`.
+export const ATTRIBUTION_OPTION = "claudeCodeAttribution"
 
 const primary = {
   type: "preset",

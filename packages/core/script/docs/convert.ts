@@ -1,7 +1,7 @@
 import path from "path"
 
-export const ROOT = "services/www/src/docs/content"
-export const DOCS_URL = "https://opencode.ai/v2/docs"
+export const ROOT = "services/site/src/docs/content"
+export const DOCS_URL = "https://opencode.ai/docs"
 // REDSUN: V1 migration guides and the embedding SDK (redsun ships no `@opencode/sdk`) are not vendored.
 export const EXCLUDED = [
   /^console(\/|$)/,
@@ -140,6 +140,12 @@ export const PATCHES: Readonly<Record<string, ReadonlyArray<readonly [RegExp | s
       "",
     ],
     [/^\| Desktop picker selection .*\n/m, ""],
+  ],
+  "mcp-servers": [
+    [
+      "The prompt appears in `/mcps`, in `redsun mcp auth`, and in the desktop and web app's sign-in dialog while redsun waits for the browser.",
+      "The prompt appears in `/mcps` and in `redsun mcp auth` while redsun waits for the browser.",
+    ],
   ],
   "build/index": [
     ["Build on top of it to create", "Build on top of redsun to create"],

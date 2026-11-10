@@ -213,7 +213,7 @@ await ctx.agent.reload()
 
 #### Reference
 
-Schema: [`Agent.Info`](https://opencode.ai/v2/docs/api#schema-Agent.Info)
+Schema: [`Agent.Info`](https://opencode.ai/docs/api#schema-Agent.Info)
 
 ```ts
 interface AgentContext {
@@ -287,7 +287,7 @@ await ctx.provider.transform((editor) => {
 
 #### Reference
 
-Schemas: [`Provider.Info`](https://opencode.ai/v2/docs/api#schema-Provider.Info), [`Model.Info`](https://opencode.ai/v2/docs/api#schema-Model.Info)
+Schemas: [`Provider.Info`](https://opencode.ai/docs/api#schema-Provider.Info), [`Model.Info`](https://opencode.ai/docs/api#schema-Model.Info)
 
 ```ts
 interface ProviderDomain extends ProviderApi {
@@ -357,7 +357,7 @@ await ctx.model.reload()
 
 #### Reference
 
-Schema: [`Model.Info`](https://opencode.ai/v2/docs/api#schema-Model.Info)
+Schema: [`Model.Info`](https://opencode.ai/docs/api#schema-Model.Info)
 
 ```ts
 interface ModelDomain extends ModelApi {
@@ -416,8 +416,8 @@ await ctx.command.reload()
 
 #### Reference
 
-Schemas: [`Command.Info`](https://opencode.ai/v2/docs/api#schema-Command.Info),
-[`Session.Inbox.Delivery`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.Delivery)
+Schemas: [`Command.Info`](https://opencode.ai/docs/api#schema-Command.Info),
+[`Session.Inbox.Delivery`](https://opencode.ai/docs/api#schema-Session.Inbox.Delivery)
 
 ```ts
 interface CommandContext {
@@ -510,8 +510,8 @@ await ctx.integration.reload()
 
 #### Reference
 
-Schemas: [`Integration.Info`](https://opencode.ai/v2/docs/api#schema-Integration.Info), [`Integration.Method`](https://opencode.ai/v2/docs/api#schema-Integration.Method),
-[`Connection.Info`](https://opencode.ai/v2/docs/api#schema-Connection.Info), [`Form.Answer`](https://opencode.ai/v2/docs/api#schema-Form.Answer)
+Schemas: [`Integration.Info`](https://opencode.ai/docs/api#schema-Integration.Info), [`Integration.Method`](https://opencode.ai/docs/api#schema-Integration.Method),
+[`Connection.Info`](https://opencode.ai/docs/api#schema-Connection.Info), [`Form.Answer`](https://opencode.ai/docs/api#schema-Form.Answer)
 
 ```ts
 interface IntegrationContext {
@@ -611,8 +611,8 @@ await ctx.mcp.reload()
 
 #### Reference
 
-Schemas: [`Mcp.Server`](https://opencode.ai/v2/docs/api#schema-Mcp.Server), [`Mcp.LocalConfigEncoded`](https://opencode.ai/v2/docs/api#schema-Mcp.LocalConfigEncoded),
-[`Mcp.RemoteConfigEncoded`](https://opencode.ai/v2/docs/api#schema-Mcp.RemoteConfigEncoded)
+Schemas: [`Mcp.Server`](https://opencode.ai/docs/api#schema-Mcp.Server), [`Mcp.LocalConfigEncoded`](https://opencode.ai/docs/api#schema-Mcp.LocalConfigEncoded),
+[`Mcp.RemoteConfigEncoded`](https://opencode.ai/docs/api#schema-Mcp.RemoteConfigEncoded)
 
 ```ts
 interface MCPContext {
@@ -640,7 +640,7 @@ const plugins = await ctx.plugin.list()
 
 #### Reference
 
-Schemas: [`Plugin.Info`](https://opencode.ai/v2/docs/api#schema-Plugin.Info), [`Plugin.Source`](https://opencode.ai/v2/docs/api#schema-Plugin.Source)
+Schemas: [`Plugin.Info`](https://opencode.ai/docs/api#schema-Plugin.Info), [`Plugin.Source`](https://opencode.ai/docs/api#schema-Plugin.Source)
 
 ```ts
 interface PluginContext {
@@ -677,8 +677,8 @@ await ctx.reference.reload()
 
 #### Reference
 
-Schemas: [`Reference.Info`](https://opencode.ai/v2/docs/api#schema-Reference.Info), [`Reference.LocalSource`](https://opencode.ai/v2/docs/api#schema-Reference.LocalSource),
-[`Reference.GitSource`](https://opencode.ai/v2/docs/api#schema-Reference.GitSource)
+Schemas: [`Reference.Info`](https://opencode.ai/docs/api#schema-Reference.Info), [`Reference.LocalSource`](https://opencode.ai/docs/api#schema-Reference.LocalSource),
+[`Reference.GitSource`](https://opencode.ai/docs/api#schema-Reference.GitSource)
 
 ```ts
 interface ReferenceContext {
@@ -830,9 +830,9 @@ await ctx.session.instructions.entry.remove({ sessionID, key: "deploy-target" })
 
 #### Reference
 
-Schemas: [`Session.Info`](https://opencode.ai/v2/docs/api#schema-Session.Info), [`Model.Ref`](https://opencode.ai/v2/docs/api#schema-Model.Ref),
-[`Session.Inbox.User`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.User), [`Session.Inbox.Synthetic`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.Synthetic),
-[`InstructionEntry.Info`](https://opencode.ai/v2/docs/api#schema-InstructionEntry.Info)
+Schemas: [`Session.Info`](https://opencode.ai/docs/api#schema-Session.Info), [`Model.Ref`](https://opencode.ai/docs/api#schema-Model.Ref),
+[`Session.Inbox.User`](https://opencode.ai/docs/api#schema-Session.Inbox.User), [`Session.Inbox.Synthetic`](https://opencode.ai/docs/api#schema-Session.Inbox.Synthetic),
+[`InstructionEntry.Info`](https://opencode.ai/docs/api#schema-InstructionEntry.Info)
 
 ```ts
 interface SessionContext {
@@ -903,7 +903,7 @@ await ctx.skill.reload()
 
 #### Reference
 
-Schema: [`Skill.Info`](https://opencode.ai/v2/docs/api#schema-Skill.Info)
+Schema: [`Skill.Info`](https://opencode.ai/docs/api#schema-Skill.Info)
 
 ```ts
 interface SkillContext {
@@ -1047,8 +1047,8 @@ that definition.
 
 #### Reference
 
-Schemas: [`Tool.Content`](https://opencode.ai/v2/docs/api#schema-Tool.Content), [`Tool.TextContent`](https://opencode.ai/v2/docs/api#schema-Tool.TextContent),
-[`Tool.FileContent`](https://opencode.ai/v2/docs/api#schema-Tool.FileContent)
+Schemas: [`Tool.Content`](https://opencode.ai/docs/api#schema-Tool.Content), [`Tool.TextContent`](https://opencode.ai/docs/api#schema-Tool.TextContent),
+[`Tool.FileContent`](https://opencode.ai/docs/api#schema-Tool.FileContent)
 
 ```ts
 interface ToolContext {
@@ -1106,8 +1106,8 @@ it, then rediscovers the project. New repository formats still need discovery su
 
 #### Reference
 
-Schemas: [`Vcs.Info`](https://opencode.ai/v2/docs/api#schema-Vcs.Info), [`Vcs.FileStatus`](https://opencode.ai/v2/docs/api#schema-Vcs.FileStatus),
-[`FileDiff.Info`](https://opencode.ai/v2/docs/api#schema-FileDiff.Info)
+Schemas: [`Vcs.Info`](https://opencode.ai/docs/api#schema-Vcs.Info), [`Vcs.FileStatus`](https://opencode.ai/docs/api#schema-Vcs.FileStatus),
+[`FileDiff.Info`](https://opencode.ai/docs/api#schema-FileDiff.Info)
 
 ```ts
 interface VcsContext {
@@ -1291,7 +1291,7 @@ await ctx.websearch.reload()
 
 #### Reference
 
-Schemas: [`WebSearch.Provider`](https://opencode.ai/v2/docs/api#schema-WebSearch.Provider), [`WebSearch.Result`](https://opencode.ai/v2/docs/api#schema-WebSearch.Result)
+Schemas: [`WebSearch.Provider`](https://opencode.ai/docs/api#schema-WebSearch.Provider), [`WebSearch.Result`](https://opencode.ai/docs/api#schema-WebSearch.Result)
 
 ```ts
 interface WebSearchContext {
@@ -1326,7 +1326,7 @@ return () => controller.abort()
 
 #### Reference
 
-Schema: [`V2EventEncoded`](https://opencode.ai/v2/docs/api#schema-V2EventEncoded)
+Schema: [`V2EventEncoded`](https://opencode.ai/docs/api#schema-V2EventEncoded)
 
 ```ts
 type EventType = Exclude<OpenCodeEvent["type"], "server.connected">

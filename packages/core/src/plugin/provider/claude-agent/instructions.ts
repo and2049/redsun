@@ -1,8 +1,11 @@
 export * as ClaudeInstructions from "./instructions.js"
 
 import type { SystemPart } from "@opencode/ai/effect"
-import type { Context } from "@opencode/plugin/effect/plugin"
+import { define, type Context } from "@opencode/plugin/effect/plugin"
 import { Effect, Option, Schema } from "effect"
+import { Config } from "../../../config.js"
+import { RedsunAttribution } from "../../redsun/attribution.js"
+import type { PluginInternal } from "../../internal.js"
 import { ClaudeSystemPrompt } from "./language-model/system-prompt.js"
 import { ClaudeProvider } from "./provider.js"
 
@@ -18,6 +21,7 @@ const InstructionsMetadata = Schema.Struct({
 const SUPPLIED_BY_CLAUDE = new Set(["core/date", "core/environment"])
 
 export const register = Effect.fn("ClaudeInstructions.register")(function* (ctx: Context) {
+  const config = yield* Config.Service
   yield* Effect.forEach(
     KINDS,
     (kind) =>
@@ -29,12 +33,28 @@ export const register = Effect.fn("ClaudeInstructions.register")(function* (ctx:
             // Read the role from the resolved agent, not by guessing which prompt text is a built-in.
             event.options[ClaudeSystemPrompt.AGENT_OPTION] = agent.data.system ?? ""
             event.options[ClaudeSystemPrompt.INSTRUCTIONS_OPTION] = instructions(event.system)
+            // REDSUN: redsun's attribution setting drives Claude Code's own, so the harness never adds its default trailer.
+            const commit = Config.latest(yield* config.entries(), "attribution")?.commit
+            event.options[ClaudeSystemPrompt.ATTRIBUTION_OPTION] = RedsunAttribution.claudeSettings(commit)
           }),
         { providerID: ClaudeProvider.ID },
       ),
     { discard: true },
   )
 })
+
+/**
+ * REDSUN: registered as the last internal plugin rather than from the provider plugin. Hooks run in
+ * registration order and this one copies `event.system` into Claude's appended instructions, so every
+ * system part a later plugin pushes (attribution, project-memory policy, context bounding) would
+ * otherwise be dropped for Claude.
+ */
+export const Plugin = define({
+  id: "redsun.claude-agent.instructions",
+  effect: Effect.fn("ClaudeInstructions.Plugin")(function* (ctx) {
+    yield* register(ctx)
+  }),
+} satisfies PluginInternal.InternalPlugin)
 
 // The first part is OpenCode's own prompt, which Claude Code's prompt replaces.
 function instructions(system: ReadonlyArray<SystemPart>) {

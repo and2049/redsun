@@ -281,7 +281,7 @@ effect: (ctx) =>
   }),
 ```
 
-Schema: [`Agent.Info`](https://opencode.ai/v2/docs/api#schema-Agent.Info).
+Schema: [`Agent.Info`](https://opencode.ai/docs/api#schema-Agent.Info).
 
 ```ts
 interface AgentEditor {
@@ -360,7 +360,7 @@ yield *
   })
 ```
 
-Schemas: [`Provider.Info`](https://opencode.ai/v2/docs/api#schema-Provider.Info), [`Model.Info`](https://opencode.ai/v2/docs/api#schema-Model.Info).
+Schemas: [`Provider.Info`](https://opencode.ai/docs/api#schema-Provider.Info), [`Model.Info`](https://opencode.ai/docs/api#schema-Model.Info).
 
 ```ts
 interface ProviderRecord {
@@ -439,7 +439,7 @@ effect: (ctx) =>
   }),
 ```
 
-Schema: [`Model.Info`](https://opencode.ai/v2/docs/api#schema-Model.Info).
+Schema: [`Model.Info`](https://opencode.ai/docs/api#schema-Model.Info).
 
 ```ts
 interface ModelEditor {
@@ -500,8 +500,8 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`Command.Info`](https://opencode.ai/v2/docs/api#schema-Command.Info),
-[`Session.Inbox.Delivery`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.Delivery).
+Schemas: [`Command.Info`](https://opencode.ai/docs/api#schema-Command.Info),
+[`Session.Inbox.Delivery`](https://opencode.ai/docs/api#schema-Session.Inbox.Delivery).
 
 ```ts
 interface CommandInvocation {
@@ -598,8 +598,8 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`Integration.Info`](https://opencode.ai/v2/docs/api#schema-Integration.Info), [`Integration.Method`](https://opencode.ai/v2/docs/api#schema-Integration.Method),
-[`Connection.Info`](https://opencode.ai/v2/docs/api#schema-Connection.Info), [`Form.Answer`](https://opencode.ai/v2/docs/api#schema-Form.Answer).
+Schemas: [`Integration.Info`](https://opencode.ai/docs/api#schema-Integration.Info), [`Integration.Method`](https://opencode.ai/docs/api#schema-Integration.Method),
+[`Connection.Info`](https://opencode.ai/docs/api#schema-Connection.Info), [`Form.Answer`](https://opencode.ai/docs/api#schema-Form.Answer).
 
 ```ts
 type IntegrationOAuthAuthorization = {
@@ -684,8 +684,8 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`Mcp.Server`](https://opencode.ai/v2/docs/api#schema-Mcp.Server), [`Mcp.LocalConfigEncoded`](https://opencode.ai/v2/docs/api#schema-Mcp.LocalConfigEncoded),
-[`Mcp.RemoteConfigEncoded`](https://opencode.ai/v2/docs/api#schema-Mcp.RemoteConfigEncoded).
+Schemas: [`Mcp.Server`](https://opencode.ai/docs/api#schema-Mcp.Server), [`Mcp.LocalConfigEncoded`](https://opencode.ai/docs/api#schema-Mcp.LocalConfigEncoded),
+[`Mcp.RemoteConfigEncoded`](https://opencode.ai/docs/api#schema-Mcp.RemoteConfigEncoded).
 
 ```ts
 interface MCPEditor {
@@ -729,7 +729,7 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`Plugin.Info`](https://opencode.ai/v2/docs/api#schema-Plugin.Info), [`Plugin.Source`](https://opencode.ai/v2/docs/api#schema-Plugin.Source).
+Schemas: [`Plugin.Info`](https://opencode.ai/docs/api#schema-Plugin.Info), [`Plugin.Source`](https://opencode.ai/docs/api#schema-Plugin.Source).
 
 ```ts
 interface PluginApi<E = never> {
@@ -771,8 +771,8 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`Reference.Info`](https://opencode.ai/v2/docs/api#schema-Reference.Info), [`Reference.LocalSource`](https://opencode.ai/v2/docs/api#schema-Reference.LocalSource),
-[`Reference.GitSource`](https://opencode.ai/v2/docs/api#schema-Reference.GitSource).
+Schemas: [`Reference.Info`](https://opencode.ai/docs/api#schema-Reference.Info), [`Reference.LocalSource`](https://opencode.ai/docs/api#schema-Reference.LocalSource),
+[`Reference.GitSource`](https://opencode.ai/docs/api#schema-Reference.GitSource).
 
 ```ts
 interface ReferenceEditor {
@@ -874,10 +874,10 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`Session.Info`](https://opencode.ai/v2/docs/api#schema-Session.Info), [`Model.Ref`](https://opencode.ai/v2/docs/api#schema-Model.Ref),
-[`Session.Inbox.User`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.User),
-[`Session.Inbox.Synthetic`](https://opencode.ai/v2/docs/api#schema-Session.Inbox.Synthetic),
-[`InstructionEntry.Info`](https://opencode.ai/v2/docs/api#schema-InstructionEntry.Info).
+Schemas: [`Session.Info`](https://opencode.ai/docs/api#schema-Session.Info), [`Model.Ref`](https://opencode.ai/docs/api#schema-Model.Ref),
+[`Session.Inbox.User`](https://opencode.ai/docs/api#schema-Session.Inbox.User),
+[`Session.Inbox.Synthetic`](https://opencode.ai/docs/api#schema-Session.Inbox.Synthetic),
+[`InstructionEntry.Info`](https://opencode.ai/docs/api#schema-InstructionEntry.Info).
 
 ```ts
 type SessionDomain = Pick<
@@ -938,7 +938,7 @@ effect: (ctx) =>
   }),
 ```
 
-Schema: [`Skill.Info`](https://opencode.ai/v2/docs/api#schema-Skill.Info).
+Schema: [`Skill.Info`](https://opencode.ai/docs/api#schema-Skill.Info).
 
 ```ts
 interface SkillEditor {
@@ -1060,8 +1060,8 @@ Each model request captures a tool snapshot. Reload and disposal affect future s
 executors already captured by an existing request. Executors that close over mutable plugin data still observe
 that data; capture a value inside the transform when it must remain tied to that definition.
 
-Schemas: [`Tool.Content`](https://opencode.ai/v2/docs/api#schema-Tool.Content), [`Tool.TextContent`](https://opencode.ai/v2/docs/api#schema-Tool.TextContent),
-[`Tool.FileContent`](https://opencode.ai/v2/docs/api#schema-Tool.FileContent).
+Schemas: [`Tool.Content`](https://opencode.ai/docs/api#schema-Tool.Content), [`Tool.TextContent`](https://opencode.ai/docs/api#schema-Tool.TextContent),
+[`Tool.FileContent`](https://opencode.ai/docs/api#schema-Tool.FileContent).
 
 ```ts
 interface ToolEditor {
@@ -1128,8 +1128,8 @@ the provider by ID (Git by default), not by the detected repository type. Regist
 the location has no repository yet; redsun checks that the directory exists and has no repository before calling
 it, then rediscovers the project. New repository formats still need discovery support beyond this callback.
 
-Schemas: [`Vcs.Info`](https://opencode.ai/v2/docs/api#schema-Vcs.Info), [`Vcs.FileStatus`](https://opencode.ai/v2/docs/api#schema-Vcs.FileStatus),
-[`FileDiff.Info`](https://opencode.ai/v2/docs/api#schema-FileDiff.Info).
+Schemas: [`Vcs.Info`](https://opencode.ai/docs/api#schema-Vcs.Info), [`Vcs.FileStatus`](https://opencode.ai/docs/api#schema-Vcs.FileStatus),
+[`FileDiff.Info`](https://opencode.ai/docs/api#schema-FileDiff.Info).
 
 ```ts
 interface VcsEditor {
@@ -1185,8 +1185,8 @@ effect: (ctx) =>
   }),
 ```
 
-Schemas: [`WebSearch.Provider`](https://opencode.ai/v2/docs/api#schema-WebSearch.Provider),
-[`WebSearch.Result`](https://opencode.ai/v2/docs/api#schema-WebSearch.Result).
+Schemas: [`WebSearch.Provider`](https://opencode.ai/docs/api#schema-WebSearch.Provider),
+[`WebSearch.Result`](https://opencode.ai/docs/api#schema-WebSearch.Result).
 
 ```ts
 interface WebSearchDefinition {
@@ -1239,7 +1239,7 @@ effect: (ctx) =>
   }),
 ```
 
-Schema: [`V2EventEncoded`](https://opencode.ai/v2/docs/api#schema-V2EventEncoded).
+Schema: [`V2EventEncoded`](https://opencode.ai/docs/api#schema-V2EventEncoded).
 
 ```ts
 type EventType = Exclude<OpenCodeEvent["type"], "server.connected">

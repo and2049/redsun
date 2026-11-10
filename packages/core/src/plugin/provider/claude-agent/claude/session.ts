@@ -5,6 +5,7 @@ import type { Options, SDKMessage, SDKResultMessage, SDKUserMessage } from "@ant
 import { ToolNames } from "../tools/names.js"
 import { ClaudeProbe } from "./probe.js"
 import { ClaudeSDK } from "./sdk.js"
+import type { RedsunAttribution } from "../../../redsun/attribution.js"
 
 interface Turn {
   readonly drained: PromiseWithResolvers<void>
@@ -158,5 +159,6 @@ export async function start(options: Options) {
     stop,
     setModel: (model: string) => session.setModel(model),
     setEffort: (effort: Options["effort"]) => session.applyFlagSettings({ effortLevel: effort ?? null }),
+    setAttribution: (attribution: RedsunAttribution.ClaudeSettings) => session.applyFlagSettings({ attribution }),
   }
 }

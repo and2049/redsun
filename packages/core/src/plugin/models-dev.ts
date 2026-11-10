@@ -12,6 +12,7 @@ const BEDROCK_PROFILE_ONLY_IDS = [
   "amazon.nova-2-lite-v1:0",
   "anthropic.claude-fable-5",
   "anthropic.claude-fable-5-1",
+  "anthropic.claude-fable-5-2",
   "anthropic.claude-haiku-4-5-20251001-v1:0",
   "anthropic.claude-haiku-5-5",
   "anthropic.claude-opus-4-1-20250805-v1:0",

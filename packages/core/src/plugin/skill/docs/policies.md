@@ -2,7 +2,7 @@
 
 Policies decide whether redsun may perform an action on a named resource. They are
 authored under `policies` and can also be delivered by a connected
-[OpenCode Console](https://opencode.ai/v2/docs/console) workspace.
+[OpenCode Console](https://opencode.ai/docs/console) workspace.
 
 Policies are separate from [permissions](permissions.md). Permissions are per-agent tool
 rules that can `allow`, `deny`, or `ask`. Policies are binary, never prompt, and only
@@ -37,11 +37,11 @@ merges into `policies`:
 
 Each statement has three fields:
 
-| Field      | Values                                                                                                     | Meaning                                              |
-| ---------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `action`   | `provider.use`, `tool.use`, `integration.connect`, `integration.use`, `mcp.use`, `skill.use`, `plugin.use` | The operation being controlled                       |
-| `resource` | string or wildcard pattern                                                                                 | What the statement applies to; depends on the action |
-| `effect`   | `allow`, `deny`                                                                                            | The decision when this statement matches             |
+| Field      | Values                                                                                                                      | Meaning                                              |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `action`   | `provider.use`, `tool.use`, `integration.connect`, `integration.use`, `mcp.use`, `skill.use`, `plugin.use`, `websearch.use` | The operation being controlled                       |
+| `resource` | string or wildcard pattern                                                                                                  | What the statement applies to; depends on the action |
+| `effect`   | `allow`, `deny`                                                                                                             | The decision when this statement matches             |
 
 Statements that fail validation are dropped with a warning in the server log and
 the rest of the list still applies. Check the log after editing a `deny`.
@@ -240,6 +240,26 @@ Clients older than 2.2.3 ignore `integration.connect`, `integration.use` (in its
 meaning), `mcp.use`, `skill.use`, and `plugin.use`, so require 2.2.3 or newer
 wherever you rely on them.
 
+## Web search
+
+`websearch.use` controls the web search providers the `websearch` tool can use. The
+resource is the provider ID: `opencode` for redsun Web Search from the Console, a
+built-in provider such as `exa`, `firecrawl`, `parallel`, `tavily`, or `tinyfish`, or
+the ID of a provider a plugin adds.
+
+```jsonc
+{
+  "policies": [
+    { "action": "websearch.use", "resource": "*", "effect": "deny" },
+    { "action": "websearch.use", "resource": "opencode", "effect": "allow" },
+  ],
+}
+```
+
+Denied providers are removed even when they work without an API key, such as Exa and
+TinyFish. When every provider is denied, the `websearch` tool is no longer offered.
+Clients older than 2.2.6 ignore `websearch.use`.
+
 ## Precedence
 
 Ordinary settings let the nearest configuration win. Policies reverse that: statements
@@ -273,7 +293,7 @@ A repository cannot re-enable a provider you deny globally:
 
 ## Console
 
-A workspace on the [OpenCode Console](https://opencode.ai/v2/docs/console) compiles its Providers and Tools
+A workspace on the [OpenCode Console](https://opencode.ai/docs/console) compiles its Providers and Tools
 policies into regular `policies` statements in the workspace configuration. redsun
 merges that configuration like a configuration file that ranks right below managed
 preferences and the system file, so an organization `deny` cannot be lifted by a
