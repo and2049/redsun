@@ -82,6 +82,7 @@ import { RedsunProjectMemory } from "./redsun/project-memory.js"
 import { RedsunContextOptimizer } from "./redsun/context-optimizer.js"
 import { RedsunAdvisor } from "./redsun/advisor.js"
 import { RedsunAttribution } from "./redsun/attribution.js"
+import { ClaudeInstructions } from "./provider/claude-agent/instructions.js"
 import { RedsunTodo } from "./redsun/todo.js"
 import { RedsunMultiedit } from "./redsun/multiedit.js"
 import { RedsunWorkerModelTool } from "./redsun/worker-model-tool.js"
@@ -322,6 +323,8 @@ const post = [
   RedsunTodo.Plugin,
   RedsunMultiedit.Plugin,
   RedsunMultiedit.LegacyFoldPlugin,
+  // Last: it copies the system parts every plugin above pushed into Claude Code's appended instructions.
+  ClaudeInstructions.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 // Repository config must not switch off policy enforcement or the Console connection that delivers

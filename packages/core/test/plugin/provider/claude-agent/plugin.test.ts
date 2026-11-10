@@ -8,7 +8,9 @@ import type { ClaudeIO } from "@opencode/core/plugin/provider/claude-agent/claud
 import { ClaudeSessions } from "@opencode/core/plugin/provider/claude-agent/claude/sessions"
 import { RequestKind } from "@opencode/core/plugin/provider/claude-agent/language-model/request-kind"
 import { ClaudeSystemPrompt } from "@opencode/core/plugin/provider/claude-agent/language-model/system-prompt"
+import { ClaudeInstructions } from "@opencode/core/plugin/provider/claude-agent/instructions"
 import { ClaudeIntegration } from "@opencode/core/plugin/provider/claude-agent/integration"
+import { RedsunAttribution } from "@opencode/core/plugin/redsun/attribution"
 import { ClaudeProvider } from "@opencode/core/plugin/provider/claude-agent/provider"
 import { Credential } from "@opencode/core/credential"
 import { Database } from "@opencode/core/database/database"
@@ -27,7 +29,7 @@ import { Provider } from "@opencode/core/provider"
 import { Session } from "@opencode/core/session"
 import { SessionInbox } from "@opencode/core/session/inbox"
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, type Scope } from "effect"
 import { FakeClaude } from "./lib/fake-claude"
 import { FakeIO } from "./lib/fake-io"
 import { TestSessions } from "./lib/sessions"
@@ -40,11 +42,15 @@ const integrationID = Integration.ID.make(ClaudeProvider.ID)
 const haiku = Model.Ref.make({ providerID: ClaudeProvider.ID, id: Model.ID.make("haiku") })
 
 // The registry outlives the plugin's scope in opencode, so each test closes its own, as an exiting opencode would.
-const addPlugin = Effect.fn(function* (io: ClaudeIO.Interface) {
+// The provider registers early and `ClaudeInstructions.Plugin` last, as `internal.ts` orders them; `between`
+// stands in for the plugins activated in between.
+const addPlugin = Effect.fn(function* (io: ClaudeIO.Interface, between?: Effect.Effect<void, never, Scope.Scope>) {
   const registry = ClaudeSessions.registry()
   yield* Effect.addFinalizer(() => registry.close())
   const host = yield* PluginHost.make(yield* Plugin.Service, ID)
   yield* make(io, registry).effect(host)
+  if (between) yield* between
+  yield* ClaudeInstructions.Plugin.effect(yield* PluginHost.make(yield* Plugin.Service, ClaudeInstructions.Plugin.id))
   return registry
 })
 
@@ -432,6 +438,40 @@ describe("ClaudeAgentPlugin session hooks", () => {
       ]
       const context = yield* hooks.trigger("session", "context", event)
       expect(context.options[ClaudeSystemPrompt.INSTRUCTIONS_OPTION]).toBe("SKILLS\n\nENTRY\n\nPLUGIN-PART")
+    }),
+  )
+
+  // REDSUN: hooks run in registration order, so the instructions hook must register after every plugin
+  // that pushes system parts (attribution, project-memory policy); the provider plugin alone ran first.
+  it.live("includes system parts that plugins activated after the provider push", () =>
+    Effect.gen(function* () {
+      const hooks = yield* PluginHooks.Service
+      const late = hooks
+        .register("session", "context", (event) =>
+          Effect.sync(() => {
+            event.system.push(SystemPart.make("LATE-PLUGIN-PART"))
+          }),
+        )
+        .pipe(Effect.asVoid)
+      yield* addPlugin(FakeIO.make({ claude: FakeClaude.make([]) }), late)
+      yield* addAgents
+      const event = hookEvent((yield* newSession).id)
+      event.system = [SystemPart.make("OPENCODE-PROMPT")]
+      const context = yield* hooks.trigger("session", "context", event)
+      expect(context.options[ClaudeSystemPrompt.INSTRUCTIONS_OPTION]).toBe("LATE-PLUGIN-PART")
+    }),
+  )
+
+  it.live("sets Claude Code's attribution to the empty default when attribution.commit is unset", () =>
+    Effect.gen(function* () {
+      yield* addPlugin(FakeIO.make({ claude: FakeClaude.make([]) }))
+      yield* addAgents
+      const hooks = yield* PluginHooks.Service
+      const session = yield* newSession
+      for (const kind of ["context", "generate", "compaction"] as const) {
+        const event = yield* hooks.trigger("session", kind, hookEvent(session.id))
+        expect(event.options[ClaudeSystemPrompt.ATTRIBUTION_OPTION]).toEqual(RedsunAttribution.CLAUDE_EMPTY)
+      }
     }),
   )
 

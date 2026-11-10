@@ -21,6 +21,36 @@ const TRAILER_PATTERN = /co-authored-by:/i
 export const trailer = (commit: boolean | string | undefined) =>
   commit === true ? DEFAULT_TRAILER : typeof commit === "string" && commit.trim() ? commit.trim() : undefined
 
+/**
+ * Claude Code's own `attribution` setting, for sessions the Claude Agent provider runs. The harness
+ * appends this text to commits and pull requests it creates; empty strings hide it. Redsun never
+ * passes Claude Code's default (`Co-Authored-By: Claude`): off or unset is explicitly empty.
+ */
+// A type alias (not an interface) so it satisfies the SDK's index-signature settings type.
+export type ClaudeSettings = {
+  readonly commit: string
+  readonly pr: string
+  readonly sessionUrl: false
+}
+
+export const CLAUDE_EMPTY: ClaudeSettings = { commit: "", pr: "", sessionUrl: false }
+
+export const claudeSettings = (commit: boolean | string | undefined): ClaudeSettings => {
+  const line = trailer(commit)
+  return line ? { ...CLAUDE_EMPTY, commit: line } : CLAUDE_EMPTY
+}
+
+const isClaudeSettings = (value: unknown): value is ClaudeSettings =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as ClaudeSettings).commit === "string" &&
+  typeof (value as ClaudeSettings).pr === "string" &&
+  (value as ClaudeSettings).sessionUrl === false
+
+/** Reads a provider option back into settings; anything else means "not set" (the empty default). */
+export const parseClaudeSettings = (value: unknown): ClaudeSettings | undefined =>
+  isClaudeSettings(value) ? value : undefined
+
 export const instruction = (commit: boolean | string | undefined, messages: ReadonlyArray<Message>) => {
   const line = trailer(commit)
   if (line) return `When you create a git commit, end the commit message with this trailer on its own line:\n${line}`
