@@ -16,9 +16,9 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Form } from "@opencode/core/form"
 import { Generate } from "@opencode/core/generate"
+import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { Integration } from "@opencode/core/integration"
 import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
-import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
 import { Job } from "@opencode/core/job"
 import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
@@ -30,6 +30,7 @@ import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { Provider } from "@opencode/core/provider"
 import { Session } from "@opencode/core/session"
 import { SessionStore } from "@opencode/core/session/store"
+import { SharedCache } from "@opencode/core/shared-cache"
 import { InstructionEntry } from "@opencode/core/session/instruction-entry"
 import { PersistentPty } from "@opencode/core/persistent-pty"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
@@ -117,6 +118,7 @@ export const makePluginTestLayer = (permission?: typeof permissionLayer, generat
       Provider.node,
       Model.node,
       Command.node,
+      InstructionDiscovery.node,
       Integration.node,
       InstructionBuiltIns.node,
       // REDSUN: the delegate domain's host context reads discovered instructions (`PluginHost.requirements`).
@@ -126,6 +128,7 @@ export const makePluginTestLayer = (permission?: typeof permissionLayer, generat
       Mcp.node,
       Session.node,
       SessionStore.node,
+      SharedCache.node,
       InstructionEntry.node,
       PersistentPty.node,
       LocationServiceMap.node,

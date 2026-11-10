@@ -57,7 +57,7 @@ See [Config](config.md) for configuration locations and precedence.
 
 ## Free models
 
-Set `OPENCODE_DISABLE_FREE_MODELS=1` (or `true`) on the server process to hide [free redsun models](https://opencode.ai/v2/docs/console/models#free-models):
+Set `OPENCODE_DISABLE_FREE_MODELS=1` (or `true`) on the server process to hide [free redsun models](https://opencode.ai/docs/console/models#free-models):
 
 ```bash
 OPENCODE_DISABLE_FREE_MODELS=1 redsun serve

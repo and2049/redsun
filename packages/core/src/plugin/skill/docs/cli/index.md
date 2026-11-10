@@ -54,7 +54,7 @@ This stops the running background service. `--server` still connects to an expli
 can still start the shared service explicitly. To return to automatic service use, run `redsun service unset disabled`.
 Pairing requires the shared service and is unavailable while it is disabled.
 
-See [Troubleshooting](../troubleshooting.md) for shared service diagnostics and the [API reference](https://opencode.ai/v2/docs/api) for server endpoints.
+See [Troubleshooting](../troubleshooting.md) for shared service diagnostics and the [API reference](https://opencode.ai/docs/api) for server endpoints.
 
 ## Paths
 

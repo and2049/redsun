@@ -180,8 +180,7 @@ function DialogConnectedModels(props: {
         .map((model) => {
           const provider = providers().get(model.providerID)
           const value = { providerID: model.providerID, modelID: model.id }
-          // Users with nothing connected can only favorite models in the free picker (new designs); this picker keeps them unavailable.
-          const favorite = connected() && isFavorite(value)
+          const favorite = isFavorite(value)
           return {
             value,
             providerID: model.providerID,
@@ -233,6 +232,7 @@ function DialogConnectedModels(props: {
       return results.map((option) => ({ ...option, description: option.providerName, category: undefined }))
     }
 
+    if (!connected()) return prioritizeFavorites(modelOptions, favoritePriority)
     if (!showSections) return [...favoriteOptions, ...recentOptions, ...modelOptions]
 
     // REDSUN: providers fold into expandable sections; the free group (new designs) trails them.
@@ -299,7 +299,6 @@ function DialogConnectedModels(props: {
         {
           command: "model.dialog.favorite",
           title: newDesigns() ? (option) => (isFavorite(option?.value) ? "unfavorite" : "favorite") : t("ui.favorite"),
-          hidden: !connected(),
           disabled: (option) => !option || !(option.value as { modelID?: string }).modelID,
           onTrigger: (option) => {
             const value = option.value as { providerID: string; modelID?: string }

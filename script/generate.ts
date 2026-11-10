@@ -5,3 +5,5 @@ import { $ } from "bun"
 await $`bun run generate`.cwd("packages/protocol")
 
 await $`bun run generate`.cwd("packages/client")
+
+await $`./script/format.ts`

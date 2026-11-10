@@ -44,7 +44,7 @@ Use a `data:` URL to send content inline:
 ```
 
 HTTP and HTTPS attachment URLs are not supported. See the generated
-[API reference](https://opencode.ai/v2/docs/api) for programmatic prompt submission.
+[API reference](https://opencode.ai/docs/api) for programmatic prompt submission.
 
 ## Formats
 

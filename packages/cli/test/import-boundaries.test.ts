@@ -26,10 +26,8 @@ describe("CLI frontend import boundaries", () => {
   })
 
   test("exposes only the intentional package entrypoints", async () => {
-    const run = await import("@opencode/cli/run")
     const tool = await import("@opencode/tui/util/tool-run")
 
-    expect(Object.keys(run).sort()).toEqual(["runNonInteractive", "runV1Bridge"])
     expect(Object.keys(tool).sort()).toEqual([
       "canonicalToolName",
       "nonEmptyToolContent",

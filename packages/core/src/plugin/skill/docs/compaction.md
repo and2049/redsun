@@ -48,7 +48,7 @@ redsun api post /api/session/ses_example/compact --data '{}'
 The `api` command discovers and authenticates with the background service. Its
 response confirms the request was accepted; it does not wait for the summary.
 Follow `session.compaction.*` events to learn when it finishes. See the
-[API reference](https://opencode.ai/v2/docs/api) for the full operation.
+[API reference](https://opencode.ai/docs/api) for the full operation.
 
 | Rule       | Behavior                                                            |
 | ---------- | ------------------------------------------------------------------- |
@@ -133,17 +133,21 @@ writes the summary ahead of time and swaps it in when compaction is due:
 ```
 
 ```text
-85% of the threshold   summary of the conversation so far starts in the background
-                       the session keeps going; the summary is held, not applied
-threshold              the held summary is swapped in; everything since it is kept as is
+60k tokens before the threshold   summary of the conversation so far starts in the background
+                                  the session keeps going; the summary is held, not applied
+threshold                         the held summary is swapped in; everything since it is kept as is
 ```
 
-| Rule       | Behavior                                                                                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Cost       | The summary request reuses the prompt cache. A summary that is never used still costs tokens.                                                                |
-| Falls back | Compaction summarizes as usual if too much conversation arrived since the held summary, or if the model, instructions, or start of the conversation changed. |
-| Skipped    | Not used for native compaction, in sessions under about 64k tokens, right after a model switch, or when a provider rejects a request as too long.            |
-| Storage    | Held summaries live in memory and are lost on restart.                                                                                                       |
+On small context windows, the summary starts at most halfway between the first response after the last compaction
+and the threshold.
+
+| Rule       | Behavior                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cost       | The summary request reuses the prompt cache. A summary that is never used, for example because the session ends before the threshold, still costs tokens.                                                    |
+| Waits      | If the summary is still being written when compaction is due, the session waits for it to finish.                                                                                                            |
+| Falls back | Compaction summarizes as usual if the conversation since the held summary grew past about 40% of the threshold, or if the model, instructions, or start of the conversation changed.                         |
+| Skipped    | Not used for native compaction, right after a model switch, or when a provider rejects a request as too long. After a break longer than the prompt cache lifetime, it starts from the next response instead. |
+| Storage    | Held summaries live in memory and are lost on restart.                                                                                                                                                       |
 
 ## Providers
 

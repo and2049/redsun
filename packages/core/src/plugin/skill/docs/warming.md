@@ -36,7 +36,7 @@ window:
 | Field      | Default                | Purpose                                                                                                                                     |
 | ---------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `prompt`   | Keep-alive instruction | Appended as a transient user message for each warming request. The default asks the model to do no work, use no tools, and reply with `OK`. |
-| `interval` | `"4 minutes"`          | Idle time before the next warming request.                                                                                                  |
+| `interval` | `"4 minutes"`          | Idle time before the next warming request, or `"auto"`.                                                                                     |
 | `duration` | `"30 minutes"`         | Warming window measured from the latest non-warming model request.                                                                          |
 
 Omitted object fields keep their defaults. For example, this changes only the
@@ -50,10 +50,31 @@ interval:
 }
 ```
 
+## Automatic interval
+
+Set `interval` to `"auto"` to warm just before each model's prompt cache
+expires. redsun uses 90% of the model's [`cache.ttl`](config.md) setting, so a
+`"5m"` cache is warmed every 4.5 minutes. Models without a `cache.ttl` are not
+warmed.
+
+```jsonc title="redsun.jsonc"
+{
+  "warming": { "interval": "auto", "duration": "2 hours" },
+  "providers": {
+    "anthropic": { "settings": { "cache": { "ttl": "1h" } } },
+  },
+}
+```
+
+The interval must be shorter than `duration`, so raise `duration` for long
+cache lifetimes such as `"1h"`. Otherwise redsun skips warming and logs a
+warning.
+
 ## Durations
 
 `interval` and `duration` accept duration strings. Both must resolve to finite
-values greater than zero; otherwise redsun skips warming and logs a warning.
+values greater than zero, and `interval` must be shorter than `duration`;
+otherwise redsun skips warming and logs a warning.
 
 ```jsonc title="redsun.jsonc"
 {

@@ -80,7 +80,7 @@ const runtime = (turns: Array<{ turn: DelegatedTurn; options: LanguageModelV3Cal
 
 const register = (value: Runtime) =>
   Effect.gen(function* () {
-    const host = yield* PluginHost.make(yield* Plugin.Service)
+    const host = yield* PluginHost.make(yield* Plugin.Service, "test")
     return yield* host.delegate.register(value)
   })
 
@@ -145,16 +145,16 @@ describe("delegated runtime registration", () => {
     Effect.gen(function* () {
       yield* register(runtime([]))
       const owned = yield* prepare(OWNED, "primary", "ses_parent")
-      expect(owned.request.http?.headers).toMatchObject({
+      expect(owned.request.headers).toMatchObject({
         "x-opencode-session-id": "ses_delegate",
         "x-opencode-parent-session-id": "ses_parent",
         "x-redsun-delegate-agent": "build",
         "x-redsun-delegate-kind": "primary",
       })
       const title = yield* prepare(OWNED, "title")
-      expect(title.request.http?.headers).toMatchObject({ "x-redsun-delegate-kind": "title" })
+      expect(title.request.headers).toMatchObject({ "x-redsun-delegate-kind": "title" })
       const other = yield* prepare("other-provider", "primary")
-      expect(Object.keys(other.request.http?.headers ?? {}).some((key) => key.startsWith("x-redsun-delegate"))).toBe(
+      expect(Object.keys(other.request.headers ?? {}).some((key) => key.startsWith("x-redsun-delegate"))).toBe(
         false,
       )
     }),
@@ -175,7 +175,7 @@ describe("delegated runtime registration", () => {
       yield* Effect.promise(() =>
         language.doStream({
           prompt: [],
-          headers: { ...prepared.request.http?.headers, "x-redsun-delegate-message": "msg_step" },
+          headers: { ...prepared.request.headers, "x-redsun-delegate-message": "msg_step" },
         }),
       )
 
@@ -218,7 +218,7 @@ describe("delegated runtime registration", () => {
       yield* Scope.close(scope, { _tag: "Success", value: undefined } as never)
       expect(yield* delegates.owns({ providerID: OWNED })).toBe(false)
       const untagged = yield* prepare(OWNED, "primary")
-      expect(untagged.request.http?.headers?.["x-redsun-delegate-kind"]).toBeUndefined()
+      expect(untagged.request.headers?.["x-redsun-delegate-kind"]).toBeUndefined()
     }),
   )
 })
@@ -228,14 +228,14 @@ describe("delegated runtime host capabilities", () => {
     Effect.gen(function* () {
       const base = yield* Permission.Service
       const plugin = yield* Plugin.Service
-      return yield* PluginHost.make(plugin).pipe(
+      return yield* PluginHost.make(plugin, "test").pipe(
         Effect.provideService(Permission.Service, Permission.Service.of({ ...base, ...permission })),
       )
     })
 
   it.effect("keeps runtime storage under the stable redsun.<id> prefix", () =>
     Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
       const storage = host.delegate.storage("fake-agent")
       yield* storage.set("-session/ses_1", "cursor_1")
       expect(yield* (yield* KV.Service).get("redsun.fake-agent-session/ses_1")).toBe("cursor_1")
@@ -284,7 +284,7 @@ describe("delegated runtime host capabilities", () => {
     it.effect(`settles a bound host question on ${settle}, attributed to the call, and refuses a late reply`, () =>
       Effect.gen(function* () {
         yield* registerToolPlugin(QuestionTool.Plugin)
-        const host = yield* PluginHost.make(yield* Plugin.Service)
+        const host = yield* PluginHost.make(yield* Plugin.Service, "test")
         const forms = yield* Form.Service
         const agents = yield* AgentService.Service
         yield* agents.transform((editor) =>
@@ -333,7 +333,7 @@ describe("delegated runtime host capabilities", () => {
 
   it.effect("binds tools only for a live session and agent", () =>
     Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
       const missingSession = yield* Effect.flip(
         host.delegate.tools.bind({ sessionID: "ses_missing", agent: "build", messageID: "msg_1" }),
       )
@@ -378,7 +378,7 @@ describe("delegated runtime host capabilities", () => {
 
   it.effect("builds the base prompt a native agent would get, split static/dynamic", () =>
     Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
       const agents = yield* AgentService.Service
       yield* agents.transform((editor) =>
         editor.update("delegate-test" as never, (agent) => {

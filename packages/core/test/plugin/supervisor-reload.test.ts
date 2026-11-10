@@ -82,10 +82,11 @@ const instances = Layer.effect(
 ).pipe(Layer.provide(Watcher.testLayer))
 
 const it = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([Database.node, Bus.node, SdkPlugins.node, LocationServiceMap.node]),
-    [Global.node.replace(tempGlobalLayer), offlineModels, LocationServiceMap.node.replace(instances)],
-  ).pipe(Layer.provideMerge(Watcher.testLayer)),
+  AppNodeBuilder.build(LayerNode.group([Database.node, Bus.node, SdkPlugins.node, LocationServiceMap.node]), [
+    Global.node.replace(tempGlobalLayer),
+    offlineModels,
+    LocationServiceMap.node.replace(instances),
+  ]).pipe(Layer.provideMerge(Watcher.testLayer)),
 )
 
 const greeter = (command: string) => `export default {
@@ -359,12 +360,12 @@ it.live("applies organization integration changes to running external plugins", 
         }),
       )
     })
+    const watcher = yield* Watcher.Test
     const locations = yield* LocationServiceMap.Service
     yield* Effect.gen(function* () {
       const plugins = yield* Plugin.Service
       const commands = yield* Command.Service
       const config = yield* Config.Service
-      const watcher = yield* Watcher.Test
       yield* plugins.awaitActivation
       expect(yield* commands.get("policy-greet")).toBeUndefined()
       expect(yield* Effect.promise(() => Bun.file(entered).exists())).toBe(false)

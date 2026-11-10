@@ -1,6 +1,14 @@
 export * as RedsunContextOptimizer from "./context-optimizer.js"
 
-import { Message, type ContentPart, type SystemPart } from "@opencode/ai"
+import {
+  AssistantMessage,
+  SystemMessage,
+  ToolMessage,
+  UserMessage,
+  type ContentPart,
+  type Message,
+  type SystemPart,
+} from "@opencode/ai"
 import { Document, type Entry } from "@opencode/schema/config"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
@@ -17,6 +25,20 @@ const json = (value: unknown) => {
     return JSON.stringify(value) ?? ""
   } catch {
     return "[unserializable context item]"
+  }
+}
+
+/** Rebuilds a message of the same role with mapped content; the role classes carry no other fields to preserve. */
+const withContent = (message: Message, map: (part: ContentPart) => ContentPart): Message => {
+  switch (message.role) {
+    case "system":
+      return new SystemMessage({ ...message, content: message.content.map(map) as SystemMessage["content"] })
+    case "user":
+      return new UserMessage({ ...message, content: message.content.map(map) as UserMessage["content"] })
+    case "assistant":
+      return new AssistantMessage({ ...message, content: message.content.map(map) as AssistantMessage["content"] })
+    case "tool":
+      return new ToolMessage({ ...message, content: message.content.map(map) as ToolMessage["content"] })
   }
 }
 
@@ -48,18 +70,11 @@ export const dedupeStaleReads = (messages: Array<Message>, minChars = STALE_READ
   if (results.reduce((total, part) => total + json(part).length, 0) < minChars) return messages
   return messages.map((message) => {
     if (!message.content.some((part) => part.type === "tool-result" && stale.has(part.id))) return message
-    const content = message.content.map((part) =>
+    return withContent(message, (part) =>
       part.type === "tool-result" && stale.has(part.id)
         ? staleRead(part, ReadLocator.path(inputs.get(part.id)) ?? "the same file")
         : part,
     )
-    return Message.make({
-      id: message.id,
-      role: message.role,
-      content,
-      metadata: message.metadata,
-      native: message.native,
-    })
   })
 }
 
@@ -130,16 +145,9 @@ export const instructionMaxChars = (entries: readonly Entry[]) =>
 
 const boundMessage = (message: Message, maxChars: number) => {
   if (!message.content.some((part) => part.type === "text" && part.text.includes(INSTRUCTION_HEADER))) return message
-  const content = message.content.map((part) =>
+  return withContent(message, (part) =>
     part.type === "text" ? { ...part, text: boundInstructionText(part.text, maxChars) } : part,
   )
-  return Message.make({
-    id: message.id,
-    role: message.role,
-    content,
-    metadata: message.metadata,
-    native: message.native,
-  })
 }
 
 const boundSystem = (part: SystemPart, maxChars: number): SystemPart =>

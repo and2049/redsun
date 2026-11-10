@@ -73,7 +73,7 @@ const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
 describe("ACP runtime plugin through the real host", () => {
   it.effect("lists the models the agent reports once it has discovered them", () =>
     Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
       yield* AcpPlugin.effect({
         ...host,
         options: {
@@ -96,7 +96,7 @@ describe("ACP runtime plugin through the real host", () => {
 
   it.effect("offers each reported model's effort levels as variants", () =>
     Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
       yield* AcpPlugin.effect({
         ...host,
         options: {
@@ -124,7 +124,7 @@ describe("ACP runtime plugin through the real host", () => {
 
   it.effect("registers its agent as a delegated provider and answers a tagged request", () =>
     Effect.gen(function* () {
-      const host = yield* PluginHost.make(yield* Plugin.Service)
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
       yield* AcpPlugin.effect({
         ...host,
         options: {
@@ -175,7 +175,7 @@ describe("ACP runtime plugin through the real host", () => {
           (
             await language.doStream({
               prompt: [{ role: "user", content: [{ type: "text", text: "echo from the host" }] }],
-              headers: prepared.request.http?.headers,
+              headers: prepared.request.headers,
             })
           ).stream,
         ),

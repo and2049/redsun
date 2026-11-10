@@ -51,7 +51,7 @@ export const Plugin = define({
           id: Skill.ID.make("report"),
           name: Skill.Name.make("Report"),
           description: REPORT_DESCRIPTION,
-          path: AbsolutePath.make("/builtin/report.md"),
+          path: AbsolutePath.make("skill://report/SKILL.md"),
           content: reportContent,
         }),
       )

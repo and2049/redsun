@@ -13,7 +13,7 @@ translated to redsun naming, under:
 Before answering a question about a topic below, read the page named in that
 section with the `read` tool and use the full page as the reference. Follow
 relative links inside a page when the question needs more detail. Every page
-also exists online at <https://opencode.ai/v2/docs/> under the same path
+also exists online at <https://opencode.ai/docs/> under the same path
 without the `.md` suffix; use the online copy only when the local file is
 missing or the user asks for the newest upstream version. The online copy uses
 upstream naming, so translate it with the table below.
@@ -66,8 +66,9 @@ user following it will not find the file.
 
 ## Sources
 
-The local pages and <https://opencode.ai/v2/docs/> are the only sources of
-truth; do not use web search when they cover the question. Do not use <https://opencode.ai/docs/> (a different, older product).
+The local pages and <https://opencode.ai/docs/> are the only sources of
+truth; do not use web search when they cover the question. The upstream site
+also documents OpenCode V1, a different, older product; answer for V2 only.
 The schema at <https://opencode.ai/config.json> accepts both V2 fields and
 deprecated V1 fields: never recommend a field it marks deprecated, and do not
 infer field names or shapes from it. If the pages are missing or contradictory,
@@ -215,7 +216,7 @@ redsun service status
 redsun exposes an HTTP API from its server. The API is described by an
 OpenAPI document available from the running server at `/openapi.json`. The
 API reference is not vendored locally; read `/openapi.json` from the running
-server, or the online reference at <https://opencode.ai/v2/docs/api>.
+server, or the online reference at <https://opencode.ai/docs/api>.
 
 Use redsun's built-in `api` command for local requests. It uses the same
 discovery and authentication flow as the TUI and may start the background

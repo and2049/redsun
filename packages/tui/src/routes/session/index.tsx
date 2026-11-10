@@ -359,6 +359,15 @@ export function Session() {
     })
   }
 
+  // Pin an existing row before publication. Total height also counts streamed output below the
+  // reader, which must not move their viewport when it arrives alongside the older rows.
+  const pinAbove = () => {
+    if (!scroll || scroll.isDestroyed) return
+    if (scroll.stickyScroll && scroll.scrollTop >= scroll.scrollHeight - scroll.viewport.height) return
+    const node = scroll.getChildren().find((node) => node.height > 0 && node.y + node.height > scroll.viewport.y)
+    if (node) afterLayout(scroll.anchor(node))
+  }
+
   // Tail-first transcript mounting: only the newest rows mount when the session opens. Older rows
   // mount on demand near the top, keeping inactive tabs cheap to tear down. While the reader stays
   // at the bottom the hidden span follows appends; leaving the bottom pins it to preserve the viewport.
@@ -370,8 +379,13 @@ export function Session() {
   const prependHistory = createHistoryPrepend({
     sessionID: () => route.sessionID,
     more: (id) => data.session.message.more(id),
-    loadMore: (id) => data.session.message.loadMore(id),
-    height: () => scroll.scrollHeight,
+    // Pin the viewport before an older page publishes so the history load does not flash or scroll.
+    loadMore: (id) =>
+      data.session.message.loadMore(id, {
+        beforePublish: () => {
+          if (route.sessionID === id) pinAbove()
+        },
+      }),
     afterLayout,
     active: (id) => route.sessionID === id && Boolean(scroll && !scroll.isDestroyed),
     scrollBy: (amount) => {
@@ -385,11 +399,11 @@ export function Session() {
     if (revealingOlderRows || !scroll || scroll.isDestroyed || scroll.scrollTop > scroll.viewport.height) return false
     if (current === 0) return prependHistory(scrollBy)
     revealingOlderRows = true
-    const before = scroll.scrollHeight
     scroll.stickyScroll = false
+    pinAbove()
     setHiddenRows(Math.max(0, current - TRANSCRIPT_BACKFILL_CHUNK))
     afterLayout(() => {
-      scroll.scrollBy(scroll.scrollHeight - before + scrollBy)
+      scroll.scrollBy(scrollBy)
       scroll.stickyScroll = !navigationMessage()
       revealingOlderRows = false
     })
@@ -1323,6 +1337,7 @@ export function Session() {
   }))
 
   Keymap.createLayer(() => ({
+    mode: "composer",
     enabled: () => renderer.currentFocusedEditor === null,
     bindings: baseAndUnfocusedCommands().map((command) => command.id),
   }))
@@ -1496,7 +1511,7 @@ export function Session() {
                     ref={bind}
                     disabled={false}
                     onSubmit={() => {
-                      toBottom()
+                      if (config.session?.submit_scroll !== "keep") toBottom()
                     }}
                     onEmptySubmit={async () => {
                       const next = queuedPrompts()[0]
@@ -2170,6 +2185,7 @@ function RevertMessage(props: {
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
+        paddingRight={2}
         backgroundColor={hover() ? theme.decrease(theme.background.raised.base) : theme.background.raised.base}
       >
         <text fg={theme.text.muted}>
@@ -2186,7 +2202,7 @@ function RevertMessage(props: {
                     maxWidth={Math.max(
                       2,
                       ctx.width -
-                        5 -
+                        7 -
                         (file.additions > 0 ? stringWidth(`+${file.additions}`) + 1 : 0) -
                         (file.deletions > 0 ? stringWidth(`-${file.deletions}`) + 1 : 0),
                     )}
@@ -2391,7 +2407,7 @@ function QueuedPromptDock(props: { prompts: { id: string; text: string }[]; onOp
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
-        paddingRight={1}
+        paddingRight={2}
         backgroundColor={hover() ? theme.decrease(theme.background.raised.base) : theme.background.raised.base}
         flexDirection="row"
       >
@@ -2873,7 +2889,7 @@ export function BlockTool(props: BlockToolProps) {
             </Show>
             <FilePath
               value={path().value}
-              maxWidth={Math.max(2, ctx.width - 4 - stringWidth(path().label) - (props.spinner ? 2 : 0))}
+              maxWidth={Math.max(2, ctx.width - 6 - stringWidth(path().label) - (props.spinner ? 2 : 0))}
               fg={permission() ? theme.text.feedback.warning.base : (props.headerColor ?? theme.text.muted)}
             />
           </box>
@@ -3518,7 +3534,7 @@ function ApplyPatch(props: ToolProps) {
                     </text>
                   }
                 >
-                  <box paddingLeft={1} paddingRight={3}>
+                  <box paddingLeft={1} paddingRight={1}>
                     <PatchDiff
                       diff={file.patch}
                       hunkFg={theme.diff.text.hunkHeader}
@@ -3564,7 +3580,7 @@ function ApplyPatch(props: ToolProps) {
               >
                 <FilePath
                   value={file.resource}
-                  maxWidth={Math.max(2, ctx.width - 3)}
+                  maxWidth={Math.max(2, ctx.width - 5)}
                   fg={file.type === "delete" ? theme.diff.text.removed : theme.text.muted}
                 />
               </BlockTool>

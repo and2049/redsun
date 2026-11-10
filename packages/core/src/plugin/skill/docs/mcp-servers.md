@@ -107,16 +107,17 @@ Use configuration for other process options such as a working directory:
 }
 ```
 
-| Field         | Required | Description                                                                               |
-| ------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `type`        | Yes      | Must be `"local"`.                                                                        |
-| `command`     | Yes      | Executable followed by its arguments.                                                     |
-| `cwd`         | No       | Process directory. Relative paths resolve from the workspace, which is also the default.  |
-| `environment` | No       | String variables added to redsun's inherited process environment.                         |
-| `disabled`    | No       | Prevents connection when `true`. Defaults to `false`.                                     |
-| `codemode`    | No       | Set to `false` to expose tools directly instead of through Code Mode. Defaults to `true`. |
-| `timeout`     | No       | Per-server timeout overrides.                                                             |
-| `protocol`    | No       | `legacy` (default), `auto`, or `2026-07-28`. See [Protocol version](#protocol-version).   |
+| Field         | Required | Description                                                                                                  |
+| ------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `type`        | Yes      | Must be `"local"`.                                                                                           |
+| `command`     | Yes      | Executable followed by its arguments.                                                                        |
+| `cwd`         | No       | Process directory. Relative paths resolve from the workspace, which is also the default.                     |
+| `environment` | No       | String variables added to redsun's inherited process environment.                                            |
+| `disabled`    | No       | Prevents connection when `true`. Defaults to `false`.                                                        |
+| `codemode`    | No       | Set to `false` to expose tools directly instead of through Code Mode. Defaults to `true`.                    |
+| `timeout`     | No       | Per-server timeout overrides.                                                                                |
+| `protocol`    | No       | `legacy` (default), `auto`, or `2026-07-28`. See [Protocol version](#protocol-version).                      |
+| `pool`        | No       | Share one connection across directories. Defaults to `false`. See [Shared connections](#shared-connections). |
 
 Use `{env:NAME}` for environment substitution. Shell expressions such as `$NAME` are not expanded in JSON strings:
 
@@ -162,16 +163,17 @@ Use configuration for other options. Store secrets in environment variables rath
 }
 ```
 
-| Field      | Required | Description                                                                               |
-| ---------- | -------- | ----------------------------------------------------------------------------------------- |
-| `type`     | Yes      | Must be `"remote"`.                                                                       |
-| `url`      | Yes      | Absolute Streamable HTTP endpoint.                                                        |
-| `headers`  | No       | String HTTP headers sent to the endpoint.                                                 |
-| `oauth`    | No       | OAuth settings, or `false` to disable OAuth.                                              |
-| `disabled` | No       | Prevents connection when `true`. Defaults to `false`.                                     |
-| `codemode` | No       | Set to `false` to expose tools directly instead of through Code Mode. Defaults to `true`. |
-| `timeout`  | No       | Per-server timeout overrides.                                                             |
-| `protocol` | No       | `legacy` (default), `auto`, or `2026-07-28`. See [Protocol version](#protocol-version).   |
+| Field      | Required | Description                                                                                                  |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `type`     | Yes      | Must be `"remote"`.                                                                                          |
+| `url`      | Yes      | Absolute Streamable HTTP endpoint.                                                                           |
+| `headers`  | No       | String HTTP headers sent to the endpoint.                                                                    |
+| `oauth`    | No       | OAuth settings, or `false` to disable OAuth.                                                                 |
+| `disabled` | No       | Prevents connection when `true`. Defaults to `false`.                                                        |
+| `codemode` | No       | Set to `false` to expose tools directly instead of through Code Mode. Defaults to `true`.                    |
+| `timeout`  | No       | Per-server timeout overrides.                                                                                |
+| `protocol` | No       | `legacy` (default), `auto`, or `2026-07-28`. See [Protocol version](#protocol-version).                      |
+| `pool`     | No       | Share one connection across directories. Defaults to `false`. See [Shared connections](#shared-connections). |
 
 Use `oauth: false` only when the server exclusively uses an API key or another header credential:
 
@@ -209,6 +211,16 @@ If the server needs authentication, run `/mcps`, select it, and complete authori
 ```sh
 redsun mcp auth sentry
 ```
+
+### Browser on another machine
+
+When redsun runs over SSH, in a container, or on a remote server, the browser cannot reach redsun after you sign in and shows a page that does not load. Copy that page's URL from the address bar and paste it into the sign-in prompt:
+
+```text
+http://127.0.0.1:52817/callback?code=...&state=...
+```
+
+The prompt appears in `/mcps` and in `redsun mcp auth` while redsun waits for the browser.
 
 ### Client registration
 
@@ -344,6 +356,31 @@ redsun opens every server with the classic MCP `initialize` handshake by default
 | `2026-07-28` | Requires the 2026-07-28 revision. The connection fails against older servers.                                             |
 
 Probing a local `legacy` server adds a short-lived extra process and can wait up to the startup timeout when the server ignores unknown requests, so keep `auto` scoped to servers that need it.
+
+## Shared connections
+
+One redsun server can have many directories open, and each one connects to every MCP server on its own. Set `pool` to `true` to let directories with the same server settings share one connection and one tool list:
+
+```jsonc title="redsun.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "cloudflare": {
+        "type": "remote",
+        "url": "https://mcp.cloudflare.com/mcp",
+        "pool": true,
+      },
+    },
+  },
+}
+```
+
+- Only connections on the 2026-07-28 revision are shared. With `pool` set, an unset `protocol` means `auto`. A server that answers with an older revision, or one set to `legacy`, keeps one connection per directory.
+- Directories share a connection only when everything that changes it matches: the URL, headers, OAuth settings and signed-in account for a remote server, and the command, working directory and environment for a local one. Timeouts and `protocol` must match too. The server's name doesn't need to, but sign-ins are stored per name, so an OAuth server is shared only under the same name.
+- A local server is shared only between directories on this machine, not ones in a workspace. Sharing it across projects needs a fixed `cwd`, such as `"~"`. Without one it runs in each project's folder, so each project gets its own and redsun logs a warning.
+- A shared connection has no roots. When a tool asks for input, the request appears in the directory that called it.
+- The connection closes as soon as the last directory using it closes or disconnects the server.
 
 ## Names
 
