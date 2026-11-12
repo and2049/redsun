@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { rmSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import type {
@@ -182,6 +183,7 @@ describe("ACP runtime against a scripted agent", () => {
           ],
         },
       })
+      expect(request._meta.kiro.customAgents[0].excludedTools).toBeUndefined()
       expect(cursors.get(TURN.sessionID)).toBe("kiro-v3:acp_1")
     })
     await withRuntime(config, async (runtime) => {
@@ -763,6 +765,39 @@ describe("ACP runtime against a scripted agent", () => {
     })
   })
 
+  test("maps Kiro's default-origin MCP call to one native host-tool row", async () => {
+    const bound = binding(["read"])
+    await withRuntime(
+      {
+        agent: { preset: "kiro", hostTools: "all", env: { FAKE_ACP_V3: "1", FAKE_ACP_TOOL_ORIGIN: "default" } },
+        host: {
+          tools: () => bound.tools,
+          system: () => ({ static: ["Use redsun tools"], dynamic: [] }),
+          context: () => ({ agent: { id: "build" }, isWorker: false }),
+        },
+      },
+      async (runtime) => {
+        const parts = await collect(
+          (
+            await runtime.turn(
+              HOSTED,
+              call([user('invoke:{"name":"read","args":{"path":"marker.txt"}}')], {
+                tools: [{ type: "function", name: "read", description: "Read a file", inputSchema: {} }],
+              }),
+            )
+          ).stream,
+        )
+        expect(bound.calls.map((item) => item.callID)).toEqual(["call_invoke"])
+        expect(parts.filter((part) => part.type === "tool-call")).toMatchObject([
+          { toolCallId: "call_invoke", toolName: "read" },
+        ])
+        expect(parts.filter((part) => part.type === "tool-result")).toMatchObject([
+          { toolCallId: "call_invoke", toolName: "read" },
+        ])
+      },
+    )
+  })
+
   test("matches a host tool call that reaches the host before the agent reports it", async () => {
     const bound = binding(["todowrite"])
     await withRuntime({ host: { tools: () => bound.tools } }, async (runtime) => {
@@ -1019,6 +1054,25 @@ describe("ACP runtime against a scripted agent", () => {
       await runtime.discover()
       expect(reported).toEqual([["auto", "fast"]])
     })
+  })
+
+  test("retries discovery when the first ACP session has no model catalog", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "redsun-acp-models-"))
+    const reported: string[][] = []
+    try {
+      await withRuntime(
+        {
+          agent: { preset: "kiro", env: { FAKE_ACP_V3: "1", FAKE_ACP_MODEL_MARKER: path.join(directory, "ready") } },
+          host: { reported },
+        },
+        async (runtime) => {
+          await runtime.discover()
+          expect(reported).toEqual([["auto", "fast"]])
+        },
+      )
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   test("records the agent's plan as the host's todo list through the host's todowrite", async () => {

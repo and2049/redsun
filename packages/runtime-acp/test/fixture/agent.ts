@@ -1,5 +1,5 @@
 // A scripted ACP agent over stdio. The prompt text picks the behaviour.
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { Readable, Writable } from "node:stream"
 import {
   AgentSideConnection,
@@ -37,7 +37,8 @@ const requests: unknown[] = []
 const servers = new Map<string, McpServer[]>()
 // FAKE_ACP_MODELS picks how the agent reports its models: the standard config option or the
 // unstable `models` field with `session/set_model`.
-const modelStyle = process.env.FAKE_ACP_MODELS
+const marker = process.env.FAKE_ACP_MODEL_MARKER
+const modelStyle = marker ? (existsSync(marker) ? "config" : "delayed") : process.env.FAKE_ACP_MODELS
 const MODEL_LIST = [
   { id: "auto", name: "Auto" },
   // As Kiro describes a model's effort levels.
@@ -125,6 +126,7 @@ new AgentSideConnection((connection) => {
       },
     }),
     newSession: async (params) => {
+      if (modelStyle === "delayed" && marker) writeFileSync(marker, "ready")
       requests.push({ method: "new", ...params })
       const sessionId = `acp_${++sessions}`
       modes.set(sessionId, "default")
@@ -225,7 +227,7 @@ new AgentSideConnection((connection) => {
               ? { ...input.args, _meta: { _isValid: true, _activePath: [], _completedPaths: [] } }
               : input.args,
             _meta: v3
-              ? { kiro: { serverName: "redsun", toolOrigin: "client" } }
+              ? { kiro: { serverName: "redsun", toolOrigin: process.env.FAKE_ACP_TOOL_ORIGIN ?? "client" } }
               : { mcpToolIdentity: { serverName: "redsun", toolName: input.name } },
           },
         })

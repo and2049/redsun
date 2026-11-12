@@ -449,7 +449,7 @@ export class Runtime {
       readonly resume?: string
       readonly tools?: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] }
     } = { launch: [] },
-  ): Promise<{ readonly session: Session; readonly resumed: boolean }> {
+  ): Promise<{ readonly session: Session; readonly resumed: boolean; readonly modelCount: number }> {
     if (this.agent.home && !this.homeReady) {
       prepareHome(this.agent.home)
       this.homeReady = true
@@ -529,7 +529,7 @@ export class Runtime {
         session.exited = true
         this.forget(session)
       })
-      return { session, resumed: loaded !== undefined }
+      return { session, resumed: loaded !== undefined, modelCount: models?.models.length ?? 0 }
     } catch (error) {
       if (slot) this.endpoint.detach(slot)
       process.kill()
@@ -685,8 +685,11 @@ export class Runtime {
 
   /** Starts a throwaway agent session to learn its model list (reported through `onModels`). */
   async discover() {
-    const { session } = await this.open("discover")
-    this.close(session)
+    for (let attempt = 0; attempt < (this.agent.preset === "kiro" ? 3 : 1); attempt++) {
+      const { session, modelCount } = await this.open("discover")
+      this.close(session)
+      if (modelCount) return
+    }
   }
 
   /**

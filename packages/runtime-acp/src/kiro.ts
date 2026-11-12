@@ -28,7 +28,6 @@ export const metadata = (tools: boolean, cwd: string) => ({
         description: "Kiro driven by redsun; all tools and project context belong to the host.",
         prompt: `You are working through redsun. Use only the redsun host tools and follow its supplied instructions. The native Kiro workspace is intentionally empty; the actual host working directory is ${JSON.stringify(cwd)}. Host file and shell tools operate in that directory.`,
         tools: tools ? ["@redsun"] : [],
-        excludedTools: ["@builtin"],
         includeMcpJson: false,
         includePowers: false,
         resources: [],
@@ -75,7 +74,7 @@ export const contextPercent = (update: SessionUpdate) => {
 export const normalize = (update: SessionUpdate): SessionUpdate => {
   if (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") return update
   const kiro = record(record(update._meta)?.kiro)
-  if (kiro?.serverName !== "redsun" || kiro.toolOrigin !== "client") return update
+  if (kiro?.serverName !== "redsun") return update
   const name = update.title?.startsWith("@redsun/") ? update.title.slice("@redsun/".length) : undefined
   const input = record(update.rawInput)
   const bookkeeping = record(input?._meta)
