@@ -1,7 +1,7 @@
 export * as AcpRuntime from "./runtime.js"
 
 import { execFile, spawn } from "node:child_process"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { lstatSync, mkdirSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import os from "node:os"
 import { Readable, Writable } from "node:stream"
@@ -108,6 +108,23 @@ export const prepareHome = (home: NonNullable<AcpOptions.Agent["home"]>) => {
   }
 }
 
+export const prepareKiroLogin = (
+  agent: AcpOptions.Agent,
+  source = path.join(os.homedir(), "Library", "Application Support", "kiro-cli"),
+) => {
+  if (agent.preset !== "kiro" || process.platform !== "darwin" || agent.home?.env !== "HOME") return
+  if (!lstatSync(source, { throwIfNoEntry: false })) return
+  const target = path.join(agent.home.path, "Library", "Application Support", "kiro-cli")
+  const existing = lstatSync(target, { throwIfNoEntry: false })
+  if (existing?.isSymbolicLink()) {
+    if (realpathSync(target) === realpathSync(source)) return
+    throw new Error(`Kiro login directory ${target} points to another location`)
+  }
+  mkdirSync(path.dirname(target), { recursive: true })
+  if (existing) renameSync(target, `${target}.isolated-${crypto.randomUUID()}`)
+  symlinkSync(source, target, "dir")
+}
+
 /** The agent process environment: the host's, the configured additions, and the managed home. */
 const environment = (agent: AcpOptions.Agent) => ({
   ...process.env,
@@ -133,6 +150,7 @@ export const account = (stdout: string): Record<string, string> => {
 }
 
 export const spawnProcess: Spawn = (agent, cwd, extraArgs) => {
+  prepareKiroLogin(agent)
   const group = agent.preset === "kiro" && process.platform !== "win32"
   const child = spawn(agent.command, [...agent.args, ...extraArgs], {
     cwd,
@@ -645,6 +663,7 @@ export class Runtime {
    * throwaway ACP session that must start. Rejects with the agent's sign-in hint.
    */
   async signedIn(): Promise<Record<string, string>> {
+    prepareKiroLogin(this.agent)
     const hint = this.agent.integration.signIn ?? `Check that ${this.agent.name} is installed and signed in.`
     const whoami = this.agent.integration.whoami
     if (!whoami) {
