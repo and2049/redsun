@@ -9,6 +9,7 @@ import { Integration } from "@opencode/schema/integration"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
 import { Effect, Stream } from "effect"
+import { AcpKiro } from "./kiro.js"
 import type { AcpModels } from "./models.js"
 import { AcpOptions } from "./options.js"
 import { AcpRuntime } from "./runtime.js"
@@ -149,7 +150,9 @@ export default define({
           read: (_credential, signal) => readKiroUsage(agent, ctx.location.directory, signal),
         })
       const storage = ctx.delegate.storage(agent.id)
-      let reported = discovered(yield* storage.get(MODELS_KEY))
+      const stored = discovered(yield* storage.get(MODELS_KEY))
+      // Kiro's placeholder may have been stored as its list; it is no list (`AcpKiro.modelsLoaded`).
+      let reported = agent.preset === "kiro" && !AcpKiro.modelsLoaded(stored) ? [] : stored
       const onModels = (models: readonly AcpModels.Discovered[]) => {
         const next = discovered(models)
         if (JSON.stringify(next) === JSON.stringify(reported)) return
@@ -196,6 +199,14 @@ export default define({
 
       const runtime = new AcpRuntime.Runtime(agent, host)
       yield* Effect.addFinalizer(() => Effect.sync(() => runtime.stop()))
+      // A connected agent whose list is unknown is asked again, rather than waiting for a turn.
+      if (!agent.models.length && !reported.length)
+        yield* ctx.integration.connection.active(agent.id).pipe(
+          Effect.flatMap((connection) =>
+            connection ? Effect.promise(() => runtime.discover().catch(() => {})) : Effect.void,
+          ),
+          Effect.forkScoped,
+        )
       // A deleted host session releases its agent process and the agent session it remembered.
       yield* ctx.event.subscribe().pipe(
         Stream.filter((event) => event.type === "session.deleted"),
