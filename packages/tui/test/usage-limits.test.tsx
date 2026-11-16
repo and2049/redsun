@@ -1,4 +1,4 @@
-import { test } from "bun:test"
+import { expect, test } from "bun:test"
 import { createAppFixture } from "./fixture/app"
 import { tmpdir } from "./fixture/fixture"
 import { directory, json } from "./fixture/tui-client"
@@ -153,15 +153,11 @@ test("shows what the workspace's limits leave and why a refused turn stopped", a
       frame.includes("Only you · GPT 5.6 Sol, Claude Opus 5"),
   )
 
-  // The model picker says what's left on the model it highlights, and opens the same usage list.
+  // The picker has no per-model detail line; its usage action is the way to the full list.
   setup.mockInput.pressEscape()
   await setup.waitForFrame((frame) => !frame.includes("Usage › Claude Opus 5"))
   await setup.mockInput.typeText("/models")
   setup.mockInput.pressEnter()
-  await setup.waitForFrame((frame) => frame.includes("Search models"))
-  await setup.mockInput.typeText("GPT")
-  await setup.waitForFrame(
-    (frame) =>
-      frame.includes("GPT 5.6 Sol OpenCode") && /\$6 left +\$4\/\$20 per 1M/.test(frame) && frame.includes("usage ctrl+u"),
-  )
+  await setup.waitForFrame((frame) => frame.includes("Search models") && frame.includes("usage ctrl+u"))
+  expect(setup.captureCharFrame()).not.toContain("per 1M")
 })

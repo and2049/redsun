@@ -13,13 +13,13 @@ import {
   type Accessor,
 } from "solid-js"
 import path from "node:path"
-import { EOL, tmpdir } from "node:os"
+import { EOL } from "node:os"
 import { mkdir, writeFile } from "node:fs/promises"
 import { useRoute, useRouteData } from "../../context/route"
 import { useData } from "../../context/data"
 import { SplitBorder } from "../../ui/border"
 import { tint } from "../../theme/color"
-import { useTuiTerminalEnvironment } from "../../context/runtime"
+import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { PatchDiff } from "../../component/patch-diff"
 import { useTheme, useThemes } from "../../context/theme"
@@ -152,6 +152,7 @@ import { NAVIGATION_TINT } from "./render-context"
 export function Session() {
   const epilogue = useEpilogue()
   const clipboard = useClipboard()
+  const paths = useTuiPaths()
   const writeExport = async (file: string, content: string) => {
     await mkdir(path.dirname(file), { recursive: true })
     await writeFile(file, content)
@@ -1250,7 +1251,7 @@ export function Session() {
           }
 
           const filepath = path.join(
-            tmpdir(),
+            paths.cwd,
             `session-${crypto.randomUUID()}.${options.format === "markdown" ? "md" : "json"}`,
           )
           await writeExport(filepath, content)
@@ -1856,8 +1857,7 @@ function BackgroundToolHint(props: { messages: SessionMessageInfo[] }) {
     )
     const part = current?.content.find((part): part is SessionMessageAssistantTool => {
       if (part.type !== "tool" || part.state.status !== "running") return false
-      const name = canonicalToolName(part.name)
-      return name === "shell" || name === "subagent"
+      return canonicalToolName(part.name) === "shell"
     })
     if (!current || !part) return
     return { key: `${current.id}:${part.id}`, started: part.time.ran ?? part.time.created }
@@ -2631,7 +2631,8 @@ function inlineToolImages(part: SessionMessageAssistantTool) {
   return toolDisplayContent(part.state).flatMap((content) =>
     content.type === "file" &&
     content.mime.startsWith("image/") &&
-    (content.uri.startsWith("data:image/") || mediaHashFromUri(content.uri))
+    // An emptied `data:` URI is a payload the store dropped while previews were off.
+    ((content.uri.startsWith("data:image/") && !content.uri.endsWith(",")) || mediaHashFromUri(content.uri))
       ? [{ uri: content.uri }]
       : [],
   )
@@ -2906,6 +2907,7 @@ export function BlockTool(props: BlockToolProps) {
 const SHELL_DISPLAY_LIMIT = 1024 * 1024
 
 function Shell(props: ToolProps) {
+  const stopped = createMemo(() => stoppedShell(props.part, props.metadata))
   return (
     <ShellDisplay
       part={props.part}
@@ -2914,9 +2916,20 @@ function Shell(props: ToolProps) {
       workdir={stringValue(props.input.workdir)}
       status={props.part.state.status}
       background={props.part.state.status === "completed" && props.metadata.status === "running"}
-      output={stringValue(props.metadata.shellID) ? undefined : props.output}
+      output={stopped()?.output ?? (stringValue(props.metadata.shellID) ? undefined : props.output)}
+      error={stopped()?.notice}
     />
   )
+}
+
+// A call the user stopped fails with its output followed by a notice, which its metadata names. Its output shows like
+// a finished call's and only the notice as the error. A plugin that rewrote the error gets it shown as is.
+function stoppedShell(part: SessionMessageAssistantTool, metadata: Record<string, unknown>) {
+  if (part.state.status !== "error" || metadata.interrupted !== true) return
+  const notice = stringValue(metadata.notice)
+  const message = part.state.error.message
+  if (!notice || !message.endsWith(notice)) return
+  return { output: message.slice(0, -notice.length).replace(/\n+$/, ""), notice }
 }
 
 function ShellDisplay(props: {
@@ -3281,11 +3294,6 @@ function Subagent(props: ToolProps) {
         const id = sessionID()
         if (id) navigate({ type: "session", sessionID: id })
       }}
-      status={
-        isBackgroundSubagent(props.metadata, props.part.state.status) ? (
-          <StatusBadge>Background</StatusBadge>
-        ) : undefined
-      }
     >
       {`${continuation() ? "Continue subagent" : `${Locale.titlecase(stringValue(props.input.agent) ?? stringValue(props.input.subagent_type) ?? "General")} Subagent`} — ${description() ?? "Subagent"}${model() ? ` · ${model()}` : ""}`}
     </InlineTool>
@@ -3303,13 +3311,6 @@ export function subagentModelLabel(
   const modelID = separator === -1 ? reference : reference.slice(separator + 1)
   const name = models?.find((item) => item.providerID === providerID && item.id === modelID)?.name
   return `${name ?? reference}${variant ? ` (${variant})` : ""}`
-}
-
-export function isBackgroundSubagent(
-  metadata: Record<string, unknown>,
-  status: SessionMessageAssistantTool["state"]["status"],
-) {
-  return status === "completed" && metadata.status === "running"
 }
 
 export { executeCallSummary }

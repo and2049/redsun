@@ -56,11 +56,15 @@ export const correctionFeedback = (error: unknown): string | undefined => {
 }
 
 /** Code Mode's catalog summary as a delegated runtime consumes it. */
-export const codeMode = (summary: CodeModeCatalog.Summary): DelegatedCodeMode => ({
-  summary,
-  render: () => CodeModeInstructions.render(summary),
-  update: (previous) => CodeModeInstructions.update(previous as CodeModeCatalog.Summary, summary),
-})
+export const codeMode = (inventory: CodeModeCatalog.Inventory): DelegatedCodeMode => {
+  const summary = CodeModeCatalog.summarize(inventory)
+  return {
+    summary,
+    render: () => CodeModeInstructions.render(summary),
+    update: (previous) =>
+      CodeModeInstructions.update(previous as CodeModeCatalog.Summary, summary, CodeModeCatalog.lookup(inventory)),
+  }
+}
 
 /** Registered names of connected MCP tools exposed directly rather than through Code Mode. */
 export const directNames = (connected: readonly Mcp.Tool[]): ReadonlySet<string> =>
@@ -85,7 +89,7 @@ export const bindSnapshot = (
 ): DelegatedToolBinding => ({
   definitions: snapshot.definitions,
   direct: input.direct,
-  ...(snapshot.codeModeCatalog ? { codeMode: codeMode(CodeModeCatalog.summarize(snapshot.codeModeCatalog)) } : {}),
+  ...(snapshot.codeModeCatalog ? { codeMode: codeMode(snapshot.codeModeCatalog) } : {}),
   execute: ({ name, args, callID, allowed, signal }) =>
     Effect.runPromise(
       snapshot

@@ -23,10 +23,9 @@ export const VoiceWebSocketTransportInput = Schema.Struct({
   type: Schema.Literal("websocket"),
 }).annotate({ identifier: "VoiceWebSocketTransportInput" })
 
-export const VoiceTransportInput = Schema.Union([
-  VoiceWebRTCTransportInput,
-  VoiceWebSocketTransportInput,
-]).annotate({ identifier: "VoiceTransportInput" })
+export const VoiceTransportInput = Schema.Union([VoiceWebRTCTransportInput, VoiceWebSocketTransportInput]).annotate({
+  identifier: "VoiceTransportInput",
+})
 
 export const VoiceWebRTCTransport = Schema.Struct({
   type: Schema.Literal("webrtc"),
@@ -40,10 +39,9 @@ export const VoiceWebSocketTransport = Schema.Struct({
   expiresAt: Schema.Number,
 }).annotate({ identifier: "VoiceWebSocketTransport" })
 
-export const VoiceTransport = Schema.Union([
-  VoiceWebRTCTransport,
-  VoiceWebSocketTransport,
-]).annotate({ identifier: "VoiceTransport" })
+export const VoiceTransport = Schema.Union([VoiceWebRTCTransport, VoiceWebSocketTransport]).annotate({
+  identifier: "VoiceTransport",
+})
 
 export const VoiceGroup = HttpApiGroup.make("server.voice")
   .add(

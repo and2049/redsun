@@ -89,21 +89,21 @@ test("usage picker is bottom anchored, hides disconnected providers and persists
   const app = await testRender(
     () => (
       <TestTuiContexts>
-        <ClientProvider api={api}>
-          <DataProvider directory="/project">
-            <LocationProvider>
-              <ConfigProvider
-                config={resolve(stored, { terminalSuspend: true })}
-                service={{
-                  get: async () => stored,
-                  update: async (update) => {
-                    const draft = structuredClone(stored)
-                    update(draft)
-                    stored = Schema.decodeUnknownSync(Info)(draft)
-                    return stored
-                  },
-                }}
-              >
+        <ConfigProvider
+          config={resolve(stored, { terminalSuspend: true })}
+          service={{
+            get: async () => stored,
+            update: async (update) => {
+              const draft = structuredClone(stored)
+              update(draft)
+              stored = Schema.decodeUnknownSync(Info)(draft)
+              return stored
+            },
+          }}
+        >
+          <ClientProvider api={api}>
+            <DataProvider directory="/project">
+              <LocationProvider>
                 <Keymap.Provider>
                   <ThemeProvider source={emptyThemeSource}>
                     <ToastProvider>
@@ -113,10 +113,10 @@ test("usage picker is bottom anchored, hides disconnected providers and persists
                     </ToastProvider>
                   </ThemeProvider>
                 </Keymap.Provider>
-              </ConfigProvider>
-            </LocationProvider>
-          </DataProvider>
-        </ClientProvider>
+              </LocationProvider>
+            </DataProvider>
+          </ClientProvider>
+        </ConfigProvider>
       </TestTuiContexts>
     ),
     { width: 90, height: 40, kittyKeyboard: true },

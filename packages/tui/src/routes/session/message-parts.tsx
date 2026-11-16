@@ -12,6 +12,7 @@ import { reasoningSummary } from "../../context/thinking"
 import { usePlugin } from "../../plugin/context"
 import { NAVIGATION_TINT, TRANSCRIPT_GUTTER, use } from "./render-context"
 import { tint } from "../../theme/color"
+import { useSessionLinks } from "../../ui/session-link"
 
 import { useLanguage } from "../../i18n"
 import { stringWidth } from "../../util/string-width"
@@ -75,6 +76,7 @@ export function TextPart(props: {
       <box paddingLeft={TRANSCRIPT_GUTTER} flexShrink={0}>
         {/* Apply content before streaming so completion does not freeze the previous Markdown tokens. */}
         <markdown
+          ref={useSessionLinks()}
           syntaxStyle={syntax()}
           renderNode={plugins.markdown()}
           content={props.part.text.trim()}

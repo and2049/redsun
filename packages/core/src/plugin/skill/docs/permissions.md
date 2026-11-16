@@ -97,24 +97,24 @@ operation is allowed.
 V2 action names are strings, so plugins may define more actions. Built-in tools
 currently use these actions and resources:
 
-| Action                        | Resource                                                                                                    |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `read`                        | Location-relative internal path or canonical absolute external path                                         |
-| `edit`                        | Target path for `edit`, `write`, and `patch`                                                                |
-| `glob`                        | Requested glob pattern                                                                                      |
-| `grep`                        | Requested regular expression, not the search path                                                           |
-| `shell`                       | Scanner-produced command string; compound commands may produce several                                      |
-| `subagent`                    | Target agent ID                                                                                             |
-| `skill`                       | Skill ID                                                                                                    |
-| `question`                    | `*`                                                                                                         |
-| `webfetch`                    | Requested URL                                                                                               |
-| `websearch`                   | Search query                                                                                                |
-| `experimental_image_generate` | Selected image model as `providerID/modelID`, plus `#variant` when set                                      |
-| `external_directory`          | Canonical external directory boundary, normally ending in `/*`                                              |
-| `<server>_<tool>`             | `*` for an MCP tool; unsupported characters in both names become `_`                                        |
-| `opencode_list_mcp_resources` | MCP server name                                                                                             |
-| `opencode_read_mcp_resource`  | `<server>:<uri>`                                                                                            |
-| `execute`                     | `*`; a deny removes Code Mode and the tools reached only through it, while nested tools enforce their rules |
+| Action                        | Resource                                                                                           |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `read`                        | Location-relative internal path or canonical absolute external path                                |
+| `edit`                        | Target path for `edit`, `write`, and `patch`                                                       |
+| `glob`                        | Requested glob pattern                                                                             |
+| `grep`                        | Requested regular expression, not the search path                                                  |
+| `shell`                       | Scanner-produced command string; compound commands may produce several                             |
+| `subagent`                    | Target agent ID                                                                                    |
+| `skill`                       | Skill ID                                                                                           |
+| `question`                    | `*`                                                                                                |
+| `webfetch`                    | Requested URL                                                                                      |
+| `websearch`                   | Search query                                                                                       |
+| `experimental_image_generate` | Selected image model as `providerID/modelID`, plus `#variant` when set                             |
+| `external_directory`          | Canonical external directory boundary, normally ending in `/*`                                     |
+| `<server>_<tool>`             | `*` for an MCP tool; unsupported characters in both names become `_`                               |
+| `opencode_list_mcp_resources` | MCP server name                                                                                    |
+| `opencode_read_mcp_resource`  | `<server>:<uri>`                                                                                   |
+| `execute`                     | `*`; a deny removes Code Mode and lists its tools directly, while nested tools enforce their rules |
 
 For example, allow one skill and deny all other skills:
 

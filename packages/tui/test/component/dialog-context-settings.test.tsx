@@ -52,19 +52,19 @@ test("settings show the cache warning and persist global backend choices with sa
   const app = await testRender(
     () => (
       <TestTuiContexts>
-        <ClientProvider api={api}>
-          <DataProvider directory="/default-project">
-            <LocationProvider>
-              <ConfigProvider
-                config={resolve({}, { terminalSuspend: true })}
-                service={{
-                  get: async () => ({}),
-                  update: async () => {
-                    uiWrites++
-                    return {}
-                  },
-                }}
-              >
+        <ConfigProvider
+          config={resolve({}, { terminalSuspend: true })}
+          service={{
+            get: async () => ({}),
+            update: async () => {
+              uiWrites++
+              return {}
+            },
+          }}
+        >
+          <ClientProvider api={api}>
+            <DataProvider directory="/default-project">
+              <LocationProvider>
                 <Keymap.Provider>
                   <ThemeProvider source={emptyThemeSource}>
                     <ToastProvider>
@@ -74,10 +74,10 @@ test("settings show the cache warning and persist global backend choices with sa
                     </ToastProvider>
                   </ThemeProvider>
                 </Keymap.Provider>
-              </ConfigProvider>
-            </LocationProvider>
-          </DataProvider>
-        </ClientProvider>
+              </LocationProvider>
+            </DataProvider>
+          </ClientProvider>
+        </ConfigProvider>
       </TestTuiContexts>
     ),
     { width: 100, height: 30, kittyKeyboard: true },
@@ -149,13 +149,13 @@ const renderSettings = async (initial: Record<string, unknown>, current: string)
   const app = await testRender(
     () => (
       <TestTuiContexts>
-        <ClientProvider api={api}>
-          <DataProvider directory="/default-project">
-            <LocationProvider>
-              <ConfigProvider
-                config={resolve({}, { terminalSuspend: true })}
-                service={{ get: async () => ({}), update: async () => ({}) }}
-              >
+        <ConfigProvider
+          config={resolve({}, { terminalSuspend: true })}
+          service={{ get: async () => ({}), update: async () => ({}) }}
+        >
+          <ClientProvider api={api}>
+            <DataProvider directory="/default-project">
+              <LocationProvider>
                 <Keymap.Provider>
                   <ThemeProvider source={emptyThemeSource}>
                     <ToastProvider>
@@ -165,10 +165,10 @@ const renderSettings = async (initial: Record<string, unknown>, current: string)
                     </ToastProvider>
                   </ThemeProvider>
                 </Keymap.Provider>
-              </ConfigProvider>
-            </LocationProvider>
-          </DataProvider>
-        </ClientProvider>
+              </LocationProvider>
+            </DataProvider>
+          </ClientProvider>
+        </ConfigProvider>
       </TestTuiContexts>
     ),
     { width: 110, height: 30, kittyKeyboard: true },

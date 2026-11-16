@@ -56,10 +56,10 @@ test("searches settings globally and opens the matching setting", async () => {
   const app = await testRender(
     () => (
       <TestTuiContexts>
-        <ClientProvider api={createApi(createFetch().fetch)}>
-          <DataProvider directory="/project">
-            <LocationProvider>
-              <ConfigProvider config={resolve(current, { terminalSuspend: true })} service={service}>
+        <ConfigProvider config={resolve(current, { terminalSuspend: true })} service={service}>
+          <ClientProvider api={createApi(createFetch().fetch)}>
+            <DataProvider directory="/project">
+              <LocationProvider>
                 <Keymap.Provider>
                   <ThemeProvider source={emptyThemeSource}>
                     <ToastProvider>
@@ -69,10 +69,10 @@ test("searches settings globally and opens the matching setting", async () => {
                     </ToastProvider>
                   </ThemeProvider>
                 </Keymap.Provider>
-              </ConfigProvider>
-            </LocationProvider>
-          </DataProvider>
-        </ClientProvider>
+              </LocationProvider>
+            </DataProvider>
+          </ClientProvider>
+        </ConfigProvider>
       </TestTuiContexts>
     ),
     { width: 80, height: 24, kittyKeyboard: true },

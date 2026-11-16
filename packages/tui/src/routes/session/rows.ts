@@ -492,12 +492,16 @@ export function turnTokensPerSecond(
   if (!live && settled.length !== steps.length) return
   if (steps.length === 0) return
   let output = settled.reduce((total, step) => total + (step.tokens?.output ?? 0) + (step.tokens?.reasoning ?? 0), 0)
-  let duration = settled.reduce((total, step) => total + Math.max(0, (step.time.streamed ?? 0) - step.time.created), 0)
+  // The wait for the first token is not output time; steps recorded without it count from dispatch.
+  let duration = settled.reduce(
+    (total, step) => total + Math.max(0, (step.time.streamed ?? 0) - (step.time.firstToken ?? step.time.created)),
+    0,
+  )
   if (live)
     for (const step of steps) {
       if (step.time.streamed !== undefined) continue
       output += estimateOutputTokens(step)
-      duration += Math.max(0, live.now - step.time.created)
+      duration += Math.max(0, live.now - (step.time.firstToken ?? step.time.created))
     }
   if (output <= 0 || duration <= 0) return
   // Aggregate before dividing so each step is weighted by its provider-active duration.

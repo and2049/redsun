@@ -14,9 +14,8 @@ import { groupByProvider, providerRowTitle } from "../util/provider-menu"
 import { useLanguage } from "../i18n"
 import { useNewDesigns } from "../config"
 import { DialogFreeModels } from "./dialog-model-free"
-import { FavoriteMarker, ModelDetail, isFreeModel, prioritizeFavorites, sortModelOptions } from "./model-options"
+import { FavoriteMarker, isFreeModel, prioritizeFavorites, sortModelOptions } from "./model-options"
 import { DialogUsage, useUsageLimits } from "./usage"
-import { formatDollars, usageLevel } from "../util/usage-limits"
 
 export function DialogModel(props: {
   providerID?: string
@@ -89,18 +88,9 @@ function DialogConnectedModels(props: {
   const location = useLocation()
   const { t } = useLanguage()
   dialog.setPlacement("bottom")
+  // REDSUN: `/usage` shows subscription quotas, so workspace limits stay reachable from the picker.
   const limits = useUsageLimits()
-  // Spend moves with every request, so the picker shows fresh limits.
   onMount(() => limits.load(true))
-  const usage = (model: ModelInfo) => {
-    const value = limits.usage(model)
-    if (value) {
-      const level = usageLevel(value, model)
-      return { text: `${formatDollars(value.left)} left`, danger: level === "out" || level === "reached" }
-    }
-    if (limits.unlimited(model)) return { text: "No limit" }
-    return undefined
-  }
   const [query, setQuery] = createSignal("")
   const [expanded, setExpanded] = createSignal(new Set<string>())
   // Under new designs, favoriting does not reorder the list until the dialog is reopened.
@@ -156,7 +146,6 @@ function DialogConnectedModels(props: {
             description: provider?.name ?? model.providerID,
             category,
             footer: trailing(model, isFavorite(item)),
-            detail: newDesigns() ? () => <ModelDetail model={model} usage={usage(model)} /> : undefined,
             onSelect: () => {
               props.onSelect(model.providerID, model.id)
             },
@@ -195,7 +184,6 @@ function DialogConnectedModels(props: {
               : undefined,
             footer: trailing(model, favorite),
             free: isFreeModel(model),
-            detail: newDesigns() ? () => <ModelDetail model={model} usage={usage(model)} /> : undefined,
             onSelect() {
               props.onSelect(model.providerID, model.id)
             },

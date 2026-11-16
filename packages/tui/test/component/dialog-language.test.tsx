@@ -41,27 +41,27 @@ test("language picker saves, switches live, supports English search, and recover
   const app = await testRender(
     () => (
       <TestTuiContexts>
-        <ClientProvider api={api}>
-          <DataProvider directory="/project">
-            <LocationProvider>
-              <ConfigProvider
-                config={resolve(stored, { terminalSuspend: true })}
-                service={{
-                  get: async () => stored,
-                  update: async (update) => {
-                    if (fail) throw new Error("Language save failed")
-                    if (delay) {
-                      pending = true
-                      await delay
-                    }
-                    const draft = structuredClone(stored)
-                    update(draft)
-                    stored = Schema.decodeUnknownSync(Info)(draft)
-                    writes++
-                    return stored
-                  },
-                }}
-              >
+        <ConfigProvider
+          config={resolve(stored, { terminalSuspend: true })}
+          service={{
+            get: async () => stored,
+            update: async (update) => {
+              if (fail) throw new Error("Language save failed")
+              if (delay) {
+                pending = true
+                await delay
+              }
+              const draft = structuredClone(stored)
+              update(draft)
+              stored = Schema.decodeUnknownSync(Info)(draft)
+              writes++
+              return stored
+            },
+          }}
+        >
+          <ClientProvider api={api}>
+            <DataProvider directory="/project">
+              <LocationProvider>
                 <TestLanguages>
                   <Keymap.Provider>
                     <ThemeProvider source={emptyThemeSource}>
@@ -73,10 +73,10 @@ test("language picker saves, switches live, supports English search, and recover
                     </ThemeProvider>
                   </Keymap.Provider>
                 </TestLanguages>
-              </ConfigProvider>
-            </LocationProvider>
-          </DataProvider>
-        </ClientProvider>
+              </LocationProvider>
+            </DataProvider>
+          </ClientProvider>
+        </ConfigProvider>
       </TestTuiContexts>
     ),
     { width: 90, height: 40, kittyKeyboard: true },
