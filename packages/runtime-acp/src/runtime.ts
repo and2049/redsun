@@ -93,6 +93,7 @@ const STDERR_TAIL = 4_000
 
 /** How long a cancelled turn waits for the agent to stop on its own before its process is killed. */
 export const INTERRUPT_GRACE_MS = 5_000
+const MODELS_GRACE_MS = 5_000
 
 export type Spawn = (agent: AcpOptions.Agent, cwd: string, extraArgs: readonly string[]) => Process
 
@@ -249,7 +250,15 @@ interface Session {
   readonly initialMode?: string
   currentMode?: string
   /** How to switch the session's model, when the agent reports a selector. */
-  readonly model?: { readonly control: AcpModels.Control; readonly initial?: string; current?: string }
+  model?: { readonly control: AcpModels.Control; readonly initial?: string; current?: string }
+  /**
+   * Set while the agent still owes its model list (Kiro answers `session/new` and `session/load`
+   * before the list loads); settled by the `config_option_update` that carries it. `fresh` is a
+   * session the agent created, whose current model is the agent's default.
+   */
+  awaitingModels?: { readonly listed: ReturnType<typeof Promise.withResolvers<void>>; readonly fresh: boolean }
+  /** A turn already gave the late model list its grace period; later turns do not wait again. */
+  modelsWaited?: boolean
   /** The agent's reasoning-effort selector for the current model, as it last reported it. */
   effort?: AcpModels.Effort
   /** The agent's plans, mirrored into the host's todo list. */
@@ -276,6 +285,8 @@ export interface Options {
   readonly compactionTimeoutMs?: number
   readonly spawn?: Spawn
   readonly interruptGraceMs?: number
+  /** How long a selection or discovery waits for a model list the agent sends after the session opens. */
+  readonly modelsGraceMs?: number
 }
 
 export class Runtime {
@@ -294,6 +305,7 @@ export class Runtime {
   private readonly turns = new Set<string>()
   private readonly spawn: Spawn
   private readonly interruptGraceMs: number
+  private readonly modelsGraceMs: number
 
   constructor(
     private readonly agent: AcpOptions.Agent,
@@ -302,6 +314,7 @@ export class Runtime {
   ) {
     this.spawn = options.spawn ?? spawnProcess
     this.interruptGraceMs = options.interruptGraceMs ?? INTERRUPT_GRACE_MS
+    this.modelsGraceMs = options.modelsGraceMs ?? MODELS_GRACE_MS
     this.context = new DelegateContext.Tracker({
       inherited: AcpContext.inherited(host.cwd, agent.inheritedInstructions),
       skillTool: AcpContext.SKILL_TOOL,
@@ -404,9 +417,18 @@ export class Runtime {
           session.currentMode = notification.update.currentModeId
         if (notification.update.sessionUpdate === "config_option_update") {
           session.effort = AcpModels.effort(notification.update.configOptions)
+          const models = AcpModels.fromConfig(notification.update.configOptions)
           if (session.model?.control.kind === "config") {
-            const current = AcpModels.fromConfig(notification.update.configOptions)?.current
-            if (current) session.model.current = current
+            if (models?.current) session.model.current = models.current
+          } else if (!session.model && models?.control)
+            session.model = {
+              control: models.control,
+              ...(models.current ? { initial: models.current, current: models.current } : {}),
+            }
+          if (session.awaitingModels && this.report(models)) {
+            if (session.awaitingModels.fresh && models?.current) this.defaultModel ??= models.current
+            session.awaitingModels.listed.resolve()
+            session.awaitingModels = undefined
           }
         }
         session.listener?.(notification.update)
@@ -449,7 +471,7 @@ export class Runtime {
       readonly resume?: string
       readonly tools?: { readonly catalog: string; readonly definitions: DelegatedToolBinding["definitions"] }
     } = { launch: [] },
-  ): Promise<{ readonly session: Session; readonly resumed: boolean; readonly modelCount: number }> {
+  ): Promise<{ readonly session: Session; readonly resumed: boolean }> {
     if (this.agent.home && !this.homeReady) {
       prepareHome(this.agent.home)
       this.homeReady = true
@@ -492,9 +514,7 @@ export class Runtime {
       const created = loaded ?? (await connection.newSession(request))
       if (this.agent.preset === "kiro") AcpKiro.validateSession(created)
       const models = AcpModels.read(created)
-      if (models?.models.length) this.host.onModels?.(models.models)
-      for (const model of models?.models ?? [])
-        if (model.defaultEffort) this.defaultEfforts.set(model.id, model.defaultEffort)
+      const listed = this.report(models)
       const effort = AcpModels.effort(created.configOptions)
       if (!loaded && models?.current) this.defaultModel ??= models.current
       const session: Session = {
@@ -514,6 +534,9 @@ export class Runtime {
           ? { initialMode: created.modes.currentModeId, currentMode: created.modes.currentModeId }
           : {}),
         ...(effort ? { effort } : {}),
+        ...(!listed && this.agent.preset === "kiro"
+          ? { awaitingModels: { listed: Promise.withResolvers<void>(), fresh: !loaded } }
+          : {}),
         ...(models?.control
           ? {
               model: {
@@ -529,7 +552,7 @@ export class Runtime {
         session.exited = true
         this.forget(session)
       })
-      return { session, resumed: loaded !== undefined, modelCount: models?.models.length ?? 0 }
+      return { session, resumed: loaded !== undefined }
     } catch (error) {
       if (slot) this.endpoint.detach(slot)
       process.kill()
@@ -539,6 +562,32 @@ export class Runtime {
         `${this.agent.name} did not start an ACP session: ${error instanceof Error ? error.message : String(error)}${said(process)}`,
       )
     }
+  }
+
+  /**
+   * Passes on a model list the agent reported. Kiro's placeholder (no selector, or one holding
+   * only its `auto` entry) is not a list: taking it would drop every model the host has listed.
+   */
+  private report(models: AcpModels.State | undefined) {
+    if (!models?.models.length) return false
+    if (this.agent.preset === "kiro" && !AcpKiro.modelsLoaded(models.models)) return false
+    this.host.onModels?.(models.models)
+    for (const model of models.models) if (model.defaultEffort) this.defaultEfforts.set(model.id, model.defaultEffort)
+    return true
+  }
+
+  /** Whether the session's model list is known, after giving a late one a moment to arrive. */
+  private async listed(session: Session) {
+    const awaiting = session.awaitingModels
+    if (!awaiting) return true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      awaiting.listed.promise,
+      session.process.exited,
+      new Promise((resolve) => (timer = setTimeout(resolve, this.modelsGraceMs))),
+    ])
+    clearTimeout(timer)
+    return !session.awaitingModels
   }
 
   private forget(session: Session) {
@@ -623,6 +672,11 @@ export class Runtime {
    * loaded session reports the one it last used). The agent validates the id when it prompts.
    */
   private async applyModel(session: Session, modelID: string) {
+    // A selector that is still loading takes no selection yet; the turn would run on the default.
+    if (modelID !== "default" && !session.modelsWaited) {
+      session.modelsWaited = true
+      await this.listed(session)
+    }
     const model = session.model
     if (!model) return
     const wanted = modelID === "default" ? (this.defaultModel ?? model.initial) : modelID
@@ -686,9 +740,10 @@ export class Runtime {
   /** Starts a throwaway agent session to learn its model list (reported through `onModels`). */
   async discover() {
     for (let attempt = 0; attempt < (this.agent.preset === "kiro" ? 3 : 1); attempt++) {
-      const { session, modelCount } = await this.open("discover")
+      const { session } = await this.open("discover")
+      const listed = await this.listed(session)
       this.close(session)
-      if (modelCount) return
+      if (listed) return
     }
   }
 

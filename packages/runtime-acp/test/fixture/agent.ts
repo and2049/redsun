@@ -36,9 +36,13 @@ const v3 = process.env.FAKE_ACP_V3 === "1"
 const requests: unknown[] = []
 const servers = new Map<string, McpServer[]>()
 // FAKE_ACP_MODELS picks how the agent reports its models: the standard config option or the
-// unstable `models` field with `session/set_model`.
+// unstable `models` field with `session/set_model`. `late` and `late-placeholder` answer a new
+// or loaded session before the list is ready (nothing, or a selector holding only `auto`) and
+// send it afterwards as a `config_option_update`, as Kiro 3.3 does.
 const marker = process.env.FAKE_ACP_MODEL_MARKER
-const modelStyle = marker ? (existsSync(marker) ? "config" : "delayed") : process.env.FAKE_ACP_MODELS
+const configured = marker ? (existsSync(marker) ? "config" : "delayed") : process.env.FAKE_ACP_MODELS
+const late = configured === "late" || configured === "late-placeholder"
+const modelStyle = late ? "config" : configured
 const MODEL_LIST = [
   { id: "auto", name: "Auto" },
   // As Kiro describes a model's effort levels.
@@ -85,6 +89,12 @@ const modelFields = (sessionId: string) => {
     }
   return {}
 }
+/** What a `late` agent answers before its list is ready. */
+const unlisted = (sessionId: string) => {
+  if (configured !== "late-placeholder") return {}
+  const selector = modelFields(sessionId).configOptions![0]!
+  return { configOptions: [{ ...selector, options: selector.options.slice(0, 1) }] }
+}
 
 /** Connects to the session's host MCP server the way an agent would. */
 const mcp = async (sessionId: string) => {
@@ -116,6 +126,18 @@ new AgentSideConnection((connection) => {
       sessionId,
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
     })
+  const announce = (sessionId: string) =>
+    setTimeout(
+      () =>
+        void connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "config_option_update",
+            configOptions: modelFields(sessionId).configOptions as [],
+          },
+        }),
+      Number(process.env.FAKE_ACP_MODELS_DELAY ?? 100),
+    )
   const agent: Agent = {
     initialize: async () => ({
       protocolVersion: PROTOCOL_VERSION,
@@ -131,7 +153,8 @@ new AgentSideConnection((connection) => {
       const sessionId = `acp_${++sessions}`
       modes.set(sessionId, "default")
       servers.set(sessionId, params.mcpServers)
-      return { sessionId, modes: MODES, ...modelFields(sessionId) }
+      if (late) announce(sessionId)
+      return { sessionId, modes: MODES, ...(late ? unlisted(sessionId) : modelFields(sessionId)) }
     },
     ...(loadable
       ? {
@@ -142,7 +165,8 @@ new AgentSideConnection((connection) => {
             servers.set(params.sessionId, params.mcpServers)
             // A real agent replays the loaded conversation; the client must not forward it.
             await say(params.sessionId, "REPLAYED HISTORY")
-            return { modes: MODES, ...modelFields(params.sessionId) }
+            if (late) announce(params.sessionId)
+            return { modes: MODES, ...(late ? unlisted(params.sessionId) : modelFields(params.sessionId)) }
           },
         }
       : {}),
