@@ -1,4 +1,6 @@
 import { describe, expect } from "bun:test"
+import { mkdtempSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import type { LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import { LanguageModel } from "@opencode/ai"
@@ -10,6 +12,7 @@ import AcpPlugin from "../../runtime-acp/src/index"
 import { AISDK } from "@opencode/core/aisdk"
 import { DelegatedRuntime } from "@opencode/core/delegate"
 import { Integration } from "@opencode/core/integration"
+import { KV } from "@opencode/core/kv"
 import { Location } from "@opencode/core/location"
 import { Model } from "@opencode/core/model"
 import { Plugin } from "@opencode/core/plugin"
@@ -58,6 +61,17 @@ const connect = (integrationID: string) =>
       yield* sleep(50)
     }
     throw new Error("the connection did not settle")
+  })
+
+const listed = (modelID: string) =>
+  Effect.gen(function* () {
+    const models = yield* Model.Service
+    let model = yield* models.get("fake" as never, modelID as never)
+    for (let waited = 0; !model && waited < 10_000; waited += 50) {
+      yield* sleep(50)
+      model = yield* models.get("fake" as never, modelID as never)
+    }
+    return model
   })
 
 const collect = async (stream: ReadableStream<LanguageModelV3StreamPart>) => {
@@ -119,6 +133,61 @@ describe("ACP runtime plugin through the real host", () => {
       ] as never)
       expect((yield* models.get("fake" as never, "auto" as never))?.variants).toEqual([])
       expect((yield* models.get("fake" as never, "default" as never))?.variants).toEqual([])
+    }),
+  )
+
+  it.effect("relearns a Kiro list stored as the placeholder when the agent is connected", () =>
+    Effect.gen(function* () {
+      yield* (yield* KV.Service).set("redsun.fake.models", [{ id: "auto", name: "Auto" }])
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
+      yield* AcpPlugin.effect({
+        ...host,
+        options: {
+          agents: {
+            fake: {
+              preset: "kiro",
+              command: process.execPath,
+              args: [fixture],
+              env: { FAKE_ACP_V3: "1", FAKE_ACP_MODELS: "late-placeholder" },
+              home: { env: "FAKE_ACP_HOME", path: mkdtempSync(path.join(os.tmpdir(), "redsun-acp-")) },
+              integration: { whoami: [fixture, "whoami"] },
+            },
+          },
+        },
+      })
+      yield* connect("fake")
+      expect((yield* listed("fast"))?.name).toBe("Fast")
+    }),
+  )
+
+  it.effect("asks a connected agent for its models on load when none are known", () =>
+    Effect.gen(function* () {
+      const marker = path.join(mkdtempSync(path.join(os.tmpdir(), "redsun-acp-")), "ready")
+      const host = yield* PluginHost.make(yield* Plugin.Service, "test")
+      const load = AcpPlugin.effect({
+        ...host,
+        options: {
+          agents: {
+            fake: {
+              command: process.execPath,
+              args: [fixture],
+              env: { FAKE_ACP_MODEL_MARKER: marker },
+              integration: { whoami: [fixture, "whoami"] },
+            },
+          },
+        },
+      })
+      // The first agent process reports no models, so connecting leaves the list unknown.
+      yield* load
+      yield* connect("fake")
+      const models = yield* Model.Service
+      for (let waited = 0; !(yield* Effect.promise(() => Bun.file(marker).exists())) && waited < 10_000; waited += 50)
+        yield* sleep(50)
+      yield* sleep(300)
+      expect(yield* models.get("fake" as never, "fast" as never)).toBeUndefined()
+
+      yield* load
+      expect((yield* listed("fast"))?.name).toBe("Fast")
     }),
   )
 
