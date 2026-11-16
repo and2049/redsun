@@ -107,12 +107,14 @@ export const defaultHome = (id: string) =>
  * The host owns base instructions and discovered resources. V3 receives a wire profile and an
  * empty workspace; tracked host prefixes supply the actual project context (see kiro.ts).
  *
- * `env` pins KAS's `tool_load_enabled` feature off. Kiro's cloud experiment service turns it on
- * (observed 2026-10-09 onwards with KAS 0.66.8); with it on, every MCP tool is "deferred" and
- * only reachable through the builtin `tool_load` tool, which the profile denies with the rest of
- * the builtins, so the model saw no tools at all and wrote tool calls as plain text. KAS resolves
- * `KIRO_FEATURE_*` variables ahead of the experiment, so the host's served tools stay in the
- * model's request. A configured `env` entry can still override it.
+ * `env` keeps the host's tools in the model's request. KAS otherwise "defers" every MCP tool:
+ * the model sees only the builtin `tool_load` and `tool_call` and must pass each host call as
+ * `tool_call { tool_id, arguments }`. That wrapper is validated inside Kiro, so a malformed call
+ * (seen with large `write` payloads) fails and is regenerated without the host ever seeing it,
+ * and a profile that denies builtins leaves the model with no tools at all.
+ * `ASBX_KIRO_MANDATORY_MCPS` names servers whose tools are never deferred (KAS 3.2.1, where
+ * deferral is unconditional); `KIRO_FEATURE_TOOL_LOAD_ENABLED` turns the feature off in KAS
+ * 0.66.x, where a cloud experiment controls it. A configured `env` entry can still override both.
  */
 export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
   kiro: {
@@ -125,7 +127,7 @@ export const PRESETS: Readonly<Record<string, Record<string, unknown>>> = {
       signIn: "Run `kiro-cli login` in a terminal, then connect again.",
     },
     args: ["acp", "--agent-engine", "v3", "--auth-method", "cli"],
-    env: { KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" },
+    env: { ASBX_KIRO_MANDATORY_MCPS: "redsun", KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" },
     hostTools: "all",
     prompt: "prefix",
     compactCommand: "/compact",

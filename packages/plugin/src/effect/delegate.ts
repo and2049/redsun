@@ -83,7 +83,8 @@ export interface DelegatedToolResult extends Tool.Result {
 export interface DelegatedCodeMode {
   readonly summary: unknown
   readonly render: () => string
-  readonly update: (previous: unknown) => string
+  /** Absent when nothing the model was shown changed. */
+  readonly update: (previous: unknown) => string | undefined
 }
 
 /**

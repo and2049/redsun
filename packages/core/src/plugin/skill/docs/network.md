@@ -69,6 +69,58 @@ redsun service set env NODE_EXTRA_CA_CERTS /etc/company/ca.pem
 redsun service start
 ```
 
+## Antivirus and HTTPS inspection
+
+Antivirus "HTTPS scanning" or "encrypted connection scanning" (Kaspersky, Avast, ESET and others) and corporate
+SSL-inspection proxies replace the server's certificate with their own. redsun rejects it and requests fail with
+errors such as:
+
+```text
+self signed certificate in certificate chain
+SELF_SIGNED_CERT_IN_CHAIN
+CERT_NOT_YET_VALID
+CERT_SIGNATURE_FAILURE
+```
+
+Fix it in one of two ways:
+
+- Exclude `opencode.ai` and `*.redsun.ai` from HTTPS scanning in the antivirus settings. Add your provider's API host
+  too, such as `api.anthropic.com`, if you connect to a provider directly.
+- Export the inspection certificate authority as a PEM file and trust it with `NODE_EXTRA_CA_CERTS`, as shown in
+  [Certificates](#certificates).
+
+## Client certificates
+
+Set `settings.tls` on a provider whose gateway requires mutual TLS. Its model requests present the certificate, and the
+TLS handshake only sends it to servers that ask for one.
+
+```jsonc title="redsun.jsonc"
+{
+  "providers": {
+    "company": {
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "https://llm.company.example/v1",
+        "tls": {
+          "cert": "{file:/etc/company/client.pem}",
+          "key": "{file:/etc/company/client.key}",
+          "passphrase": "{env:CLIENT_KEY_PASSPHRASE}",
+        },
+      },
+    },
+  },
+}
+```
+
+- `cert` and `key` are PEM text. Use `{file:...}` to read them from files. A file that can't be read leaves `tls` unset.
+- `passphrase` is only needed for an encrypted key.
+- Works on the Bun and Node builds. A server on Cloudflare Workers can't present a client certificate through `fetch`.
+- Requests with a client certificate don't follow redirects, so the certificate isn't presented to another host.
+
+Every model request of that provider presents the certificate: chat, compaction, image and decision models. A provider
+with `tls` uses HTTP instead of WebSockets. Tools such as webfetch, remote MCP servers and plugin installs don't present
+it.
+
 ## Foreground
 
 `--standalone` and `serve` use the environment of their own process. `redsun service set env` does not configure these

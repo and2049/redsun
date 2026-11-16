@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { AcpHostTools } from "../src/host-tools.js"
 import { AcpOptions } from "../src/options.js"
 import { ConfigAcp } from "@opencode/schema/config/acp"
 import { Schema } from "effect"
@@ -37,14 +38,21 @@ describe("ACP agent options", () => {
   })
 
   test("the kiro preset keeps KAS from deferring the host's MCP tools behind its tool_load builtin", () => {
-    // Kiro's cloud experiment `tool_load_enabled` hides every MCP tool until the model calls the
-    // builtin `tool_load`, which the profile denies; the env variable outranks the experiment.
+    // KAS hides every MCP tool behind its `tool_load`/`tool_call` builtins unless the tool's
+    // server is named mandatory (KAS 3.2.1) or the feature is switched off (KAS 0.66.x).
     const { agents } = AcpOptions.parse({ agents: { kiro: { preset: "kiro" } } })
-    expect(agents[0]!.env).toEqual({ KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" })
+    expect(agents[0]!.env).toEqual({
+      ASBX_KIRO_MANDATORY_MCPS: AcpHostTools.SERVER_NAME,
+      KIRO_FEATURE_TOOL_LOAD_ENABLED: "false",
+    })
     const overridden = AcpOptions.parse({
       agents: { kiro: { preset: "kiro", env: { KIRO_FEATURE_TOOL_LOAD_ENABLED: "true", A: "1" } } },
     })
-    expect(overridden.agents[0]!.env).toEqual({ KIRO_FEATURE_TOOL_LOAD_ENABLED: "true", A: "1" })
+    expect(overridden.agents[0]!.env).toEqual({
+      ASBX_KIRO_MANDATORY_MCPS: "redsun",
+      KIRO_FEATURE_TOOL_LOAD_ENABLED: "true",
+      A: "1",
+    })
   })
 
   test("an entry's own keys override its preset; env and home merge", () => {
@@ -56,7 +64,7 @@ describe("ACP agent options", () => {
     expect(agents[0]).toMatchObject({
       name: "Kiro",
       command: "kiro-cli",
-      env: { XDG_DATA_HOME: "/data", KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" },
+      env: { XDG_DATA_HOME: "/data", ASBX_KIRO_MANDATORY_MCPS: "redsun", KIRO_FEATURE_TOOL_LOAD_ENABLED: "false" },
     })
     expect(agents[0]!.home?.env).toBe("HOME")
     expect(agents[0]!.home?.path).toEndWith("/kiro-home")

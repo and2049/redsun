@@ -45,7 +45,9 @@ export const ArtifactEndpoints = [
     error: commonErrors,
   })
     .annotateMerge(locationQueryOpenApi)
-    .annotateMerge(annotations("providers", "List artifact providers", "Return active artifact providers and default.")),
+    .annotateMerge(
+      annotations("providers", "List artifact providers", "Return active artifact providers and default."),
+    ),
   HttpApiEndpoint.get("artifacts.list", "/api/experimental/artifacts", {
     query: ListQuery,
     success: Location.response(Schema.Array(Artifact.Info)),

@@ -1,9 +1,8 @@
 import { Keymap } from "../context/keymap"
 import { useTheme } from "../context/theme"
 import { useNewDesigns } from "../config"
-import { DialogHeader, DialogLayout, useDialog } from "./dialog"
+import { DialogButtons, DialogHeader, DialogLayout, useDialog } from "./dialog"
 import { createStore } from "solid-js/store"
-import { For } from "solid-js"
 import { Locale } from "../util/locale"
 import { useLanguage } from "../i18n"
 
@@ -17,6 +16,8 @@ export type DialogConfirmProps = {
     cancel?: string
   }
 }
+
+const keys = ["cancel", "confirm"] as const
 
 export function DialogConfirm(props: DialogConfirmProps) {
   const dialog = useDialog()
@@ -33,71 +34,31 @@ export function DialogConfirm(props: DialogConfirmProps) {
     dialog.clear()
   }
 
+  const toggle = () => setStore("active", store.active === "confirm" ? "cancel" : "confirm")
+
   Keymap.createLayer(() => ({
     mode: "modal",
-    commands: newDesigns()
-      ? [
-          { bind: "return", title: "Confirm", group: "Dialog", run: () => choose("confirm") },
-          { bind: "escape", title: "Cancel", group: "Dialog", run: () => choose("cancel") },
-        ]
-      : [
-          {
-            bind: "return",
-            title: t("ui.confirmDialogSelection"),
-            group: "Dialog",
-            run: () => choose(store.active),
-          },
-          {
-            bind: "left",
-            title: t("ui.previousDialogOption"),
-            group: "Dialog",
-            run: () => {
-              setStore("active", store.active === "confirm" ? "cancel" : "confirm")
-            },
-          },
-          {
-            bind: "right",
-            title: t("ui.nextDialogOption"),
-            group: "Dialog",
-            run: () => {
-              setStore("active", store.active === "confirm" ? "cancel" : "confirm")
-            },
-          },
-        ],
+    commands: [
+      { bind: "return", title: t("ui.confirmDialogSelection"), group: "Dialog", run: () => choose(store.active) },
+      { bind: "left", title: t("ui.previousDialogOption"), group: "Dialog", run: toggle },
+      { bind: "right", title: t("ui.nextDialogOption"), group: "Dialog", run: toggle },
+      { bind: "tab", title: t("ui.nextDialogOption"), group: "Dialog", run: toggle },
+      { bind: "shift+tab", title: t("ui.previousDialogOption"), group: "Dialog", run: toggle },
+      ...(newDesigns() ? [{ bind: "escape", title: t("common.cancel"), group: "Dialog", run: () => choose("cancel") }] : []),
+    ],
   }))
   return (
     <DialogLayout
       header={<DialogHeader title={props.title} />}
-      footer={{
-        actions: {
-          primary: [
-            // Footer labels are lowercase; the legacy buttons title-case the same labels.
-            { title: (props.label?.cancel ?? t("common.cancel")).toLowerCase(), key: "esc", onTrigger: () => choose("cancel") },
-            {
-              title: (props.label?.confirm ?? t("ui.confirm")).toLowerCase(),
-              key: "enter",
-              onTrigger: () => choose("confirm"),
-            },
-          ],
-        },
-      }}
-      legacyFooter={
-        <box flexDirection="row" justifyContent="flex-end">
-          <For each={["cancel", "confirm"] as const}>
-            {(key) => (
-              <box
-                paddingLeft={1}
-                paddingRight={1}
-                backgroundColor={key === store.active ? theme.background.action.primary.focused : undefined}
-                onMouseUp={() => choose(key)}
-              >
-                <text fg={key === store.active ? theme.text.action.primary.focused : theme.text.muted}>
-                  {props.label?.[key] ?? t(Locale.titlecase(key))}
-                </text>
-              </box>
-            )}
-          </For>
-        </box>
+      buttons={
+        <DialogButtons
+          buttons={keys.map((key) => ({
+            label: Locale.titlecase(props.label?.[key] ?? t(Locale.titlecase(key))),
+            run: () => choose(key),
+          }))}
+          active={keys.indexOf(store.active)}
+          onActive={(index) => setStore("active", keys[index]!)}
+        />
       }
     >
       <text fg={theme.text.muted}>{props.message}</text>

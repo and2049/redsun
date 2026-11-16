@@ -482,15 +482,6 @@ function normalizeExperimental(
         const value = decodeEncoded(schema, experimental[key], ["experimental", key], diagnostics)
         if (value !== undefined) result[key] = value
       })
-      if (!own(experimental, "codemode_vm") && own(experimental, "codemodeVm")) {
-        const value = decodeEncoded(
-          ConfigExperimental.Info.fields.codemode_vm,
-          experimental.codemodeVm,
-          ["experimental", "codemodeVm"],
-          diagnostics,
-        )
-        if (value !== undefined) result.codemode_vm = value
-      }
     }
   }
   if (Object.keys(result).length || (isRecord(input.experimental) && !Object.keys(input.experimental).length))
@@ -648,7 +639,7 @@ function diagnoseSelectionMap(value: unknown, path: string[], diagnostics: Diagn
 }
 
 function diagnoseSelection(value: Record<string, unknown>, path: string[], diagnostics: Diagnostic[]) {
-  const modelValid = typeof value.model === "string" && /^[^/#]+\/[^#]+$/.test(value.model)
+  const modelValid = typeof value.model === "string" && ConfigMigrateV1.modelSelection(value.model) !== undefined
   if (own(value, "model") && typeof value.model === "string" && !modelValid)
     diagnostics.push({
       kind: "unsupported",

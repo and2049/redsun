@@ -49,6 +49,13 @@ export const validateSession = (response: Omit<NewSessionResponse, "sessionId">)
   if (mode !== PROFILE) throw new Error("Kiro did not select redsun's host-only v3 profile.")
 }
 
+/**
+ * KAS 0.66.102 (CLI 3.3.0) answers `session/new` and `session/load` without waiting for its model
+ * list: the response has no model selector, or one holding only `auto`. The whole list follows in
+ * a `config_option_update`, usually within a second.
+ */
+export const modelsLoaded = (models: ReadonlyArray<{ readonly id: string }>) => models.length > 1
+
 export const compacted = (update: SessionUpdate) => {
   const kiro = record(record(update._meta)?.kiro)
   return (

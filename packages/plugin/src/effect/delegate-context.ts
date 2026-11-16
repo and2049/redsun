@@ -92,13 +92,12 @@ export class Tracker {
     }
     const codeMode = input.codeMode === undefined ? previous?.codeMode : input.codeMode?.summary
     if (input.codeMode !== undefined && JSON.stringify(codeMode) !== JSON.stringify(previous?.codeMode)) {
-      parts.push(
-        !input.codeMode
-          ? "Code Mode tools are no longer available. Do not use any previously listed Code Mode tools."
-          : previous?.codeMode === undefined
-            ? input.codeMode.render()
-            : input.codeMode.update(previous.codeMode),
-      )
+      const text = !input.codeMode
+        ? "Code Mode tools are no longer available. Do not use any previously listed Code Mode tools."
+        : previous?.codeMode === undefined
+          ? input.codeMode.render()
+          : input.codeMode.update(previous.codeMode)
+      if (text !== undefined) parts.push(text)
     }
     const next: Snapshot = {
       agent,

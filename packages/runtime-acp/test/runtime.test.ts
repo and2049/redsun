@@ -1064,6 +1064,7 @@ describe("ACP runtime against a scripted agent", () => {
         {
           agent: { preset: "kiro", env: { FAKE_ACP_V3: "1", FAKE_ACP_MODEL_MARKER: path.join(directory, "ready") } },
           host: { reported },
+          options: { modelsGraceMs: 50 },
         },
         async (runtime) => {
           await runtime.discover()
@@ -1073,6 +1074,48 @@ describe("ACP runtime against a scripted agent", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
+  })
+
+  for (const style of ["late", "late-placeholder"] as const) {
+    const kiro = { preset: "kiro", env: { FAKE_ACP_V3: "1", FAKE_ACP_MODELS: style } }
+
+    test(`takes a model list Kiro sends after the session opens (${style})`, async () => {
+      const reported: string[][] = []
+      await withRuntime({ agent: kiro, host: { reported } }, async (runtime) => {
+        const ask = async (modelID: string) =>
+          textOf(await collect((await runtime.turn({ ...TURN, modelID }, call([user("model?")]))).stream))
+        expect(await ask("fast")).toEndWith("MODEL=fast EFFORT=high SETS=")
+        expect(reported).toEqual([["auto", "fast"]])
+        expect(await ask("default")).toEndWith("MODEL=auto")
+      })
+    })
+
+    test(`discovers a late model list with one session (${style})`, async () => {
+      const reported: string[][] = []
+      await withRuntime({ agent: kiro, host: { reported } }, async (runtime) => {
+        await runtime.discover()
+        expect(reported).toEqual([["auto", "fast"]])
+      })
+    })
+  }
+
+  test("never reports Kiro's placeholder model list", async () => {
+    const reported: string[][] = []
+    await withRuntime(
+      {
+        agent: {
+          preset: "kiro",
+          env: { FAKE_ACP_V3: "1", FAKE_ACP_MODELS: "late-placeholder", FAKE_ACP_MODELS_DELAY: "60000" },
+        },
+        host: { reported },
+        options: { modelsGraceMs: 50 },
+      },
+      async (runtime) => {
+        const parts = await collect((await runtime.turn({ ...TURN, modelID: "auto" }, call([user("model?")]))).stream)
+        expect(textOf(parts)).toEndWith("MODEL=auto")
+        expect(reported).toEqual([])
+      },
+    )
   })
 
   test("records the agent's plan as the host's todo list through the host's todowrite", async () => {

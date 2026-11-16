@@ -1,9 +1,8 @@
-import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, Match, onCleanup, Show, Switch } from "solid-js"
 import { Keymap } from "../context/keymap"
-import { useNewDesigns } from "../config"
 import { useTheme } from "../context/theme"
 import type { UpdateState } from "../context/update-notification"
-import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
+import { DialogButtons, DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
 import { errorMessage } from "../util/error"
 import { Spinner } from "./spinner"
 import { useLanguage } from "../i18n"
@@ -18,7 +17,6 @@ export function DialogUpdate(props: {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   const { t } = useLanguage()
-  const newDesigns = useNewDesigns()
   const [error, setError] = createSignal<string>()
   const [active, setActive] = createSignal(0)
   const controller = new AbortController()
@@ -67,6 +65,11 @@ export function DialogUpdate(props: {
 
   createEffect(() => setActive(Math.max(0, buttons().length - 1)))
 
+  const move = (step: number) => {
+    const count = buttons().length
+    if (count) setActive((value) => (value + step + count) % count)
+  }
+
   Keymap.createLayer(() => ({
     mode: "modal",
     commands: [
@@ -74,17 +77,12 @@ export function DialogUpdate(props: {
         bind: "return",
         title: t("ui.confirmUpdateAction"),
         group: "Dialog",
-        run: () => void buttons()[newDesigns() ? buttons().length - 1 : active()]?.run(),
+        run: () => void buttons()[active()]?.run(),
       },
-      ...(newDesigns() ? [] : ["left", "right", "tab", "shift+tab"]).map((bind) => ({
-        bind,
-        title: bind === "left" || bind === "shift+tab" ? t("ui.previousUpdateAction") : t("ui.nextUpdateAction"),
-        group: "Dialog",
-        run: () => {
-          const count = buttons().length
-          if (count) setActive((value) => (value + 1) % count)
-        },
-      })),
+      { bind: "left", title: t("ui.previousUpdateAction"), group: "Dialog", run: () => move(-1) },
+      { bind: "shift+tab", title: t("ui.previousUpdateAction"), group: "Dialog", run: () => move(-1) },
+      { bind: "right", title: t("ui.nextUpdateAction"), group: "Dialog", run: () => move(1) },
+      { bind: "tab", title: t("ui.nextUpdateAction"), group: "Dialog", run: () => move(1) },
     ],
   }))
 
@@ -99,33 +97,13 @@ export function DialogUpdate(props: {
           }
         />
       }
-      footer={{
-        actions: {
-          primary: buttons().map((button, index) => ({
-            title: button.label.toLowerCase(),
-            key: index === buttons().length - 1 ? "enter" : undefined,
-            onTrigger: () => void button.run(),
-          })),
-        },
-      }}
-      legacyFooter={
+      buttons={
         <Show when={buttons().length > 0}>
-          <box flexDirection="row" justifyContent="flex-end">
-            <For each={buttons()}>
-              {(button, index) => (
-                <box
-                  paddingLeft={1}
-                  paddingRight={1}
-                  backgroundColor={active() === index() ? theme.background.action.primary.focused : undefined}
-                  onMouseUp={() => void button.run()}
-                >
-                  <text fg={active() === index() ? theme.text.action.primary.focused : theme.text.muted}>
-                    {button.label}
-                  </text>
-                </box>
-              )}
-            </For>
-          </box>
+          <DialogButtons
+            buttons={buttons().map((button) => ({ label: button.label, run: () => void button.run() }))}
+            active={active()}
+            onActive={setActive}
+          />
         </Show>
       }
     >

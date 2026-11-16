@@ -41,7 +41,7 @@
     "redsun-remote-control": "0.4.0"
   },
   "devDependencies": {
-    "@opencode/pty": "0.4.0",
+    "@opencode/pty": "0.5.2",
     "@opencode/client": "workspace:*",
     "@opencode/plugin": "workspace:*",
     "@tsconfig/bun": "catalog:",
